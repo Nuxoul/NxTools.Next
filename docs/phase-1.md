@@ -31,8 +31,10 @@ Phase 1 answers the risky architecture questions before product features are mig
 7. Confirm Escape and clicking outside close the popup while background capture continues.
 8. After a successful paste, confirm the popup closes, the process remains alive, and `Alt+C`
    opens it again.
-9. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
-10. Launch a second desktop instance and confirm it exits immediately.
+9. Repeat the paste-and-reopen cycle at least three times and confirm a topmost failure cannot
+   terminate the background process.
+10. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
+11. Launch a second desktop instance and confirm it exits immediately.
 
 ## Exit criteria before clipboard migration
 

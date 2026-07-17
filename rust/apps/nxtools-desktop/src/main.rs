@@ -1,4 +1,5 @@
 mod clipboard;
+mod popup_lifecycle;
 mod runtime;
 mod theme;
 mod ui;

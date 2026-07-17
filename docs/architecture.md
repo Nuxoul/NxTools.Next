@@ -71,8 +71,9 @@ Windows-only topmost operation, focus restoration, modifier release, input injec
 The clipboard panel is not a page in an application main window. Its GPUI window does not exist
 until the global shortcut is pressed. Escape, a successful paste, or window deactivation hides
 the native panel without destroying its GPUI window. On the next shortcut, Rust creates the new
-panel before releasing the previous hidden one, so the native event loop never observes its last
-window closing.
+panel and retains the previous hidden window until the asynchronous topmost result arrives. A
+topmost failure is nonfatal: the new panel stays usable and only the previous hidden panel is
+released. The native event loop therefore never observes its last window closing.
 
 ## Reference use
 

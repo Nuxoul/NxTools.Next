@@ -217,6 +217,17 @@ impl ClipboardPanel {
         cx.notify();
     }
 
+    pub(crate) fn handle_topmost_failure(
+        &mut self,
+        reason: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.status = PanelStatus::Error(format!("面板置顶失败：{reason}"));
+        window.activate_window();
+        cx.notify();
+    }
+
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.is_open {
             return;

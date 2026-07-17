@@ -17,6 +17,7 @@ use nxtools_protocol::{
 };
 use tracing::{error, info};
 
+use crate::popup_lifecycle::{PopupLifecycle, TopmostResolution};
 use crate::ui::{ClipboardPanel, PANEL_HEIGHT, PANEL_WIDTH, native_window_handle, panel_bounds};
 
 const HISTORY_LIMIT: usize = 500;
@@ -43,12 +44,21 @@ pub struct ClipboardApplication {
     _platform_task: Task<()>,
 }
 
+#[derive(Clone)]
+struct PopupWindow {
+    window: AnyWindowHandle,
+    panel: WeakEntity<ClipboardPanel>,
+}
+
+struct PendingVisibility {
+    correlation_id: uuid::Uuid,
+    window: AnyWindowHandle,
+}
+
 #[derive(Default)]
 struct PopupSession {
-    window: Option<AnyWindowHandle>,
-    panel: Option<WeakEntity<ClipboardPanel>>,
-    pending_topmost: Option<uuid::Uuid>,
-    pending_visibility: Option<uuid::Uuid>,
+    lifecycle: PopupLifecycle<PopupWindow>,
+    pending_visibility: Option<PendingVisibility>,
 }
 
 impl ClipboardApplication {
@@ -122,7 +132,12 @@ impl ClipboardApplication {
                     visible: false,
                 },
             ))?;
-        self.popup.pending_visibility = Some(command_id);
+        if let Some(popup) = self.popup.lifecycle.current() {
+            self.popup.pending_visibility = Some(PendingVisibility {
+                correlation_id: command_id,
+                window: popup.window,
+            });
+        }
         info!(%command_id, window_handle, "clipboard popup hide command sent");
         Ok(command_id)
     }
@@ -138,8 +153,13 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
-                if self.popup.pending_visibility == Some(correlation_id) {
-                    self.popup.pending_visibility = None;
+                if self
+                    .popup
+                    .pending_visibility
+                    .as_ref()
+                    .is_some_and(|pending| pending.correlation_id == correlation_id)
+                {
+                    let pending = self.popup.pending_visibility.take().expect("checked above");
                     if result.success {
                         info!(%correlation_id, "clipboard popup hidden without closing its GPUI window");
                     } else {
@@ -153,11 +173,15 @@ impl ClipboardApplication {
                             %reason,
                             "failed to hide clipboard popup"
                         );
-                        if let (Some(window), Some(panel)) =
-                            (self.popup.window, self.popup.panel.as_ref().cloned())
+                        if let Some(popup) = self
+                            .popup
+                            .lifecycle
+                            .current()
+                            .filter(|popup| popup.window == pending.window)
+                            .cloned()
                         {
-                            let _ = window.update(cx, |_, window, app| {
-                                let _ = panel.update(app, |panel, cx| {
+                            let _ = popup.window.update(cx, |_, window, app| {
+                                let _ = popup.panel.update(app, |panel, cx| {
                                     panel.handle_hide_failure(reason, window, cx);
                                 });
                             });
@@ -165,32 +189,52 @@ impl ClipboardApplication {
                     }
                     return;
                 }
-                if self.popup.pending_topmost == Some(correlation_id) {
-                    self.popup.pending_topmost = None;
-                    if result.success {
-                        info!(%correlation_id, "clipboard window is topmost");
-                    } else {
-                        error!(
-                            %correlation_id,
-                            reason = result.error.as_deref().unwrap_or("unknown Windows error"),
-                            "failed to make clipboard window topmost"
-                        );
-                        let window = self.popup.window.take();
-                        self.popup.panel = None;
-                        self.popup.pending_visibility = None;
-                        if let Some(window) = window {
-                            let _ = window.update(cx, |_, window, _| window.remove_window());
+                let topmost_reason = result
+                    .error
+                    .as_deref()
+                    .unwrap_or("unknown Windows error")
+                    .to_owned();
+                if let Some(resolution) = self
+                    .popup
+                    .lifecycle
+                    .resolve_topmost(correlation_id, result.success)
+                {
+                    match resolution {
+                        TopmostResolution::Confirmed { previous } => {
+                            info!(%correlation_id, "clipboard window is topmost");
+                            if let Some(previous) = previous {
+                                let _ = previous
+                                    .window
+                                    .update(cx, |_, window, _| window.remove_window());
+                            }
+                        }
+                        TopmostResolution::Rejected { previous } => {
+                            error!(
+                                %correlation_id,
+                                reason = %topmost_reason,
+                                "clipboard window remains open because topmost is nonfatal"
+                            );
+                            if let Some(previous) = previous {
+                                let _ = previous
+                                    .window
+                                    .update(cx, |_, window, _| window.remove_window());
+                            }
+                            if let Some(current) = self.popup.lifecycle.current().cloned() {
+                                let _ = current.window.update(cx, |_, window, app| {
+                                    let _ = current.panel.update(app, |panel, cx| {
+                                        panel.handle_topmost_failure(topmost_reason, window, cx);
+                                    });
+                                });
+                            }
                         }
                     }
                     return;
                 }
-                let (Some(window), Some(panel)) =
-                    (self.popup.window, self.popup.panel.as_ref().cloned())
-                else {
+                let Some(popup) = self.popup.lifecycle.current().cloned() else {
                     return;
                 };
-                let _ = window.update(cx, |_, window, app| {
-                    let _ = panel.update(app, |panel, cx| {
+                let _ = popup.window.update(cx, |_, window, app| {
+                    let _ = popup.panel.update(app, |panel, cx| {
                         panel.handle_command_result(correlation_id, result, window, cx);
                     });
                 });
@@ -228,7 +272,12 @@ impl ClipboardApplication {
     }
 
     fn show_panel(&mut self, request: ClipboardPanelRequest, cx: &mut Context<Self>) {
-        let previous_window = self.popup.window;
+        if self.popup.lifecycle.replacement_pending() {
+            info!(
+                "ignored clipboard panel request while a replacement is awaiting topmost confirmation"
+            );
+            return;
+        }
 
         let entries = self.query_entries("").unwrap_or_else(|error| {
             error!(%error, "failed to load clipboard popup history");
@@ -281,22 +330,40 @@ impl ClipboardApplication {
         match opened {
             Ok(window) => {
                 let topmost_result = topmost_slot.borrow_mut().take();
+                let Some(panel) = panel_slot.borrow_mut().take() else {
+                    error!("clipboard popup opened without a panel entity");
+                    let _ = window.update(cx, |_, window, _| window.remove_window());
+                    return;
+                };
+                let popup = PopupWindow {
+                    window: window.into(),
+                    panel,
+                };
                 let Some(Ok(topmost_command)) = topmost_result else {
                     let reason = match topmost_result {
                         Some(Err(reason)) => reason,
                         _ => "topmost request was not created".to_owned(),
                     };
-                    error!(%reason, "clipboard popup closed because topmost could not be requested");
-                    let _ = window.update(cx, |_, window, _| window.remove_window());
+                    error!(%reason, "clipboard popup topmost request could not be created");
+                    if let Some(previous) = self
+                        .popup
+                        .lifecycle
+                        .replace_without_topmost_confirmation(popup)
+                    {
+                        let _ = previous
+                            .window
+                            .update(cx, |_, window, _| window.remove_window());
+                    }
+                    if let Some(current) = self.popup.lifecycle.current().cloned() {
+                        let _ = current.window.update(cx, |_, window, app| {
+                            let _ = current.panel.update(app, |panel, cx| {
+                                panel.handle_topmost_failure(reason, window, cx);
+                            });
+                        });
+                    }
                     return;
                 };
-                self.popup.window = Some(window.into());
-                self.popup.panel = panel_slot.borrow_mut().take();
-                self.popup.pending_topmost = Some(topmost_command);
-                self.popup.pending_visibility = None;
-                if let Some(previous_window) = previous_window {
-                    let _ = previous_window.update(cx, |_, window, _| window.remove_window());
-                }
+                self.popup.lifecycle.stage(popup, topmost_command);
                 info!(
                     target = %request.target.process_name,
                     x = request.cursor_x,
