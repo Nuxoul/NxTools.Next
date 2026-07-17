@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use directories::ProjectDirs;
@@ -109,6 +110,11 @@ impl SingleInstanceGuard {
 pub type LogGuard = tracing_appender::non_blocking::WorkerGuard;
 
 pub fn init_file_logging(paths: &AppPaths, process_name: &str) -> Result<LogGuard> {
+    delete_expired_logs(
+        &paths.log_dir,
+        process_name,
+        Duration::from_secs(14 * 24 * 60 * 60),
+    );
     let appender = tracing_appender::rolling::daily(&paths.log_dir, format!("{process_name}.log"));
     let (writer, guard) = tracing_appender::non_blocking(appender);
     tracing_subscriber::fmt()
@@ -122,6 +128,33 @@ pub fn init_file_logging(paths: &AppPaths, process_name: &str) -> Result<LogGuar
     Ok(guard)
 }
 
+fn delete_expired_logs(log_dir: &Path, process_name: &str, retention: Duration) {
+    let prefix = format!("{process_name}.log.");
+    let Some(cutoff) = SystemTime::now().checked_sub(retention) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(log_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_process_log = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&prefix));
+        if !is_process_log {
+            continue;
+        }
+        let is_expired = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| modified < cutoff);
+        if is_expired {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +165,28 @@ mod tests {
         let json = serde_json::to_string(&config).expect("serialize");
         let decoded = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn log_retention_only_deletes_matching_process_logs() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-log-retention-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("create test directory");
+        let desktop_log = directory.join("desktop.log.2000-01-01");
+        let other_log = directory.join("indexer.log.2000-01-01");
+        fs::write(&desktop_log, b"old").expect("write desktop log");
+        fs::write(&other_log, b"old").expect("write other log");
+
+        delete_expired_logs(&directory, "desktop", Duration::ZERO);
+
+        assert!(!desktop_log.exists());
+        assert!(other_log.exists());
+        fs::remove_dir_all(directory).expect("remove test directory");
     }
 }

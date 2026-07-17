@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 using NxTools.PlatformHost.Windows;
 
@@ -15,6 +16,9 @@ internal static class Program
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
             ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
+            ("native input layout matches Windows ABI", NativeInputLayoutMatchesWindowsAbi),
+            ("paste diagnostics preserve correlation and Win32 error", PasteDiagnosticsPreserveCorrelationAndWin32Error),
+            ("platform log writes structured JSON lines", PlatformLogWritesStructuredJsonLines),
             ("unverified fallback is not reported as paste success", UnverifiedFallbackIsNotReportedAsPasteSuccess),
             ("pressed modifiers keep paste result unconfirmed", PressedModifiersKeepPasteResultUnconfirmed),
             ("incomplete input keeps paste result unconfirmed", IncompleteInputKeepsPasteResultUnconfirmed),
@@ -127,6 +131,62 @@ internal static class Program
         Assert(operations.ActivationAttempts == 2);
         Assert(operations.SendPasteCalls == 1);
         Assert(operations.PostPasteCalls == 0);
+        return Task.CompletedTask;
+    }
+
+    private static Task NativeInputLayoutMatchesWindowsAbi()
+    {
+        var expectedSize = IntPtr.Size == 8 ? 40 : 28;
+        Assert(WindowsPlatformAdapter.NativeInputSize == expectedSize);
+        return Task.CompletedTask;
+    }
+
+    private static Task PasteDiagnosticsPreserveCorrelationAndWin32Error()
+    {
+        var correlationId = Guid.NewGuid();
+        var log = new RecordingPlatformLog();
+        var coordinator = new WindowsPasteCoordinator(
+            new FakePasteOperations { SentInputCount = 0, PostPasteResult = true },
+            log);
+
+        var result = coordinator.Execute(new PasteTextCommand("paste", 42, 43), correlationId);
+
+        Assert(!result.Success);
+        var inputFailure = log.Entries.Single(entry =>
+            entry.EventName == "paste.send_input_step" &&
+            Equals(entry.Fields["step"], "ctrl_down"));
+        Assert(inputFailure.CorrelationId == correlationId);
+        Assert(Equals(inputFailure.Fields["win32_error"], 87));
+        Assert(Equals(inputFailure.Fields["input_struct_size"], IntPtr.Size == 8 ? 40 : 28));
+        return Task.CompletedTask;
+    }
+
+    private static Task PlatformLogWritesStructuredJsonLines()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-log-test-{Guid.NewGuid():N}");
+        var correlationId = Guid.NewGuid();
+        string path;
+        using (var log = PlatformLog.CreateForDirectory(directory))
+        {
+            path = log.CurrentLogPath;
+            log.Write("info", "test.event", correlationId, new Dictionary<string, object?>
+            {
+                ["win32_error"] = 87,
+                ["text"] = "must-not-appear",
+                ["nested"] = new { Text = "nested-must-not-appear", Safe = 1 }
+            });
+        }
+        var json = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert(root.GetProperty("event").GetString() == "test.event");
+        Assert(root.GetProperty("correlation_id").GetGuid() == correlationId);
+        Assert(root.GetProperty("win32_error").GetInt32() == 87);
+        Assert(root.GetProperty("text").GetString() == "[REDACTED]");
+        Assert(root.GetProperty("nested").GetProperty("Text").GetString() == "[REDACTED]");
+        Assert(!json.Contains("must-not-appear", StringComparison.Ordinal));
+        Assert(!json.Contains("nested-must-not-appear", StringComparison.Ordinal));
+        Directory.Delete(directory, recursive: true);
         return Task.CompletedTask;
     }
 
@@ -279,11 +339,10 @@ internal static class Program
 
         public bool IsWindow(long windowHandle) => windowHandle != 0;
 
-        public bool TrySetClipboardText(string text, out string? error)
-        {
-            error = null;
-            return true;
-        }
+        public uint GetClipboardSequenceNumber() => 7;
+
+        public ClipboardWriteResult WriteClipboardText(string text) =>
+            new(true, null, [new ClipboardWriteAttempt(1, true, 0, null)]);
 
         public bool TryActivateWindow(long targetWindowHandle, long focusWindowHandle)
         {
@@ -294,24 +353,62 @@ internal static class Program
         public bool IsForegroundWindowForTarget(long targetWindowHandle) =>
             ActivationAttempts > 0 && ActivationResults.Count < 3;
 
-        public bool TryReleaseActivationModifiers() => ModifiersReleased;
+        public PasteWindowSnapshot CaptureWindowState(long targetWindowHandle) =>
+            new(targetWindowHandle, targetWindowHandle, targetWindowHandle, 1, 2, 2, 3, 3);
 
-        public uint SendPasteShortcut()
+        public ModifierReleaseResult ReleaseActivationModifiers() =>
+            new(ModifiersReleased, [], ModifiersReleased ? [] : [0x12], 1, []);
+
+        public PasteShortcutResult SendPasteShortcut()
         {
             SendPasteCalls++;
-            return SentInputCount;
+            var steps = new[] { "ctrl_down", "v_down", "v_up", "ctrl_up" }
+                .Select((name, index) => new KeyboardInputStep(
+                    name,
+                    index is 0 or 3 ? (ushort)0x11 : (ushort)0x56,
+                    index >= 2 ? 2U : 0U,
+                    index < SentInputCount ? 1U : 0U,
+                    index < SentInputCount ? 0 : 87))
+                .ToArray();
+            return new PasteShortcutResult(SentInputCount, WindowsPlatformAdapter.NativeInputSize, steps);
         }
 
-        public bool TryPostPaste(long targetWindowHandle, out string? error)
+        public PostPasteResult PostPaste(long targetWindowHandle)
         {
             PostPasteCalls++;
             LastPostTarget = targetWindowHandle;
-            error = PostPasteResult ? null : "post failed";
-            return PostPasteResult;
+            return new PostPasteResult(
+                PostPasteResult,
+                PostPasteResult ? 0 : 5,
+                PostPasteResult ? null : "post failed");
         }
 
         public void Delay(int milliseconds)
         {
         }
     }
+
+    private sealed class RecordingPlatformLog : IPlatformLog
+    {
+        public List<RecordedLogEntry> Entries { get; } = [];
+
+        public void Write(
+            string level,
+            string eventName,
+            Guid? correlationId = null,
+            IReadOnlyDictionary<string, object?>? fields = null) =>
+            Entries.Add(new RecordedLogEntry(
+                level,
+                eventName,
+                correlationId,
+                fields is null
+                    ? new Dictionary<string, object?>()
+                    : new Dictionary<string, object?>(fields)));
+    }
+
+    private sealed record RecordedLogEntry(
+        string Level,
+        string EventName,
+        Guid? CorrelationId,
+        IReadOnlyDictionary<string, object?> Fields);
 }

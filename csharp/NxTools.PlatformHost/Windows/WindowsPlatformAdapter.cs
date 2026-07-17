@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using System.Windows.Forms;
+using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 
 namespace NxTools.PlatformHost.Windows;
@@ -11,6 +12,8 @@ internal sealed record WindowsCommandResult(bool Success, string? Error = null);
 
 internal sealed class WindowsPlatformAdapter : IDisposable
 {
+    internal static int NativeInputSize => NativeMethods.InputSize;
+
     private readonly Channel<WindowsPlatformEvent> _events = Channel.CreateBounded<WindowsPlatformEvent>(
         new BoundedChannelOptions(512)
         {
@@ -20,12 +23,16 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         });
     private readonly ManualResetEventSlim _started = new(false);
     private readonly Thread _thread;
+    private readonly IPlatformLog _log;
     private EventWindow? _window;
     private Exception? _startupError;
     private bool _disposed;
 
-    public WindowsPlatformAdapter(ForegroundContextProvider foregroundContextProvider)
+    public WindowsPlatformAdapter(
+        ForegroundContextProvider foregroundContextProvider,
+        IPlatformLog? log = null)
     {
+        _log = log ?? NullPlatformLog.Instance;
         _thread = new Thread(() => RunMessageLoop(foregroundContextProvider))
         {
             IsBackground = true,
@@ -46,11 +53,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
     public Task<WindowsCommandResult> PasteTextAsync(
         PasteTextCommand command,
+        Guid correlationId,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(command, cancellationToken);
+            .EnqueuePaste(command, correlationId, cancellationToken);
     }
 
     public WindowsCommandResult SetWindowTopmost(SetWindowTopmostCommand command) =>
@@ -60,7 +68,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     {
         try
         {
-            _window = new EventWindow(_events.Writer, foregroundContextProvider);
+            _window = new EventWindow(_events.Writer, foregroundContextProvider, _log);
             _started.Set();
             Application.Run();
         }
@@ -109,6 +117,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         private readonly ChannelWriter<WindowsPlatformEvent> _events;
         private readonly ForegroundContextProvider _foregroundContextProvider;
+        private readonly IPlatformLog _log;
         private readonly ConcurrentQueue<PasteRequest> _pasteRequests = new();
         private readonly ClipboardWriteSuppressor _writeSuppressor = new();
         private readonly NativeMethods.WinEventDelegate _foregroundCallback;
@@ -120,10 +129,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         public EventWindow(
             ChannelWriter<WindowsPlatformEvent> events,
-            ForegroundContextProvider foregroundContextProvider)
+            ForegroundContextProvider foregroundContextProvider,
+            IPlatformLog log)
         {
             _events = events;
             _foregroundContextProvider = foregroundContextProvider;
+            _log = log;
             _foregroundCallback = OnForegroundChanged;
             CreateHandle(new CreateParams
             {
@@ -165,11 +176,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         public Task<WindowsCommandResult> EnqueuePaste(
             PasteTextCommand command,
+            Guid correlationId,
             CancellationToken cancellationToken)
         {
             var completion = new TaskCompletionSource<WindowsCommandResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            _pasteRequests.Enqueue(new PasteRequest(command, cancellationToken, completion));
+            _pasteRequests.Enqueue(new PasteRequest(command, correlationId, cancellationToken, completion));
             if (!NativeMethods.PostMessage(Handle, WmExecutePaste, IntPtr.Zero, IntPtr.Zero))
             {
                 completion.TrySetResult(new WindowsCommandResult(false, "Failed to schedule paste on the Windows thread."));
@@ -276,41 +288,53 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     continue;
                 }
                 request.Completion.TrySetResult(
-                    new WindowsPasteCoordinator(this).Execute(request.Command));
+                    new WindowsPasteCoordinator(this, _log).Execute(
+                        request.Command,
+                        request.CorrelationId));
             }
         }
 
-        private bool TrySetClipboardText(string text, out string? error)
+        private ClipboardWriteResult WriteClipboardText(string text)
         {
+            var attempts = new List<ClipboardWriteAttempt>();
             for (var attempt = 0; attempt < 5; attempt++)
             {
                 _writeSuppressor.SuppressNext(text);
                 try
                 {
                     Clipboard.SetText(text, TextDataFormat.UnicodeText);
-                    error = null;
-                    return true;
+                    attempts.Add(new ClipboardWriteAttempt(attempt + 1, true, 0, null));
+                    return new ClipboardWriteResult(true, null, attempts);
                 }
                 catch (ExternalException exception)
                 {
                     _writeSuppressor.Cancel(text);
+                    attempts.Add(new ClipboardWriteAttempt(
+                        attempt + 1,
+                        false,
+                        exception.ErrorCode,
+                        exception.Message));
                     if (attempt == 4)
                     {
-                        error = $"Could not open the Windows clipboard: {exception.Message}";
-                        return false;
+                        return new ClipboardWriteResult(
+                            false,
+                            $"Could not open the Windows clipboard: {exception.Message}",
+                            attempts);
                     }
                     Thread.Sleep(20);
                 }
             }
-            error = "Could not open the Windows clipboard.";
-            return false;
+            return new ClipboardWriteResult(false, "Could not open the Windows clipboard.", attempts);
         }
 
         bool IWindowsPasteOperations.IsWindow(long windowHandle) =>
             NativeMethods.IsWindow(new IntPtr(windowHandle));
 
-        bool IWindowsPasteOperations.TrySetClipboardText(string text, out string? error) =>
-            TrySetClipboardText(text, out error);
+        uint IWindowsPasteOperations.GetClipboardSequenceNumber() =>
+            NativeMethods.GetClipboardSequenceNumber();
+
+        ClipboardWriteResult IWindowsPasteOperations.WriteClipboardText(string text) =>
+            WriteClipboardText(text);
 
         bool IWindowsPasteOperations.TryActivateWindow(
             long targetWindowHandle,
@@ -322,13 +346,17 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         bool IWindowsPasteOperations.IsForegroundWindowForTarget(long targetWindowHandle) =>
             NativeMethods.IsForegroundWindowForTarget(new IntPtr(targetWindowHandle));
 
-        bool IWindowsPasteOperations.TryReleaseActivationModifiers() =>
-            NativeMethods.TryReleaseActivationModifiers();
+        PasteWindowSnapshot IWindowsPasteOperations.CaptureWindowState(long targetWindowHandle) =>
+            NativeMethods.CaptureWindowState(new IntPtr(targetWindowHandle));
 
-        uint IWindowsPasteOperations.SendPasteShortcut() => NativeMethods.SendPasteShortcut();
+        ModifierReleaseResult IWindowsPasteOperations.ReleaseActivationModifiers() =>
+            NativeMethods.ReleaseActivationModifiers();
 
-        bool IWindowsPasteOperations.TryPostPaste(long targetWindowHandle, out string? error) =>
-            NativeMethods.TryPostPaste(new IntPtr(targetWindowHandle), out error);
+        PasteShortcutResult IWindowsPasteOperations.SendPasteShortcut() =>
+            NativeMethods.SendPasteShortcut();
+
+        PostPasteResult IWindowsPasteOperations.PostPaste(long targetWindowHandle) =>
+            NativeMethods.PostPaste(new IntPtr(targetWindowHandle));
 
         void IWindowsPasteOperations.Delay(int milliseconds) => Thread.Sleep(milliseconds);
 
@@ -381,11 +409,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
     private sealed record PasteRequest(
         PasteTextCommand Command,
+        Guid CorrelationId,
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 
     private static class NativeMethods
     {
+        internal static int InputSize => Marshal.SizeOf<Input>();
+
         private const int SwRestore = 9;
         private const uint InputKeyboard = 1;
         private const uint KeyeventfKeyup = 0x0002;
@@ -470,6 +501,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsWindow(IntPtr window);
+
+        [DllImport("user32.dll")]
+        internal static extern uint GetClipboardSequenceNumber();
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -612,7 +646,30 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             return targetRoot != IntPtr.Zero && targetRoot == foregroundRoot;
         }
 
-        internal static bool TryReleaseActivationModifiers()
+        internal static PasteWindowSnapshot CaptureWindowState(IntPtr target)
+        {
+            var currentThread = GetCurrentThreadId();
+            uint targetProcess = 0;
+            var targetThread = target == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(target, out targetProcess);
+            var foreground = GetForegroundWindow();
+            uint foregroundProcess = 0;
+            var foregroundThread = foreground == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(foreground, out foregroundProcess);
+            return new PasteWindowSnapshot(
+                foreground.ToInt64(),
+                GetAncestor(foreground, GaRoot).ToInt64(),
+                GetAncestor(target, GaRoot).ToInt64(),
+                currentThread,
+                targetThread,
+                foregroundThread,
+                targetProcess,
+                foregroundProcess);
+        }
+
+        internal static ModifierReleaseResult ReleaseActivationModifiers()
         {
             ushort[] keys =
             [
@@ -620,49 +677,72 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 VkLShift, VkRShift, VkLControl, VkRControl, VkLMenu, VkRMenu,
                 VkLWin, VkRWin
             ];
-            for (var attempt = 0; attempt < 12; attempt++)
+            var initiallyPressed = keys.Where(IsKeyDown).ToArray();
+            var inputSteps = new List<KeyboardInputStep>();
+            var attempts = 0;
+            for (; attempts < 12; attempts++)
             {
                 var pressed = keys.Where(IsKeyDown).ToArray();
                 if (pressed.Length == 0)
                 {
-                    return true;
+                    return new ModifierReleaseResult(true, initiallyPressed, [], attempts, inputSteps);
                 }
                 foreach (var key in pressed)
                 {
-                    _ = SendKeyboardInput(key, KeyeventfKeyup);
+                    inputSteps.Add(SendKeyboardInput("modifier_up", key, KeyeventfKeyup));
                 }
                 Thread.Sleep(3);
             }
-            return !keys.Any(IsKeyDown);
+            var finallyPressed = keys.Where(IsKeyDown).ToArray();
+            return new ModifierReleaseResult(
+                finallyPressed.Length == 0,
+                initiallyPressed,
+                finallyPressed,
+                attempts,
+                inputSteps);
         }
 
-        internal static uint SendPasteShortcut()
+        internal static PasteShortcutResult SendPasteShortcut()
         {
-            uint sent = 0;
-            sent += SendKeyboardInput(VkControl, 0);
-            Thread.Sleep(10);
-            sent += SendKeyboardInput(VkV, 0);
-            Thread.Sleep(10);
-            sent += SendKeyboardInput(VkV, KeyeventfKeyup);
-            Thread.Sleep(5);
-            sent += SendKeyboardInput(VkControl, KeyeventfKeyup);
-            return sent;
+            KeyboardInputStep[] steps =
+            [
+                SendKeyboardInput("ctrl_down", VkControl, 0),
+                DelayThenSend(10, "v_down", VkV, 0),
+                DelayThenSend(10, "v_up", VkV, KeyeventfKeyup),
+                DelayThenSend(5, "ctrl_up", VkControl, KeyeventfKeyup)
+            ];
+            return new PasteShortcutResult(
+                steps.Aggregate(0U, static (sent, step) => sent + step.Sent),
+                Marshal.SizeOf<Input>(),
+                steps);
         }
 
-        internal static bool TryPostPaste(IntPtr target, out string? error)
+        private static KeyboardInputStep DelayThenSend(
+            int milliseconds,
+            string name,
+            ushort key,
+            uint flags)
+        {
+            Thread.Sleep(milliseconds);
+            return SendKeyboardInput(name, key, flags);
+        }
+
+        internal static PostPasteResult PostPaste(IntPtr target)
         {
             if (target == IntPtr.Zero || !IsWindow(target))
             {
-                error = "The paste target is no longer a valid window.";
-                return false;
+                return new PostPasteResult(false, 1400, "The paste target is no longer a valid window.");
             }
+            Marshal.SetLastPInvokeError(0);
             if (PostMessage(target, WmPaste, IntPtr.Zero, IntPtr.Zero))
             {
-                error = null;
-                return true;
+                return new PostPasteResult(true, 0, null);
             }
-            error = $"PostMessage(WM_PASTE) failed with Win32={Marshal.GetLastWin32Error()}.";
-            return false;
+            var error = Marshal.GetLastPInvokeError();
+            return new PostPasteResult(
+                false,
+                error,
+                $"PostMessage(WM_PASTE) failed with Win32={error}.");
         }
 
         internal static WindowsCommandResult SetWindowTopmost(IntPtr window, bool enabled)
@@ -752,10 +832,13 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         private static bool IsKeyDown(ushort key) => (GetAsyncKeyState(key) & 0x8000) != 0;
 
-        private static uint SendKeyboardInput(ushort key, uint flags)
+        private static KeyboardInputStep SendKeyboardInput(string name, ushort key, uint flags)
         {
             var input = new[] { KeyboardInput(key, flags) };
-            return SendInput(1, input, Marshal.SizeOf<Input>());
+            Marshal.SetLastPInvokeError(0);
+            var sent = SendInput(1, input, Marshal.SizeOf<Input>());
+            var error = sent == 0 ? Marshal.GetLastPInvokeError() : 0;
+            return new KeyboardInputStep(name, key, flags, sent, error);
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -785,6 +868,31 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         {
             [FieldOffset(0)]
             public KeyboardInputData Keyboard;
+
+            [FieldOffset(0)]
+            public MouseInputData Mouse;
+
+            [FieldOffset(0)]
+            public HardwareInputData Hardware;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MouseInputData
+        {
+            public int X;
+            public int Y;
+            public uint MouseData;
+            public uint Flags;
+            public uint Time;
+            public UIntPtr ExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct HardwareInputData
+        {
+            public uint Message;
+            public ushort ParameterLow;
+            public ushort ParameterHigh;
         }
 
         [StructLayout(LayoutKind.Sequential)]

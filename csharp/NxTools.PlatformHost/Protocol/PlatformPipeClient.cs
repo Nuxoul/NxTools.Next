@@ -1,14 +1,17 @@
 using System.IO.Pipes;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Windows;
 
 namespace NxTools.PlatformHost.Protocol;
 
 internal sealed class PlatformPipeClient(
     string pipeName,
-    WindowsPlatformAdapter platformAdapter)
+    WindowsPlatformAdapter platformAdapter,
+    IPlatformLog log)
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
 
@@ -27,6 +30,12 @@ internal sealed class PlatformPipeClient(
             catch (Exception error)
             {
                 Console.Error.WriteLine($"PlatformHost disconnected: {error.Message}");
+                log.Write("error", "ipc.disconnected", fields: new Dictionary<string, object?>
+                {
+                    ["exception_type"] = error.GetType().FullName,
+                    ["message"] = error.Message,
+                    ["stack_trace"] = error.StackTrace
+                });
                 await Task.Delay(ReconnectDelay, cancellationToken);
             }
         }
@@ -66,6 +75,11 @@ internal sealed class PlatformPipeClient(
         }
 
         Console.WriteLine("PlatformHost connected to NxTools desktop protocol v1.");
+        log.Write("info", "ipc.connected", fields: new Dictionary<string, object?>
+        {
+            ["pipe_name"] = pipeName,
+            ["capabilities"] = PlatformCapabilities.Create(platformAdapter.ClipboardHotKeyAvailable)
+        });
         using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var outgoing = Channel.CreateBounded<ProtocolEnvelope>(new BoundedChannelOptions(256)
         {
@@ -111,10 +125,16 @@ internal sealed class PlatformPipeClient(
             else if (envelope.Type == "platform_command")
             {
                 var commandName = PlatformCommandParser.GetCommandName(envelope);
+                var started = Stopwatch.GetTimestamp();
+                log.Write("info", "command.received", envelope.Id, new Dictionary<string, object?>
+                {
+                    ["command"] = commandName
+                });
                 var result = commandName switch
                 {
                     "paste_text" => await platformAdapter.PasteTextAsync(
                         PlatformCommandParser.ParsePasteText(envelope),
+                        envelope.Id,
                         cancellationToken),
                     "set_window_topmost" => platformAdapter.SetWindowTopmost(
                         PlatformCommandParser.ParseSetWindowTopmost(envelope)),
@@ -130,6 +150,14 @@ internal sealed class PlatformPipeClient(
                         },
                         envelope.Id),
                     cancellationToken);
+                log.Write(result.Success ? "info" : "error", "command.completed", envelope.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["command"] = commandName,
+                        ["success"] = result.Success,
+                        ["error"] = result.Error,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                    });
                 if (!result.Success)
                 {
                     Console.Error.WriteLine($"Platform command '{commandName}' failed: {result.Error}");
