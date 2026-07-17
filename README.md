@@ -13,9 +13,12 @@ adapter for APIs that are significantly safer or more maintainable through .NET 
 
 ## Repository status
 
-Phase 1 is the architecture and platform proof. It establishes the process boundary,
-versioned named-pipe protocol, custom GPUI shell, runtime paths, logs and build scripts.
-Product features will be delivered as vertical slices after these foundations are verified.
+The first product vertical slice is a pure-text clipboard workflow. NxTools stays in the
+background, captures text through the Windows adapter, and opens a focused GPUI clipboard
+panel only when `Alt+C` is pressed. The former always-visible demo shell has been removed.
+
+Images, files, categories, favorites, downloads, Finder/Listary behavior and the floating
+assistant are intentionally not part of this slice.
 
 ## Quick start
 
@@ -27,6 +30,10 @@ Release builds also require the Windows 10/11 SDK shader compiler (`fxc.exe`); s
 .\scripts\build.ps1
 .\scripts\run-dev.ps1
 ```
+
+After the development launcher starts, copy text in another application and press `Alt+C`.
+Search the real persisted history or click an item to paste it back into the application that
+was active when the panel opened.
 
 See [docs/architecture.md](docs/architecture.md) for ownership rules and
 [docs/phase-1.md](docs/phase-1.md) for the verification checklist, and

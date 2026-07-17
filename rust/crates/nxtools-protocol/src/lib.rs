@@ -70,6 +70,8 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     PlatformEvent(PlatformEvent),
+    PlatformCommand(PlatformCommand),
+    PlatformCommandResult(PlatformCommandResult),
     Error(ProtocolFault),
 }
 
@@ -101,13 +103,53 @@ pub struct Pong {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum PlatformEvent {
     ForegroundChanged(ForegroundContext),
+    ClipboardTextCaptured(ClipboardTextCapture),
+    ClipboardPanelRequested(ClipboardPanelRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForegroundContext {
+    pub window_handle: i64,
+    pub focus_window_handle: i64,
     pub process_id: u32,
     pub process_name: String,
     pub window_title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardTextCapture {
+    pub text: String,
+    pub source: ForegroundContext,
+    pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardPanelRequest {
+    pub target: ForegroundContext,
+    pub cursor_x: i32,
+    pub cursor_y: i32,
+    pub cursor_display_index: u32,
+    pub cursor_monitor_dpi: u32,
+    pub requested_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "command", content = "data", rename_all = "snake_case")]
+pub enum PlatformCommand {
+    PasteText(PasteTextCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasteTextCommand {
+    pub text: String,
+    pub target_window_handle: i64,
+    pub target_focus_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlatformCommandResult {
+    pub success: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,5 +229,88 @@ mod tests {
             Envelope::decode_line(&line),
             Err(ProtocolError::FrameTooLarge(_))
         ));
+    }
+
+    #[test]
+    fn clipboard_text_capture_round_trips_as_platform_event() {
+        let envelope = Envelope::new(Message::PlatformEvent(
+            PlatformEvent::ClipboardTextCaptured(ClipboardTextCapture {
+                text: "真实剪贴板内容".into(),
+                source: ForegroundContext {
+                    window_handle: 42,
+                    focus_window_handle: 43,
+                    process_id: 7,
+                    process_name: "notepad".into(),
+                    window_title: "notes.txt".into(),
+                },
+                captured_at_unix_ms: 1_700_000_000_000,
+            }),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("clipboard event must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn paste_text_command_round_trips_with_target_window() {
+        let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
+            PasteTextCommand {
+                text: "paste me".into(),
+                target_window_handle: 99,
+                target_focus_window_handle: 100,
+            },
+        )));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("paste command must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn clipboard_panel_request_preserves_target_and_cursor_position() {
+        let envelope = Envelope::new(Message::PlatformEvent(
+            PlatformEvent::ClipboardPanelRequested(ClipboardPanelRequest {
+                target: ForegroundContext {
+                    window_handle: 88,
+                    focus_window_handle: 89,
+                    process_id: 9,
+                    process_name: "editor".into(),
+                    window_title: "draft.md".into(),
+                },
+                cursor_x: 1200,
+                cursor_y: 700,
+                cursor_display_index: 1,
+                cursor_monitor_dpi: 144,
+                requested_at_unix_ms: 1_700_000_000_500,
+            }),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("panel request must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn command_result_is_correlated_to_the_original_command() {
+        let command = Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
+            PasteTextCommand {
+                text: "paste".into(),
+                target_window_handle: 9,
+                target_focus_window_handle: 10,
+            },
+        )));
+        let result = Envelope::reply_to(
+            &command,
+            Message::PlatformCommandResult(PlatformCommandResult {
+                success: false,
+                error: Some("target closed".into()),
+            }),
+        );
+
+        let decoded = Envelope::decode_line(&result.encode_line().expect("encode"))
+            .expect("command result must decode");
+        assert_eq!(decoded.correlation_id, Some(command.id));
+        assert_eq!(decoded, result);
     }
 }

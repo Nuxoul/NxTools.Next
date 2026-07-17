@@ -4,7 +4,8 @@
 
 ```text
 NxTools.exe (Rust + GPUI)
-  |-- owns UI, domain state, SQLite, commands and orchestration
+  |-- runs without a main window
+  |-- owns popup UI, domain state, SQLite, commands and orchestration
   |-- named pipe: nxtools-next-platform-v1
   |
   +---- NxTools.PlatformHost.exe (.NET 8)
@@ -43,6 +44,27 @@ the envelope is versioned so payload encoding can change without blurring proces
 4. Events describe observed platform facts; commands express Rust-owned intent.
 5. GPL repositories are behavioral references only. Zed's Apache-licensed GPUI crate is the
    sole Zed code dependency.
+
+## Clipboard text slice
+
+```text
+Windows copy
+  -> C# observes text/source/focused HWND
+  -> Rust persists and deduplicates in SQLite
+
+Alt+C
+  -> C# WM_HOTKEY captures target HWND + focused child HWND + cursor
+  -> Rust opens a GPUI WindowKind::PopUp near the cursor
+  -> user searches/clicks a Rust-owned history item
+  -> Rust sends paste_text(item, target, focused child)
+  -> C# restores Windows focus and emits Ctrl+V
+  -> C# returns a result correlated to the paste command
+  -> GPUI popup closes on success, or stays open with an error on failure
+```
+
+The clipboard panel is not a page in an application main window. No GPUI window exists until
+the global shortcut is pressed. Escape or window deactivation closes the panel without stopping
+the background process.
 
 ## Reference use
 

@@ -8,10 +8,13 @@ license.workspace = true
 anyhow.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+nxtools-clipboard = { path = "../../crates/nxtools-clipboard" }
 nxtools-core = { path = "../../crates/nxtools-core" }
 nxtools-ipc = { path = "../../crates/nxtools-ipc" }
+nxtools-protocol = { path = "../../crates/nxtools-protocol" }
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

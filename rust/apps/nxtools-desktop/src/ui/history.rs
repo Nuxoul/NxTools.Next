@@ -1,60 +1,33 @@
-use gpui::{div, prelude::*, px};
+use gpui::{App, ClickEvent, Window, div, prelude::*, px};
+use nxtools_clipboard::ClipboardItem;
 
 use crate::theme::Theme;
 
-#[derive(Clone)]
-pub struct HistoryEntry {
-    source: &'static str,
-    summary: &'static str,
-    detail: &'static str,
-    kind: EntryKind,
-}
-
-#[derive(Clone, Copy)]
-enum EntryKind {
-    Text,
-    Image,
-    Link,
-}
-
-pub fn sample_entries() -> Vec<HistoryEntry> {
-    let templates = [
-        HistoryEntry {
-            source: "Visual Studio Code",
-            summary: "Rust 与 C# 只通过版本化 IPC 通信",
-            detail: "刚刚 · 142 字符",
-            kind: EntryKind::Text,
-        },
-        HistoryEntry {
-            source: "Snipping Tool",
-            summary: "图片按原始比例预览，不制造空白区域",
-            detail: "2 分钟前 · 1280 × 720",
-            kind: EntryKind::Image,
-        },
-        HistoryEntry {
-            source: "Microsoft Edge",
-            summary: "https://gpui.rs — GPUI documentation",
-            detail: "5 分钟前 · 可直接打开",
-            kind: EntryKind::Link,
-        },
-    ];
-    (0..90)
-        .map(|index| templates[index % templates.len()].clone())
-        .collect()
-}
-
-pub fn history_row(theme: Theme, entry: HistoryEntry, index: usize) -> impl IntoElement + use<> {
-    let kind = match entry.kind {
-        EntryKind::Text => "Tt",
-        EntryKind::Image => "▧",
-        EntryKind::Link => "↗",
+pub fn history_row(
+    theme: Theme,
+    entry: ClipboardItem,
+    index: usize,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let source = if entry.source.process_name.is_empty() {
+        "未知来源".to_owned()
+    } else {
+        entry.source.process_name.clone()
+    };
+    let detail = if entry.copy_count > 1 {
+        format!("已连续复制 {} 次", entry.copy_count)
+    } else if entry.source.window_title.is_empty() {
+        "纯文本".to_owned()
+    } else {
+        entry.source.window_title.clone()
     };
 
     div()
         .id(("history-row", index))
-        .h(px(68.0))
+        .min_h(px(68.0))
         .mx_2()
         .px_3()
+        .py_2()
         .flex()
         .items_center()
         .gap_3()
@@ -62,6 +35,7 @@ pub fn history_row(theme: Theme, entry: HistoryEntry, index: usize) -> impl Into
         .border_color(theme.border)
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_raised))
+        .on_click(on_click)
         .child(
             div()
                 .size(px(34.0))
@@ -72,7 +46,7 @@ pub fn history_row(theme: Theme, entry: HistoryEntry, index: usize) -> impl Into
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(kind),
+                .child("Tt"),
         )
         .child(
             div()
@@ -86,14 +60,15 @@ pub fn history_row(theme: Theme, entry: HistoryEntry, index: usize) -> impl Into
                         .text_sm()
                         .text_color(theme.text)
                         .truncate()
-                        .child(entry.summary),
+                        .child(entry.text),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .child(format!("{}  ·  {}", entry.source, entry.detail)),
+                        .truncate()
+                        .child(format!("{source}  ·  {detail}")),
                 ),
         )
-        .child(div().text_xs().text_color(theme.text_muted).child("⋯"))
+        .child(div().text_xs().text_color(theme.text_muted).child("粘贴"))
 }

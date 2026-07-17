@@ -4,6 +4,44 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260717-002] debug-package-missing-binaries
+
+**Logged**: 2026-07-17T18:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+The Debug package script copied top-level Rust executables after tests without explicitly building binary targets.
+
+### Error
+
+```text
+Cannot find path 'target\debug\nxtools-indexer.exe' because it does not exist.
+```
+
+### Context
+
+- Command: `scripts/package.ps1 -Configuration Debug`
+- `cargo test` produced hashed test executables but not `target\debug\nxtools-indexer.exe`.
+
+### Suggested Fix
+
+Run `cargo build -p nxtools-desktop -p nxtools-indexer` for the selected profile before copying package files.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: scripts/package.ps1
+
+### Resolution
+
+- **Resolved**: 2026-07-17T18:10:00+08:00
+- **Notes**: The packaging script now explicitly builds both Rust binary targets before publishing and copying artifacts.
+
+---
+
 ## [ERR-20260717-001] cargo-release-build
 
 **Logged**: 2026-07-17T15:43:00+08:00

@@ -1,16 +1,105 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use nxtools_protocol::{Envelope, HelloAck, MAX_FRAME_BYTES, Message, Pong};
+use async_channel::{Receiver, Sender};
+use nxtools_protocol::{
+    Envelope, HelloAck, MAX_FRAME_BYTES, Message, PlatformCommand, PlatformCommandResult,
+    PlatformEvent, Pong,
+};
+use thiserror::Error;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tracing::{info, warn};
 
+pub struct PlatformBridge {
+    notifications: Receiver<PlatformNotification>,
+    commands: Sender<Envelope>,
+    connected: Arc<AtomicBool>,
+}
+
+pub struct PlatformServerEndpoint {
+    notifications: Sender<PlatformNotification>,
+    commands: Receiver<Envelope>,
+    connected: Arc<AtomicBool>,
+}
+
+pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoint) {
+    let (notification_sender, notification_receiver) = async_channel::bounded(capacity);
+    let (command_sender, command_receiver) = async_channel::bounded(capacity);
+    let connected = Arc::new(AtomicBool::new(false));
+    (
+        PlatformBridge {
+            notifications: notification_receiver,
+            commands: command_sender,
+            connected: Arc::clone(&connected),
+        },
+        PlatformServerEndpoint {
+            notifications: notification_sender,
+            commands: command_receiver,
+            connected,
+        },
+    )
+}
+
+impl PlatformBridge {
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Acquire)
+    }
+
+    pub fn notification_receiver(&self) -> Receiver<PlatformNotification> {
+        self.notifications.clone()
+    }
+
+    pub fn send_command(
+        &self,
+        command: PlatformCommand,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        if !self.is_connected() {
+            return Err(PlatformBridgeError::Disconnected);
+        }
+        let envelope = Envelope::new(Message::PlatformCommand(command));
+        let command_id = envelope.id;
+        self.commands
+            .try_send(envelope)
+            .map_err(|error| match error {
+                async_channel::TrySendError::Full(_) => PlatformBridgeError::Busy,
+                async_channel::TrySendError::Closed(_) => PlatformBridgeError::Disconnected,
+            })?;
+        Ok(command_id)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlatformNotification {
+    Event(PlatformEvent),
+    CommandResult {
+        correlation_id: uuid::Uuid,
+        result: PlatformCommandResult,
+    },
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PlatformBridgeError {
+    #[error("the Windows platform host is disconnected")]
+    Disconnected,
+    #[error("the Windows platform command queue is full")]
+    Busy,
+}
+
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 1] = ["foreground_context"];
+            const SUPPORTED_CAPABILITIES: [&str; 4] = [
+                "foreground_context",
+                "clipboard_text_capture",
+                "paste_text",
+                "clipboard_panel_hotkey",
+            ];
             let accepted_capabilities = hello
                 .capabilities
                 .iter()
@@ -35,13 +124,17 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
             info!(?event, "platform event received");
             return None;
         }
-        Message::HelloAck(_) | Message::Pong(_) | Message::Error(_) => return None,
+        Message::HelloAck(_)
+        | Message::Pong(_)
+        | Message::PlatformCommand(_)
+        | Message::PlatformCommandResult(_)
+        | Message::Error(_) => return None,
     };
     Some(Envelope::reply_to(message, response))
 }
 
 #[cfg(windows)]
-pub async fn run_platform_server(pipe_name: &str) -> Result<()> {
+pub async fn run_platform_server(pipe_name: &str, endpoint: PlatformServerEndpoint) -> Result<()> {
     let pipe_path = format!(r"\\.\pipe\{pipe_name}");
     info!(%pipe_path, "platform IPC server started");
 
@@ -54,40 +147,114 @@ pub async fn run_platform_server(pipe_name: &str) -> Result<()> {
             .await
             .with_context(|| format!("failed to accept named pipe {pipe_path}"))?;
 
-        if let Err(error) = handle_connection(server).await {
+        if let Err(error) = handle_connection(server, &endpoint).await {
             warn!(%error, "platform host connection ended with an error");
         }
     }
 }
 
 #[cfg(not(windows))]
-pub async fn run_platform_server(_pipe_name: &str) -> Result<()> {
+pub async fn run_platform_server(
+    _pipe_name: &str,
+    _endpoint: PlatformServerEndpoint,
+) -> Result<()> {
     anyhow::bail!("the platform host named pipe is only available on Windows")
 }
 
 #[cfg(windows)]
-async fn handle_connection(server: NamedPipeServer) -> Result<()> {
+async fn handle_connection(
+    server: NamedPipeServer,
+    endpoint: &PlatformServerEndpoint,
+) -> Result<()> {
     info!("platform host connected");
     let (reader, mut writer) = tokio::io::split(server);
     let mut reader = BufReader::new(reader);
 
-    loop {
-        let Some(frame) = read_bounded_frame(&mut reader).await? else {
-            info!("platform host disconnected");
-            return Ok(());
-        };
+    let Some(handshake_frame) = read_bounded_frame(&mut reader).await? else {
+        anyhow::bail!("platform host disconnected before handshake");
+    };
+    let handshake = Envelope::decode_line(&handshake_frame).context("invalid handshake frame")?;
+    if !matches!(handshake.message, Message::Hello(_)) {
+        anyhow::bail!("platform host did not begin with a hello message");
+    }
+    let acknowledgement =
+        dispatch(&handshake).context("hello did not produce an acknowledgement")?;
+    write_envelope(&mut writer, &acknowledgement).await?;
 
-        let envelope = Envelope::decode_line(&frame).context("invalid platform frame")?;
-        if let Some(response) = dispatch(&envelope) {
-            writer
-                .write_all(response.encode_line()?.as_bytes())
-                .await
-                .context("failed to write platform response")?;
-            writer
-                .flush()
-                .await
-                .context("failed to flush platform response")?;
+    endpoint.connected.store(true, Ordering::Release);
+    let _connection = ConnectionState::new(endpoint);
+
+    loop {
+        tokio::select! {
+            frame = read_bounded_frame(&mut reader) => {
+                let Some(frame) = frame? else {
+                    info!("platform host disconnected");
+                    return Ok(());
+                };
+                let envelope = Envelope::decode_line(&frame).context("invalid platform frame")?;
+                match &envelope.message {
+                    Message::PlatformEvent(event) => endpoint
+                        .notifications
+                        .send(PlatformNotification::Event(event.clone()))
+                        .await
+                        .context("desktop platform event receiver closed")?,
+                    Message::PlatformCommandResult(result) => {
+                        let correlation_id = envelope
+                            .correlation_id
+                            .context("platform command result had no correlation ID")?;
+                        endpoint
+                            .notifications
+                            .send(PlatformNotification::CommandResult {
+                                correlation_id,
+                                result: result.clone(),
+                            })
+                            .await
+                            .context("desktop platform notification receiver closed")?;
+                    }
+                    _ => {
+                        if let Some(response) = dispatch(&envelope) {
+                            write_envelope(&mut writer, &response).await?;
+                        }
+                    }
+                }
+            }
+            command = endpoint.commands.recv() => {
+                let envelope = command.context("desktop platform command sender closed")?;
+                write_envelope(&mut writer, &envelope).await?;
+            }
         }
+    }
+}
+
+#[cfg(windows)]
+async fn write_envelope<W>(writer: &mut W, envelope: &Envelope) -> Result<()>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    writer
+        .write_all(envelope.encode_line()?.as_bytes())
+        .await
+        .context("failed to write platform frame")?;
+    writer
+        .flush()
+        .await
+        .context("failed to flush platform frame")
+}
+
+struct ConnectionState<'a> {
+    endpoint: &'a PlatformServerEndpoint,
+}
+
+impl<'a> ConnectionState<'a> {
+    fn new(endpoint: &'a PlatformServerEndpoint) -> Self {
+        Self { endpoint }
+    }
+}
+
+impl Drop for ConnectionState<'_> {
+    fn drop(&mut self) {
+        self.endpoint.connected.store(false, Ordering::Release);
+        while self.endpoint.commands.try_recv().is_ok() {}
     }
 }
 
@@ -130,7 +297,7 @@ pub fn unix_time_ms() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use nxtools_protocol::{Hello, Message, Ping};
+    use nxtools_protocol::{Hello, Message, PasteTextCommand, Ping, PlatformCommand};
     use tokio::io::BufReader;
 
     use super::*;
@@ -140,14 +307,28 @@ mod tests {
         let request = Envelope::new(Message::Hello(Hello {
             client_name: "platform_host".into(),
             client_version: "0.1.0".into(),
-            capabilities: vec!["clipboard".into(), "foreground_context".into()],
+            capabilities: vec![
+                "clipboard_text_capture".into(),
+                "unknown".into(),
+                "paste_text".into(),
+                "clipboard_panel_hotkey".into(),
+                "foreground_context".into(),
+            ],
         }));
         let response = dispatch(&request).expect("hello response");
 
         let Message::HelloAck(ack) = response.message else {
             panic!("expected hello acknowledgement")
         };
-        assert_eq!(ack.accepted_capabilities, vec!["foreground_context"]);
+        assert_eq!(
+            ack.accepted_capabilities,
+            vec![
+                "clipboard_text_capture",
+                "paste_text",
+                "clipboard_panel_hotkey",
+                "foreground_context"
+            ]
+        );
         assert_eq!(response.correlation_id, Some(request.id));
     }
 
@@ -163,6 +344,19 @@ mod tests {
                 sent_at_unix_ms: 42
             })
         ));
+    }
+
+    #[test]
+    fn bridge_rejects_commands_while_platform_host_is_disconnected() {
+        let (bridge, _server) = platform_bridge(4);
+        let error = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "must not become stale".into(),
+                target_window_handle: 42,
+                target_focus_window_handle: 43,
+            }))
+            .expect_err("disconnected command must be rejected");
+        assert!(matches!(error, PlatformBridgeError::Disconnected));
     }
 
     #[tokio::test]

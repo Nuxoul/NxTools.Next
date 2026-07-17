@@ -6,9 +6,12 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+async-channel.workspace = true
 nxtools-protocol = { path = "../nxtools-protocol" }
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

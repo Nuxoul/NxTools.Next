@@ -5,11 +5,14 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use nxtools_clipboard::ClipboardHistory;
 use nxtools_core::{AppConfig, AppPaths, LogGuard, SingleInstanceGuard, init_file_logging};
 use tracing::{error, info, warn};
 
 pub struct DesktopRuntime {
     pub config: AppConfig,
+    pub platform_bridge: Option<nxtools_ipc::PlatformBridge>,
+    pub clipboard_history: Option<ClipboardHistory>,
     _instance: SingleInstanceGuard,
     _log_guard: LogGuard,
     _platform_host: Option<PlatformHostSupervisor>,
@@ -21,12 +24,17 @@ impl DesktopRuntime {
         let instance = SingleInstanceGuard::acquire(&paths, "desktop")?;
         let log_guard = init_file_logging(&paths, "desktop")?;
         let config = AppConfig::load_or_create(&paths)?;
-        start_platform_server(config.platform_pipe_name.clone())?;
+        let clipboard_history = ClipboardHistory::open(paths.data_dir.join("clipboard.db"))
+            .context("failed to open clipboard history")?;
+        let (platform_bridge, platform_server) = nxtools_ipc::platform_bridge(256);
+        start_platform_server(config.platform_pipe_name.clone(), platform_server)?;
         let platform_host = PlatformHostSupervisor::launch_if_packaged()?;
         info!("desktop runtime initialized");
 
         Ok(Self {
             config,
+            platform_bridge: Some(platform_bridge),
+            clipboard_history: Some(clipboard_history),
             _instance: instance,
             _log_guard: log_guard,
             _platform_host: platform_host,
@@ -34,7 +42,10 @@ impl DesktopRuntime {
     }
 }
 
-fn start_platform_server(pipe_name: String) -> Result<()> {
+fn start_platform_server(
+    pipe_name: String,
+    platform_server: nxtools_ipc::PlatformServerEndpoint,
+) -> Result<()> {
     thread::Builder::new()
         .name("platform-ipc".into())
         .spawn(move || {
@@ -43,9 +54,10 @@ fn start_platform_server(pipe_name: String) -> Result<()> {
                 .build();
             match runtime {
                 Ok(runtime) => {
-                    if let Err(error) =
-                        runtime.block_on(nxtools_ipc::run_platform_server(&pipe_name))
-                    {
+                    if let Err(error) = runtime.block_on(nxtools_ipc::run_platform_server(
+                        &pipe_name,
+                        platform_server,
+                    )) {
                         error!(%error, "platform IPC server stopped");
                     }
                 }

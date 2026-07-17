@@ -1,13 +1,14 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using NxTools.PlatformHost.Windows;
 
 namespace NxTools.PlatformHost.Protocol;
 
 internal sealed class PlatformPipeClient(
     string pipeName,
-    ForegroundContextProvider foregroundContextProvider)
+    WindowsPlatformAdapter platformAdapter)
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
 
@@ -54,7 +55,7 @@ internal sealed class PlatformPipeClient(
         {
             ClientName = "platform_host",
             ClientVersion = typeof(PlatformPipeClient).Assembly.GetName().Version?.ToString() ?? "0.1.0",
-            Capabilities = new[] { "foreground_context" }
+            Capabilities = PlatformCapabilities.Create(platformAdapter.ClipboardHotKeyAvailable)
         });
         await WriteAsync(writer, hello, cancellationToken);
 
@@ -65,36 +66,102 @@ internal sealed class PlatformPipeClient(
         }
 
         Console.WriteLine("PlatformHost connected to NxTools desktop protocol v1.");
-        await SendForegroundContextAsync(writer, cancellationToken);
+        using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var outgoing = Channel.CreateBounded<ProtocolEnvelope>(new BoundedChannelOptions(256)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false
+        });
+        var writeTask = WriteLoopAsync(writer, outgoing.Reader, session.Token);
+        var eventTask = ForwardEventsAsync(outgoing.Writer, session.Token);
+        var readTask = ReadLoopAsync(reader, outgoing.Writer, session.Token);
+        var tasks = new[] { writeTask, eventTask, readTask };
 
+        var completed = await Task.WhenAny(tasks);
+        await session.CancelAsync();
+        try
+        {
+            await completed;
+        }
+        finally
+        {
+            await Task.WhenAll(tasks.Select(IgnoreCancellationAsync));
+        }
+    }
+
+    private async Task ReadLoopAsync(
+        BoundedFrameReader reader,
+        ChannelWriter<ProtocolEnvelope> outgoing,
+        CancellationToken cancellationToken)
+    {
         while (!cancellationToken.IsCancellationRequested)
         {
             var envelope = await ReadAsync(reader, cancellationToken);
             if (envelope.Type == "ping")
             {
                 var sentAt = envelope.Payload.GetProperty("sent_at_unix_ms").GetInt64();
-                await WriteAsync(
-                    writer,
+                await outgoing.WriteAsync(
                     ProtocolEnvelope.Create(
                         "pong",
                         new { SentAtUnixMs = sentAt },
                         envelope.Id),
                     cancellationToken);
             }
+            else if (envelope.Type == "platform_command")
+            {
+                var command = PlatformCommandParser.ParsePasteText(envelope);
+                var result = await platformAdapter.PasteTextAsync(command, cancellationToken);
+                await outgoing.WriteAsync(
+                    ProtocolEnvelope.Create(
+                        "platform_command_result",
+                        new
+                        {
+                            result.Success,
+                            result.Error
+                        },
+                        envelope.Id),
+                    cancellationToken);
+                if (!result.Success)
+                {
+                    Console.Error.WriteLine($"Paste command failed: {result.Error}");
+                }
+            }
         }
     }
 
-    private async Task SendForegroundContextAsync(
-        StreamWriter writer,
+    private async Task ForwardEventsAsync(
+        ChannelWriter<ProtocolEnvelope> outgoing,
         CancellationToken cancellationToken)
     {
-        var context = foregroundContextProvider.Capture();
-        var envelope = ProtocolEnvelope.Create("platform_event", new
+        await foreach (var platformEvent in platformAdapter.Events.ReadAllAsync(cancellationToken))
         {
-            Event = "foreground_changed",
-            Data = context
-        });
-        await WriteAsync(writer, envelope, cancellationToken);
+            await outgoing.WriteAsync(
+                PlatformEventEnvelopeFactory.Create(platformEvent),
+                cancellationToken);
+        }
+    }
+
+    private static async Task WriteLoopAsync(
+        StreamWriter writer,
+        ChannelReader<ProtocolEnvelope> outgoing,
+        CancellationToken cancellationToken)
+    {
+        await foreach (var envelope in outgoing.ReadAllAsync(cancellationToken))
+        {
+            await WriteAsync(writer, envelope, cancellationToken);
+        }
+    }
+
+    private static async Task IgnoreCancellationAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private static async Task<ProtocolEnvelope> ReadAsync(

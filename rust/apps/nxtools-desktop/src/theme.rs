@@ -11,8 +11,6 @@ pub struct Theme {
     pub text_muted: Rgba,
     pub accent: Rgba,
     pub accent_soft: Rgba,
-    pub success: Rgba,
-    pub danger: Rgba,
 }
 
 impl Theme {
@@ -27,8 +25,6 @@ impl Theme {
             text_muted: rgb(0x8a8a8a),
             accent: rgb(0x7aa2f7),
             accent_soft: rgb(0x283653),
-            success: rgb(0x7dcfff),
-            danger: rgb(0xf7768e),
         }
     }
 }
