@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -50,15 +51,10 @@ struct PopupWindow {
     panel: WeakEntity<ClipboardPanel>,
 }
 
-struct PendingVisibility {
-    correlation_id: uuid::Uuid,
-    window: AnyWindowHandle,
-}
-
 #[derive(Default)]
 struct PopupSession {
     lifecycle: PopupLifecycle<PopupWindow>,
-    pending_visibility: Option<PendingVisibility>,
+    pending_visibility: HashMap<uuid::Uuid, AnyWindowHandle>,
 }
 
 impl ClipboardApplication {
@@ -122,23 +118,21 @@ impl ClipboardApplication {
 
     pub(crate) fn hide_popup(
         &mut self,
-        window_handle: i64,
+        popup_window: AnyWindowHandle,
+        native_window_handle: i64,
     ) -> Result<uuid::Uuid, PlatformBridgeError> {
         let command_id = self
             .platform
             .send_command(PlatformCommand::SetWindowVisibility(
                 SetWindowVisibilityCommand {
-                    window_handle,
+                    window_handle: native_window_handle,
                     visible: false,
                 },
             ))?;
-        if let Some(popup) = self.popup.lifecycle.current() {
-            self.popup.pending_visibility = Some(PendingVisibility {
-                correlation_id: command_id,
-                window: popup.window,
-            });
-        }
-        info!(%command_id, window_handle, "clipboard popup hide command sent");
+        self.popup
+            .pending_visibility
+            .insert(command_id, popup_window);
+        info!(%command_id, window_handle = native_window_handle, "clipboard popup hide command sent");
         Ok(command_id)
     }
 
@@ -153,13 +147,8 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
-                if self
-                    .popup
-                    .pending_visibility
-                    .as_ref()
-                    .is_some_and(|pending| pending.correlation_id == correlation_id)
+                if let Some(pending_window) = self.popup.pending_visibility.remove(&correlation_id)
                 {
-                    let pending = self.popup.pending_visibility.take().expect("checked above");
                     if result.success {
                         info!(%correlation_id, "clipboard popup hidden without closing its GPUI window");
                     } else {
@@ -177,7 +166,7 @@ impl ClipboardApplication {
                             .popup
                             .lifecycle
                             .current()
-                            .filter(|popup| popup.window == pending.window)
+                            .filter(|popup| popup.window == pending_window)
                             .cloned()
                         {
                             let _ = popup.window.update(cx, |_, window, app| {

@@ -238,12 +238,14 @@ impl ClipboardPanel {
             cx.notify();
             return;
         };
+        let popup_window = window.window_handle();
         self.is_open = false;
         let application = self.application.clone();
         let panel = cx.entity().downgrade();
         cx.defer(move |cx| {
-            let result =
-                application.update(cx, |application, _| application.hide_popup(window_handle));
+            let result = application.update(cx, |application, _| {
+                application.hide_popup(popup_window, window_handle)
+            });
             let reason = match result {
                 Ok(Ok(_)) => return,
                 Ok(Err(error)) => {
