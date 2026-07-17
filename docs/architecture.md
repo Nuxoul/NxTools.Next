@@ -68,9 +68,10 @@ translates search/click interactions into application intents. The C# PlatformHo
 Windows-only topmost operation, focus restoration, modifier release, input injection and
 `WM_PASTE` fallback.
 
-The clipboard panel is not a page in an application main window. No GPUI window exists until
-the global shortcut is pressed. Escape or window deactivation closes the panel without stopping
-the background process.
+The clipboard panel is not a page in an application main window. Its visible GPUI window does not
+exist until the global shortcut is pressed. A separate hidden, non-interactive GPUI lifetime
+window keeps the native event loop alive. Escape, a successful paste, or window deactivation
+therefore closes only the panel without stopping the background process.
 
 ## Reference use
 

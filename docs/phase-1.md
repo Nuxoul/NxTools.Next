@@ -29,8 +29,10 @@ Phase 1 answers the risky architecture questions before product features are mig
 5. Confirm search filters persisted real history and no demonstration rows appear.
 6. Click a row and confirm it pastes into the control that had focus before the popup opened.
 7. Confirm Escape and clicking outside close the popup while background capture continues.
-8. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
-9. Launch a second desktop instance and confirm it exits immediately.
+8. After a successful paste, confirm the popup closes, the process remains alive, and `Alt+C`
+   opens it again.
+9. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
+10. Launch a second desktop instance and confirm it exits immediately.
 
 ## Exit criteria before clipboard migration
 
