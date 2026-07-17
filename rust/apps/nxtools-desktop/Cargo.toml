@@ -1,0 +1,17 @@
+[package]
+name = "nxtools-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+nxtools-core = { path = "../../crates/nxtools-core" }
+nxtools-ipc = { path = "../../crates/nxtools-ipc" }
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

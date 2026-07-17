@@ -1,0 +1,13 @@
+[package]
+name = "nxtools-indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+nxtools-core = { path = "../../crates/nxtools-core" }
+tracing.workspace = true
+
+[lints]
+workspace = true

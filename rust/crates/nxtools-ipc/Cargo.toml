@@ -1,0 +1,14 @@
+[package]
+name = "nxtools-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+nxtools-protocol = { path = "../nxtools-protocol" }
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+/target/
+/artifacts/
+**/bin/
+**/obj/
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+*.log
+*.pdb
+.DS_Store

@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "rust/apps/nxtools-desktop",
+    "rust/apps/nxtools-indexer",
+    "rust/crates/nxtools-core",
+    "rust/crates/nxtools-ipc",
+    "rust/crates/nxtools-protocol",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+directories = "6.0.0"
+fs2 = "0.4.3"
+gpui = { version = "0.2.2", default-features = false, features = ["windows-manifest"] }
+gpui-component = "0.5.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+tokio = { version = "1.45.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
+uuid = { version = "1.16.0", features = ["serde", "v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
