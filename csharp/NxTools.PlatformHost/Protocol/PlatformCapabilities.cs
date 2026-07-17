@@ -7,6 +7,7 @@ internal static class PlatformCapabilities
     public const string PasteText = "paste_text";
     public const string ClipboardPanelHotKey = "clipboard_panel_hotkey";
     public const string WindowTopmost = "window_topmost";
+    public const string WindowVisibility = "window_visibility";
 
     public static string[] Create(bool clipboardHotKeyAvailable)
     {
@@ -15,7 +16,8 @@ internal static class PlatformCapabilities
             ForegroundContext,
             ClipboardTextCapture,
             PasteText,
-            WindowTopmost
+            WindowTopmost,
+            WindowVisibility
         };
         if (clipboardHotKeyAvailable)
         {

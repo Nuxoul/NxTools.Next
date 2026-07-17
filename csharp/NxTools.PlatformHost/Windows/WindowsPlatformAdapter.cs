@@ -64,6 +64,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult SetWindowTopmost(SetWindowTopmostCommand command) =>
         NativeMethods.SetWindowTopmost(new IntPtr(command.WindowHandle), command.Enabled);
 
+    public WindowsCommandResult SetWindowVisibility(SetWindowVisibilityCommand command) =>
+        NativeMethods.SetWindowVisibility(new IntPtr(command.WindowHandle), command.Visible);
+
     private void RunMessageLoop(ForegroundContextProvider foregroundContextProvider)
     {
         try
@@ -442,6 +445,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private const uint MonitorDefaultToNearest = 2;
         private const int MonitorDpiTypeEffective = 0;
         private const uint DefaultDpi = 96;
+        private const int SwHide = 0;
+        private const int SwShowNoActivate = 4;
 
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         internal delegate void WinEventDelegate(
@@ -501,6 +506,10 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsWindow(IntPtr window);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr window);
 
         [DllImport("user32.dll")]
         internal static extern uint GetClipboardSequenceNumber();
@@ -777,6 +786,19 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 lastError == 0
                     ? "Windows did not apply the requested topmost state."
                     : $"SetWindowPos failed with Win32={lastError}.");
+        }
+
+        internal static WindowsCommandResult SetWindowVisibility(IntPtr window, bool visible)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+
+            _ = ShowWindow(window, visible ? SwShowNoActivate : SwHide);
+            return IsWindowVisible(window) == visible
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(false, "Windows did not apply the requested visibility state.");
         }
 
         private static bool IsTopmost(IntPtr window) =>

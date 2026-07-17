@@ -138,6 +138,7 @@ pub struct ClipboardPanelRequest {
 pub enum PlatformCommand {
     PasteText(PasteTextCommand),
     SetWindowTopmost(SetWindowTopmostCommand),
+    SetWindowVisibility(SetWindowVisibilityCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +152,12 @@ pub struct PasteTextCommand {
 pub struct SetWindowTopmostCommand {
     pub window_handle: i64,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetWindowVisibilityCommand {
+    pub window_handle: i64,
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,6 +292,20 @@ mod tests {
 
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("topmost command must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn visibility_command_round_trips_with_native_window() {
+        let envelope = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+                window_handle: 778,
+                visible: false,
+            }),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("visibility command must decode");
         assert_eq!(decoded, envelope);
     }
 

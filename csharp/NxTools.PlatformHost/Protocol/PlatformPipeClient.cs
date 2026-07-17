@@ -138,6 +138,8 @@ internal sealed class PlatformPipeClient(
                         cancellationToken),
                     "set_window_topmost" => platformAdapter.SetWindowTopmost(
                         PlatformCommandParser.ParseSetWindowTopmost(envelope)),
+                    "set_window_visibility" => platformAdapter.SetWindowVisibility(
+                        PlatformCommandParser.ParseSetWindowVisibility(envelope)),
                     var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
                 };
                 await outgoing.WriteAsync(

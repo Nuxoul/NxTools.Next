@@ -1,17 +1,14 @@
 mod clipboard;
-mod lifecycle;
 mod runtime;
 mod theme;
 mod ui;
-
-use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context as _, Result};
 use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use gpui::{App, AppContext, Application};
 use gpui_component::{Theme, ThemeMode};
 use runtime::DesktopRuntime;
-use tracing::{error, info};
+use tracing::info;
 
 fn run() -> Result<()> {
     let mut runtime = DesktopRuntime::initialize()?;
@@ -25,18 +22,9 @@ fn run() -> Result<()> {
         .context("desktop runtime did not provide clipboard history")?;
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
-    let startup_error = Rc::new(RefCell::new(None));
-    let startup_error_from_app = Rc::clone(&startup_error);
     Application::new().run(move |cx: &mut App| {
         gpui_component::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
-
-        if let Err(error) = lifecycle::install_gpui_lifetime_window(cx) {
-            error!(%error, "failed to create hidden background lifetime window");
-            *startup_error_from_app.borrow_mut() = Some(error);
-            cx.quit();
-            return;
-        }
 
         let clipboard =
             cx.new(|cx| ClipboardApplication::new(clipboard_history, platform_bridge, cx));
@@ -44,10 +32,6 @@ fn run() -> Result<()> {
     });
 
     drop(runtime);
-    let startup_error = startup_error.borrow_mut().take();
-    if let Some(error) = startup_error {
-        return Err(error).context("failed to create GPUI background lifetime window");
-    }
     Ok(())
 }
 

@@ -8,6 +8,7 @@ internal sealed record PasteTextCommand(
     long TargetFocusWindowHandle);
 
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
+internal sealed record SetWindowVisibilityCommand(long WindowHandle, bool Visible);
 
 internal static class PlatformCommandParser
 {
@@ -35,6 +36,19 @@ internal static class PlatformCommandParser
         var data = envelope.Payload.GetProperty("data");
         var parsed = data.Deserialize<SetWindowTopmostCommand>(JsonDefaults.Options);
         return parsed ?? throw new InvalidDataException("Topmost command payload was empty.");
+    }
+
+    public static SetWindowVisibilityCommand ParseSetWindowVisibility(ProtocolEnvelope envelope)
+    {
+        var command = GetCommandName(envelope);
+        if (command != "set_window_visibility")
+        {
+            throw new InvalidDataException($"Unsupported platform command '{command}'.");
+        }
+
+        var data = envelope.Payload.GetProperty("data");
+        var parsed = data.Deserialize<SetWindowVisibilityCommand>(JsonDefaults.Options);
+        return parsed ?? throw new InvalidDataException("Visibility command payload was empty.");
     }
 
     public static string GetCommandName(ProtocolEnvelope envelope)

@@ -66,6 +66,7 @@ pub(crate) struct ClipboardPanel {
     entries: Vec<ClipboardItem>,
     status: PanelStatus,
     pending_paste: Option<uuid::Uuid>,
+    is_open: bool,
     active_category: ClipboardCategory,
     list_scroll: UniformListScrollHandle,
     search_input: Entity<InputState>,
@@ -117,6 +118,7 @@ impl ClipboardPanel {
             entries,
             status,
             pending_paste: None,
+            is_open: true,
             active_category: ClipboardCategory::All,
             list_scroll: UniformListScrollHandle::new(),
             search_input,
@@ -203,11 +205,51 @@ impl ClipboardPanel {
         }
     }
 
+    pub(crate) fn handle_hide_failure(
+        &mut self,
+        reason: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.is_open = true;
+        self.status = PanelStatus::Error(format!("隐藏面板失败：{reason}"));
+        window.activate_window();
+        cx.notify();
+    }
+
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let _ = self.application.update(cx, |application, _| {
-            application.popup_closed();
+        if !self.is_open {
+            return;
+        }
+        let Some(window_handle) = native_window_handle(window) else {
+            error!("cannot hide clipboard popup because its native window handle is unavailable");
+            self.status = PanelStatus::Error("无法隐藏面板：窗口句柄不可用".into());
+            cx.notify();
+            return;
+        };
+        self.is_open = false;
+        let application = self.application.clone();
+        let panel = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let result =
+                application.update(cx, |application, _| application.hide_popup(window_handle));
+            let reason = match result {
+                Ok(Ok(_)) => return,
+                Ok(Err(error)) => {
+                    error!(%error, "failed to request clipboard popup hide");
+                    format!("无法隐藏面板：{error}")
+                }
+                Err(error) => {
+                    error!(%error, "clipboard application became unavailable while hiding popup");
+                    "无法隐藏面板：剪贴板核心不可用".into()
+                }
+            };
+            let _ = panel.update(cx, |panel, cx| {
+                panel.is_open = true;
+                panel.status = PanelStatus::Error(reason);
+                cx.notify();
+            });
         });
-        window.remove_window();
     }
 }
 

@@ -13,7 +13,7 @@ use nxtools_clipboard::{
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ClipboardPanelRequest, ForegroundContext, PasteTextCommand, PlatformCommand, PlatformEvent,
-    SetWindowTopmostCommand,
+    SetWindowTopmostCommand, SetWindowVisibilityCommand,
 };
 use tracing::{error, info};
 
@@ -48,14 +48,7 @@ struct PopupSession {
     window: Option<AnyWindowHandle>,
     panel: Option<WeakEntity<ClipboardPanel>>,
     pending_topmost: Option<uuid::Uuid>,
-}
-
-impl PopupSession {
-    fn clear(&mut self) {
-        self.window = None;
-        self.panel = None;
-        self.pending_topmost = None;
-    }
+    pending_visibility: Option<uuid::Uuid>,
 }
 
 impl ClipboardApplication {
@@ -117,8 +110,21 @@ impl ClipboardApplication {
         Ok(command_id)
     }
 
-    pub(crate) fn popup_closed(&mut self) {
-        self.popup.clear();
+    pub(crate) fn hide_popup(
+        &mut self,
+        window_handle: i64,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        let command_id = self
+            .platform
+            .send_command(PlatformCommand::SetWindowVisibility(
+                SetWindowVisibilityCommand {
+                    window_handle,
+                    visible: false,
+                },
+            ))?;
+        self.popup.pending_visibility = Some(command_id);
+        info!(%command_id, window_handle, "clipboard popup hide command sent");
+        Ok(command_id)
     }
 
     fn handle_platform_notification(
@@ -132,6 +138,33 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
+                if self.popup.pending_visibility == Some(correlation_id) {
+                    self.popup.pending_visibility = None;
+                    if result.success {
+                        info!(%correlation_id, "clipboard popup hidden without closing its GPUI window");
+                    } else {
+                        let reason = result
+                            .error
+                            .as_deref()
+                            .unwrap_or("unknown Windows error")
+                            .to_owned();
+                        error!(
+                            %correlation_id,
+                            %reason,
+                            "failed to hide clipboard popup"
+                        );
+                        if let (Some(window), Some(panel)) =
+                            (self.popup.window, self.popup.panel.as_ref().cloned())
+                        {
+                            let _ = window.update(cx, |_, window, app| {
+                                let _ = panel.update(app, |panel, cx| {
+                                    panel.handle_hide_failure(reason, window, cx);
+                                });
+                            });
+                        }
+                    }
+                    return;
+                }
                 if self.popup.pending_topmost == Some(correlation_id) {
                     self.popup.pending_topmost = None;
                     if result.success {
@@ -143,7 +176,8 @@ impl ClipboardApplication {
                             "failed to make clipboard window topmost"
                         );
                         let window = self.popup.window.take();
-                        self.popup.clear();
+                        self.popup.panel = None;
+                        self.popup.pending_visibility = None;
                         if let Some(window) = window {
                             let _ = window.update(cx, |_, window, _| window.remove_window());
                         }
@@ -194,10 +228,7 @@ impl ClipboardApplication {
     }
 
     fn show_panel(&mut self, request: ClipboardPanelRequest, cx: &mut Context<Self>) {
-        if let Some(existing) = self.popup.window.take() {
-            let _ = existing.update(cx, |_, window, _| window.remove_window());
-        }
-        self.popup.clear();
+        let previous_window = self.popup.window;
 
         let entries = self.query_entries("").unwrap_or_else(|error| {
             error!(%error, "failed to load clipboard popup history");
@@ -262,6 +293,10 @@ impl ClipboardApplication {
                 self.popup.window = Some(window.into());
                 self.popup.panel = panel_slot.borrow_mut().take();
                 self.popup.pending_topmost = Some(topmost_command);
+                self.popup.pending_visibility = None;
+                if let Some(previous_window) = previous_window {
+                    let _ = previous_window.update(cx, |_, window, _| window.remove_window());
+                }
                 info!(
                     target = %request.target.process_name,
                     x = request.cursor_x,

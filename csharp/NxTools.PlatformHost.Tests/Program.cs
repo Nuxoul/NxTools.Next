@@ -15,6 +15,7 @@ internal static class Program
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
+            ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
             ("native input layout matches Windows ABI", NativeInputLayoutMatchesWindowsAbi),
             ("paste diagnostics preserve correlation and Win32 error", PasteDiagnosticsPreserveCorrelationAndWin32Error),
@@ -114,6 +115,24 @@ internal static class Program
         var command = PlatformCommandParser.ParseSetWindowTopmost(envelope);
         Assert(command.WindowHandle == 777L);
         Assert(command.Enabled);
+        return Task.CompletedTask;
+    }
+
+    private static Task VisibilityCommandPreservesNativeWindow()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "set_window_visibility",
+            Data = new
+            {
+                WindowHandle = 778L,
+                Visible = false
+            }
+        });
+
+        var command = PlatformCommandParser.ParseSetWindowVisibility(envelope);
+        Assert(command.WindowHandle == 778L);
+        Assert(!command.Visible);
         return Task.CompletedTask;
     }
 
