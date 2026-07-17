@@ -110,8 +110,16 @@ internal sealed class PlatformPipeClient(
             }
             else if (envelope.Type == "platform_command")
             {
-                var command = PlatformCommandParser.ParsePasteText(envelope);
-                var result = await platformAdapter.PasteTextAsync(command, cancellationToken);
+                var commandName = PlatformCommandParser.GetCommandName(envelope);
+                var result = commandName switch
+                {
+                    "paste_text" => await platformAdapter.PasteTextAsync(
+                        PlatformCommandParser.ParsePasteText(envelope),
+                        cancellationToken),
+                    "set_window_topmost" => platformAdapter.SetWindowTopmost(
+                        PlatformCommandParser.ParseSetWindowTopmost(envelope)),
+                    var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
+                };
                 await outgoing.WriteAsync(
                     ProtocolEnvelope.Create(
                         "platform_command_result",
@@ -124,7 +132,7 @@ internal sealed class PlatformPipeClient(
                     cancellationToken);
                 if (!result.Success)
                 {
-                    Console.Error.WriteLine($"Paste command failed: {result.Error}");
+                    Console.Error.WriteLine($"Platform command '{commandName}' failed: {result.Error}");
                 }
             }
         }

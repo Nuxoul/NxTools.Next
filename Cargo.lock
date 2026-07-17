@@ -3859,6 +3859,7 @@ dependencies = [
  "nxtools-core",
  "nxtools-ipc",
  "nxtools-protocol",
+ "raw-window-handle",
  "tokio",
  "tracing",
  "uuid",

@@ -1,228 +1,85 @@
 mod history;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use gpui::{
-    AnyWindowHandle, App, AppContext, Bounds, Context, Entity, Focusable, Global, Render,
-    Subscription, Task, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowDecorations, WindowKind, WindowOptions, div, point, prelude::*, px, size, uniform_list,
+    App, AppContext, Bounds, Context, Entity, Focusable, Render, ResizeEdge, ScrollStrategy,
+    Subscription, UniformListScrollHandle, WeakEntity, Window, div, point, prelude::*, px, size,
+    uniform_list,
 };
-use gpui_component::Root;
 use gpui_component::input::{Input, InputEvent, InputState};
-use nxtools_clipboard::{CaptureSource, ClipboardHistory, ClipboardItem, TextCapture};
-use nxtools_ipc::{PlatformBridge, PlatformNotification};
-use nxtools_protocol::{
-    ClipboardPanelRequest, PasteTextCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
-};
+use nxtools_clipboard::ClipboardItem;
+use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
+use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
 use history::history_row;
 
-const HISTORY_LIMIT: usize = 500;
-const PANEL_WIDTH: f32 = 340.0;
-const PANEL_HEIGHT: f32 = 440.0;
-const MAX_PANEL_REQUEST_AGE_MS: i64 = 2_000;
+pub(crate) const PANEL_WIDTH: f32 = 340.0;
+pub(crate) const PANEL_HEIGHT: f32 = 440.0;
 
-pub struct ClipboardControllerGlobal {
-    _controller: Entity<ClipboardController>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PanelStatus {
+    Ready(String),
+    Pending(&'static str),
+    Error(String),
 }
 
-impl ClipboardControllerGlobal {
-    pub fn new(controller: Entity<ClipboardController>) -> Self {
-        Self {
-            _controller: controller,
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipboardCategory {
+    All,
+    Text,
 }
 
-impl Global for ClipboardControllerGlobal {}
-
-pub struct ClipboardController {
-    history: Rc<RefCell<ClipboardHistory>>,
-    platform: Rc<PlatformBridge>,
-    popup_window: Option<AnyWindowHandle>,
-    popup_panel: Option<WeakEntity<ClipboardPanel>>,
-    _platform_task: Task<()>,
-}
-
-impl ClipboardController {
-    pub fn new(
-        history: ClipboardHistory,
-        platform: PlatformBridge,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let platform = Rc::new(platform);
-        let platform_notifications = platform.notification_receiver();
-        let platform_task = cx.spawn(async move |this, cx| {
-            while let Ok(notification) = platform_notifications.recv().await {
-                let Some(this) = this.upgrade() else {
-                    return;
-                };
-                if this
-                    .update(cx, |this, cx| {
-                        this.handle_platform_notification(notification, cx)
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        });
-
-        Self {
-            history: Rc::new(RefCell::new(history)),
-            platform,
-            popup_window: None,
-            popup_panel: None,
-            _platform_task: platform_task,
+impl PanelStatus {
+    fn label(&self) -> &str {
+        match self {
+            Self::Ready(label) | Self::Error(label) => label,
+            Self::Pending(label) => label,
         }
     }
 
-    fn handle_platform_notification(
-        &mut self,
-        notification: PlatformNotification,
-        cx: &mut Context<Self>,
-    ) {
-        match notification {
-            PlatformNotification::Event(event) => self.handle_platform_event(event, cx),
-            PlatformNotification::CommandResult {
-                correlation_id,
-                result,
-            } => {
-                let (Some(window), Some(panel)) =
-                    (self.popup_window, self.popup_panel.as_ref().cloned())
-                else {
-                    return;
-                };
-                let _ = window.update(cx, |_, window, app| {
-                    let _ = panel.update(app, |panel, cx| {
-                        panel.handle_command_result(correlation_id, result, window, cx);
-                    });
-                });
-            }
-        }
-    }
-
-    fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
-        match event {
-            PlatformEvent::ClipboardTextCaptured(capture) => {
-                if let Err(error) = self.history.borrow_mut().capture(TextCapture {
-                    text: capture.text,
-                    source: CaptureSource {
-                        window_handle: capture.source.window_handle,
-                        process_id: capture.source.process_id,
-                        process_name: capture.source.process_name,
-                        window_title: capture.source.window_title,
-                    },
-                    captured_at_unix_ms: capture.captured_at_unix_ms,
-                }) {
-                    error!(%error, "failed to persist clipboard capture");
-                }
-            }
-            PlatformEvent::ClipboardPanelRequested(request) => {
-                let request_age =
-                    nxtools_ipc::unix_time_ms().saturating_sub(request.requested_at_unix_ms);
-                if request_age <= MAX_PANEL_REQUEST_AGE_MS {
-                    self.show_panel(request, cx);
-                } else {
-                    info!(request_age, "ignored stale clipboard panel request");
-                }
-            }
-            PlatformEvent::ForegroundChanged(_) => {}
-        }
-    }
-
-    fn show_panel(&mut self, request: ClipboardPanelRequest, cx: &mut Context<Self>) {
-        if let Some(existing) = self.popup_window.take() {
-            let _ = existing.update(cx, |_, window, _| window.remove_window());
-        }
-        self.popup_panel = None;
-
-        let (bounds, display_id) = panel_bounds(&request, cx);
-        let history = Rc::clone(&self.history);
-        let platform = Rc::clone(&self.platform);
-        let controller = cx.entity().downgrade();
-        let target = request.target.clone();
-        let panel_slot = Rc::new(RefCell::new(None));
-        let opened_panel_slot = Rc::clone(&panel_slot);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: None,
-                focus: true,
-                show: true,
-                kind: WindowKind::PopUp,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                display_id,
-                window_background: WindowBackgroundAppearance::Transparent,
-                app_id: Some("NxTools.Clipboard".into()),
-                window_min_size: Some(size(px(280.0), px(280.0))),
-                window_decorations: Some(WindowDecorations::Client),
-                tabbing_identifier: None,
-            },
-            move |window, cx| {
-                let panel = cx.new(|cx| {
-                    ClipboardPanel::new(history, platform, target, controller, window, cx)
-                });
-                *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
-                cx.new(|cx| Root::new(panel, window, cx))
-            },
-        );
-
-        match opened {
-            Ok(window) => {
-                self.popup_window = Some(window.into());
-                self.popup_panel = panel_slot.borrow_mut().take();
-                info!(
-                    target = %request.target.process_name,
-                    x = request.cursor_x,
-                    y = request.cursor_y,
-                    "clipboard popup opened"
-                );
-            }
-            Err(error) => error!(%error, "failed to open clipboard popup"),
-        }
-    }
-
-    fn popup_closed(&mut self) {
-        self.popup_window = None;
-        self.popup_panel = None;
+    fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
     }
 }
 
-struct ClipboardPanel {
+#[cfg(windows)]
+pub(crate) fn native_window_handle(window: &Window) -> Option<i64> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let handle = HasWindowHandle::window_handle(window).ok()?;
+    match handle.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as i64),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn native_window_handle(_window: &Window) -> Option<i64> {
+    None
+}
+
+pub(crate) struct ClipboardPanel {
     theme: Theme,
-    history: Rc<RefCell<ClipboardHistory>>,
-    platform: Rc<PlatformBridge>,
+    application: WeakEntity<ClipboardApplication>,
     target: nxtools_protocol::ForegroundContext,
-    controller: WeakEntity<ClipboardController>,
     entries: Vec<ClipboardItem>,
-    status: String,
+    status: PanelStatus,
     pending_paste: Option<uuid::Uuid>,
+    active_category: ClipboardCategory,
+    list_scroll: UniformListScrollHandle,
     search_input: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl ClipboardPanel {
-    fn new(
-        history: Rc<RefCell<ClipboardHistory>>,
-        platform: Rc<PlatformBridge>,
+    pub(crate) fn new(
+        entries: Vec<ClipboardItem>,
         target: nxtools_protocol::ForegroundContext,
-        controller: WeakEntity<ClipboardController>,
+        application: WeakEntity<ClipboardApplication>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let entries = history
-            .borrow()
-            .recent(HISTORY_LIMIT)
-            .unwrap_or_else(|error| {
-                error!(%error, "failed to load clipboard popup history");
-                Vec::new()
-            });
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索剪贴板历史"));
         search_input.focus_handle(cx).focus(window);
 
@@ -232,7 +89,7 @@ impl ClipboardPanel {
             |this, state, event: &InputEvent, _window, cx| {
                 if matches!(event, InputEvent::Change) {
                     let query = state.read(cx).value().to_string();
-                    this.reload_entries(&query);
+                    this.reload_entries(&query, cx);
                     cx.notify();
                 }
             },
@@ -249,19 +106,19 @@ impl ClipboardPanel {
         });
 
         let status = if target.process_name.is_empty() {
-            "选择一条记录进行粘贴".into()
+            PanelStatus::Ready("选择一条记录进行粘贴".into())
         } else {
-            format!("将粘贴到 {}", target.process_name)
+            PanelStatus::Ready(format!("将粘贴到 {}", target.process_name))
         };
         Self {
             theme: Theme::zed_dark(),
-            history,
-            platform,
+            application,
             target,
-            controller,
             entries,
             status,
             pending_paste: None,
+            active_category: ClipboardCategory::All,
+            list_scroll: UniformListScrollHandle::new(),
             search_input,
             _subscriptions: vec![
                 search_subscription,
@@ -271,54 +128,59 @@ impl ClipboardPanel {
         }
     }
 
-    fn reload_entries(&mut self, query: &str) {
-        let result = if query.is_empty() {
-            self.history.borrow().recent(HISTORY_LIMIT)
-        } else {
-            self.history.borrow().search(query, HISTORY_LIMIT)
-        };
-        match result {
-            Ok(entries) => self.entries = entries,
-            Err(error) => {
+    fn reload_entries(&mut self, query: &str, cx: &mut Context<Self>) {
+        match self
+            .application
+            .update(cx, |application, _| application.query_entries(query))
+        {
+            Ok(Ok(entries)) => self.entries = entries,
+            Ok(Err(error)) => {
                 error!(%error, "failed to query clipboard popup history");
                 self.entries.clear();
-                self.status = "查询失败，请查看日志".into();
+                self.status = PanelStatus::Error("查询失败，请查看日志".into());
+            }
+            Err(error) => {
+                error!(%error, "clipboard application became unavailable");
+                self.entries.clear();
+                self.status = PanelStatus::Error("剪贴板核心不可用".into());
             }
         }
     }
 
     fn paste_entry(&mut self, entry: &ClipboardItem, _window: &mut Window, cx: &mut Context<Self>) {
         if self.pending_paste.is_some() {
-            self.status = "正在等待粘贴结果…".into();
+            self.status = PanelStatus::Pending("正在等待粘贴结果…");
             cx.notify();
             return;
         }
         if self.target.window_handle == 0 {
-            self.status = "原目标窗口已经不可用".into();
+            self.status = PanelStatus::Error("原目标窗口已经不可用".into());
             cx.notify();
             return;
         }
-        match self
-            .platform
-            .send_command(PlatformCommand::PasteText(PasteTextCommand {
-                text: entry.text.clone(),
-                target_window_handle: self.target.window_handle,
-                target_focus_window_handle: self.target.focus_window_handle,
-            })) {
-            Ok(command_id) => {
+        let target = self.target.clone();
+        let entry = entry.clone();
+        match self.application.update(cx, |application, _| {
+            application.request_paste(&entry, &target)
+        }) {
+            Ok(Ok(command_id)) => {
                 self.pending_paste = Some(command_id);
-                self.status = "正在粘贴…".into();
-                info!(item_id = entry.id, %command_id, target = %self.target.process_name, "paste command sent");
+                self.status = PanelStatus::Pending("正在粘贴…");
+                cx.notify();
+            }
+            Ok(Err(error)) => {
+                self.status = PanelStatus::Error(format!("无法粘贴：{error}"));
                 cx.notify();
             }
             Err(error) => {
-                self.status = format!("无法粘贴：{error}");
+                error!(%error, "clipboard application became unavailable");
+                self.status = PanelStatus::Error("无法粘贴：剪贴板核心不可用".into());
                 cx.notify();
             }
         }
     }
 
-    fn handle_command_result(
+    pub(crate) fn handle_command_result(
         &mut self,
         correlation_id: uuid::Uuid,
         result: PlatformCommandResult,
@@ -330,20 +192,20 @@ impl ClipboardPanel {
         }
         self.pending_paste = None;
         if result.success {
+            info!(%correlation_id, "paste command completed");
             self.close(window, cx);
         } else {
-            self.status = format!(
-                "粘贴失败：{}",
-                result.error.unwrap_or_else(|| "Windows 未返回原因".into())
-            );
+            let reason = result.error.unwrap_or_else(|| "Windows 未返回原因".into());
+            error!(%correlation_id, %reason, "paste command failed");
+            self.status = PanelStatus::Error(format!("粘贴失败：{}", reason));
             window.activate_window();
             cx.notify();
         }
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let _ = self.controller.update(cx, |controller, _| {
-            controller.popup_closed();
+        let _ = self.application.update(cx, |application, _| {
+            application.popup_closed();
         });
         window.remove_window();
     }
@@ -353,24 +215,38 @@ impl Render for ClipboardPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let entries_empty = self.entries.is_empty();
+        let status_is_error = self.status.is_error();
+        let status_label = self.status.label().to_owned();
+        let summary = if self.target.process_name.is_empty() {
+            format!("{} 条记录", self.entries.len())
+        } else {
+            format!("{} 条 · {}", self.entries.len(), self.target.process_name)
+        };
+        let is_scrolled = self.list_scroll.0.borrow().base_handle.offset().y < px(-1.0);
+        let scroll_to_top = self.list_scroll.clone();
+        let panel = cx.entity().downgrade();
+        let all_category_panel = cx.entity().downgrade();
+        let text_category_panel = cx.entity().downgrade();
         div()
+            .relative()
             .size_full()
             .p_2()
-            .rounded_lg()
+            .rounded(px(8.0))
             .border_1()
-            .border_color(theme.border_active)
-            .bg(theme.surface)
+            .border_color(theme.border)
+            .bg(theme.canvas)
             .shadow_lg()
             .text_color(theme.text)
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(6.0))
             .child(
                 div()
                     .id("clipboard-panel-header")
-                    .h(px(28.0))
+                    .h(px(26.0))
                     .flex()
                     .items_center()
+                    .gap(px(6.0))
                     .cursor_default()
                     .on_mouse_down(gpui::MouseButton::Left, |_event, window, _cx| {
                         window.start_window_move();
@@ -381,44 +257,118 @@ impl Render for ClipboardPanel {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("剪贴板"),
                     )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .truncate()
+                            .child(summary),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(150.0))
+                            .h(px(21.0))
+                            .px_2()
+                            .rounded(px(5.0))
+                            .border_1()
+                            .border_color(if status_is_error {
+                                theme.danger
+                            } else {
+                                theme.border
+                            })
+                            .bg(theme.surface_raised)
+                            .text_xs()
+                            .text_color(if status_is_error {
+                                theme.danger
+                            } else {
+                                theme.text_secondary
+                            })
+                            .flex()
+                            .items_center()
+                            .truncate()
+                            .child(status_label),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .overflow_hidden()
+                    .child(category_tab(
+                        theme,
+                        "全部",
+                        self.active_category == ClipboardCategory::All,
+                        move |_event, _window, app| {
+                            let _ = all_category_panel.update(app, |panel, cx| {
+                                panel.active_category = ClipboardCategory::All;
+                                cx.notify();
+                            });
+                        },
+                    ))
+                    .child(category_tab(
+                        theme,
+                        "文本",
+                        self.active_category == ClipboardCategory::Text,
+                        move |_event, _window, app| {
+                            let _ = text_category_panel.update(app, |panel, cx| {
+                                panel.active_category = ClipboardCategory::Text;
+                                cx.notify();
+                            });
+                        },
+                    ))
                     .child(div().flex_1())
                     .child(
                         div()
                             .text_xs()
                             .text_color(theme.text_muted)
-                            .child(self.status.clone()),
+                            .child("当前阶段仅迁移文本"),
                     ),
             )
             .child(
                 div()
-                    .h(px(36.0))
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border_active)
-                    .bg(theme.canvas)
-                    .px_2()
+                    .h(px(30.0))
                     .flex()
                     .items_center()
                     .gap_2()
-                    .text_sm()
-                    .text_color(theme.text_muted)
-                    .child("⌕")
                     .child(
-                        div().min_w_0().flex_1().text_color(theme.text).child(
-                            Input::new(&self.search_input)
-                                .appearance(false)
-                                .bordered(false)
-                                .focus_bordered(false),
-                        ),
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .h(px(30.0))
+                            .rounded(px(6.0))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface)
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .child(
+                                div().min_w_0().flex_1().text_color(theme.text).child(
+                                    Input::new(&self.search_input)
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false),
+                                ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .flex()
+                            .items_center()
+                            .child(format!("{} 条", self.entries.len())),
                     ),
             )
             .child(
                 div()
+                    .relative()
                     .flex_1()
                     .min_h_0()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border)
                     .bg(theme.canvas)
                     .overflow_hidden()
                     .when(entries_empty, |list| {
@@ -458,26 +408,103 @@ impl Render for ClipboardPanel {
                                         .collect::<Vec<_>>()
                                 }),
                             )
-                            .h_full(),
+                            .w_full()
+                            .h_full()
+                            .track_scroll(self.list_scroll.clone()),
+                        )
+                    })
+                    .when(is_scrolled, |list| {
+                        list.child(
+                            div()
+                                .absolute()
+                                .bottom_2()
+                                .left_0()
+                                .right_0()
+                                .flex()
+                                .justify_center()
+                                .child(
+                                    div()
+                                        .id("back-to-top")
+                                        .h(px(28.0))
+                                        .px_3()
+                                        .rounded(px(5.0))
+                                        .border_1()
+                                        .border_color(theme.border)
+                                        .bg(theme.surface_raised)
+                                        .shadow_md()
+                                        .cursor_pointer()
+                                        .hover(move |style| style.bg(theme.surface_hover))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .flex()
+                                        .items_center()
+                                        .child("↑  回到开头")
+                                        .on_click(move |_event, _window, app| {
+                                            scroll_to_top
+                                                .scroll_to_item_strict(0, ScrollStrategy::Top);
+                                            let _ = panel.update(app, |_, cx| cx.notify());
+                                        }),
+                                ),
                         )
                     }),
             )
             .child(
                 div()
-                    .h(px(18.0))
-                    .px_1()
-                    .flex()
-                    .items_center()
+                    .absolute()
+                    .right_0()
+                    .bottom_0()
+                    .size(px(16.0))
+                    .cursor_e_resize()
                     .text_xs()
                     .text_color(theme.text_muted)
-                    .child(format!("{} 条结果", self.entries.len()))
-                    .child(div().flex_1())
-                    .child("Esc 关闭 · 单击粘贴"),
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child("⌟")
+                    .on_mouse_down(gpui::MouseButton::Left, |_event, window, _cx| {
+                        window.start_window_resize(ResizeEdge::BottomRight);
+                    }),
             )
     }
 }
 
-fn panel_bounds(
+fn category_tab(
+    theme: Theme,
+    label: &'static str,
+    selected: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(label)
+        .h(px(26.0))
+        .px_2()
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(if selected {
+            theme.accent
+        } else {
+            gpui::rgba(0x00000000)
+        })
+        .bg(if selected {
+            theme.accent_soft
+        } else {
+            gpui::rgba(0x00000000)
+        })
+        .text_xs()
+        .text_color(if selected {
+            theme.accent_text
+        } else {
+            theme.text_secondary
+        })
+        .flex()
+        .items_center()
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.surface_hover))
+        .on_click(on_click)
+        .child(label)
+}
+
+pub(crate) fn panel_bounds(
     request: &ClipboardPanelRequest,
     cx: &App,
 ) -> (Bounds<gpui::Pixels>, Option<gpui::DisplayId>) {
@@ -526,5 +553,23 @@ fn clamp_pixels(value: gpui::Pixels, minimum: gpui::Pixels, maximum: gpui::Pixel
         maximum
     } else {
         value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_status_uses_typed_error_state() {
+        assert!(!PanelStatus::Ready("ready".into()).is_error());
+        assert!(!PanelStatus::Pending("pending").is_error());
+        assert!(PanelStatus::Error("failed".into()).is_error());
+    }
+
+    #[test]
+    fn panel_metrics_match_the_reference_window() {
+        assert_eq!(PANEL_WIDTH, 340.0);
+        assert_eq!(PANEL_HEIGHT, 440.0);
     }
 }

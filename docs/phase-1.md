@@ -13,8 +13,9 @@ Phase 1 answers the risky architecture questions before product features are mig
 - background GPUI application controller with no startup main window;
 - `Alt+C` Windows global hotkey and cursor/target-window context transfer;
 - independent borderless GPUI clipboard popup with search and virtual history list;
+- Windows-enforced topmost popup and reference-derived clipboard visual tokens;
 - Rust-owned SQLite text history, adjacent deduplication and restart persistence;
-- correlated click-to-paste command restoring the original focused child window through C#;
+- correlated click-to-paste command with focus retries, modifier release and `WM_PASTE` fallback;
 - separate Rust indexer process placeholder;
 - repeatable development build and launch scripts.
 - packaged-desktop supervision and restart of the C# PlatformHost adapter.

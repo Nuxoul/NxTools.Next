@@ -137,6 +137,7 @@ pub struct ClipboardPanelRequest {
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub enum PlatformCommand {
     PasteText(PasteTextCommand),
+    SetWindowTopmost(SetWindowTopmostCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +145,12 @@ pub struct PasteTextCommand {
     pub text: String,
     pub target_window_handle: i64,
     pub target_focus_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetWindowTopmostCommand {
+    pub window_handle: i64,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,6 +271,20 @@ mod tests {
 
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("paste command must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn topmost_command_round_trips_with_native_window() {
+        let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::SetWindowTopmost(
+            SetWindowTopmostCommand {
+                window_handle: 777,
+                enabled: true,
+            },
+        )));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("topmost command must decode");
         assert_eq!(decoded, envelope);
     }
 

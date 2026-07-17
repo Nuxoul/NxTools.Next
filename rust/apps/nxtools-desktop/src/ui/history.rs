@@ -1,7 +1,13 @@
-use gpui::{App, ClickEvent, Window, div, prelude::*, px};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use gpui::{App, ClickEvent, SharedString, Window, div, prelude::*, px};
 use nxtools_clipboard::ClipboardItem;
 
 use crate::theme::Theme;
+
+pub const TEXT_ROW_HEIGHT: f32 = 62.0;
+pub const ROW_GAP: f32 = 5.0;
+pub const LIST_ITEM_HEIGHT: f32 = TEXT_ROW_HEIGHT + ROW_GAP;
 
 pub fn history_row(
     theme: Theme,
@@ -14,61 +20,151 @@ pub fn history_row(
     } else {
         entry.source.process_name.clone()
     };
-    let detail = if entry.copy_count > 1 {
-        format!("已连续复制 {} 次", entry.copy_count)
-    } else if entry.source.window_title.is_empty() {
-        "纯文本".to_owned()
-    } else {
-        entry.source.window_title.clone()
-    };
+    let group: SharedString = format!("clipboard-row-{index}").into();
+    let character_count = entry.text.chars().count();
+    let copied = (entry.copy_count > 1).then(|| format!("{}×", entry.copy_count));
+    let relative_time = relative_time(entry.captured_at_unix_ms);
 
     div()
-        .id(("history-row", index))
-        .min_h(px(68.0))
-        .mx_2()
-        .px_3()
-        .py_2()
-        .flex()
-        .items_center()
-        .gap_3()
-        .border_b_1()
-        .border_color(theme.border)
-        .cursor_pointer()
-        .hover(move |style| style.bg(theme.surface_raised))
-        .on_click(on_click)
+        .id(("history-row-slot", index))
+        .h(px(LIST_ITEM_HEIGHT))
+        .pb(px(ROW_GAP))
         .child(
             div()
-                .size(px(34.0))
-                .rounded_md()
-                .bg(theme.accent_soft)
-                .text_color(theme.accent)
-                .text_sm()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child("Tt"),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .flex_1()
+                .id(("history-row", index))
+                .group(group.clone())
+                .h(px(TEXT_ROW_HEIGHT))
+                .px_2()
+                .py(px(6.0))
+                .rounded(px(6.0))
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.surface)
+                .cursor_pointer()
+                .hover(move |style| {
+                    style
+                        .bg(theme.surface_hover)
+                        .border_color(theme.border_active)
+                })
+                .on_click(on_click)
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(px(5.0))
                 .child(
                     div()
-                        .text_sm()
-                        .text_color(theme.text)
-                        .truncate()
-                        .child(entry.text),
+                        .h(px(18.0))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .when_some(copied, |row, copied| {
+                            row.child(metadata_chip(theme, copied, true))
+                        })
+                        .child(metadata_chip(theme, source, false))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child(relative_time),
+                        )
+                        .child(div().flex_1())
+                        .child(
+                            div()
+                                .invisible()
+                                .group_hover(group, |style| style.visible())
+                                .h(px(18.0))
+                                .px_2()
+                                .rounded(px(4.0))
+                                .border_1()
+                                .border_color(theme.border_active)
+                                .bg(theme.surface_raised)
+                                .text_xs()
+                                .text_color(theme.accent_text)
+                                .flex()
+                                .items_center()
+                                .child("粘贴"),
+                        ),
                 )
                 .child(
                     div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .truncate()
-                        .child(format!("{source}  ·  {detail}")),
+                        .min_w_0()
+                        .h(px(24.0))
+                        .flex()
+                        .items_center()
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                                .truncate()
+                                .child(entry.text),
+                        )
+                        .child(
+                            div()
+                                .ml_2()
+                                .px_2()
+                                .h(px(18.0))
+                                .rounded(px(9.0))
+                                .border_1()
+                                .border_color(theme.border)
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .flex()
+                                .items_center()
+                                .child(format!("{character_count} 字符")),
+                        ),
                 ),
         )
-        .child(div().text_xs().text_color(theme.text_muted).child("粘贴"))
+}
+
+fn metadata_chip(theme: Theme, text: String, accented: bool) -> impl IntoElement {
+    div()
+        .max_w(px(104.0))
+        .h(px(18.0))
+        .px_2()
+        .rounded(px(9.0))
+        .border_1()
+        .border_color(if accented { theme.accent } else { theme.border })
+        .bg(if accented {
+            theme.accent_soft
+        } else {
+            theme.surface_raised
+        })
+        .text_xs()
+        .text_color(if accented {
+            theme.accent_text
+        } else {
+            theme.text_secondary
+        })
+        .flex()
+        .items_center()
+        .truncate()
+        .child(text)
+}
+
+fn relative_time(timestamp_ms: i64) -> String {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(timestamp_ms);
+    let seconds = now_ms.saturating_sub(timestamp_ms).max(0) / 1_000;
+    match seconds {
+        0..=59 => "刚刚".into(),
+        60..=3_599 => format!("{} 分钟前", seconds / 60),
+        3_600..=86_399 => format!("{} 小时前", seconds / 3_600),
+        _ => format!("{} 天前", seconds / 86_400),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_metrics_match_the_reference_panel() {
+        assert_eq!(TEXT_ROW_HEIGHT, 62.0);
+        assert_eq!(ROW_GAP, 5.0);
+        assert_eq!(LIST_ITEM_HEIGHT, 67.0);
+    }
 }

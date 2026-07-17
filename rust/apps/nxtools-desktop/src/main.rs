@@ -1,13 +1,14 @@
+mod clipboard;
 mod runtime;
 mod theme;
 mod ui;
 
 use anyhow::{Context as _, Result};
+use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use gpui::{App, AppContext, Application};
 use gpui_component::{Theme, ThemeMode};
 use runtime::DesktopRuntime;
 use tracing::info;
-use ui::{ClipboardController, ClipboardControllerGlobal};
 
 fn run() -> Result<()> {
     let mut runtime = DesktopRuntime::initialize()?;
@@ -25,9 +26,9 @@ fn run() -> Result<()> {
         gpui_component::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
-        let controller =
-            cx.new(|cx| ClipboardController::new(clipboard_history, platform_bridge, cx));
-        cx.set_global(ClipboardControllerGlobal::new(controller));
+        let clipboard =
+            cx.new(|cx| ClipboardApplication::new(clipboard_history, platform_bridge, cx));
+        cx.set_global(ClipboardApplicationGlobal::new(clipboard));
     });
 
     drop(runtime);

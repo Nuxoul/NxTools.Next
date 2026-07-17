@@ -62,6 +62,12 @@ Alt+C
   -> GPUI popup closes on success, or stays open with an error on failure
 ```
 
+The Rust `ClipboardApplication` is the application-layer module: it owns SQLite history,
+search, platform notifications and commands. The GPUI `ClipboardPanel` only owns view state and
+translates search/click interactions into application intents. The C# PlatformHost owns the
+Windows-only topmost operation, focus restoration, modifier release, input injection and
+`WM_PASTE` fallback.
+
 The clipboard panel is not a page in an application main window. No GPUI window exists until
 the global shortcut is pressed. Escape or window deactivation closes the panel without stopping
 the background process.

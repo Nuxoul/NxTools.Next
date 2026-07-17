@@ -13,6 +13,11 @@ internal static class Program
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
+            ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
+            ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
+            ("unverified fallback is not reported as paste success", UnverifiedFallbackIsNotReportedAsPasteSuccess),
+            ("pressed modifiers keep paste result unconfirmed", PressedModifiersKeepPasteResultUnconfirmed),
+            ("incomplete input keeps paste result unconfirmed", IncompleteInputKeepsPasteResultUnconfirmed),
             ("paste result correlates to command", PasteResultCorrelatesToCommand),
             ("clipboard event preserves source context", ClipboardEventPreservesSourceContext),
             ("panel request preserves target and cursor", PanelRequestPreservesTargetAndCursor),
@@ -90,6 +95,97 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task TopmostCommandPreservesNativeWindow()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "set_window_topmost",
+            Data = new
+            {
+                WindowHandle = 777L,
+                Enabled = true
+            }
+        });
+
+        var command = PlatformCommandParser.ParseSetWindowTopmost(envelope);
+        Assert(command.WindowHandle == 777L);
+        Assert(command.Enabled);
+        return Task.CompletedTask;
+    }
+
+    private static Task PasteRetriesTransientTargetActivation()
+    {
+        var operations = new FakePasteOperations
+        {
+            ActivationResults = new Queue<bool>([false, true])
+        };
+        var coordinator = new WindowsPasteCoordinator(operations);
+
+        var result = coordinator.Execute(new PasteTextCommand("paste", 42, 43));
+
+        Assert(result.Success);
+        Assert(operations.ActivationAttempts == 2);
+        Assert(operations.SendPasteCalls == 1);
+        Assert(operations.PostPasteCalls == 0);
+        return Task.CompletedTask;
+    }
+
+    private static Task UnverifiedFallbackIsNotReportedAsPasteSuccess()
+    {
+        var operations = new FakePasteOperations
+        {
+            ActivationResults = new Queue<bool>([false, false, false, false]),
+            PostPasteResult = true
+        };
+        var coordinator = new WindowsPasteCoordinator(operations);
+
+        var result = coordinator.Execute(new PasteTextCommand("paste", 42, 43));
+
+        Assert(!result.Success);
+        Assert(result.Error?.Contains("could not be confirmed", StringComparison.OrdinalIgnoreCase) == true);
+        Assert(operations.ActivationAttempts == 4);
+        Assert(operations.SendPasteCalls == 0);
+        Assert(operations.PostPasteCalls == 1);
+        Assert(operations.LastPostTarget == 43);
+        return Task.CompletedTask;
+    }
+
+    private static Task PressedModifiersKeepPasteResultUnconfirmed()
+    {
+        var operations = new FakePasteOperations
+        {
+            ModifiersReleased = false,
+            PostPasteResult = true
+        };
+        var coordinator = new WindowsPasteCoordinator(operations);
+
+        var result = coordinator.Execute(new PasteTextCommand("paste", 42, 43));
+
+        Assert(!result.Success);
+        Assert(result.Error?.Contains("could not be confirmed", StringComparison.OrdinalIgnoreCase) == true);
+        Assert(operations.SendPasteCalls == 0);
+        Assert(operations.PostPasteCalls == 1);
+        return Task.CompletedTask;
+    }
+
+    private static Task IncompleteInputKeepsPasteResultUnconfirmed()
+    {
+        var operations = new FakePasteOperations
+        {
+            SentInputCount = 2,
+            PostPasteResult = true
+        };
+        var coordinator = new WindowsPasteCoordinator(operations);
+
+        var result = coordinator.Execute(new PasteTextCommand("paste", 42, 43));
+
+        Assert(!result.Success);
+        Assert(result.Error?.Contains("could not be confirmed", StringComparison.OrdinalIgnoreCase) == true);
+        Assert(operations.SendPasteCalls == 1);
+        Assert(operations.PostPasteCalls == 1);
+        return Task.CompletedTask;
+    }
+
     private static Task PasteResultCorrelatesToCommand()
     {
         var commandId = Guid.NewGuid();
@@ -133,6 +229,7 @@ internal static class Program
     private static Task HotKeyCapabilityReflectsRegistration()
     {
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.PasteText));
+        Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.WindowTopmost));
         Assert(!PlatformCapabilities.Create(false).Contains(PlatformCapabilities.ClipboardPanelHotKey));
         Assert(PlatformCapabilities.Create(true).Contains(PlatformCapabilities.ClipboardPanelHotKey));
         return Task.CompletedTask;
@@ -166,6 +263,55 @@ internal static class Program
         if (!condition)
         {
             throw new InvalidOperationException("assertion failed");
+        }
+    }
+
+    private sealed class FakePasteOperations : IWindowsPasteOperations
+    {
+        public Queue<bool> ActivationResults { get; init; } = new([true]);
+        public bool PostPasteResult { get; init; }
+        public bool ModifiersReleased { get; init; } = true;
+        public uint SentInputCount { get; init; } = 4;
+        public int ActivationAttempts { get; private set; }
+        public int SendPasteCalls { get; private set; }
+        public int PostPasteCalls { get; private set; }
+        public long LastPostTarget { get; private set; }
+
+        public bool IsWindow(long windowHandle) => windowHandle != 0;
+
+        public bool TrySetClipboardText(string text, out string? error)
+        {
+            error = null;
+            return true;
+        }
+
+        public bool TryActivateWindow(long targetWindowHandle, long focusWindowHandle)
+        {
+            ActivationAttempts++;
+            return ActivationResults.Count > 0 && ActivationResults.Dequeue();
+        }
+
+        public bool IsForegroundWindowForTarget(long targetWindowHandle) =>
+            ActivationAttempts > 0 && ActivationResults.Count < 3;
+
+        public bool TryReleaseActivationModifiers() => ModifiersReleased;
+
+        public uint SendPasteShortcut()
+        {
+            SendPasteCalls++;
+            return SentInputCount;
+        }
+
+        public bool TryPostPaste(long targetWindowHandle, out string? error)
+        {
+            PostPasteCalls++;
+            LastPostTarget = targetWindowHandle;
+            error = PostPasteResult ? null : "post failed";
+            return PostPasteResult;
+        }
+
+        public void Delay(int milliseconds)
+        {
         }
     }
 }

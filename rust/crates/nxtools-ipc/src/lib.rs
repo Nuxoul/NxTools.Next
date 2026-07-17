@@ -94,11 +94,12 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 4] = [
+            const SUPPORTED_CAPABILITIES: [&str; 5] = [
                 "foreground_context",
                 "clipboard_text_capture",
                 "paste_text",
                 "clipboard_panel_hotkey",
+                "window_topmost",
             ];
             let accepted_capabilities = hello
                 .capabilities
@@ -313,6 +314,7 @@ mod tests {
                 "paste_text".into(),
                 "clipboard_panel_hotkey".into(),
                 "foreground_context".into(),
+                "window_topmost".into(),
             ],
         }));
         let response = dispatch(&request).expect("hello response");
@@ -326,7 +328,8 @@ mod tests {
                 "clipboard_text_capture",
                 "paste_text",
                 "clipboard_panel_hotkey",
-                "foreground_context"
+                "foreground_context",
+                "window_topmost"
             ]
         );
         assert_eq!(response.correlation_id, Some(request.id));
