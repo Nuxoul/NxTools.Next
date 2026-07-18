@@ -4,6 +4,45 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-004] release-package-locked-destination
+
+**Logged**: 2026-07-18T11:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+Release packaging could not overwrite the default artifact because that packaged executable was still running.
+
+### Error
+
+```text
+The process cannot access artifacts\win-x64\NxTools.exe because it is being used by another process.
+```
+
+### Context
+
+- Command: `scripts/package.ps1 -Configuration Release`
+- The Release build and tests completed before `Copy-Item` failed.
+- The running process belonged to the default package directory and was not terminated.
+
+### Suggested Fix
+
+Use the package script's `-OutputPath` option to create a side-by-side package when the default artifact is locked.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: scripts/package.ps1
+
+### Resolution
+
+- **Resolved**: 2026-07-18T11:10:00+08:00
+- **Notes**: Generated the package in a new versioned output directory without interrupting the user's running app.
+
+---
+
 ## [ERR-20260718-003] clipboard-category-regression-test
 
 **Logged**: 2026-07-18T11:00:00+08:00
