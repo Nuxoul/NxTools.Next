@@ -114,6 +114,12 @@ pub struct ClipboardHistory {
     connection: Connection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipboardItemFlag {
+    Favorite,
+    Pinned,
+}
+
 impl ClipboardHistory {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ClipboardHistoryError> {
         let connection = Connection::open(path)?;
@@ -392,7 +398,7 @@ impl ClipboardHistory {
         item_id: i64,
         value: bool,
     ) -> Result<ClipboardItem, ClipboardHistoryError> {
-        self.set_flag(item_id, "is_favorite", value)
+        self.set_flag(item_id, ClipboardItemFlag::Favorite, value)
     }
 
     pub fn set_pinned(
@@ -400,19 +406,24 @@ impl ClipboardHistory {
         item_id: i64,
         value: bool,
     ) -> Result<ClipboardItem, ClipboardHistoryError> {
-        self.set_flag(item_id, "is_pinned", value)
+        self.set_flag(item_id, ClipboardItemFlag::Pinned, value)
     }
 
     fn set_flag(
         &mut self,
         item_id: i64,
-        column: &'static str,
+        flag: ClipboardItemFlag,
         value: bool,
     ) -> Result<ClipboardItem, ClipboardHistoryError> {
-        let changed = self.connection.execute(
-            &format!("UPDATE clipboard_items SET {column} = ?1 WHERE id = ?2"),
-            params![value, item_id],
-        )?;
+        let statement = match flag {
+            ClipboardItemFlag::Favorite => {
+                "UPDATE clipboard_items SET is_favorite = ?1 WHERE id = ?2"
+            }
+            ClipboardItemFlag::Pinned => "UPDATE clipboard_items SET is_pinned = ?1 WHERE id = ?2",
+        };
+        let changed = self
+            .connection
+            .execute(statement, params![value, item_id])?;
         if changed == 0 {
             return Err(ClipboardHistoryError::ItemNotFound(item_id));
         }

@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{Icon, IconName};
-use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
+use nxtools_clipboard::{ClipboardAction, ClipboardHistoryError, ClipboardItem, ClipboardKind};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
@@ -245,48 +245,36 @@ impl ClipboardPanel {
                 let result = self.application.update(cx, |application, _| {
                     application.set_item_pinned(entry.id, !entry.is_pinned)
                 });
-                match result {
-                    Ok(Ok(_)) => {
-                        self.status = PanelStatus::Notice(if entry.is_pinned {
-                            "已取消置顶".into()
-                        } else {
-                            "已置顶".into()
-                        });
-                        self.refresh_entries(cx);
-                    }
-                    Ok(Err(error)) => self.item_action_failed("置顶", error, cx),
-                    Err(error) => self.application_action_failed("置顶", error, cx),
+                if self.resolve_item_action("置顶", result, cx).is_some() {
+                    self.status = PanelStatus::Notice(if entry.is_pinned {
+                        "已取消置顶".into()
+                    } else {
+                        "已置顶".into()
+                    });
+                    self.refresh_entries(cx);
                 }
             }
             ClipboardItemAction::ToggleFavorite => {
                 let result = self.application.update(cx, |application, _| {
                     application.set_item_favorite(entry.id, !entry.is_favorite)
                 });
-                match result {
-                    Ok(Ok(_)) => {
-                        self.status = PanelStatus::Notice(if entry.is_favorite {
-                            "已取消收藏".into()
-                        } else {
-                            "已收藏".into()
-                        });
-                        self.refresh_entries(cx);
-                    }
-                    Ok(Err(error)) => self.item_action_failed("收藏", error, cx),
-                    Err(error) => self.application_action_failed("收藏", error, cx),
+                if self.resolve_item_action("收藏", result, cx).is_some() {
+                    self.status = PanelStatus::Notice(if entry.is_favorite {
+                        "已取消收藏".into()
+                    } else {
+                        "已收藏".into()
+                    });
+                    self.refresh_entries(cx);
                 }
             }
             ClipboardItemAction::Delete => {
                 let result = self
                     .application
                     .update(cx, |application, _| application.delete_item(entry.id));
-                match result {
-                    Ok(Ok(())) => {
-                        self.last_deleted_item_id = Some(entry.id);
-                        self.status = PanelStatus::Notice("已删除，可在底部撤销".into());
-                        self.refresh_entries(cx);
-                    }
-                    Ok(Err(error)) => self.item_action_failed("删除", error, cx),
-                    Err(error) => self.application_action_failed("删除", error, cx),
+                if self.resolve_item_action("删除", result, cx).is_some() {
+                    self.last_deleted_item_id = Some(entry.id);
+                    self.status = PanelStatus::Notice("已删除，可在底部撤销".into());
+                    self.refresh_entries(cx);
                 }
             }
         }
@@ -321,15 +309,11 @@ impl ClipboardPanel {
         let result = self.application.update(cx, |application, _| {
             application.update_item_text(item_id, &text)
         });
-        match result {
-            Ok(Ok(_)) => {
-                self.editing_item_id = None;
-                self.status = PanelStatus::Notice("文本已保存为纯文本".into());
-                self.refresh_entries(cx);
-                self.search_input.focus_handle(cx).focus(window);
-            }
-            Ok(Err(error)) => self.item_action_failed("保存", error, cx),
-            Err(error) => self.application_action_failed("保存", error, cx),
+        if self.resolve_item_action("保存", result, cx).is_some() {
+            self.editing_item_id = None;
+            self.status = PanelStatus::Notice("文本已保存为纯文本".into());
+            self.refresh_entries(cx);
+            self.search_input.focus_handle(cx).focus(window);
         }
         cx.notify();
     }
@@ -341,38 +325,38 @@ impl ClipboardPanel {
         let result = self
             .application
             .update(cx, |application, _| application.restore_item(item_id));
-        match result {
-            Ok(Ok(_)) => {
-                self.last_deleted_item_id = None;
-                self.status = PanelStatus::Notice("已撤销删除".into());
-                self.refresh_entries(cx);
-            }
-            Ok(Err(error)) => self.item_action_failed("撤销删除", error, cx),
-            Err(error) => self.application_action_failed("撤销删除", error, cx),
+        if self.resolve_item_action("撤销删除", result, cx).is_some() {
+            self.last_deleted_item_id = None;
+            self.status = PanelStatus::Notice("已撤销删除".into());
+            self.refresh_entries(cx);
         }
         cx.notify();
     }
 
-    fn item_action_failed(
+    fn resolve_item_action<T, E>(
         &mut self,
         action: &str,
-        error: impl std::fmt::Display,
+        result: Result<Result<T, ClipboardHistoryError>, E>,
         cx: &mut Context<Self>,
-    ) {
-        error!(%error, %action, "clipboard item action failed");
-        self.status = PanelStatus::Error(format!("{action}失败：{error}"));
-        cx.notify();
-    }
-
-    fn application_action_failed(
-        &mut self,
-        action: &str,
-        error: impl std::fmt::Display,
-        cx: &mut Context<Self>,
-    ) {
-        error!(%error, %action, "clipboard application became unavailable");
-        self.status = PanelStatus::Error(format!("{action}失败：剪贴板核心不可用"));
-        cx.notify();
+    ) -> Option<T>
+    where
+        E: std::fmt::Display,
+    {
+        match result {
+            Ok(Ok(value)) => Some(value),
+            Ok(Err(error)) => {
+                error!(%error, %action, "clipboard item action failed");
+                self.status = PanelStatus::Error(format!("{action}失败：{error}"));
+                cx.notify();
+                None
+            }
+            Err(error) => {
+                error!(%error, %action, "clipboard application became unavailable");
+                self.status = PanelStatus::Error(format!("{action}失败：剪贴板核心不可用"));
+                cx.notify();
+                None
+            }
+        }
     }
 
     fn activate_entry(
