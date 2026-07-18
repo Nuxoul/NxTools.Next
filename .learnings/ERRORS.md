@@ -4,6 +4,23 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-003] cargo-test-multiple-positional-filters
+
+**Logged**: 2026-07-18T10:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+`cargo test` accepts only one positional test-name filter; passing two test names made that step fail while a later PowerShell command masked the aggregate exit code.
+
+### Resolution
+
+Use one shared module/name substring or run focused tests as separate commands, and do not infer a chained native-command result only from the final process exit code.
+
+---
+
 ## [ERR-20260718-002] stale-platform-protocol-file-names
 
 **Logged**: 2026-07-18T10:05:00+08:00
@@ -120,8 +137,10 @@ Run `cargo build -p nxtools-desktop -p nxtools-indexer` for the selected profile
 ## [ERR-20260717-001] cargo-release-build
 
 **Logged**: 2026-07-17T15:43:00+08:00
+**Last Seen**: 2026-07-18T00:00:00+08:00
+**Occurrences**: 2
 **Priority**: high
-**Status**: in_progress
+**Status**: resolved
 **Area**: infra
 
 ### Summary
@@ -137,7 +156,7 @@ Failed to find fxc.exe
 ### Context
 
 - Command: `cargo build --release -p nxtools-desktop -p nxtools-indexer`
-- Environment: Windows 10 with Rust 1.96; no Windows SDK shader compiler installed.
+- Environment: Windows 10 with Rust 1.96; Windows SDK was rooted at `D:\Windows Kits\10` while the preflight only checked C:.
 - GPUI's build script only compiles HLSL ahead of time when debug assertions are disabled.
 
 ### Suggested Fix
@@ -149,5 +168,10 @@ preflight so missing toolchains fail before the expensive Release compilation be
 
 - Reproducible: yes
 - Related Files: scripts/build.ps1, docs/building.md
+
+### Resolution
+
+- **Resolved**: 2026-07-18T10:45:00+08:00
+- **Notes**: Installed the Microsoft Windows SDK package and changed `Find-Fxc` to discover `KitsRoot10` through both Windows SDK registry views. The preflight now finds SDK tools regardless of drive.
 
 ---

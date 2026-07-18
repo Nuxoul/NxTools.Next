@@ -182,8 +182,10 @@ internal static class NativeClipboardFormats
         return payloads;
     }
 
+    // Handle-backed formats cannot be serialized as movable global-memory bytes.
+    // CF_DIB (8) and CF_DIBV5 (17) are intentionally retained for original image paste.
     private static bool ShouldSkip(uint format) => format is
-        2 or 3 or 6 or 7 or 8 or 9 or 14 or 16 or 17 or
+        2 or 3 or 9 or 14 or 16 or
         >= 0x0080 and <= 0x008F;
 
     private static string GetFormatName(uint format)

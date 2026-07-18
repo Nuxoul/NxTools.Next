@@ -22,13 +22,25 @@ function Find-Fxc {
         return $fromPath.Source
     }
 
-    $sdkBin = 'C:\Program Files (x86)\Windows Kits\10\bin'
-    if (Test-Path -LiteralPath $sdkBin) {
-        return Get-ChildItem -LiteralPath $sdkBin -Directory -ErrorAction SilentlyContinue |
-            Sort-Object Name -Descending |
-            ForEach-Object { Join-Path $_.FullName 'x64\fxc.exe' } |
-            Where-Object { Test-Path -LiteralPath $_ } |
-            Select-Object -First 1
+    $sdkRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots'
+    ) | ForEach-Object {
+        (Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).KitsRoot10
+    } | Where-Object { $_ } | Select-Object -Unique
+
+    foreach ($sdkRoot in $sdkRoots) {
+        $sdkBin = Join-Path $sdkRoot 'bin'
+        if (Test-Path -LiteralPath $sdkBin) {
+            $fxc = Get-ChildItem -LiteralPath $sdkBin -Directory -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending |
+                ForEach-Object { Join-Path $_.FullName 'x64\fxc.exe' } |
+                Where-Object { Test-Path -LiteralPath $_ } |
+                Select-Object -First 1
+            if ($fxc) {
+                return $fxc
+            }
+        }
     }
 
     return $null

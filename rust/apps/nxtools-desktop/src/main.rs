@@ -21,8 +21,8 @@ fn run() -> Result<()> {
         .clipboard_history
         .take()
         .context("desktop runtime did not provide clipboard history")?;
-    let clipboard_image_dir = runtime
-        .clipboard_image_dir
+    let clipboard_asset_dir = runtime
+        .clipboard_asset_dir
         .take()
         .context("desktop runtime did not provide a clipboard image directory")?;
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
@@ -32,7 +32,7 @@ fn run() -> Result<()> {
         Theme::change(ThemeMode::Dark, None, cx);
 
         let clipboard = cx.new(|cx| {
-            ClipboardApplication::new(clipboard_history, clipboard_image_dir, platform_bridge, cx)
+            ClipboardApplication::new(clipboard_history, clipboard_asset_dir, platform_bridge, cx)
         });
         cx.set_global(ClipboardApplicationGlobal::new(clipboard));
     });

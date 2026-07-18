@@ -246,6 +246,7 @@ impl ClipboardHistory {
             && latest_text == text
             && latest_image == image_path
             && latest_files == file_paths_json
+            && native_formats_match(&transaction, id, &native_formats)?
         {
             transaction.execute(
                 "UPDATE clipboard_items
@@ -417,6 +418,31 @@ fn replace_native_formats(
         ])?;
     }
     Ok(())
+}
+
+fn native_formats_match(
+    transaction: &rusqlite::Transaction<'_>,
+    item_id: i64,
+    incoming: &[ClipboardNativeFormat],
+) -> Result<bool, rusqlite::Error> {
+    let mut statement = transaction.prepare(
+        "SELECT format_id, format_name, data_path, size_bytes, sort_order
+         FROM clipboard_item_formats
+         WHERE clipboard_item_id = ?1
+         ORDER BY sort_order, format_id, format_name",
+    )?;
+    let stored = statement
+        .query_map([item_id], |row| {
+            Ok(ClipboardNativeFormat {
+                format_id: row.get::<_, i64>(0)?.max(0) as u32,
+                format_name: row.get(1)?,
+                data_path: row.get(2)?,
+                size_bytes: row.get::<_, i64>(3)?.max(0) as u64,
+                sort_order: row.get::<_, i64>(4)?.max(0) as u32,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(stored == incoming)
 }
 
 fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
@@ -610,6 +636,41 @@ mod tests {
         assert_eq!(updated.captured_at_unix_ms, 200);
         assert_eq!(updated.source.process_name, "second-app");
         assert_eq!(history.recent(10).expect("recent"), vec![updated]);
+    }
+
+    #[test]
+    fn equal_visible_text_with_different_native_formats_stays_distinct() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let native = |data_path: &str| ClipboardNativeFormat {
+            format_id: 49_152,
+            format_name: "HTML Format".into(),
+            data_path: data_path.into(),
+            size_bytes: 64,
+            sort_order: 0,
+        };
+
+        let first = history
+            .capture(TextCapture {
+                text: "same visible text".into(),
+                native_formats: vec![native("C:/formats/first.bin")],
+                source: fixture_source(),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture first native representation");
+        let second = history
+            .capture(TextCapture {
+                text: "same visible text".into(),
+                native_formats: vec![native("C:/formats/second.bin")],
+                source: fixture_source(),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture second native representation");
+
+        assert!(matches!(first, CaptureOutcome::Inserted(_)));
+        assert!(matches!(second, CaptureOutcome::Inserted(_)));
+        assert_eq!(history.recent(10).expect("recent").len(), 2);
     }
 
     #[test]

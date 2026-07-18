@@ -57,7 +57,7 @@ impl Global for ClipboardApplicationGlobal {}
 
 pub struct ClipboardApplication {
     history: Rc<RefCell<ClipboardHistory>>,
-    image_dir: PathBuf,
+    clipboard_asset_dir: PathBuf,
     platform: Rc<PlatformBridge>,
     popup: PopupSession,
     _platform_task: Task<()>,
@@ -79,7 +79,7 @@ struct PopupSession {
 impl ClipboardApplication {
     pub fn new(
         history: ClipboardHistory,
-        image_dir: PathBuf,
+        clipboard_asset_dir: PathBuf,
         platform: PlatformBridge,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -103,7 +103,7 @@ impl ClipboardApplication {
 
         Self {
             history: Rc::new(RefCell::new(history)),
-            image_dir,
+            clipboard_asset_dir,
             platform,
             popup: PopupSession::default(),
             _platform_task: platform_task,
@@ -132,61 +132,15 @@ impl ClipboardApplication {
         target: &ForegroundContext,
         action: ClipboardAction,
     ) -> anyhow::Result<uuid::Uuid> {
-        let paste_after_write = action != ClipboardAction::CopyOnly;
         let native_formats = if matches!(
             action,
             ClipboardAction::OriginalPaste | ClipboardAction::CopyOnly
-        ) && entry.kind != ClipboardKind::Image
-        {
+        ) {
             self.history.borrow().native_formats(entry.id)?
         } else {
             Vec::new()
         };
-        let command = if !native_formats.is_empty() {
-            PlatformCommand::PasteNativeFormats(PasteNativeFormatsCommand {
-                formats: native_formats
-                    .into_iter()
-                    .map(|format| ProtocolClipboardNativeFormat {
-                        format_id: format.format_id,
-                        format_name: format.format_name,
-                        data_path: format.data_path,
-                        size_bytes: format.size_bytes,
-                        sort_order: format.sort_order,
-                    })
-                    .collect(),
-                paste_after_write,
-                target_window_handle: target.window_handle,
-                target_focus_window_handle: target.focus_window_handle,
-            })
-        } else if let Some(text) = action_text_payload(entry, action) {
-            PlatformCommand::PasteText(PasteTextCommand {
-                text,
-                paste_after_write,
-                target_window_handle: target.window_handle,
-                target_focus_window_handle: target.focus_window_handle,
-            })
-        } else {
-            match entry.kind {
-                ClipboardKind::Text => PlatformCommand::PasteText(PasteTextCommand {
-                    text: entry.text.clone(),
-                    paste_after_write,
-                    target_window_handle: target.window_handle,
-                    target_focus_window_handle: target.focus_window_handle,
-                }),
-                ClipboardKind::Files => PlatformCommand::PasteFiles(PasteFilesCommand {
-                    paths: entry.file_paths.clone(),
-                    paste_after_write,
-                    target_window_handle: target.window_handle,
-                    target_focus_window_handle: target.focus_window_handle,
-                }),
-                ClipboardKind::Image => PlatformCommand::PasteImage(PasteImageCommand {
-                    image_path: entry.image_path.clone(),
-                    paste_after_write,
-                    target_window_handle: target.window_handle,
-                    target_focus_window_handle: target.focus_window_handle,
-                }),
-            }
-        };
+        let command = command_for_action(entry, target, action, native_formats)?;
         let command_id = self.platform.send_command(command)?;
         info!(item_id = entry.id, ?action, %command_id, target = %target.process_name, "clipboard action command sent");
         Ok(command_id)
@@ -211,7 +165,81 @@ impl ClipboardApplication {
         info!(%command_id, window_handle = native_window_handle, "clipboard popup hide command sent");
         Ok(command_id)
     }
+}
 
+fn command_for_action(
+    entry: &ClipboardItem,
+    target: &ForegroundContext,
+    action: ClipboardAction,
+    native_formats: Vec<StoredClipboardNativeFormat>,
+) -> anyhow::Result<PlatformCommand> {
+    if action == ClipboardAction::WithoutLineBreaks && entry.kind != ClipboardKind::Text {
+        anyhow::bail!("去换行仅适用于文本条目");
+    }
+    let paste_after_write = action != ClipboardAction::CopyOnly;
+    if native_formats_restore_primary_kind(entry.kind, &native_formats) {
+        return Ok(PlatformCommand::PasteNativeFormats(
+            PasteNativeFormatsCommand {
+                formats: native_formats
+                    .into_iter()
+                    .map(|format| ProtocolClipboardNativeFormat {
+                        format_id: format.format_id,
+                        format_name: format.format_name,
+                        data_path: format.data_path,
+                        size_bytes: format.size_bytes,
+                        sort_order: format.sort_order,
+                    })
+                    .collect(),
+                paste_after_write,
+                target_window_handle: target.window_handle,
+                target_focus_window_handle: target.focus_window_handle,
+            },
+        ));
+    }
+    if let Some(text) = action_text_payload(entry, action) {
+        return Ok(PlatformCommand::PasteText(PasteTextCommand {
+            text,
+            paste_after_write,
+            target_window_handle: target.window_handle,
+            target_focus_window_handle: target.focus_window_handle,
+        }));
+    }
+    Ok(match entry.kind {
+        ClipboardKind::Text => PlatformCommand::PasteText(PasteTextCommand {
+            text: entry.text.clone(),
+            paste_after_write,
+            target_window_handle: target.window_handle,
+            target_focus_window_handle: target.focus_window_handle,
+        }),
+        ClipboardKind::Files => PlatformCommand::PasteFiles(PasteFilesCommand {
+            paths: entry.file_paths.clone(),
+            paste_after_write,
+            target_window_handle: target.window_handle,
+            target_focus_window_handle: target.focus_window_handle,
+        }),
+        ClipboardKind::Image => PlatformCommand::PasteImage(PasteImageCommand {
+            image_path: entry.image_path.clone(),
+            paste_after_write,
+            target_window_handle: target.window_handle,
+            target_focus_window_handle: target.focus_window_handle,
+        }),
+    })
+}
+
+fn native_formats_restore_primary_kind(
+    kind: ClipboardKind,
+    formats: &[StoredClipboardNativeFormat],
+) -> bool {
+    match kind {
+        ClipboardKind::Text => formats.iter().any(|format| format.format_id == 13),
+        ClipboardKind::Files => formats.iter().any(|format| format.format_id == 15),
+        ClipboardKind::Image => formats
+            .iter()
+            .any(|format| matches!(format.format_id, 8 | 17)),
+    }
+}
+
+impl ClipboardApplication {
     fn handle_platform_notification(
         &mut self,
         notification: PlatformNotification,
@@ -420,8 +448,8 @@ impl ClipboardApplication {
 
     fn store_native_format(&self, staging_path: &str) -> std::io::Result<String> {
         let staging = std::path::Path::new(staging_path);
-        let fingerprint = image_fingerprint(std::fs::File::open(staging)?)?;
-        let format_dir = self.image_dir.join("native-formats");
+        let fingerprint = content_fingerprint(std::fs::File::open(staging)?)?;
+        let format_dir = self.clipboard_asset_dir.join("native-formats");
         std::fs::create_dir_all(&format_dir)?;
         let destination = format_dir.join(format!("{fingerprint}.bin"));
         if !destination.exists() {
@@ -442,9 +470,9 @@ impl ClipboardApplication {
         remove_source: bool,
     ) -> std::io::Result<String> {
         let staging = std::path::Path::new(staging_path);
-        let fingerprint = image_fingerprint(std::fs::File::open(staging)?)?;
+        let fingerprint = content_fingerprint(std::fs::File::open(staging)?)?;
         let destination = self
-            .image_dir
+            .clipboard_asset_dir
             .join(format!("{file_name_prefix}{fingerprint}.png"));
         if !destination.exists() {
             std::fs::copy(staging, &destination)?;
@@ -568,7 +596,7 @@ impl ClipboardApplication {
     }
 }
 
-fn image_fingerprint(mut reader: impl Read) -> std::io::Result<String> {
+fn content_fingerprint(mut reader: impl Read) -> std::io::Result<String> {
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -582,19 +610,158 @@ fn image_fingerprint(mut reader: impl Read) -> std::io::Result<String> {
 }
 
 #[cfg(test)]
-mod image_tests {
-    use super::image_fingerprint;
+mod asset_tests {
+    use super::*;
 
     #[test]
-    fn image_fingerprint_depends_on_content_instead_of_staging_path() {
-        let first = image_fingerprint(std::io::Cursor::new(b"same image bytes"))
+    fn content_fingerprint_depends_on_bytes_instead_of_staging_path() {
+        let first = content_fingerprint(std::io::Cursor::new(b"same image bytes"))
             .expect("fingerprint first image");
-        let second = image_fingerprint(std::io::Cursor::new(b"same image bytes"))
+        let second = content_fingerprint(std::io::Cursor::new(b"same image bytes"))
             .expect("fingerprint second image");
-        let different = image_fingerprint(std::io::Cursor::new(b"different image bytes"))
+        let different = content_fingerprint(std::io::Cursor::new(b"different image bytes"))
             .expect("fingerprint different image");
 
         assert_eq!(first, second);
         assert_ne!(first, different);
+    }
+
+    fn fixture_target() -> ForegroundContext {
+        ForegroundContext {
+            window_handle: 42,
+            focus_window_handle: 43,
+            process_id: 7,
+            process_name: "editor".into(),
+            window_title: "draft".into(),
+        }
+    }
+
+    fn fixture_text() -> ClipboardItem {
+        ClipboardItem {
+            id: 1,
+            kind: ClipboardKind::Text,
+            text: "first\r\nsecond".into(),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: Vec::new(),
+            source: CaptureSource {
+                window_handle: 1,
+                process_id: 2,
+                process_name: "browser".into(),
+                process_icon_path: String::new(),
+                window_title: "source".into(),
+            },
+            captured_at_unix_ms: 10,
+            copy_count: 1,
+        }
+    }
+
+    fn unicode_native_format() -> StoredClipboardNativeFormat {
+        StoredClipboardNativeFormat {
+            format_id: 13,
+            format_name: String::new(),
+            data_path: "C:/formats/unicode.bin".into(),
+            size_bytes: 28,
+            sort_order: 0,
+        }
+    }
+
+    #[test]
+    fn four_clipboard_actions_build_the_expected_platform_outcomes() {
+        let entry = fixture_text();
+        let target = fixture_target();
+
+        let original = command_for_action(
+            &entry,
+            &target,
+            ClipboardAction::OriginalPaste,
+            vec![unicode_native_format()],
+        )
+        .expect("original action");
+        let copy = command_for_action(
+            &entry,
+            &target,
+            ClipboardAction::CopyOnly,
+            vec![unicode_native_format()],
+        )
+        .expect("copy action");
+        let plain = command_for_action(&entry, &target, ClipboardAction::PlainText, Vec::new())
+            .expect("plain action");
+        let without_breaks = command_for_action(
+            &entry,
+            &target,
+            ClipboardAction::WithoutLineBreaks,
+            Vec::new(),
+        )
+        .expect("without line breaks action");
+
+        assert!(matches!(
+            original,
+            PlatformCommand::PasteNativeFormats(PasteNativeFormatsCommand {
+                paste_after_write: true,
+                ..
+            })
+        ));
+        assert!(matches!(
+            copy,
+            PlatformCommand::PasteNativeFormats(PasteNativeFormatsCommand {
+                paste_after_write: false,
+                ..
+            })
+        ));
+        assert!(matches!(
+            plain,
+            PlatformCommand::PasteText(PasteTextCommand {
+                ref text,
+                paste_after_write: true,
+                ..
+            }) if text == "first\r\nsecond"
+        ));
+        assert!(matches!(
+            without_breaks,
+            PlatformCommand::PasteText(PasteTextCommand {
+                ref text,
+                paste_after_write: true,
+                ..
+            }) if text == "firstsecond"
+        ));
+    }
+
+    #[test]
+    fn image_original_uses_dib_bundle_and_shift_rejects_non_text() {
+        let mut image = fixture_text();
+        image.kind = ClipboardKind::Image;
+        image.text.clear();
+        image.image_path = "C:/images/capture.png".into();
+        image.image_width = 640;
+        image.image_height = 480;
+        let dib = StoredClipboardNativeFormat {
+            format_id: 8,
+            format_name: String::new(),
+            data_path: "C:/formats/image-dib.bin".into(),
+            size_bytes: 1024,
+            sort_order: 0,
+        };
+
+        assert!(matches!(
+            command_for_action(
+                &image,
+                &fixture_target(),
+                ClipboardAction::OriginalPaste,
+                vec![dib]
+            )
+            .expect("image original action"),
+            PlatformCommand::PasteNativeFormats(_)
+        ));
+        assert!(
+            command_for_action(
+                &image,
+                &fixture_target(),
+                ClipboardAction::WithoutLineBreaks,
+                Vec::new()
+            )
+            .is_err()
+        );
     }
 }

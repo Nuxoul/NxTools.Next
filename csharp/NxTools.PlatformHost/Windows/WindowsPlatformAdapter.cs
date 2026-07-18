@@ -55,42 +55,48 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         PasteTextCommand command,
         Guid correlationId,
         CancellationToken cancellationToken)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new TextClipboardPastePayload(
+        => EnqueuePaste(
+            new TextClipboardPastePayload(
                 command.Text, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
-    }
+                command.TargetFocusWindowHandle, command.PasteAfterWrite),
+            correlationId,
+            cancellationToken);
 
     public Task<WindowsCommandResult> PasteFilesAsync(
         PasteFilesCommand command, Guid correlationId, CancellationToken cancellationToken)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new FilesClipboardPastePayload(
+        => EnqueuePaste(
+            new FilesClipboardPastePayload(
                 command.Paths, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
-    }
+                command.TargetFocusWindowHandle, command.PasteAfterWrite),
+            correlationId,
+            cancellationToken);
 
     public Task<WindowsCommandResult> PasteImageAsync(
         PasteImageCommand command, Guid correlationId, CancellationToken cancellationToken)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new ImageClipboardPastePayload(
+        => EnqueuePaste(
+            new ImageClipboardPastePayload(
                 command.ImagePath, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
-    }
+                command.TargetFocusWindowHandle, command.PasteAfterWrite),
+            correlationId,
+            cancellationToken);
 
     public Task<WindowsCommandResult> PasteNativeFormatsAsync(
         PasteNativeFormatsCommand command, Guid correlationId, CancellationToken cancellationToken)
+        => EnqueuePaste(
+            new NativeFormatsClipboardPastePayload(
+                command.Formats, command.TargetWindowHandle,
+                command.TargetFocusWindowHandle, command.PasteAfterWrite),
+            correlationId,
+            cancellationToken);
+
+    private Task<WindowsCommandResult> EnqueuePaste(
+        ClipboardPastePayload payload,
+        Guid correlationId,
+        CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new NativeFormatsClipboardPastePayload(
-                command.Formats, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
+            .EnqueuePaste(payload, correlationId, cancellationToken);
     }
 
     public WindowsCommandResult SetWindowTopmost(SetWindowTopmostCommand command) =>

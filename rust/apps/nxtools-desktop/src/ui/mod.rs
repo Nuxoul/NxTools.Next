@@ -219,6 +219,11 @@ impl ClipboardPanel {
             cx.notify();
             return;
         }
+        if action == ClipboardAction::WithoutLineBreaks && entry.kind != ClipboardKind::Text {
+            self.status = PanelStatus::Error("去换行仅适用于文本条目".into());
+            cx.notify();
+            return;
+        }
         if action != ClipboardAction::CopyOnly && self.target.window_handle == 0 {
             self.status = PanelStatus::Error("原目标窗口已经不可用".into());
             cx.notify();

@@ -20,6 +20,7 @@ internal static class Program
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
             ("copy-only writes clipboard without activating target", CopyOnlyWritesWithoutActivatingTarget),
+            ("four clipboard actions reach the expected Windows outcome", FourActionsReachExpectedWindowsOutcome),
             ("native input layout matches Windows ABI", NativeInputLayoutMatchesWindowsAbi),
             ("paste diagnostics preserve correlation and Win32 error", PasteDiagnosticsPreserveCorrelationAndWin32Error),
             ("platform log writes structured JSON lines", PlatformLogWritesStructuredJsonLines),
@@ -238,6 +239,41 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task FourActionsReachExpectedWindowsOutcome()
+    {
+        var operations = new FakePasteOperations
+        {
+            ActivationResults = new Queue<bool>([true, true, true])
+        };
+        var coordinator = new WindowsPasteCoordinator(operations);
+        var native = new PasteNativeFormatsCommand(
+            [new ClipboardNativeFormatData(13, "", "C:/formats/unicode.bin", 24, 0)],
+            true,
+            42,
+            43);
+
+        Assert(coordinator.Execute(native).Success);
+        Assert(coordinator.Execute(new PasteNativeFormatsCommand(
+            native.Formats, false, 0, 0)).Success);
+        Assert(coordinator.Execute(new PasteTextCommand("plain text", 42, 43, true)).Success);
+        Assert(coordinator.Execute(new PasteTextCommand("firstsecond", 42, 43, true)).Success);
+
+        Assert(operations.WrittenPayloads.Count == 4);
+        Assert(operations.WrittenPayloads[0] is NativeFormatsClipboardPastePayload
+        {
+            PasteAfterWrite: true
+        });
+        Assert(operations.WrittenPayloads[1] is NativeFormatsClipboardPastePayload
+        {
+            PasteAfterWrite: false
+        });
+        Assert(operations.WrittenPayloads[2] is TextClipboardPastePayload { Text: "plain text" });
+        Assert(operations.WrittenPayloads[3] is TextClipboardPastePayload { Text: "firstsecond" });
+        Assert(operations.ActivationAttempts == 3);
+        Assert(operations.SendPasteCalls == 3);
+        return Task.CompletedTask;
+    }
+
     private static Task NativeInputLayoutMatchesWindowsAbi()
     {
         var expectedSize = IntPtr.Size == 8 ? 40 : 28;
@@ -441,13 +477,17 @@ internal static class Program
         public int SendPasteCalls { get; private set; }
         public int PostPasteCalls { get; private set; }
         public long LastPostTarget { get; private set; }
+        public List<ClipboardPastePayload> WrittenPayloads { get; } = [];
 
         public bool IsWindow(long windowHandle) => windowHandle != 0;
 
         public uint GetClipboardSequenceNumber() => 7;
 
-        public ClipboardWriteResult WriteClipboard(ClipboardPastePayload payload) =>
-            new(true, null, [new ClipboardWriteAttempt(1, true, 0, null)]);
+        public ClipboardWriteResult WriteClipboard(ClipboardPastePayload payload)
+        {
+            WrittenPayloads.Add(payload);
+            return new(true, null, [new ClipboardWriteAttempt(1, true, 0, null)]);
+        }
 
         public bool TryActivateWindow(long targetWindowHandle, long focusWindowHandle)
         {
