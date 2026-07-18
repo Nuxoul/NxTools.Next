@@ -246,17 +246,24 @@ internal static class Program
             ActivationResults = new Queue<bool>([true, true, true])
         };
         var coordinator = new WindowsPasteCoordinator(operations);
-        var native = new PasteNativeFormatsCommand(
-            [new ClipboardNativeFormatData(13, "", "C:/formats/unicode.bin", 24, 0)],
-            true,
-            42,
-            43);
-
-        Assert(coordinator.Execute(native).Success);
-        Assert(coordinator.Execute(new PasteNativeFormatsCommand(
-            native.Formats, false, 0, 0)).Success);
-        Assert(coordinator.Execute(new PasteTextCommand("plain text", 42, 43, true)).Success);
-        Assert(coordinator.Execute(new PasteTextCommand("firstsecond", 42, 43, true)).Success);
+        var fixturePath = Path.Combine(
+            FindRepositoryRoot(),
+            "tests", "fixtures", "clipboard_action_commands.jsonl");
+        foreach (var line in File.ReadLines(fixturePath))
+        {
+            var envelope = JsonSerializer.Deserialize<ProtocolEnvelope>(line, JsonDefaults.Options)
+                ?? throw new InvalidDataException("Shared clipboard action fixture was empty.");
+            var result = PlatformCommandParser.GetCommandName(envelope) switch
+            {
+                "paste_native_formats" => coordinator.Execute(
+                    PlatformCommandParser.ParsePasteNativeFormats(envelope)),
+                "paste_text" => coordinator.Execute(
+                    PlatformCommandParser.ParsePasteText(envelope)),
+                var command => throw new InvalidDataException(
+                    $"Unexpected shared clipboard action fixture '{command}'.")
+            };
+            Assert(result.Success);
+        }
 
         Assert(operations.WrittenPayloads.Count == 4);
         Assert(operations.WrittenPayloads[0] is NativeFormatsClipboardPastePayload
@@ -267,11 +274,25 @@ internal static class Program
         {
             PasteAfterWrite: false
         });
-        Assert(operations.WrittenPayloads[2] is TextClipboardPastePayload { Text: "plain text" });
+        Assert(operations.WrittenPayloads[2] is TextClipboardPastePayload { Text: "first\r\nsecond" });
         Assert(operations.WrittenPayloads[3] is TextClipboardPastePayload { Text: "firstsecond" });
         Assert(operations.ActivationAttempts == 3);
         Assert(operations.SendPasteCalls == 3);
         return Task.CompletedTask;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Cargo.toml")))
+            {
+                return directory.FullName;
+            }
+        }
+        throw new DirectoryNotFoundException("Could not locate the NxTools.Next repository root.");
     }
 
     private static Task NativeInputLayoutMatchesWindowsAbi()

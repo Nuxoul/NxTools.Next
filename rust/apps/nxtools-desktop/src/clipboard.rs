@@ -30,6 +30,10 @@ use crate::ui::{ClipboardPanel, PANEL_HEIGHT, PANEL_WIDTH, native_window_handle,
 
 const HISTORY_LIMIT: usize = 500;
 const MAX_PANEL_REQUEST_AGE_MS: i64 = 2_000;
+const CF_UNICODETEXT: u32 = 13;
+const CF_HDROP: u32 = 15;
+const CF_DIB: u32 = 8;
+const CF_DIBV5: u32 = 17;
 
 fn map_source(source: ForegroundContext, process_icon_path: String) -> CaptureSource {
     CaptureSource {
@@ -231,11 +235,13 @@ fn native_formats_restore_primary_kind(
     formats: &[StoredClipboardNativeFormat],
 ) -> bool {
     match kind {
-        ClipboardKind::Text => formats.iter().any(|format| format.format_id == 13),
-        ClipboardKind::Files => formats.iter().any(|format| format.format_id == 15),
+        ClipboardKind::Text => formats
+            .iter()
+            .any(|format| format.format_id == CF_UNICODETEXT),
+        ClipboardKind::Files => formats.iter().any(|format| format.format_id == CF_HDROP),
         ClipboardKind::Image => formats
             .iter()
-            .any(|format| matches!(format.format_id, 8 | 17)),
+            .any(|format| matches!(format.format_id, CF_DIB | CF_DIBV5)),
     }
 }
 
@@ -695,6 +701,28 @@ mod asset_tests {
             Vec::new(),
         )
         .expect("without line breaks action");
+
+        let fixture_commands =
+            include_str!("../../../../tests/fixtures/clipboard_action_commands.jsonl")
+                .lines()
+                .map(|line| {
+                    nxtools_protocol::Envelope::decode_line(line)
+                        .expect("decode shared action fixture")
+                })
+                .map(|envelope| match envelope.message {
+                    nxtools_protocol::Message::PlatformCommand(command) => command,
+                    message => panic!("unexpected shared fixture message: {message:?}"),
+                })
+                .collect::<Vec<_>>();
+        assert_eq!(
+            vec![
+                original.clone(),
+                copy.clone(),
+                plain.clone(),
+                without_breaks.clone()
+            ],
+            fixture_commands
+        );
 
         assert!(matches!(
             original,

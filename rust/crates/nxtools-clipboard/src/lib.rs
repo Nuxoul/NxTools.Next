@@ -374,22 +374,7 @@ impl ClipboardHistory {
         &self,
         item_id: i64,
     ) -> Result<Vec<ClipboardNativeFormat>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT format_id, format_name, data_path, size_bytes, sort_order
-             FROM clipboard_item_formats
-             WHERE clipboard_item_id = ?1
-             ORDER BY sort_order, format_id, format_name",
-        )?;
-        let formats = statement.query_map([item_id], |row| {
-            Ok(ClipboardNativeFormat {
-                format_id: row.get(0)?,
-                format_name: row.get(1)?,
-                data_path: row.get(2)?,
-                size_bytes: row.get::<_, i64>(3)?.max(0) as u64,
-                sort_order: row.get(4)?,
-            })
-        })?;
-        formats.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        read_native_formats(&self.connection, item_id).map_err(Into::into)
     }
 }
 
@@ -425,24 +410,38 @@ fn native_formats_match(
     item_id: i64,
     incoming: &[ClipboardNativeFormat],
 ) -> Result<bool, rusqlite::Error> {
-    let mut statement = transaction.prepare(
+    Ok(read_native_formats(transaction, item_id)? == incoming)
+}
+
+fn read_native_formats(
+    connection: &Connection,
+    item_id: i64,
+) -> Result<Vec<ClipboardNativeFormat>, rusqlite::Error> {
+    let mut statement = connection.prepare(
         "SELECT format_id, format_name, data_path, size_bytes, sort_order
          FROM clipboard_item_formats
          WHERE clipboard_item_id = ?1
          ORDER BY sort_order, format_id, format_name",
     )?;
-    let stored = statement
+    statement
         .query_map([item_id], |row| {
+            let size_bytes = row.get::<_, i64>(3)?;
+            let size_bytes = u64::try_from(size_bytes).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    3,
+                    rusqlite::types::Type::Integer,
+                    Box::new(error),
+                )
+            })?;
             Ok(ClipboardNativeFormat {
-                format_id: row.get::<_, i64>(0)?.max(0) as u32,
+                format_id: row.get(0)?,
                 format_name: row.get(1)?,
                 data_path: row.get(2)?,
-                size_bytes: row.get::<_, i64>(3)?.max(0) as u64,
-                sort_order: row.get::<_, i64>(4)?.max(0) as u32,
+                size_bytes,
+                sort_order: row.get(4)?,
             })
         })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(stored == incoming)
+        .collect()
 }
 
 fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
