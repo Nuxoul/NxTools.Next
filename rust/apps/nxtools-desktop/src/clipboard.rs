@@ -11,9 +11,10 @@ use gpui::{
 };
 use gpui_component::Root;
 use nxtools_clipboard::{
-    CaptureSource, ClipboardAction, ClipboardHistory, ClipboardHistoryError, ClipboardItem,
-    ClipboardKind, ClipboardNativeFormat as StoredClipboardNativeFormat, FilesCapture,
-    ImageCapture, TextCapture, action_text_payload,
+    BUILTIN_ALL_CATEGORY_ID, CaptureSource, ClipboardAction, ClipboardCategory, ClipboardHistory,
+    ClipboardHistoryError, ClipboardItem, ClipboardKind,
+    ClipboardNativeFormat as StoredClipboardNativeFormat, FilesCapture, ImageCapture, TextCapture,
+    action_text_payload,
 };
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
@@ -117,17 +118,68 @@ impl ClipboardApplication {
     pub(crate) fn query_entries(
         &self,
         query: &str,
-        kind: Option<ClipboardKind>,
+        category_id: &str,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        match (query.is_empty(), kind) {
-            (true, None) => self.history.borrow().recent(HISTORY_LIMIT),
-            (true, Some(kind)) => self.history.borrow().recent_by_kind(kind, HISTORY_LIMIT),
-            (false, None) => self.history.borrow().search(query, HISTORY_LIMIT),
-            (false, Some(kind)) => self
-                .history
-                .borrow()
-                .search_by_kind(query, kind, HISTORY_LIMIT),
-        }
+        self.history
+            .borrow()
+            .query_category(query, category_id, HISTORY_LIMIT)
+    }
+
+    pub(crate) fn categories(&self) -> Result<Vec<ClipboardCategory>, ClipboardHistoryError> {
+        self.history.borrow().categories()
+    }
+
+    pub(crate) fn create_category(
+        &self,
+        name: &str,
+    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
+        self.history.borrow_mut().create_category(name)
+    }
+
+    pub(crate) fn rename_category(
+        &self,
+        category_id: &str,
+        name: &str,
+    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
+        self.history.borrow_mut().rename_category(category_id, name)
+    }
+
+    pub(crate) fn delete_category(&self, category_id: &str) -> Result<(), ClipboardHistoryError> {
+        self.history.borrow_mut().delete_category(category_id)
+    }
+
+    pub(crate) fn reorder_categories(
+        &self,
+        ordered_ids: &[String],
+    ) -> Result<Vec<ClipboardCategory>, ClipboardHistoryError> {
+        self.history.borrow_mut().reorder_categories(ordered_ids)
+    }
+
+    pub(crate) fn add_category_source(
+        &self,
+        category_id: &str,
+        process_name: &str,
+    ) -> Result<Vec<String>, ClipboardHistoryError> {
+        self.history
+            .borrow_mut()
+            .add_category_source(category_id, process_name)
+    }
+
+    pub(crate) fn category_sources(
+        &self,
+        category_id: &str,
+    ) -> Result<Vec<String>, ClipboardHistoryError> {
+        self.history.borrow().category_sources(category_id)
+    }
+
+    pub(crate) fn remove_category_source(
+        &self,
+        category_id: &str,
+        process_name: &str,
+    ) -> Result<Vec<String>, ClipboardHistoryError> {
+        self.history
+            .borrow_mut()
+            .remove_category_source(category_id, process_name)
     }
 
     pub(crate) fn set_item_favorite(
@@ -534,8 +586,14 @@ impl ClipboardApplication {
             return;
         }
 
-        let entries = self.query_entries("", None).unwrap_or_else(|error| {
-            error!(%error, "failed to load clipboard popup history");
+        let entries = self
+            .query_entries("", BUILTIN_ALL_CATEGORY_ID)
+            .unwrap_or_else(|error| {
+                error!(%error, "failed to load clipboard popup history");
+                Vec::new()
+            });
+        let categories = self.categories().unwrap_or_else(|error| {
+            error!(%error, "failed to load clipboard popup categories");
             Vec::new()
         });
         let (bounds, display_id) = panel_bounds(&request, cx);
@@ -579,8 +637,9 @@ impl ClipboardApplication {
                     Err("GPUI did not expose a native Windows handle".to_owned())
                 };
                 *opened_topmost_slot.borrow_mut() = Some(topmost_result);
-                let panel =
-                    cx.new(|cx| ClipboardPanel::new(entries, target, application, window, cx));
+                let panel = cx.new(|cx| {
+                    ClipboardPanel::new(entries, categories, target, application, window, cx)
+                });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
                 cx.new(|cx| Root::new(panel, window, cx))
             },

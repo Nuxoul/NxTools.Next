@@ -27,12 +27,20 @@ pub type HistoryActionHandler = Rc<dyn Fn(ClipboardAction, &ClickEvent, &mut Win
 pub type HistoryManagementHandler =
     Rc<dyn Fn(ClipboardItemAction, &ClickEvent, &mut Window, &mut App)>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipboardItemAction {
     Edit,
     TogglePinned,
     ToggleFavorite,
     Delete,
+    ToggleCategorySource { category_id: String, remove: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategorySourceOption {
+    pub category_id: String,
+    pub name: String,
+    pub included: bool,
 }
 
 pub fn history_row(
@@ -40,6 +48,7 @@ pub fn history_row(
     entry: ClipboardItem,
     index: usize,
     available_image_width: f32,
+    category_options: Vec<CategorySourceOption>,
     on_action: HistoryActionHandler,
     on_management: HistoryManagementHandler,
 ) -> impl IntoElement {
@@ -74,6 +83,7 @@ pub fn history_row(
     let menu_pin_action = Rc::clone(&on_management);
     let menu_favorite_action = Rc::clone(&on_management);
     let menu_delete_action = Rc::clone(&on_management);
+    let menu_category_action = Rc::clone(&on_management);
     let without_breaks_disabled = entry.kind != ClipboardKind::Text;
     let group_name = format!("history-row-actions-{index}");
 
@@ -182,69 +192,118 @@ pub fn history_row(
                         ),
                 )
                 .child(content)
-                .context_menu(move |menu, _window, _cx| {
-                    menu.item(PopupMenuItem::new("粘贴").on_click({
-                        let action = Rc::clone(&original_action);
-                        move |event, window, cx| {
-                            action(ClipboardAction::OriginalPaste, event, window, cx);
-                        }
-                    }))
-                    .item(PopupMenuItem::new("复制").on_click({
-                        let action = Rc::clone(&copy_action);
-                        move |event, window, cx| {
-                            action(ClipboardAction::CopyOnly, event, window, cx);
-                        }
-                    }))
-                    .item(PopupMenuItem::new("纯文本粘贴").on_click({
-                        let action = Rc::clone(&plain_action);
-                        move |event, window, cx| {
-                            action(ClipboardAction::PlainText, event, window, cx);
-                        }
-                    }))
-                    .item(
-                        PopupMenuItem::new("去除换行")
-                            .disabled(without_breaks_disabled)
+                .context_menu(move |menu, window, cx| {
+                    let menu = menu
+                        .item(PopupMenuItem::new("粘贴").on_click({
+                            let action = Rc::clone(&original_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::OriginalPaste, event, window, cx);
+                            }
+                        }))
+                        .item(PopupMenuItem::new("复制").on_click({
+                            let action = Rc::clone(&copy_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::CopyOnly, event, window, cx);
+                            }
+                        }))
+                        .item(PopupMenuItem::new("纯文本粘贴").on_click({
+                            let action = Rc::clone(&plain_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::PlainText, event, window, cx);
+                            }
+                        }))
+                        .item(
+                            PopupMenuItem::new("去除换行")
+                                .disabled(without_breaks_disabled)
+                                .on_click({
+                                    let action = Rc::clone(&without_breaks_action);
+                                    move |event, window, cx| {
+                                        action(
+                                            ClipboardAction::WithoutLineBreaks,
+                                            event,
+                                            window,
+                                            cx,
+                                        );
+                                    }
+                                }),
+                        )
+                        .separator()
+                        .item(PopupMenuItem::new("编辑").disabled(!can_edit).on_click({
+                            let action = Rc::clone(&menu_edit_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::Edit, event, window, cx);
+                            }
+                        }))
+                        .item(
+                            PopupMenuItem::new(if is_pinned { "取消置顶" } else { "置顶" })
+                                .on_click({
+                                    let action = Rc::clone(&menu_pin_action);
+                                    move |event, window, cx| {
+                                        action(
+                                            ClipboardItemAction::TogglePinned,
+                                            event,
+                                            window,
+                                            cx,
+                                        );
+                                    }
+                                }),
+                        )
+                        .item(
+                            PopupMenuItem::new(if is_favorite {
+                                "取消收藏"
+                            } else {
+                                "收藏"
+                            })
                             .on_click({
-                                let action = Rc::clone(&without_breaks_action);
+                                let action = Rc::clone(&menu_favorite_action);
                                 move |event, window, cx| {
-                                    action(ClipboardAction::WithoutLineBreaks, event, window, cx);
+                                    action(ClipboardItemAction::ToggleFavorite, event, window, cx);
                                 }
                             }),
-                    )
-                    .separator()
-                    .item(PopupMenuItem::new("编辑").disabled(!can_edit).on_click({
-                        let action = Rc::clone(&menu_edit_action);
-                        move |event, window, cx| {
-                            action(ClipboardItemAction::Edit, event, window, cx);
-                        }
-                    }))
-                    .item(
-                        PopupMenuItem::new(if is_pinned { "取消置顶" } else { "置顶" }).on_click({
-                            let action = Rc::clone(&menu_pin_action);
+                        )
+                        .item(PopupMenuItem::new("删除").on_click({
+                            let action = Rc::clone(&menu_delete_action);
                             move |event, window, cx| {
-                                action(ClipboardItemAction::TogglePinned, event, window, cx);
+                                action(ClipboardItemAction::Delete, event, window, cx);
                             }
-                        }),
-                    )
-                    .item(
-                        PopupMenuItem::new(if is_favorite {
-                            "取消收藏"
-                        } else {
-                            "收藏"
-                        })
-                        .on_click({
-                            let action = Rc::clone(&menu_favorite_action);
-                            move |event, window, cx| {
-                                action(ClipboardItemAction::ToggleFavorite, event, window, cx);
-                            }
-                        }),
-                    )
-                    .item(PopupMenuItem::new("删除").on_click({
-                        let action = Rc::clone(&menu_delete_action);
-                        move |event, window, cx| {
-                            action(ClipboardItemAction::Delete, event, window, cx);
-                        }
-                    }))
+                        }));
+                    if category_options.is_empty() {
+                        menu
+                    } else {
+                        let options = category_options.clone();
+                        let management = Rc::clone(&menu_category_action);
+                        menu.separator().submenu(
+                            "来源分类",
+                            window,
+                            cx,
+                            move |submenu, _window, _cx| {
+                                options
+                                    .clone()
+                                    .into_iter()
+                                    .fold(submenu, |submenu, option| {
+                                        let label = if option.included {
+                                            format!("✓ {}", option.name)
+                                        } else {
+                                            option.name.clone()
+                                        };
+                                        let management = Rc::clone(&management);
+                                        submenu.item(PopupMenuItem::new(label).on_click(
+                                            move |event, window, cx| {
+                                                management(
+                                                    ClipboardItemAction::ToggleCategorySource {
+                                                        category_id: option.category_id.clone(),
+                                                        remove: option.included,
+                                                    },
+                                                    event,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ))
+                                    })
+                            },
+                        )
+                    }
                 }),
         )
 }
@@ -276,7 +335,7 @@ fn management_button(
         }))
         .on_click(move |event, window, cx| {
             cx.stop_propagation();
-            handler(action, event, window, cx);
+            handler(action.clone(), event, window, cx);
         })
 }
 

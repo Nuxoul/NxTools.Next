@@ -82,6 +82,13 @@ plain-text record, and deletion clears the pin while retaining the favorite flag
 only the most recently deleted id for immediate undo; a persistent recycle-bin surface is a later
 slice.
 
+Clipboard categories are also Rust-owned. SQLite stores five built-in filters plus user-created
+categories, their ordering and case-insensitive source-process membership. GPUI routes category-bar
+wheel input horizontally, persists drag/drop ordering, and exposes add/rename/delete plus source
+assignment without involving the Windows adapter. Built-in categories are immutable definitions but
+may be reordered; custom categories filter all visible records captured from their assigned source
+programs.
+
 The clipboard panel is not a page in an application main window. Its GPUI window does not exist
 until the global shortcut is pressed. Escape, a successful paste, or a foreground-window change hides
 the native panel without destroying its GPUI window. On the next shortcut, Rust creates the new

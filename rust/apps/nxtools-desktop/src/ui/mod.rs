@@ -1,21 +1,27 @@
 mod history;
 
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, Focusable, ListAlignment, ListState, Render,
-    ResizeEdge, Subscription, WeakEntity, Window, div, list, point, prelude::*, px, size,
+    App, AppContext, Bounds, Context, Entity, Focusable, ListAlignment, ListState, Pixels, Point,
+    Render, ResizeEdge, ScrollHandle, Subscription, WeakEntity, Window, div, list, point,
+    prelude::*, px, size,
 };
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::{Icon, IconName};
-use nxtools_clipboard::{ClipboardAction, ClipboardHistoryError, ClipboardItem, ClipboardKind};
+use nxtools_clipboard::{
+    BUILTIN_ALL_CATEGORY_ID, ClipboardAction, ClipboardCategory, ClipboardCategoryKind,
+    ClipboardHistoryError, ClipboardItem, ClipboardKind,
+};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
 use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
-use history::{ClipboardItemAction, history_row};
+use history::{CategorySourceOption, ClipboardItemAction, history_row};
 
 pub(crate) const PANEL_WIDTH: f32 = 300.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
@@ -28,40 +34,56 @@ enum PanelStatus {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClipboardCategory {
-    All,
-    Text,
-    Image,
-    Files,
+#[derive(Debug, Clone)]
+struct CategoryEditorState {
+    category_id: Option<String>,
 }
 
-impl ClipboardCategory {
-    fn kind(self) -> Option<ClipboardKind> {
-        match self {
-            Self::All => None,
-            Self::Text => Some(ClipboardKind::Text),
-            Self::Image => Some(ClipboardKind::Image),
-            Self::Files => Some(ClipboardKind::Files),
-        }
-    }
+#[derive(Clone)]
+struct CategoryDrag {
+    category: ClipboardCategory,
+    position: Point<Pixels>,
+}
 
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "全部",
-            Self::Text => "文字",
-            Self::Image => "图片",
-            Self::Files => "文件",
-        }
+impl CategoryDrag {
+    fn at(mut self, position: Point<Pixels>) -> Self {
+        self.position = position;
+        self
     }
+}
 
-    fn icon(self) -> IconName {
-        match self {
-            Self::All => IconName::LayoutDashboard,
-            Self::Text => IconName::ALargeSmall,
-            Self::Image => IconName::Frame,
-            Self::Files => IconName::Folder,
-        }
+impl Render for CategoryDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .pl(self.position.x - px(36.0))
+            .pt(self.position.y - px(13.0))
+            .child(
+                div()
+                    .h(px(26.0))
+                    .px_2()
+                    .rounded(px(5.0))
+                    .border_1()
+                    .border_color(gpui::rgb(0x38d6c7))
+                    .bg(gpui::rgb(0x292929))
+                    .shadow_md()
+                    .text_xs()
+                    .text_color(gpui::rgb(0xddfbf7))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(Icon::new(category_icon(self.category.kind)).size(px(12.0)))
+                    .child(self.category.name.clone()),
+            )
+    }
+}
+
+fn category_icon(kind: ClipboardCategoryKind) -> IconName {
+    match kind {
+        ClipboardCategoryKind::All => IconName::LayoutDashboard,
+        ClipboardCategoryKind::Favorite => IconName::Star,
+        ClipboardCategoryKind::Text => IconName::ALargeSmall,
+        ClipboardCategoryKind::Image => IconName::Frame,
+        ClipboardCategoryKind::Files | ClipboardCategoryKind::Custom => IconName::Folder,
     }
 }
 
@@ -106,13 +128,18 @@ pub(crate) struct ClipboardPanel {
     status: PanelStatus,
     pending_action: Option<(uuid::Uuid, ClipboardAction)>,
     is_open: bool,
-    active_category: ClipboardCategory,
+    categories: Vec<ClipboardCategory>,
+    category_sources: HashMap<String, HashSet<String>>,
+    active_category_id: String,
+    category_scroll: ScrollHandle,
+    category_editor: Option<CategoryEditorState>,
     active_modifier_action: Option<ClipboardAction>,
     list_scroll: ListState,
     list_is_scrolled: bool,
     list_width: f32,
     search_input: Entity<InputState>,
     edit_input: Entity<InputState>,
+    category_name_input: Entity<InputState>,
     editing_item_id: Option<i64>,
     last_deleted_item_id: Option<i64>,
     _subscriptions: Vec<Subscription>,
@@ -121,6 +148,7 @@ pub(crate) struct ClipboardPanel {
 impl ClipboardPanel {
     pub(crate) fn new(
         entries: Vec<ClipboardItem>,
+        categories: Vec<ClipboardCategory>,
         target: nxtools_protocol::ForegroundContext,
         application: WeakEntity<ClipboardApplication>,
         window: &mut Window,
@@ -133,6 +161,7 @@ impl ClipboardPanel {
                 .auto_grow(5, 12)
                 .placeholder("输入剪贴板文本")
         });
+        let category_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("分类名称"));
 
         let search_subscription = cx.subscribe_in(
             &search_input,
@@ -152,11 +181,18 @@ impl ClipboardPanel {
         });
         let keystroke_subscription = cx.observe_keystrokes(|this, event, window, cx| {
             if event.keystroke.key.eq_ignore_ascii_case("escape") {
-                if this.editing_item_id.is_some() {
+                if this.category_editor.is_some() {
+                    this.cancel_category_editor(window, cx);
+                } else if this.editing_item_id.is_some() {
                     this.cancel_edit(window, cx);
                 } else {
                     this.close(window, cx);
                 }
+            } else if this.category_editor.is_some()
+                && event.keystroke.key.eq_ignore_ascii_case("enter")
+                && event.keystroke.modifiers.control
+            {
+                this.save_category_editor(window, cx);
             } else if this.editing_item_id.is_some()
                 && event.keystroke.key.eq_ignore_ascii_case("enter")
                 && event.keystroke.modifiers.control
@@ -180,6 +216,29 @@ impl ClipboardPanel {
                 }
             });
         });
+        let mut category_sources = HashMap::new();
+        for category in categories
+            .iter()
+            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
+        {
+            let sources = application
+                .update(cx, |application, _| {
+                    application.category_sources(&category.id)
+                })
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|source| source.to_lowercase())
+                .collect();
+            category_sources.insert(category.id.clone(), sources);
+        }
+        let active_category_id = categories
+            .iter()
+            .find(|category| category.id == BUILTIN_ALL_CATEGORY_ID)
+            .or_else(|| categories.first())
+            .map(|category| category.id.clone())
+            .unwrap_or_else(|| BUILTIN_ALL_CATEGORY_ID.into());
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -188,13 +247,18 @@ impl ClipboardPanel {
             status,
             pending_action: None,
             is_open: true,
-            active_category: ClipboardCategory::All,
+            categories,
+            category_sources,
+            active_category_id,
+            category_scroll: ScrollHandle::new(),
+            category_editor: None,
             active_modifier_action: None,
             list_scroll,
             list_is_scrolled: false,
             list_width: 0.0,
             search_input,
             edit_input,
+            category_name_input,
             editing_item_id: None,
             last_deleted_item_id: None,
             _subscriptions: vec![
@@ -206,11 +270,10 @@ impl ClipboardPanel {
     }
 
     fn reload_entries(&mut self, query: &str, cx: &mut Context<Self>) {
-        let kind = self.active_category.kind();
-        match self
-            .application
-            .update(cx, |application, _| application.query_entries(query, kind))
-        {
+        let category_id = self.active_category_id.clone();
+        match self.application.update(cx, |application, _| {
+            application.query_entries(query, &category_id)
+        }) {
             Ok(Ok(entries)) => {
                 self.entries = entries;
                 self.list_scroll.reset(self.entries.len());
@@ -229,11 +292,143 @@ impl ClipboardPanel {
         }
     }
 
-    fn select_category(&mut self, category: ClipboardCategory, cx: &mut Context<Self>) {
-        self.active_category = category;
+    fn select_category(&mut self, category_id: String, cx: &mut Context<Self>) {
+        if !self
+            .categories
+            .iter()
+            .any(|category| category.id == category_id)
+        {
+            return;
+        }
+        self.active_category_id = category_id;
         let query = self.search_input.read(cx).value().to_string();
         self.reload_entries(&query, cx);
         cx.notify();
+    }
+
+    fn active_category(&self) -> Option<&ClipboardCategory> {
+        self.categories
+            .iter()
+            .find(|category| category.id == self.active_category_id)
+    }
+
+    fn begin_category_editor(
+        &mut self,
+        category: Option<&ClipboardCategory>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let value = category
+            .map(|category| category.name.clone())
+            .unwrap_or_default();
+        self.editing_item_id = None;
+        self.category_editor = Some(CategoryEditorState {
+            category_id: category.map(|category| category.id.clone()),
+        });
+        self.category_name_input
+            .update(cx, |state, cx| state.set_value(value, window, cx));
+        self.category_name_input.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
+    fn cancel_category_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.category_editor = None;
+        self.search_input.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
+    fn save_category_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(editor) = self.category_editor.clone() else {
+            return;
+        };
+        let name = self.category_name_input.read(cx).value().to_string();
+        let result = if let Some(category_id) = editor.category_id.as_deref() {
+            self.application.update(cx, |application, _| {
+                application.rename_category(category_id, &name)
+            })
+        } else {
+            self.application
+                .update(cx, |application, _| application.create_category(&name))
+        };
+        if let Some(category) = self.resolve_item_action("保存分类", result, cx) {
+            self.category_editor = None;
+            self.reload_categories(cx);
+            self.active_category_id = category.id;
+            self.refresh_entries(cx);
+            self.search_input.focus_handle(cx).focus(window);
+            self.status = PanelStatus::Notice("分类已保存".into());
+        }
+        cx.notify();
+    }
+
+    fn delete_category(&mut self, category_id: &str, cx: &mut Context<Self>) {
+        let result = self.application.update(cx, |application, _| {
+            application.delete_category(category_id)
+        });
+        if self.resolve_item_action("删除分类", result, cx).is_some() {
+            if self.active_category_id == category_id {
+                self.active_category_id = BUILTIN_ALL_CATEGORY_ID.into();
+            }
+            self.reload_categories(cx);
+            self.refresh_entries(cx);
+            self.status = PanelStatus::Notice("分类已删除".into());
+        }
+        cx.notify();
+    }
+
+    fn reorder_category(
+        &mut self,
+        source_id: &str,
+        target_id: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if target_id == Some(source_id) {
+            return;
+        }
+        let current_ids = self
+            .categories
+            .iter()
+            .map(|category| category.id.clone())
+            .collect::<Vec<_>>();
+        let Some(ordered_ids) = reordered_category_ids(&current_ids, source_id, target_id) else {
+            return;
+        };
+        let result = self.application.update(cx, |application, _| {
+            application.reorder_categories(&ordered_ids)
+        });
+        if let Some(categories) = self.resolve_item_action("分类排序", result, cx) {
+            self.categories = categories;
+        }
+        cx.notify();
+    }
+
+    fn reload_categories(&mut self, cx: &mut Context<Self>) {
+        let result = self
+            .application
+            .update(cx, |application, _| application.categories());
+        let Some(categories) = self.resolve_item_action("加载分类", result, cx) else {
+            return;
+        };
+        self.categories = categories;
+        self.category_sources.clear();
+        for category in self
+            .categories
+            .iter()
+            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
+        {
+            let sources = self
+                .application
+                .update(cx, |application, _| {
+                    application.category_sources(&category.id)
+                })
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|source| source.to_lowercase())
+                .collect();
+            self.category_sources.insert(category.id.clone(), sources);
+        }
     }
 
     fn refresh_entries(&mut self, cx: &mut Context<Self>) {
@@ -286,6 +481,43 @@ impl ClipboardPanel {
                     self.refresh_entries(cx);
                 }
             }
+            ClipboardItemAction::ToggleCategorySource {
+                category_id,
+                remove,
+            } => {
+                let process_name = entry.source.process_name.trim();
+                if process_name.is_empty() {
+                    self.status = PanelStatus::Error("该条目没有可用的来源程序".into());
+                    cx.notify();
+                    return;
+                }
+                let result = if remove {
+                    self.application.update(cx, |application, _| {
+                        application.remove_category_source(&category_id, process_name)
+                    })
+                } else {
+                    self.application.update(cx, |application, _| {
+                        application.add_category_source(&category_id, process_name)
+                    })
+                };
+                if let Some(sources) = self.resolve_item_action("更新来源分类", result, cx) {
+                    self.category_sources.insert(
+                        category_id.clone(),
+                        sources
+                            .into_iter()
+                            .map(|source| source.to_lowercase())
+                            .collect(),
+                    );
+                    if self.active_category_id == category_id {
+                        self.refresh_entries(cx);
+                    }
+                    self.status = PanelStatus::Notice(if remove {
+                        "已从分类移除来源".into()
+                    } else {
+                        "已将来源加入分类".into()
+                    });
+                }
+            }
         }
         cx.notify();
     }
@@ -296,6 +528,7 @@ impl ClipboardPanel {
             cx.notify();
             return;
         }
+        self.category_editor = None;
         self.editing_item_id = Some(entry.id);
         self.edit_input.update(cx, |state, cx| {
             state.set_value(entry.text.clone(), window, cx)
@@ -533,10 +766,25 @@ impl Render for ClipboardPanel {
         let status_is_error = self.status.is_error();
         let status_should_render = self.status.should_render();
         let status_label = self.status.label().to_owned();
-        let summary = self.active_category.label();
+        let summary = self
+            .active_category()
+            .map(|category| category.name.clone())
+            .unwrap_or_else(|| "全部".into());
         let modifier_action = self.active_modifier_action;
         let is_scrolled = self.list_is_scrolled;
         let is_editing = self.editing_item_id.is_some();
+        let is_editing_category = self.category_editor.is_some();
+        let category_editor_title = self
+            .category_editor
+            .as_ref()
+            .map(|editor| {
+                if editor.category_id.is_some() {
+                    "重命名分类"
+                } else {
+                    "新建分类"
+                }
+            })
+            .unwrap_or("新建分类");
         let can_undo_delete = self.last_deleted_item_id.is_some();
         let list_width = (window.viewport_size().width.as_f32() - 12.0).max(28.0);
         if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
@@ -547,14 +795,17 @@ impl Render for ClipboardPanel {
         let available_image_width = (list_width - 24.0).max(28.0);
         let scroll_to_top = self.list_scroll.clone();
         let panel = cx.entity().downgrade();
-        let all_category_panel = cx.entity().downgrade();
-        let text_category_panel = cx.entity().downgrade();
-        let image_category_panel = cx.entity().downgrade();
-        let files_category_panel = cx.entity().downgrade();
+        let categories = self.categories.clone();
+        let active_category_id = self.active_category_id.clone();
+        let category_panel = cx.entity().downgrade();
+        let add_category_panel = cx.entity().downgrade();
+        let category_scroll = self.category_scroll.clone();
         let modifier_panel = cx.entity().downgrade();
         let undo_panel = cx.entity().downgrade();
         let cancel_edit_panel = cx.entity().downgrade();
         let save_edit_panel = cx.entity().downgrade();
+        let cancel_category_panel = cx.entity().downgrade();
+        let save_category_panel = cx.entity().downgrade();
         div()
             .relative()
             .size_full()
@@ -652,48 +903,77 @@ impl Render for ClipboardPanel {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .overflow_hidden()
-                    .child(category_tab(
-                        theme,
-                        ClipboardCategory::All,
-                        self.active_category == ClipboardCategory::All,
-                        move |_event, _window, app| {
-                            let _ = all_category_panel.update(app, |panel, cx| {
-                                panel.select_category(ClipboardCategory::All, cx);
-                            });
-                        },
-                    ))
-                    .child(category_tab(
-                        theme,
-                        ClipboardCategory::Text,
-                        self.active_category == ClipboardCategory::Text,
-                        move |_event, _window, app| {
-                            let _ = text_category_panel.update(app, |panel, cx| {
-                                panel.select_category(ClipboardCategory::Text, cx);
-                            });
-                        },
-                    ))
-                    .child(category_tab(
-                        theme,
-                        ClipboardCategory::Image,
-                        self.active_category == ClipboardCategory::Image,
-                        move |_event, _window, app| {
-                            let _ = image_category_panel.update(app, |panel, cx| {
-                                panel.select_category(ClipboardCategory::Image, cx);
-                            });
-                        },
-                    ))
-                    .child(category_tab(
-                        theme,
-                        ClipboardCategory::Files,
-                        self.active_category == ClipboardCategory::Files,
-                        move |_event, _window, app| {
-                            let _ = files_category_panel.update(app, |panel, cx| {
-                                panel.select_category(ClipboardCategory::Files, cx);
-                            });
-                        },
-                    ))
-                    .child(div().flex_1()),
+                    .child(
+                        div()
+                            .id("clipboard-category-scroll")
+                            .min_w_0()
+                            .flex_1()
+                            .h(px(26.0))
+                            .overflow_x_scroll()
+                            .track_scroll(&category_scroll)
+                            .on_scroll_wheel({
+                                let scroll = category_scroll.clone();
+                                move |event, _window, app| {
+                                    app.stop_propagation();
+                                    let delta = event.delta.pixel_delta(px(48.0));
+                                    let maximum = scroll.max_offset().width.as_f32().max(0.0);
+                                    let current = scroll.offset().x.as_f32();
+                                    let next = resolve_category_wheel_offset(
+                                        current,
+                                        maximum,
+                                        delta.x.as_f32(),
+                                        delta.y.as_f32(),
+                                    );
+                                    scroll.set_offset(point(px(next), px(0.0)));
+                                }
+                            })
+                            .child(
+                                div()
+                                    .h(px(26.0))
+                                    .flex()
+                                    .flex_none()
+                                    .items_center()
+                                    .gap_1()
+                                    .children(categories.into_iter().map(|category| {
+                                        category_tab(
+                                            theme,
+                                            category.clone(),
+                                            category.id == active_category_id,
+                                            category_panel.clone(),
+                                        )
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("add-clipboard-category")
+                            .size(px(24.0))
+                            .rounded(px(5.0))
+                            .cursor_pointer()
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(theme.text_secondary)
+                            .hover(move |style| style.bg(theme.surface_hover))
+                            .drag_over::<CategoryDrag>(move |style, _, _, _| {
+                                style.bg(theme.accent_soft).text_color(theme.accent_text)
+                            })
+                            .on_drop({
+                                let panel = add_category_panel.clone();
+                                move |drag: &CategoryDrag, _window, app| {
+                                    let _ = panel.update(app, |panel, cx| {
+                                        panel.reorder_category(&drag.category.id, None, cx);
+                                    });
+                                }
+                            })
+                            .on_click(move |_event, window, app| {
+                                let _ = add_category_panel.update(app, |panel, cx| {
+                                    panel.begin_category_editor(None, window, cx);
+                                });
+                            })
+                            .child(Icon::new(IconName::Plus).size(px(14.0))),
+                    ),
             )
             .child(
                 div()
@@ -752,6 +1032,13 @@ impl Render for ClipboardPanel {
                     })
                     .when(!entries_empty, |container| {
                         let entries = self.entries.clone();
+                        let custom_categories = self
+                            .categories
+                            .iter()
+                            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let category_sources = self.category_sources.clone();
                         let history_panel = cx.entity().downgrade();
                         let theme = self.theme;
                         container.child(
@@ -761,6 +1048,23 @@ impl Render for ClipboardPanel {
                                 };
                                 let action_entry = entry.clone();
                                 let management_entry = entry.clone();
+                                let process_name = entry.source.process_name.to_lowercase();
+                                let category_options = if process_name.is_empty() {
+                                    Vec::new()
+                                } else {
+                                    custom_categories
+                                        .iter()
+                                        .map(|category| CategorySourceOption {
+                                            category_id: category.id.clone(),
+                                            name: category.name.clone(),
+                                            included: category_sources
+                                                .get(&category.id)
+                                                .is_some_and(|sources| {
+                                                    sources.contains(&process_name)
+                                                }),
+                                        })
+                                        .collect()
+                                };
                                 let panel = history_panel.clone();
                                 let on_action = Rc::new(
                                     move |action: ClipboardAction,
@@ -793,6 +1097,7 @@ impl Render for ClipboardPanel {
                                     entry,
                                     index,
                                     available_image_width,
+                                    category_options,
                                     on_action,
                                     on_management,
                                 )
@@ -973,6 +1278,81 @@ impl Render for ClipboardPanel {
                         ),
                 )
             })
+            .when(is_editing_category, |panel| {
+                panel.child(
+                    div()
+                        .absolute()
+                        .top(px(104.0))
+                        .left_3()
+                        .right_3()
+                        .p_3()
+                        .rounded(px(7.0))
+                        .border_1()
+                        .border_color(theme.border_active)
+                        .bg(theme.canvas)
+                        .shadow_lg()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child(category_editor_title),
+                        )
+                        .child(
+                            div()
+                                .h(px(32.0))
+                                .px_2()
+                                .rounded(px(6.0))
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .flex()
+                                .items_center()
+                                .child(
+                                    Input::new(&self.category_name_input)
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("在条目右键菜单中把来源程序加入分类"),
+                        )
+                        .child(
+                            div()
+                                .h(px(30.0))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(div().flex_1())
+                                .child(dialog_button(
+                                    theme,
+                                    "取消",
+                                    false,
+                                    move |_event, window, app| {
+                                        let _ = cancel_category_panel.update(app, |panel, cx| {
+                                            panel.cancel_category_editor(window, cx);
+                                        });
+                                    },
+                                ))
+                                .child(dialog_button(
+                                    theme,
+                                    "保存",
+                                    true,
+                                    move |_event, window, app| {
+                                        let _ = save_category_panel.update(app, |panel, cx| {
+                                            panel.save_category_editor(window, cx);
+                                        });
+                                    },
+                                )),
+                        ),
+                )
+            })
             .child(
                 div()
                     .absolute()
@@ -1034,16 +1414,56 @@ fn modifier_action_label(action: ClipboardAction) -> &'static str {
     }
 }
 
+fn resolve_category_wheel_offset(current: f32, maximum: f32, delta_x: f32, delta_y: f32) -> f32 {
+    if maximum <= 0.0 {
+        return 0.0;
+    }
+    let delta = if delta_x.abs() > delta_y.abs() {
+        delta_x
+    } else {
+        delta_y
+    };
+    (current + delta).clamp(-maximum, 0.0)
+}
+
+fn reordered_category_ids(
+    current: &[String],
+    source_id: &str,
+    target_id: Option<&str>,
+) -> Option<Vec<String>> {
+    if target_id == Some(source_id) {
+        return None;
+    }
+    let mut ordered = current.to_vec();
+    let source_index = ordered.iter().position(|id| id == source_id)?;
+    let source = ordered.remove(source_index);
+    let target_index = target_id
+        .and_then(|target_id| ordered.iter().position(|id| id == target_id))
+        .unwrap_or(ordered.len());
+    ordered.insert(target_index, source);
+    Some(ordered)
+}
+
 fn category_tab(
     theme: Theme,
     category: ClipboardCategory,
     selected: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    let label = category.label();
-    let icon = category.icon();
-    div()
-        .id(label)
+    panel: WeakEntity<ClipboardPanel>,
+) -> gpui::AnyElement {
+    let label = category.name.clone();
+    let icon = category_icon(category.kind);
+    let category_id = category.id.clone();
+    let click_category_id = category.id.clone();
+    let drop_target_id = category.id.clone();
+    let edit_category = category.clone();
+    let delete_category_id = category.id.clone();
+    let drag = CategoryDrag {
+        category: category.clone(),
+        position: point(px(0.0), px(0.0)),
+    };
+    let is_custom = category.kind == ClipboardCategoryKind::Custom;
+    let tab = div()
+        .id(gpui::SharedString::from(format!("category-{category_id}")))
         .h(px(24.0))
         .px(px(7.0))
         .rounded(px(5.0))
@@ -1069,13 +1489,65 @@ fn category_tab(
         .gap_1()
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
-        .on_click(on_click)
+        .on_click({
+            let panel = panel.clone();
+            move |_event, _window, app| {
+                let category_id = click_category_id.clone();
+                let _ = panel.update(app, |panel, cx| {
+                    panel.select_category(category_id, cx);
+                });
+            }
+        })
+        .on_drag(drag, |drag: &CategoryDrag, position, _window, cx| {
+            cx.new(|_| drag.clone().at(position))
+        })
+        .drag_over::<CategoryDrag>(move |style, drag, _, _| {
+            if drag.category.id == drop_target_id {
+                style
+            } else {
+                style.border_color(theme.accent).bg(theme.accent_soft)
+            }
+        })
+        .on_drop({
+            let panel = panel.clone();
+            let target_id = category.id.clone();
+            move |drag: &CategoryDrag, _window, app| {
+                let _ = panel.update(app, |panel, cx| {
+                    panel.reorder_category(&drag.category.id, Some(&target_id), cx);
+                });
+            }
+        })
         .child(Icon::new(icon).size(px(12.0)).text_color(if selected {
             theme.accent_text
         } else {
             theme.text_secondary
         }))
-        .child(label)
+        .child(label);
+    if is_custom {
+        tab.context_menu(move |menu, _window, _cx| {
+            menu.item(PopupMenuItem::new("重命名").on_click({
+                let panel = panel.clone();
+                let category = edit_category.clone();
+                move |_event, window, app| {
+                    let _ = panel.update(app, |panel, cx| {
+                        panel.begin_category_editor(Some(&category), window, cx);
+                    });
+                }
+            }))
+            .item(PopupMenuItem::new("删除分类").on_click({
+                let panel = panel.clone();
+                let category_id = delete_category_id.clone();
+                move |_event, _window, app| {
+                    let _ = panel.update(app, |panel, cx| {
+                        panel.delete_category(&category_id, cx);
+                    });
+                }
+            }))
+        })
+        .into_any_element()
+    } else {
+        tab.into_any_element()
+    }
 }
 
 fn dialog_button(
@@ -1230,5 +1702,33 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn category_wheel_is_horizontal_clamped_and_uses_vertical_wheel_input() {
+        assert_eq!(resolve_category_wheel_offset(0.0, 120.0, 0.0, -48.0), -48.0);
+        assert_eq!(
+            resolve_category_wheel_offset(-100.0, 120.0, 0.0, -48.0),
+            -120.0
+        );
+        assert_eq!(
+            resolve_category_wheel_offset(-80.0, 120.0, 32.0, -10.0),
+            -48.0
+        );
+        assert_eq!(resolve_category_wheel_offset(-20.0, 0.0, 0.0, -48.0), 0.0);
+    }
+
+    #[test]
+    fn category_drop_reorders_before_target_or_at_end() {
+        let ids = vec!["all".to_owned(), "favorite".to_owned(), "work".to_owned()];
+        assert_eq!(
+            reordered_category_ids(&ids, "all", Some("work")),
+            Some(vec!["favorite".into(), "all".into(), "work".into()])
+        );
+        assert_eq!(
+            reordered_category_ids(&ids, "favorite", None),
+            Some(vec!["all".into(), "work".into(), "favorite".into()])
+        );
+        assert_eq!(reordered_category_ids(&ids, "missing", None), None);
     }
 }

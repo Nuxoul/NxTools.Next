@@ -16,7 +16,8 @@ adapter for APIs that are significantly safer or more maintainable through .NET 
 The active product slice is the background clipboard workflow. NxTools captures text, images
 and file drops through the Windows adapter, persists typed history in Rust, and opens a focused
 GPUI panel only when `Alt+C` is pressed. The panel supports search, type filters, native/plain
-paste actions, favorites, pinning, text editing, soft deletion and immediate undo.
+paste actions, favorites, pinning, text editing, soft deletion, immediate undo and persisted
+built-in/custom source categories with drag ordering.
 
 Downloads, Finder/Listary behavior and the floating assistant remain later vertical slices.
 

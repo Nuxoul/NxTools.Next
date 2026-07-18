@@ -18,6 +18,8 @@ Phase 1 answers the risky architecture questions before product features are mig
   deduplication, type-aware queries and restart persistence;
 - Rust-owned favorites, pinned-first ordering, text editing, soft deletion and immediate undo,
   exposed through shared GPUI hover actions and context menus;
+- persisted built-in/favorite/custom clipboard categories, source-process filtering, horizontal
+  category scrolling and drag ordering;
 - correlated type-preserving click-to-paste commands with focus retries, modifier release and
   `WM_PASTE` fallback;
 - separate Rust indexer process placeholder;
@@ -44,8 +46,12 @@ Phase 1 answers the risky architecture questions before product features are mig
     records stay first.
 11. Edit a text record and confirm it is saved as plain text; delete a record and confirm the
     bottom undo action restores it without restoring its pin.
-12. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
-13. Launch a second desktop instance and confirm it exits immediately.
+12. Create and rename a custom category, assign a record's source through its right-click menu,
+    drag the category to a new position, restart and confirm its name, sources and order persist.
+13. With the pointer over the category strip, confirm the wheel scrolls categories horizontally
+    without moving the history list; right-click a custom category and delete it.
+14. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
+15. Launch a second desktop instance and confirm it exits immediately.
 
 ## Exit criteria before clipboard migration
 
