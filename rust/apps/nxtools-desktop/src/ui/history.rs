@@ -11,16 +11,16 @@ use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
 use crate::theme::Theme;
 use crate::ui::action_from_modifiers;
 
-pub const TEXT_ROW_HEIGHT: f32 = 68.0;
+pub const TEXT_ROW_HEIGHT: f32 = 58.0;
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
-const ROW_VERTICAL_PADDING: f32 = 10.0;
+const ROW_VERTICAL_PADDING: f32 = 8.0;
 const METADATA_HEIGHT: f32 = 18.0;
-const CONTENT_GAP: f32 = 5.0;
+const CONTENT_GAP: f32 = 4.0;
 const IMAGE_WELL_VERTICAL_PADDING: f32 = 8.0;
 pub const IMAGE_ROW_CHROME_HEIGHT: f32 =
     ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + IMAGE_WELL_VERTICAL_PADDING;
-pub const ROW_GAP: f32 = 5.0;
+pub const ROW_GAP: f32 = 4.0;
 pub type HistoryActionHandler = Rc<dyn Fn(ClipboardAction, &ClickEvent, &mut Window, &mut App)>;
 pub type HistoryManagementHandler =
     Rc<dyn Fn(ClipboardItemAction, &ClickEvent, &mut Window, &mut App)>;
@@ -84,8 +84,8 @@ pub fn history_row(
                 .id(("history-row", index))
                 .group(group_name.clone())
                 .h(px(card_height))
-                .px_2()
-                .py(px(5.0))
+                .px(px(7.0))
+                .py(px(4.0))
                 .rounded(px(6.0))
                 .border_1()
                 .border_color(theme.border_subtle)
@@ -104,9 +104,10 @@ pub fn history_row(
                 })
                 .flex()
                 .flex_col()
-                .gap(px(5.0))
+                .gap(px(CONTENT_GAP))
                 .child(
                     div()
+                        .relative()
                         .h(px(18.0))
                         .flex()
                         .items_center()
@@ -123,9 +124,14 @@ pub fn history_row(
                         })
                         .child(
                             div()
+                                .absolute()
+                                .top_0()
+                                .right_0()
                                 .invisible()
                                 .group_hover(group_name, |style| style.visible())
                                 .h(px(20.0))
+                                .pl_1()
+                                .bg(theme.surface_hover)
                                 .flex()
                                 .items_center()
                                 .gap(px(2.0))
@@ -175,28 +181,26 @@ pub fn history_row(
                 )
                 .child(content)
                 .context_menu(move |menu, _window, _cx| {
-                    menu.item(PopupMenuItem::new("原格式粘贴").on_click({
+                    menu.item(PopupMenuItem::new("粘贴").on_click({
                         let action = Rc::clone(&original_action);
                         move |event, window, cx| {
                             action(ClipboardAction::OriginalPaste, event, window, cx);
                         }
                     }))
-                    .item(PopupMenuItem::new("仅复制    Ctrl+单击").on_click({
+                    .item(PopupMenuItem::new("复制").on_click({
                         let action = Rc::clone(&copy_action);
                         move |event, window, cx| {
                             action(ClipboardAction::CopyOnly, event, window, cx);
                         }
                     }))
+                    .item(PopupMenuItem::new("纯文本粘贴").on_click({
+                        let action = Rc::clone(&plain_action);
+                        move |event, window, cx| {
+                            action(ClipboardAction::PlainText, event, window, cx);
+                        }
+                    }))
                     .item(
-                        PopupMenuItem::new("纯文本 / 路径粘贴    Alt+单击").on_click({
-                            let action = Rc::clone(&plain_action);
-                            move |event, window, cx| {
-                                action(ClipboardAction::PlainText, event, window, cx);
-                            }
-                        }),
-                    )
-                    .item(
-                        PopupMenuItem::new("去除换行后粘贴    Shift+单击")
+                        PopupMenuItem::new("去除换行")
                             .disabled(without_breaks_disabled)
                             .on_click({
                                 let action = Rc::clone(&without_breaks_action);
@@ -206,16 +210,12 @@ pub fn history_row(
                             }),
                     )
                     .separator()
-                    .item(
-                        PopupMenuItem::new("编辑文本")
-                            .disabled(!can_edit)
-                            .on_click({
-                                let action = Rc::clone(&menu_edit_action);
-                                move |event, window, cx| {
-                                    action(ClipboardItemAction::Edit, event, window, cx);
-                                }
-                            }),
-                    )
+                    .item(PopupMenuItem::new("编辑").disabled(!can_edit).on_click({
+                        let action = Rc::clone(&menu_edit_action);
+                        move |event, window, cx| {
+                            action(ClipboardItemAction::Edit, event, window, cx);
+                        }
+                    }))
                     .item(
                         PopupMenuItem::new(if is_pinned { "取消置顶" } else { "置顶" }).on_click({
                             let action = Rc::clone(&menu_pin_action);
@@ -427,8 +427,16 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
 fn time_label(theme: Theme, text: String) -> impl IntoElement {
     div()
         .max_w(px(92.0))
-        .text_size(px(10.0))
+        .h(px(18.0))
+        .px(px(7.0))
+        .rounded(px(9.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface_raised)
+        .text_size(px(9.0))
         .text_color(theme.text_muted)
+        .flex()
+        .items_center()
         .truncate()
         .child(text)
 }
@@ -436,7 +444,11 @@ fn time_label(theme: Theme, text: String) -> impl IntoElement {
 fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
     div()
         .h(px(18.0))
-        .px(px(2.0))
+        .px(px(7.0))
+        .rounded(px(9.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface_raised)
         .text_size(px(9.0))
         .text_color(theme.text_muted)
         .flex()
@@ -483,10 +495,10 @@ mod tests {
 
     #[test]
     fn row_metrics_match_the_reference_panel() {
-        assert_eq!(TEXT_ROW_HEIGHT, 68.0);
-        assert_eq!(ROW_GAP, 5.0);
+        assert_eq!(TEXT_ROW_HEIGHT, 58.0);
+        assert_eq!(ROW_GAP, 4.0);
         assert_eq!(IMAGE_PREVIEW_MAX_HEIGHT, 270.0);
-        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 41.0);
+        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 38.0);
     }
 
     #[test]

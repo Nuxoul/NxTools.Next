@@ -17,7 +17,7 @@ use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
 use history::{ClipboardItemAction, history_row};
 
-pub(crate) const PANEL_WIDTH: f32 = 340.0;
+pub(crate) const PANEL_WIDTH: f32 = 300.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,9 +49,18 @@ impl ClipboardCategory {
     fn label(self) -> &'static str {
         match self {
             Self::All => "全部",
-            Self::Text => "文本",
+            Self::Text => "文字",
             Self::Image => "图片",
             Self::Files => "文件",
+        }
+    }
+
+    fn icon(self) -> IconName {
+        match self {
+            Self::All => IconName::LayoutDashboard,
+            Self::Text => IconName::ALargeSmall,
+            Self::Image => IconName::Frame,
+            Self::Files => IconName::Folder,
         }
     }
 }
@@ -529,7 +538,7 @@ impl Render for ClipboardPanel {
         let is_scrolled = self.list_is_scrolled;
         let is_editing = self.editing_item_id.is_some();
         let can_undo_delete = self.last_deleted_item_id.is_some();
-        let list_width = (window.viewport_size().width.as_f32() - 16.0).max(28.0);
+        let list_width = (window.viewport_size().width.as_f32() - 12.0).max(28.0);
         if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
             self.list_scroll.reset(self.entries.len());
             self.list_is_scrolled = false;
@@ -549,7 +558,7 @@ impl Render for ClipboardPanel {
         div()
             .relative()
             .size_full()
-            .p_2()
+            .p(px(6.0))
             .rounded(px(8.0))
             .border_1()
             .border_color(theme.border)
@@ -558,7 +567,7 @@ impl Render for ClipboardPanel {
             .text_color(theme.text)
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(4.0))
             .on_modifiers_changed(move |event, _window, app| {
                 let _ = modifier_panel.update(app, |panel, cx| {
                     let action = action_from_modifiers(event.modifiers);
@@ -571,7 +580,7 @@ impl Render for ClipboardPanel {
             .child(
                 div()
                     .id("clipboard-panel-header")
-                    .h(px(26.0))
+                    .h(px(24.0))
                     .flex()
                     .items_center()
                     .gap(px(6.0))
@@ -639,7 +648,7 @@ impl Render for ClipboardPanel {
             )
             .child(
                 div()
-                    .h(px(28.0))
+                    .h(px(26.0))
                     .flex()
                     .items_center()
                     .gap_1()
@@ -688,7 +697,7 @@ impl Render for ClipboardPanel {
             )
             .child(
                 div()
-                    .h(px(30.0))
+                    .h(px(28.0))
                     .flex()
                     .items_center()
                     .gap_2()
@@ -696,7 +705,7 @@ impl Render for ClipboardPanel {
                         div()
                             .min_w_0()
                             .flex_1()
-                            .h(px(30.0))
+                            .h(px(28.0))
                             .rounded(px(6.0))
                             .border_1()
                             .border_color(theme.border)
@@ -719,7 +728,7 @@ impl Render for ClipboardPanel {
                             .text_color(theme.text_muted)
                             .flex()
                             .items_center()
-                            .child(format!("共 {} 条", self.entries.len())),
+                            .child(format!("{} 条", self.entries.len())),
                     ),
             )
             .child(
@@ -1032,10 +1041,11 @@ fn category_tab(
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let label = category.label();
+    let icon = category.icon();
     div()
         .id(label)
-        .h(px(26.0))
-        .px_2()
+        .h(px(24.0))
+        .px(px(7.0))
         .rounded(px(5.0))
         .border_1()
         .border_color(if selected {
@@ -1056,9 +1066,15 @@ fn category_tab(
         })
         .flex()
         .items_center()
+        .gap_1()
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
         .on_click(on_click)
+        .child(Icon::new(icon).size(px(12.0)).text_color(if selected {
+            theme.accent_text
+        } else {
+            theme.text_secondary
+        }))
         .child(label)
 }
 
@@ -1179,7 +1195,7 @@ mod tests {
 
     #[test]
     fn panel_metrics_match_the_reference_window() {
-        assert_eq!(PANEL_WIDTH, 340.0);
+        assert_eq!(PANEL_WIDTH, 300.0);
         assert_eq!(PANEL_HEIGHT, 440.0);
     }
 
