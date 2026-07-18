@@ -11,13 +11,15 @@ use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
 use crate::theme::Theme;
 use crate::ui::action_from_modifiers;
 
-pub const TEXT_ROW_HEIGHT: f32 = 58.0;
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
 const ROW_VERTICAL_PADDING: f32 = 8.0;
-const METADATA_HEIGHT: f32 = 18.0;
+const METADATA_HEIGHT: f32 = 20.0;
 const CONTENT_GAP: f32 = 4.0;
+const TEXT_CONTENT_HEIGHT: f32 = 23.0;
 const IMAGE_WELL_VERTICAL_PADDING: f32 = 8.0;
+pub const TEXT_ROW_HEIGHT: f32 =
+    ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + TEXT_CONTENT_HEIGHT;
 pub const IMAGE_ROW_CHROME_HEIGHT: f32 =
     ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + IMAGE_WELL_VERTICAL_PADDING;
 pub const ROW_GAP: f32 = 4.0;
@@ -108,7 +110,7 @@ pub fn history_row(
                 .child(
                     div()
                         .relative()
-                        .h(px(18.0))
+                        .h(px(METADATA_HEIGHT))
                         .flex()
                         .items_center()
                         .gap(px(5.0))
@@ -129,7 +131,7 @@ pub fn history_row(
                                 .right_0()
                                 .invisible()
                                 .group_hover(group_name, |style| style.visible())
-                                .h(px(20.0))
+                                .h(px(METADATA_HEIGHT))
                                 .pl_1()
                                 .bg(theme.surface_hover)
                                 .flex()
@@ -304,7 +306,7 @@ fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
     let character_count = entry.text.chars().count();
     div()
         .min_w_0()
-        .h(px(23.0))
+        .h(px(TEXT_CONTENT_HEIGHT))
         .flex()
         .items_center()
         .gap_2()
@@ -336,7 +338,7 @@ fn files_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
         .join("  ·  ");
     div()
         .min_w_0()
-        .h(px(23.0))
+        .h(px(TEXT_CONTENT_HEIGHT))
         .flex()
         .items_center()
         .gap_2()
@@ -495,10 +497,10 @@ mod tests {
 
     #[test]
     fn row_metrics_match_the_reference_panel() {
-        assert_eq!(TEXT_ROW_HEIGHT, 58.0);
+        assert_eq!(TEXT_ROW_HEIGHT, 55.0);
         assert_eq!(ROW_GAP, 4.0);
         assert_eq!(IMAGE_PREVIEW_MAX_HEIGHT, 270.0);
-        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 38.0);
+        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 40.0);
     }
 
     #[test]
