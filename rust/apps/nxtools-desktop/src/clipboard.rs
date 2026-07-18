@@ -29,11 +29,12 @@ use crate::ui::{ClipboardPanel, PANEL_HEIGHT, PANEL_WIDTH, native_window_handle,
 const HISTORY_LIMIT: usize = 500;
 const MAX_PANEL_REQUEST_AGE_MS: i64 = 2_000;
 
-fn map_source(source: ForegroundContext) -> CaptureSource {
+fn map_source(source: ForegroundContext, process_icon_path: String) -> CaptureSource {
     CaptureSource {
         window_handle: source.window_handle,
         process_id: source.process_id,
         process_name: source.process_name,
+        process_icon_path,
         window_title: source.window_title,
     }
 }
@@ -268,7 +269,12 @@ impl ClipboardApplication {
     fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
         match event {
             PlatformEvent::ClipboardCaptured(capture) => {
-                let source = map_source(capture.source);
+                let process_icon_path = capture
+                    .source_icon_staging_path
+                    .as_deref()
+                    .and_then(|path| self.store_source_icon(path).ok())
+                    .unwrap_or_default();
+                let source = map_source(capture.source, process_icon_path);
                 if !capture.paths.is_empty() {
                     if let Some(image) = capture.image {
                         let _ = std::fs::remove_file(image.staging_path);
@@ -336,13 +342,30 @@ impl ClipboardApplication {
     }
 
     fn store_captured_image(&self, staging_path: &str) -> std::io::Result<String> {
+        self.store_captured_asset(staging_path, "", true)
+    }
+
+    fn store_source_icon(&self, staging_path: &str) -> std::io::Result<String> {
+        self.store_captured_asset(staging_path, "source-", false)
+    }
+
+    fn store_captured_asset(
+        &self,
+        staging_path: &str,
+        file_name_prefix: &str,
+        remove_source: bool,
+    ) -> std::io::Result<String> {
         let staging = std::path::Path::new(staging_path);
         let fingerprint = image_fingerprint(std::fs::File::open(staging)?)?;
-        let destination = self.image_dir.join(format!("{fingerprint}.png"));
+        let destination = self
+            .image_dir
+            .join(format!("{file_name_prefix}{fingerprint}.png"));
         if !destination.exists() {
             std::fs::copy(staging, &destination)?;
         }
-        let _ = std::fs::remove_file(staging);
+        if remove_source {
+            let _ = std::fs::remove_file(staging);
+        }
         Ok(destination.to_string_lossy().into_owned())
     }
 

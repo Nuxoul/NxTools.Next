@@ -8,6 +8,7 @@ pub struct CaptureSource {
     pub window_handle: i64,
     pub process_id: u32,
     pub process_name: String,
+    pub process_icon_path: String,
     pub window_title: String,
 }
 
@@ -90,6 +91,7 @@ impl ClipboardHistory {
                 source_window_handle INTEGER NOT NULL,
                 source_process_id INTEGER NOT NULL,
                 source_process_name TEXT NOT NULL,
+                source_process_icon_path TEXT NOT NULL DEFAULT '',
                 source_window_title TEXT NOT NULL,
                 captured_at_unix_ms INTEGER NOT NULL,
                 copy_count INTEGER NOT NULL DEFAULT 1
@@ -102,6 +104,11 @@ impl ClipboardHistory {
         ensure_column(&connection, "image_width", "INTEGER NOT NULL DEFAULT 0")?;
         ensure_column(&connection, "image_height", "INTEGER NOT NULL DEFAULT 0")?;
         ensure_column(&connection, "file_paths_json", "TEXT NOT NULL DEFAULT '[]'")?;
+        ensure_column(
+            &connection,
+            "source_process_icon_path",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
         Ok(Self { connection })
     }
 
@@ -195,14 +202,16 @@ impl ClipboardHistory {
                  SET source_window_handle = ?1,
                      source_process_id = ?2,
                      source_process_name = ?3,
-                     source_window_title = ?4,
-                     captured_at_unix_ms = ?5,
+                     source_process_icon_path = ?4,
+                     source_window_title = ?5,
+                     captured_at_unix_ms = ?6,
                      copy_count = copy_count + 1
-                 WHERE id = ?6",
+                 WHERE id = ?7",
                 params![
                     source.window_handle,
                     source.process_id,
                     source.process_name,
+                    source.process_icon_path,
                     source.window_title,
                     captured_at_unix_ms,
                     id,
@@ -215,8 +224,8 @@ impl ClipboardHistory {
             "INSERT INTO clipboard_items (
                 content_type, text, image_path, image_width, image_height, file_paths_json,
                 source_window_handle, source_process_id, source_process_name,
-                source_window_title, captured_at_unix_ms, copy_count
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)",
+                source_process_icon_path, source_window_title, captured_at_unix_ms, copy_count
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1)",
             params![
                 kind.as_str(),
                 text,
@@ -227,6 +236,7 @@ impl ClipboardHistory {
                 source.window_handle,
                 source.process_id,
                 source.process_name,
+                source.process_icon_path,
                 source.window_title,
                 captured_at_unix_ms,
             ],
@@ -274,7 +284,8 @@ impl ClipboardHistory {
         let mut statement = self.connection.prepare(
             "SELECT id, content_type, text, image_path, image_width, image_height,
                     file_paths_json, source_window_handle, source_process_id,
-                    source_process_name, source_window_title, captured_at_unix_ms, copy_count
+                    source_process_name, source_process_icon_path, source_window_title,
+                    captured_at_unix_ms, copy_count
              FROM clipboard_items
              WHERE (?1 IS NULL OR content_type = ?1)
                AND (?2 = ''
@@ -295,7 +306,8 @@ impl ClipboardHistory {
             .query_row(
                 "SELECT id, content_type, text, image_path, image_width, image_height,
                         file_paths_json, source_window_handle, source_process_id,
-                        source_process_name, source_window_title, captured_at_unix_ms, copy_count
+                        source_process_name, source_process_icon_path, source_window_title,
+                        captured_at_unix_ms, copy_count
                  FROM clipboard_items WHERE id = ?1",
                 [id],
                 map_item,
@@ -323,10 +335,11 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
             window_handle: row.get(7)?,
             process_id: row.get(8)?,
             process_name: row.get(9)?,
-            window_title: row.get(10)?,
+            process_icon_path: row.get(10)?,
+            window_title: row.get(11)?,
         },
-        captured_at_unix_ms: row.get(11)?,
-        copy_count: row.get(12)?,
+        captured_at_unix_ms: row.get(12)?,
+        copy_count: row.get(13)?,
     })
 }
 
@@ -373,6 +386,7 @@ mod tests {
                     window_handle: 42,
                     process_id: 7,
                     process_name: "notepad".into(),
+                    process_icon_path: "C:/icons/notepad.png".into(),
                     window_title: "notes.txt".into(),
                 },
                 captured_at_unix_ms: 1_700_000_000_000,
@@ -386,6 +400,7 @@ mod tests {
         assert_eq!(recent, vec![inserted]);
         assert_eq!(recent[0].text, "first real clipboard item");
         assert_eq!(recent[0].source.process_name, "notepad");
+        assert_eq!(recent[0].source.process_icon_path, "C:/icons/notepad.png");
         assert_eq!(recent[0].copy_count, 1);
     }
 
@@ -402,6 +417,7 @@ mod tests {
                     window_handle: 1,
                     process_id: 10,
                     process_name: "first-app".into(),
+                    process_icon_path: String::new(),
                     window_title: "first window".into(),
                 },
                 captured_at_unix_ms: 100,
@@ -418,6 +434,7 @@ mod tests {
                     window_handle: 2,
                     process_id: 20,
                     process_name: "second-app".into(),
+                    process_icon_path: String::new(),
                     window_title: "second window".into(),
                 },
                 captured_at_unix_ms: 200,
@@ -452,6 +469,7 @@ mod tests {
                         window_handle: 1,
                         process_id: 10,
                         process_name: "editor".into(),
+                        process_icon_path: String::new(),
                         window_title: "design.md".into(),
                     },
                     captured_at_unix_ms: captured_at,
@@ -482,6 +500,7 @@ mod tests {
                         window_handle: 5,
                         process_id: 50,
                         process_name: "terminal".into(),
+                        process_icon_path: String::new(),
                         window_title: "PowerShell".into(),
                     },
                     captured_at_unix_ms: 500,
@@ -505,6 +524,7 @@ mod tests {
             window_handle: 1,
             process_id: 2,
             process_name: "capture".into(),
+            process_icon_path: String::new(),
             window_title: "capture".into(),
         };
         history
@@ -540,6 +560,7 @@ mod tests {
             window_handle: 1,
             process_id: 2,
             process_name: "capture".into(),
+            process_icon_path: String::new(),
             window_title: "capture".into(),
         };
         history

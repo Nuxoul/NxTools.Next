@@ -1,10 +1,10 @@
 mod history;
 
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, Focusable, Render, ResizeEdge, ScrollStrategy,
-    Subscription, UniformListScrollHandle, WeakEntity, Window, div, point, prelude::*, px, size,
-    uniform_list,
+    App, AppContext, Bounds, Context, Entity, Focusable, ListAlignment, ListState, Render,
+    ResizeEdge, Subscription, WeakEntity, Window, div, list, point, prelude::*, px, size,
 };
+use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
 use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
@@ -16,6 +16,7 @@ use history::history_row;
 
 pub(crate) const PANEL_WIDTH: f32 = 340.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
+const MATERIAL_SYMBOLS: &str = "Material Symbols Outlined";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PanelStatus {
@@ -39,6 +40,24 @@ impl ClipboardCategory {
             Self::Text => Some(ClipboardKind::Text),
             Self::Image => Some(ClipboardKind::Image),
             Self::Files => Some(ClipboardKind::Files),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "全部",
+            Self::Text => "文本",
+            Self::Image => "图片",
+            Self::Files => "文件",
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Self::All => "grid_view",
+            Self::Text => "title",
+            Self::Image => "image",
+            Self::Files => "folder",
         }
     }
 }
@@ -85,7 +104,9 @@ pub(crate) struct ClipboardPanel {
     pending_paste: Option<uuid::Uuid>,
     is_open: bool,
     active_category: ClipboardCategory,
-    list_scroll: UniformListScrollHandle,
+    list_scroll: ListState,
+    list_is_scrolled: bool,
+    list_width: f32,
     search_input: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
@@ -128,6 +149,16 @@ impl ClipboardPanel {
         } else {
             PanelStatus::Ready(format!("将粘贴到 {}", target.process_name))
         };
+        let list_scroll = ListState::new(entries.len(), ListAlignment::Top, px(180.0));
+        let panel = cx.entity().downgrade();
+        list_scroll.set_scroll_handler(move |event, _window, app| {
+            let _ = panel.update(app, |panel, cx| {
+                if panel.list_is_scrolled != event.is_scrolled {
+                    panel.list_is_scrolled = event.is_scrolled;
+                    cx.notify();
+                }
+            });
+        });
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -137,7 +168,9 @@ impl ClipboardPanel {
             pending_paste: None,
             is_open: true,
             active_category: ClipboardCategory::All,
-            list_scroll: UniformListScrollHandle::new(),
+            list_scroll,
+            list_is_scrolled: false,
+            list_width: 0.0,
             search_input,
             _subscriptions: vec![
                 search_subscription,
@@ -153,7 +186,11 @@ impl ClipboardPanel {
             .application
             .update(cx, |application, _| application.query_entries(query, kind))
         {
-            Ok(Ok(entries)) => self.entries = entries,
+            Ok(Ok(entries)) => {
+                self.entries = entries;
+                self.list_scroll.reset(self.entries.len());
+                self.list_is_scrolled = false;
+            }
             Ok(Err(error)) => {
                 error!(%error, "failed to query clipboard popup history");
                 self.entries.clear();
@@ -309,18 +346,21 @@ impl ClipboardPanel {
 }
 
 impl Render for ClipboardPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let entries_empty = self.entries.is_empty();
         let status_is_error = self.status.is_error();
         let status_should_render = self.status.should_render();
         let status_label = self.status.label().to_owned();
-        let summary = if self.target.process_name.is_empty() {
-            format!("{} 条记录", self.entries.len())
-        } else {
-            format!("{} 条 · {}", self.entries.len(), self.target.process_name)
-        };
-        let is_scrolled = self.list_scroll.0.borrow().base_handle.offset().y < px(-1.0);
+        let summary = self.active_category.label();
+        let is_scrolled = self.list_is_scrolled;
+        let list_width = (window.viewport_size().width.as_f32() - 16.0).max(28.0);
+        if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
+            self.list_scroll.reset(self.entries.len());
+            self.list_is_scrolled = false;
+        }
+        self.list_width = list_width;
+        let available_image_width = (list_width - 24.0).max(28.0);
         let scroll_to_top = self.list_scroll.clone();
         let panel = cx.entity().downgrade();
         let all_category_panel = cx.entity().downgrade();
@@ -402,7 +442,7 @@ impl Render for ClipboardPanel {
                     .overflow_hidden()
                     .child(category_tab(
                         theme,
-                        "全部",
+                        ClipboardCategory::All,
                         self.active_category == ClipboardCategory::All,
                         move |_event, _window, app| {
                             let _ = all_category_panel.update(app, |panel, cx| {
@@ -412,7 +452,7 @@ impl Render for ClipboardPanel {
                     ))
                     .child(category_tab(
                         theme,
-                        "文本",
+                        ClipboardCategory::Text,
                         self.active_category == ClipboardCategory::Text,
                         move |_event, _window, app| {
                             let _ = text_category_panel.update(app, |panel, cx| {
@@ -422,7 +462,7 @@ impl Render for ClipboardPanel {
                     ))
                     .child(category_tab(
                         theme,
-                        "图片",
+                        ClipboardCategory::Image,
                         self.active_category == ClipboardCategory::Image,
                         move |_event, _window, app| {
                             let _ = image_category_panel.update(app, |panel, cx| {
@@ -432,7 +472,7 @@ impl Render for ClipboardPanel {
                     ))
                     .child(category_tab(
                         theme,
-                        "文件",
+                        ClipboardCategory::Files,
                         self.active_category == ClipboardCategory::Files,
                         move |_event, _window, app| {
                             let _ = files_category_panel.update(app, |panel, cx| {
@@ -475,7 +515,7 @@ impl Render for ClipboardPanel {
                             .text_color(theme.text_muted)
                             .flex()
                             .items_center()
-                            .child(format!("{} 条", self.entries.len())),
+                            .child(format!("共 {} 条", self.entries.len())),
                     ),
             )
             .child(
@@ -497,34 +537,30 @@ impl Render for ClipboardPanel {
                                 .child("暂无剪贴板记录"),
                         )
                     })
-                    .when(!entries_empty, |list| {
-                        list.child(
-                            uniform_list(
-                                "clipboard-popup-history",
-                                self.entries.len(),
-                                cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
-                                    range
-                                        .filter_map(|index| {
-                                            let entry = this.entries.get(index)?.clone();
-                                            let paste_entry = entry.clone();
-                                            let panel = cx.entity().downgrade();
-                                            let on_click = move |
-                                                _event: &gpui::ClickEvent,
-                                                window: &mut Window,
-                                                app: &mut App,
-                                            | {
-                                                let _ = panel.update(app, |this, cx| {
-                                                    this.paste_entry(&paste_entry, window, cx);
-                                                });
-                                            };
-                                            Some(history_row(this.theme, entry, index, on_click))
-                                        })
-                                        .collect::<Vec<_>>()
-                                }),
-                            )
+                    .when(!entries_empty, |container| {
+                        let entries = self.entries.clone();
+                        let history_panel = cx.entity().downgrade();
+                        let theme = self.theme;
+                        container.child(
+                            list(self.list_scroll.clone(), move |index, _window, _app| {
+                                let Some(entry) = entries.get(index).cloned() else {
+                                    return div().into_any_element();
+                                };
+                                let paste_entry = entry.clone();
+                                let panel = history_panel.clone();
+                                let on_click =
+                                    move |_event: &gpui::ClickEvent,
+                                          window: &mut Window,
+                                          app: &mut App| {
+                                        let _ = panel.update(app, |this, cx| {
+                                            this.paste_entry(&paste_entry, window, cx);
+                                        });
+                                    };
+                                history_row(theme, entry, index, available_image_width, on_click)
+                                    .into_any_element()
+                            })
                             .w_full()
-                            .h_full()
-                            .track_scroll(self.list_scroll.clone()),
+                            .h_full(),
                         )
                     })
                     .when(is_scrolled, |list| {
@@ -552,11 +588,20 @@ impl Render for ClipboardPanel {
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .flex()
                                         .items_center()
-                                        .child("↑  回到开头")
+                                        .gap_1()
+                                        .child(material_icon(
+                                            theme,
+                                            "vertical_align_top",
+                                            15.0,
+                                            false,
+                                        ))
+                                        .child("回到开头")
                                         .on_click(move |_event, _window, app| {
-                                            scroll_to_top
-                                                .scroll_to_item_strict(0, ScrollStrategy::Top);
-                                            let _ = panel.update(app, |_, cx| cx.notify());
+                                            scroll_to_top.scroll_to(Default::default());
+                                            let _ = panel.update(app, |panel, cx| {
+                                                panel.list_is_scrolled = false;
+                                                cx.notify();
+                                            });
                                         }),
                                 ),
                         )
@@ -574,7 +619,7 @@ impl Render for ClipboardPanel {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child("⌟")
+                    .child(material_icon(theme, "south_east", 14.0, false))
                     .on_mouse_down(gpui::MouseButton::Left, |_event, window, _cx| {
                         window.start_window_resize(ResizeEdge::BottomRight);
                     }),
@@ -597,10 +642,11 @@ fn should_hide_for_foreground_change(
 
 fn category_tab(
     theme: Theme,
-    label: &'static str,
+    category: ClipboardCategory,
     selected: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    let label = category.label();
     div()
         .id(label)
         .h(px(26.0))
@@ -608,12 +654,12 @@ fn category_tab(
         .rounded(px(5.0))
         .border_1()
         .border_color(if selected {
-            theme.accent
+            theme.accent_soft
         } else {
             gpui::rgba(0x00000000)
         })
         .bg(if selected {
-            theme.accent_soft
+            theme.surface_raised
         } else {
             gpui::rgba(0x00000000)
         })
@@ -625,10 +671,27 @@ fn category_tab(
         })
         .flex()
         .items_center()
+        .gap(px(5.0))
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
         .on_click(on_click)
+        .child(material_icon(theme, category.icon(), 14.0, selected))
         .child(label)
+}
+
+fn material_icon(theme: Theme, name: &'static str, size: f32, accented: bool) -> impl IntoElement {
+    div()
+        .font_family(MATERIAL_SYMBOLS)
+        .text_size(px(size))
+        .text_color(if accented {
+            theme.accent
+        } else {
+            theme.text_secondary
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(name)
 }
 
 pub(crate) fn panel_bounds(

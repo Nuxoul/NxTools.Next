@@ -13,6 +13,7 @@ internal sealed record ClipboardCapturedEvent(
     string? Text,
     ClipboardImageData? Image,
     IReadOnlyList<string> Paths,
+    string? SourceIconStagingPath,
     ForegroundContext Source,
     long CapturedAtUnixMs) : WindowsPlatformEvent;
 

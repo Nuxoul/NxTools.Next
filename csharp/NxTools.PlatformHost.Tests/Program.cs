@@ -92,6 +92,7 @@ internal static class Program
                 "captured text",
                 null,
                 [],
+                "C:/source.png",
                 new ForegroundContext(42, 43, 7, "notepad", "notes.txt"),
                 1_700_000_000_000));
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
@@ -100,6 +101,7 @@ internal static class Program
         Assert(json.Contains("\"text\":\"captured text\"", StringComparison.Ordinal));
         Assert(json.Contains("\"window_handle\":42", StringComparison.Ordinal));
         Assert(json.Contains("\"process_name\":\"notepad\"", StringComparison.Ordinal));
+        Assert(json.Contains("C:/source.png", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 
@@ -125,6 +127,7 @@ internal static class Program
             "alternate representation",
             new ClipboardImageData("C:/staging.png", 640, 480),
             ["C:/one.txt"],
+            "C:/source.png",
             new ForegroundContext(1, 2, 3, "capture", "window"), 10));
         var json = JsonSerializer.Serialize(captured, JsonDefaults.Options);
         Assert(json.Contains("clipboard_captured", StringComparison.Ordinal));

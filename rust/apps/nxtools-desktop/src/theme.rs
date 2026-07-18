@@ -6,6 +6,7 @@ pub struct Theme {
     pub surface: Rgba,
     pub surface_raised: Rgba,
     pub surface_hover: Rgba,
+    pub border_subtle: Rgba,
     pub border: Rgba,
     pub border_active: Rgba,
     pub text: Rgba,
@@ -15,6 +16,7 @@ pub struct Theme {
     pub accent_soft: Rgba,
     pub accent_text: Rgba,
     pub danger: Rgba,
+    pub image_well: Rgba,
 }
 
 impl Theme {
@@ -24,6 +26,7 @@ impl Theme {
             surface: rgb(0x292929),
             surface_raised: rgb(0x303130),
             surface_hover: rgb(0x343534),
+            border_subtle: rgb(0x363836),
             border: rgb(0x454745),
             border_active: rgb(0x56615b),
             text: rgb(0xf2f1ea),
@@ -33,6 +36,7 @@ impl Theme {
             accent_soft: rgb(0x305c54),
             accent_text: rgb(0xddfbf7),
             danger: rgb(0xff6b78),
+            image_well: rgb(0x202623),
         }
     }
 }

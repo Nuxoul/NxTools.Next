@@ -286,8 +286,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 }
                 if (paths.Length > 0 || imageData is not null || !string.IsNullOrEmpty(text))
                 {
+                    var sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(source.ProcessId);
                     _events.TryWrite(new ClipboardCapturedEvent(
-                        text, imageData, paths, source, capturedAt));
+                        text, imageData, paths, sourceIconPath, source, capturedAt));
                 }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)

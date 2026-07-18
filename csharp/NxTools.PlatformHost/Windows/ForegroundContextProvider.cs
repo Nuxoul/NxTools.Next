@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace NxTools.PlatformHost.Windows;
@@ -13,6 +14,44 @@ internal sealed record ForegroundContext(
 
 internal sealed class ForegroundContextProvider
 {
+    public string? TryStageProcessIcon(uint processId)
+    {
+        if (processId == 0)
+        {
+            return null;
+        }
+        try
+        {
+            using var process = Process.GetProcessById(checked((int)processId));
+            var executablePath = process.MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            {
+                return null;
+            }
+            var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(executablePath)))
+                .ToLowerInvariant();
+            var directory = Path.Combine(Path.GetTempPath(), "NxTools.Next", "process-icons");
+            Directory.CreateDirectory(directory);
+            var destination = Path.Combine(directory, $"{key}.png");
+            if (File.Exists(destination))
+            {
+                return destination;
+            }
+            using var icon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
+            if (icon is null)
+            {
+                return null;
+            }
+            using var bitmap = icon.ToBitmap();
+            bitmap.Save(destination, System.Drawing.Imaging.ImageFormat.Png);
+            return destination;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public ForegroundContext Capture()
     {
         return Capture(NativeMethods.GetForegroundWindow());

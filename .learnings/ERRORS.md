@@ -4,6 +4,43 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-001] product-design-user-context-preflight-path
+
+**Logged**: 2026-07-18T09:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+
+The Product Design user-context preflight script was resolved from the plugin root instead of the skill-local scripts directory.
+
+### Error
+
+```text
+can't open file '...product-design\\0.1.50\\scripts\\user_context_preflight.py': No such file or directory
+```
+
+### Context
+
+- The script referenced by `skills/user-context/SKILL.md` lives under `skills/user-context/scripts/`.
+
+### Suggested Fix
+
+Resolve relative script references against the directory containing the selected `SKILL.md`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: product-design/skills/user-context/SKILL.md
+
+### Resolution
+
+- **Resolved**: 2026-07-18T09:36:00+08:00
+- **Notes**: Re-ran the preflight from the skill-local scripts directory successfully.
+
+---
+
 ## [ERR-20260717-002] debug-package-missing-binaries
 
 **Logged**: 2026-07-17T18:10:00+08:00

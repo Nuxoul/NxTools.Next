@@ -49,7 +49,7 @@ the envelope is versioned so payload encoding can change without blurring proces
 
 ```text
 Windows copy
-  -> C# snapshots every available text, image and file-drop representation plus its source window
+  -> C# snapshots every available text, image and file-drop representation plus its source window/icon
   -> C# stages image bytes; file paths remain platform metadata
   -> Rust selects the primary history type, ingests content-addressed images and persists it in SQLite
 
@@ -68,6 +68,12 @@ search, platform notifications and commands. The GPUI `ClipboardPanel` only owns
 translates search/click interactions into application intents. The C# PlatformHost owns the
 Windows-only clipboard format extraction/write-back, topmost operation, focus restoration,
 modifier release, input injection and `WM_PASTE` fallback.
+
+The popup uses a variable-height GPUI list: text and file rows remain compact, while image rows
+preserve aspect ratio without upscaling and cap the preview at 270 logical pixels. Source-process
+icons are extracted by the Windows adapter, content-addressed by Rust, and shown with a process-name
+tooltip; the visual treatment remains NxTools.Next's Zed-inspired design rather than copying the
+reference Avalonia surface.
 
 The clipboard panel is not a page in an application main window. Its GPUI window does not exist
 until the global shortcut is pressed. Escape, a successful paste, or a foreground-window change hides

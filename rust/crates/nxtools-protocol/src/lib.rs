@@ -121,6 +121,7 @@ pub struct ClipboardCapture {
     pub text: Option<String>,
     pub image: Option<ClipboardImageData>,
     pub paths: Vec<String>,
+    pub source_icon_staging_path: Option<String>,
     pub source: ForegroundContext,
     pub captured_at_unix_ms: i64,
 }
@@ -287,6 +288,7 @@ mod tests {
                 text: Some("真实剪贴板内容".into()),
                 image: None,
                 paths: Vec::new(),
+                source_icon_staging_path: None,
                 source: ForegroundContext {
                     window_handle: 42,
                     focus_window_handle: 43,
@@ -329,6 +331,7 @@ mod tests {
                     height: 480,
                 }),
                 paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                source_icon_staging_path: Some("C:/temp/source.png".into()),
                 source: fixture_context(),
                 captured_at_unix_ms: 10,
             })),
