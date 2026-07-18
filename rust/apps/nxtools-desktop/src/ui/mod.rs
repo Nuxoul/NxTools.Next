@@ -201,7 +201,7 @@ impl ClipboardPanel {
             }
         });
 
-        let status = if target.process_name.is_empty() {
+        let mut status = if target.process_name.is_empty() {
             PanelStatus::Ready("选择一条记录进行粘贴".into())
         } else {
             PanelStatus::Ready(format!("将粘贴到 {}", target.process_name))
@@ -216,23 +216,15 @@ impl ClipboardPanel {
                 }
             });
         });
-        let mut category_sources = HashMap::new();
-        for category in categories
-            .iter()
-            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
-        {
-            let sources = application
-                .update(cx, |application, _| {
-                    application.category_sources(&category.id)
-                })
-                .ok()
-                .and_then(Result::ok)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|source| source.to_lowercase())
-                .collect();
-            category_sources.insert(category.id.clone(), sources);
-        }
+        let category_sources =
+            match Self::load_category_source_snapshot(&application, &categories, cx) {
+                Ok(sources) => sources,
+                Err(reason) => {
+                    error!(%reason, "failed to load clipboard category sources");
+                    status = PanelStatus::Error("分类来源加载失败，请查看日志".into());
+                    HashMap::new()
+                }
+            };
         let active_category_id = categories
             .iter()
             .find(|category| category.id == BUILTIN_ALL_CATEGORY_ID)
@@ -267,6 +259,29 @@ impl ClipboardPanel {
                 keystroke_subscription,
             ],
         }
+    }
+
+    fn load_category_source_snapshot(
+        application: &WeakEntity<ClipboardApplication>,
+        categories: &[ClipboardCategory],
+        cx: &mut Context<Self>,
+    ) -> Result<HashMap<String, HashSet<String>>, String> {
+        categories
+            .iter()
+            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
+            .map(|category| {
+                let sources = application
+                    .update(cx, |application, _| {
+                        application.category_sources(&category.id)
+                    })
+                    .map_err(|error| format!("clipboard application unavailable: {error}"))?
+                    .map_err(|error| error.to_string())?
+                    .into_iter()
+                    .map(|source| source.to_lowercase())
+                    .collect();
+                Ok((category.id.clone(), sources))
+            })
+            .collect()
     }
 
     fn reload_entries(&mut self, query: &str, cx: &mut Context<Self>) {
@@ -409,26 +424,17 @@ impl ClipboardPanel {
         let Some(categories) = self.resolve_item_action("加载分类", result, cx) else {
             return;
         };
+        let category_sources =
+            match Self::load_category_source_snapshot(&self.application, &categories, cx) {
+                Ok(sources) => sources,
+                Err(reason) => {
+                    error!(%reason, "failed to reload clipboard category sources");
+                    self.status = PanelStatus::Error("分类来源加载失败，请查看日志".into());
+                    return;
+                }
+            };
         self.categories = categories;
-        self.category_sources.clear();
-        for category in self
-            .categories
-            .iter()
-            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
-        {
-            let sources = self
-                .application
-                .update(cx, |application, _| {
-                    application.category_sources(&category.id)
-                })
-                .ok()
-                .and_then(Result::ok)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|source| source.to_lowercase())
-                .collect();
-            self.category_sources.insert(category.id.clone(), sources);
-        }
+        self.category_sources = category_sources;
     }
 
     fn refresh_entries(&mut self, cx: &mut Context<Self>) {

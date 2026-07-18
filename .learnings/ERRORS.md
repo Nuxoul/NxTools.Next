@@ -4,6 +4,44 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-003] clipboard-category-regression-test
+
+**Logged**: 2026-07-18T11:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A regression test assumed `ClipboardHistory::open_in_memory`, but this project only exposes `ClipboardHistory::open`.
+
+### Error
+
+```text
+no associated function or constant named `open_in_memory` found for struct `ClipboardHistory`
+```
+
+### Context
+
+- Command: `cargo test -p nxtools-clipboard invalid_category_kind_is_rejected_instead_of_becoming_all`
+- The unverified helper assumption prevented the new corruption regression test from compiling.
+
+### Suggested Fix
+
+Use the same `tempfile::tempdir` plus file-backed SQLite setup as the crate's existing tests, and verify available test helpers before calling them.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: rust/crates/nxtools-clipboard/src/lib.rs
+
+### Resolution
+
+- **Resolved**: 2026-07-18T11:00:00+08:00
+- **Notes**: Replaced the nonexistent helper with the established temporary database fixture.
+
+---
+
 ## [ERR-20260718-003] cargo-test-multiple-positional-filters
 
 **Logged**: 2026-07-18T10:40:00+08:00

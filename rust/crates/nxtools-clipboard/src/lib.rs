@@ -91,14 +91,15 @@ impl ClipboardCategoryKind {
         }
     }
 
-    fn from_str(value: &str) -> Self {
+    fn from_str(value: &str) -> Result<Self, String> {
         match value {
-            "favorite" => Self::Favorite,
-            "text" => Self::Text,
-            "image" => Self::Image,
-            "files" => Self::Files,
-            "custom" => Self::Custom,
-            _ => Self::All,
+            "all" => Ok(Self::All),
+            "favorite" => Ok(Self::Favorite),
+            "text" => Ok(Self::Text),
+            "image" => Ok(Self::Image),
+            "files" => Ok(Self::Files),
+            "custom" => Ok(Self::Custom),
+            _ => Err(format!("unknown clipboard category kind: {value}")),
         }
     }
 
@@ -212,7 +213,7 @@ impl ClipboardHistory {
             CREATE TABLE IF NOT EXISTS clipboard_categories (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                kind TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('all', 'favorite', 'text', 'image', 'files', 'custom')),
                 sort_order INTEGER NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_clipboard_categories_name
@@ -905,10 +906,21 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
 }
 
 fn map_category(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardCategory> {
+    let kind = row.get::<_, String>(2)?;
+    let kind = ClipboardCategoryKind::from_str(&kind).map_err(|message| {
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                message,
+            )),
+        )
+    })?;
     Ok(ClipboardCategory {
         id: row.get(0)?,
         name: row.get(1)?,
-        kind: ClipboardCategoryKind::from_str(&row.get::<_, String>(2)?),
+        kind,
         sort_order: row.get(3)?,
     })
 }
@@ -1359,6 +1371,31 @@ mod tests {
             ]
         );
         assert_eq!(categories[1].name, "专注");
+    }
+
+    #[test]
+    fn invalid_category_kind_is_rejected_instead_of_becoming_all() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let history =
+            ClipboardHistory::open(directory.path().join("clipboard.db")).expect("open history");
+        history
+            .connection
+            .execute("PRAGMA ignore_check_constraints = ON", [])
+            .expect("allow corruption fixture");
+        history
+            .connection
+            .execute(
+                "UPDATE clipboard_categories SET kind = 'future-kind' WHERE id = ?1",
+                [BUILTIN_ALL_CATEGORY_ID],
+            )
+            .expect("corrupt category kind");
+
+        assert!(matches!(
+            history.categories(),
+            Err(ClipboardHistoryError::Database(
+                rusqlite::Error::FromSqlConversionFailure(2, _, _)
+            ))
+        ));
     }
 
     #[test]
