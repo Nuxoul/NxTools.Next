@@ -14,8 +14,8 @@ Phase 1 answers the risky architecture questions before product features are mig
 - `Alt+C` Windows global hotkey and cursor/target-window context transfer;
 - independent borderless GPUI clipboard popup with search and virtual history list;
 - Windows-enforced topmost popup and reference-derived clipboard visual tokens;
-- Rust-owned typed SQLite history for text, images and file drops, with adjacent deduplication
-  and restart persistence;
+- Rust-owned typed SQLite history for text, content-addressed images and file drops, with adjacent
+  deduplication, type-aware queries and restart persistence;
 - correlated type-preserving click-to-paste commands with focus retries, modifier release and
   `WM_PASTE` fallback;
 - separate Rust indexer process placeholder;

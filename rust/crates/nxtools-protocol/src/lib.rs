@@ -103,9 +103,7 @@ pub struct Pong {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum PlatformEvent {
     ForegroundChanged(ForegroundContext),
-    ClipboardTextCaptured(ClipboardTextCapture),
-    ClipboardImageCaptured(ClipboardImageCapture),
-    ClipboardFilesCaptured(ClipboardFilesCapture),
+    ClipboardCaptured(ClipboardCapture),
     ClipboardPanelRequested(ClipboardPanelRequest),
 }
 
@@ -119,26 +117,19 @@ pub struct ForegroundContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClipboardTextCapture {
-    pub text: String,
-    pub source: ForegroundContext,
-    pub captured_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClipboardImageCapture {
-    pub staging_path: String,
-    pub width: u32,
-    pub height: u32,
-    pub source: ForegroundContext,
-    pub captured_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClipboardFilesCapture {
+pub struct ClipboardCapture {
+    pub text: Option<String>,
+    pub image: Option<ClipboardImageData>,
     pub paths: Vec<String>,
     pub source: ForegroundContext,
     pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardImageData {
+    pub staging_path: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,9 +282,11 @@ mod tests {
 
     #[test]
     fn clipboard_text_capture_round_trips_as_platform_event() {
-        let envelope = Envelope::new(Message::PlatformEvent(
-            PlatformEvent::ClipboardTextCaptured(ClipboardTextCapture {
-                text: "真实剪贴板内容".into(),
+        let envelope = Envelope::new(Message::PlatformEvent(PlatformEvent::ClipboardCaptured(
+            ClipboardCapture {
+                text: Some("真实剪贴板内容".into()),
+                image: None,
+                paths: Vec::new(),
                 source: ForegroundContext {
                     window_handle: 42,
                     focus_window_handle: 43,
@@ -302,8 +295,8 @@ mod tests {
                     window_title: "notes.txt".into(),
                 },
                 captured_at_unix_ms: 1_700_000_000_000,
-            }),
-        ));
+            },
+        )));
 
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("clipboard event must decode");
@@ -328,22 +321,17 @@ mod tests {
     #[test]
     fn image_and_files_round_trip_as_capture_and_paste_messages() {
         for message in [
-            Message::PlatformEvent(PlatformEvent::ClipboardImageCaptured(
-                ClipboardImageCapture {
+            Message::PlatformEvent(PlatformEvent::ClipboardCaptured(ClipboardCapture {
+                text: Some("alternate representation".into()),
+                image: Some(ClipboardImageData {
                     staging_path: "C:/temp/image.png".into(),
                     width: 640,
                     height: 480,
-                    source: fixture_context(),
-                    captured_at_unix_ms: 10,
-                },
-            )),
-            Message::PlatformEvent(PlatformEvent::ClipboardFilesCaptured(
-                ClipboardFilesCapture {
-                    paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
-                    source: fixture_context(),
-                    captured_at_unix_ms: 11,
-                },
-            )),
+                }),
+                paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                source: fixture_context(),
+                captured_at_unix_ms: 10,
+            })),
             Message::PlatformCommand(PlatformCommand::PasteFiles(PasteFilesCommand {
                 paths: vec!["C:/one.txt".into()],
                 target_window_handle: 5,

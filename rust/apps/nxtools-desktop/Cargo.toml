@@ -13,6 +13,7 @@ nxtools-core = { path = "../../crates/nxtools-core" }
 nxtools-ipc = { path = "../../crates/nxtools-ipc" }
 nxtools-protocol = { path = "../../crates/nxtools-protocol" }
 raw-window-handle.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true

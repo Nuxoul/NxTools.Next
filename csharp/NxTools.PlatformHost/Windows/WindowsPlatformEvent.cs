@@ -4,19 +4,14 @@ internal abstract record WindowsPlatformEvent;
 
 internal sealed record ForegroundChangedEvent(ForegroundContext Context) : WindowsPlatformEvent;
 
-internal sealed record ClipboardTextCapturedEvent(
-    string Text,
-    ForegroundContext Source,
-    long CapturedAtUnixMs) : WindowsPlatformEvent;
-
-internal sealed record ClipboardImageCapturedEvent(
+internal sealed record ClipboardImageData(
     string StagingPath,
     uint Width,
-    uint Height,
-    ForegroundContext Source,
-    long CapturedAtUnixMs) : WindowsPlatformEvent;
+    uint Height);
 
-internal sealed record ClipboardFilesCapturedEvent(
+internal sealed record ClipboardCapturedEvent(
+    string? Text,
+    ClipboardImageData? Image,
     IReadOnlyList<string> Paths,
     ForegroundContext Source,
     long CapturedAtUnixMs) : WindowsPlatformEvent;

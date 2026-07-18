@@ -58,8 +58,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new ClipboardPastePayload(
-                "text", command.Text, [], "", command.TargetWindowHandle,
+            .EnqueuePaste(new TextClipboardPastePayload(
+                command.Text, command.TargetWindowHandle,
                 command.TargetFocusWindowHandle), correlationId, cancellationToken);
     }
 
@@ -68,8 +68,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new ClipboardPastePayload(
-                "files", "", command.Paths, "", command.TargetWindowHandle,
+            .EnqueuePaste(new FilesClipboardPastePayload(
+                command.Paths, command.TargetWindowHandle,
                 command.TargetFocusWindowHandle), correlationId, cancellationToken);
     }
 
@@ -78,8 +78,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(new ClipboardPastePayload(
-                "image", "", [], command.ImagePath, command.TargetWindowHandle,
+            .EnqueuePaste(new ImageClipboardPastePayload(
+                command.ImagePath, command.TargetWindowHandle,
                 command.TargetFocusWindowHandle), correlationId, cancellationToken);
     }
 
@@ -256,19 +256,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             {
                 var source = _pendingClipboardSource ?? _foregroundContextProvider.Capture();
                 var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                if (Clipboard.ContainsFileDropList())
-                {
-                    var paths = Clipboard.GetFileDropList()
+                var paths = Clipboard.ContainsFileDropList()
+                    ? Clipboard.GetFileDropList()
                         .Cast<string>()
                         .Where(static path => !string.IsNullOrWhiteSpace(path))
                         .Take(1024)
-                        .ToArray();
-                    if (paths.Length > 0)
-                    {
-                        _events.TryWrite(new ClipboardFilesCapturedEvent(paths, source, capturedAt));
-                    }
-                    return;
-                }
+                        .ToArray()
+                    : [];
+                ClipboardImageData? imageData = null;
                 if (Clipboard.ContainsImage())
                 {
                     using var image = Clipboard.GetImage();
@@ -278,22 +273,21 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                         Directory.CreateDirectory(directory);
                         var path = Path.Combine(directory, $"{Guid.NewGuid():N}.png");
                         image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-                        _events.TryWrite(new ClipboardImageCapturedEvent(
+                        imageData = new ClipboardImageData(
                             path,
                             checked((uint)image.Width),
-                            checked((uint)image.Height),
-                            source,
-                            capturedAt));
+                            checked((uint)image.Height));
                     }
-                    return;
                 }
+                string? text = null;
                 if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
                 {
-                    var text = Clipboard.GetText(TextDataFormat.UnicodeText);
-                    if (text.Length > 0)
-                    {
-                        _events.TryWrite(new ClipboardTextCapturedEvent(text, source, capturedAt));
-                    }
+                    text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                }
+                if (paths.Length > 0 || imageData is not null || !string.IsNullOrEmpty(text))
+                {
+                    _events.TryWrite(new ClipboardCapturedEvent(
+                        text, imageData, paths, source, capturedAt));
                 }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
@@ -367,14 +361,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 try
                 {
                     _suppressNextClipboardUpdate = true;
-                    switch (payload.Kind)
+                    switch (payload)
                     {
-                        case "text":
-                            Clipboard.SetText(payload.Text, TextDataFormat.UnicodeText);
+                        case TextClipboardPastePayload text:
+                            Clipboard.SetText(text.Text, TextDataFormat.UnicodeText);
                             break;
-                        case "files":
+                        case FilesClipboardPastePayload files:
                             var paths = new System.Collections.Specialized.StringCollection();
-                            paths.AddRange(payload.Paths.Where(static path =>
+                            paths.AddRange(files.Paths.Where(static path =>
                                 File.Exists(path) || Directory.Exists(path)).ToArray());
                             if (paths.Count == 0)
                             {
@@ -383,13 +377,13 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                             }
                             Clipboard.SetFileDropList(paths);
                             break;
-                        case "image":
-                            if (!File.Exists(payload.ImagePath))
+                        case ImageClipboardPastePayload imagePayload:
+                            if (!File.Exists(imagePayload.ImagePath))
                             {
                                 _suppressNextClipboardUpdate = false;
                                 return new ClipboardWriteResult(false, "The clipboard image file no longer exists.", attempts);
                             }
-                            using (var source = System.Drawing.Image.FromFile(payload.ImagePath))
+                            using (var source = System.Drawing.Image.FromFile(imagePayload.ImagePath))
                             using (var image = new System.Drawing.Bitmap(source))
                             {
                                 Clipboard.SetImage(image);
@@ -397,7 +391,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                             break;
                         default:
                             _suppressNextClipboardUpdate = false;
-                            return new ClipboardWriteResult(false, $"Unsupported clipboard content kind '{payload.Kind}'.", attempts);
+                            return new ClipboardWriteResult(false, "Unsupported clipboard paste payload.", attempts);
                     }
                     attempts.Add(new ClipboardWriteAttempt(attempt + 1, true, 0, null));
                     return new ClipboardWriteResult(true, null, attempts);

@@ -49,9 +49,9 @@ the envelope is versioned so payload encoding can change without blurring proces
 
 ```text
 Windows copy
-  -> C# observes text, image or file-drop data plus its source window
+  -> C# snapshots every available text, image and file-drop representation plus its source window
   -> C# stages image bytes; file paths remain platform metadata
-  -> Rust ingests staged images and persists typed history in SQLite
+  -> Rust selects the primary history type, ingests content-addressed images and persists it in SQLite
 
 Alt+C
   -> C# WM_HOTKEY captures target HWND + focused child HWND + cursor

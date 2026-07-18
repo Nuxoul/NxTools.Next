@@ -3861,6 +3861,7 @@ dependencies = [
  "nxtools-ipc",
  "nxtools-protocol",
  "raw-window-handle",
+ "sha2 0.10.9",
  "tokio",
  "tracing",
  "uuid",

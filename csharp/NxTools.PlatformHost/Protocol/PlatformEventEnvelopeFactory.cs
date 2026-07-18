@@ -12,36 +12,16 @@ internal static class PlatformEventEnvelopeFactory
                 Event = "foreground_changed",
                 Data = foreground.Context
             }),
-            ClipboardTextCapturedEvent clipboard => ProtocolEnvelope.Create("platform_event", new
+            ClipboardCapturedEvent clipboard => ProtocolEnvelope.Create("platform_event", new
             {
-                Event = "clipboard_text_captured",
+                Event = "clipboard_captured",
                 Data = new
                 {
                     clipboard.Text,
+                    clipboard.Image,
+                    clipboard.Paths,
                     clipboard.Source,
                     clipboard.CapturedAtUnixMs
-                }
-            }),
-            ClipboardImageCapturedEvent image => ProtocolEnvelope.Create("platform_event", new
-            {
-                Event = "clipboard_image_captured",
-                Data = new
-                {
-                    image.StagingPath,
-                    image.Width,
-                    image.Height,
-                    image.Source,
-                    image.CapturedAtUnixMs
-                }
-            }),
-            ClipboardFilesCapturedEvent files => ProtocolEnvelope.Create("platform_event", new
-            {
-                Event = "clipboard_files_captured",
-                Data = new
-                {
-                    files.Paths,
-                    files.Source,
-                    files.CapturedAtUnixMs
                 }
             }),
             ClipboardPanelRequestedEvent panel => ProtocolEnvelope.Create("platform_event", new

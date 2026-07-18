@@ -32,6 +32,17 @@ enum ClipboardCategory {
     Files,
 }
 
+impl ClipboardCategory {
+    fn kind(self) -> Option<ClipboardKind> {
+        match self {
+            Self::All => None,
+            Self::Text => Some(ClipboardKind::Text),
+            Self::Image => Some(ClipboardKind::Image),
+            Self::Files => Some(ClipboardKind::Files),
+        }
+    }
+}
+
 impl PanelStatus {
     fn label(&self) -> &str {
         match self {
@@ -137,20 +148,12 @@ impl ClipboardPanel {
     }
 
     fn reload_entries(&mut self, query: &str, cx: &mut Context<Self>) {
+        let kind = self.active_category.kind();
         match self
             .application
-            .update(cx, |application, _| application.query_entries(query))
+            .update(cx, |application, _| application.query_entries(query, kind))
         {
-            Ok(Ok(mut entries)) => {
-                let category = self.active_category;
-                entries.retain(|entry| match category {
-                    ClipboardCategory::All => true,
-                    ClipboardCategory::Text => entry.kind == ClipboardKind::Text,
-                    ClipboardCategory::Image => entry.kind == ClipboardKind::Image,
-                    ClipboardCategory::Files => entry.kind == ClipboardKind::Files,
-                });
-                self.entries = entries;
-            }
+            Ok(Ok(entries)) => self.entries = entries,
             Ok(Err(error)) => {
                 error!(%error, "failed to query clipboard popup history");
                 self.entries.clear();

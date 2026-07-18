@@ -88,13 +88,15 @@ internal static class Program
     private static Task ClipboardEventPreservesSourceContext()
     {
         var envelope = PlatformEventEnvelopeFactory.Create(
-            new ClipboardTextCapturedEvent(
+            new ClipboardCapturedEvent(
                 "captured text",
+                null,
+                [],
                 new ForegroundContext(42, 43, 7, "notepad", "notes.txt"),
                 1_700_000_000_000));
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
 
-        Assert(json.Contains("\"event\":\"clipboard_text_captured\"", StringComparison.Ordinal));
+        Assert(json.Contains("\"event\":\"clipboard_captured\"", StringComparison.Ordinal));
         Assert(json.Contains("\"text\":\"captured text\"", StringComparison.Ordinal));
         Assert(json.Contains("\"window_handle\":42", StringComparison.Ordinal));
         Assert(json.Contains("\"process_name\":\"notepad\"", StringComparison.Ordinal));
@@ -119,12 +121,15 @@ internal static class Program
         var image = PlatformCommandParser.ParsePasteImage(imageEnvelope);
         Assert(image.ImagePath == "C:/image.png" && image.TargetFocusWindowHandle == 7);
 
-        var captured = PlatformEventEnvelopeFactory.Create(new ClipboardImageCapturedEvent(
-            "C:/staging.png", 640, 480,
+        var captured = PlatformEventEnvelopeFactory.Create(new ClipboardCapturedEvent(
+            "alternate representation",
+            new ClipboardImageData("C:/staging.png", 640, 480),
+            ["C:/one.txt"],
             new ForegroundContext(1, 2, 3, "capture", "window"), 10));
         var json = JsonSerializer.Serialize(captured, JsonDefaults.Options);
-        Assert(json.Contains("clipboard_image_captured", StringComparison.Ordinal));
+        Assert(json.Contains("clipboard_captured", StringComparison.Ordinal));
         Assert(json.Contains("\"width\":640", StringComparison.Ordinal));
+        Assert(json.Contains("C:/one.txt", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 

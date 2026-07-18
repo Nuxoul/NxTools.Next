@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -19,6 +20,7 @@ use nxtools_protocol::{
     PasteTextCommand, PlatformCommand, PlatformEvent, SetWindowTopmostCommand,
     SetWindowVisibilityCommand,
 };
+use sha2::{Digest, Sha256};
 use tracing::{error, info};
 
 use crate::popup_lifecycle::{PopupLifecycle, TopmostResolution};
@@ -108,11 +110,16 @@ impl ClipboardApplication {
     pub(crate) fn query_entries(
         &self,
         query: &str,
+        kind: Option<ClipboardKind>,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        if query.is_empty() {
-            self.history.borrow().recent(HISTORY_LIMIT)
-        } else {
-            self.history.borrow().search(query, HISTORY_LIMIT)
+        match (query.is_empty(), kind) {
+            (true, None) => self.history.borrow().recent(HISTORY_LIMIT),
+            (true, Some(kind)) => self.history.borrow().recent_by_kind(kind, HISTORY_LIMIT),
+            (false, None) => self.history.borrow().search(query, HISTORY_LIMIT),
+            (false, Some(kind)) => self
+                .history
+                .borrow()
+                .search_by_kind(query, kind, HISTORY_LIMIT),
         }
     }
 
@@ -260,43 +267,45 @@ impl ClipboardApplication {
 
     fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
         match event {
-            PlatformEvent::ClipboardTextCaptured(capture) => {
-                if let Err(error) = self.history.borrow_mut().capture(TextCapture {
-                    text: capture.text,
-                    source: CaptureSource {
-                        window_handle: capture.source.window_handle,
-                        process_id: capture.source.process_id,
-                        process_name: capture.source.process_name,
-                        window_title: capture.source.window_title,
-                    },
-                    captured_at_unix_ms: capture.captured_at_unix_ms,
-                }) {
-                    error!(%error, "failed to persist clipboard capture");
-                }
-            }
-            PlatformEvent::ClipboardImageCaptured(capture) => {
-                match self.store_captured_image(&capture.staging_path) {
-                    Ok(image_path) => {
-                        if let Err(error) = self.history.borrow_mut().capture_image(ImageCapture {
-                            image_path,
-                            width: capture.width,
-                            height: capture.height,
-                            source: map_source(capture.source),
-                            captured_at_unix_ms: capture.captured_at_unix_ms,
-                        }) {
-                            error!(%error, "failed to persist clipboard image capture");
-                        }
+            PlatformEvent::ClipboardCaptured(capture) => {
+                let source = map_source(capture.source);
+                if !capture.paths.is_empty() {
+                    if let Some(image) = capture.image {
+                        let _ = std::fs::remove_file(image.staging_path);
                     }
-                    Err(error) => error!(%error, "failed to ingest staged clipboard image"),
-                }
-            }
-            PlatformEvent::ClipboardFilesCaptured(capture) => {
-                if let Err(error) = self.history.borrow_mut().capture_files(FilesCapture {
-                    paths: capture.paths,
-                    source: map_source(capture.source),
-                    captured_at_unix_ms: capture.captured_at_unix_ms,
-                }) {
-                    error!(%error, "failed to persist clipboard files capture");
+                    if let Err(error) = self.history.borrow_mut().capture_files(FilesCapture {
+                        paths: capture.paths,
+                        source,
+                        captured_at_unix_ms: capture.captured_at_unix_ms,
+                    }) {
+                        error!(%error, "failed to persist clipboard files capture");
+                    }
+                } else if let Some(image) = capture.image {
+                    match self.store_captured_image(&image.staging_path) {
+                        Ok(image_path) => {
+                            if let Err(error) =
+                                self.history.borrow_mut().capture_image(ImageCapture {
+                                    image_path,
+                                    width: image.width,
+                                    height: image.height,
+                                    source,
+                                    captured_at_unix_ms: capture.captured_at_unix_ms,
+                                })
+                            {
+                                error!(%error, "failed to persist clipboard image capture");
+                            }
+                        }
+                        Err(error) => error!(%error, "failed to ingest staged clipboard image"),
+                    }
+                } else if let Some(text) = capture.text
+                    && !text.is_empty()
+                    && let Err(error) = self.history.borrow_mut().capture(TextCapture {
+                        text,
+                        source,
+                        captured_at_unix_ms: capture.captured_at_unix_ms,
+                    })
+                {
+                    error!(%error, "failed to persist clipboard capture");
                 }
             }
             PlatformEvent::ClipboardPanelRequested(request) => {
@@ -328,11 +337,11 @@ impl ClipboardApplication {
 
     fn store_captured_image(&self, staging_path: &str) -> std::io::Result<String> {
         let staging = std::path::Path::new(staging_path);
-        let file_name = staging
-            .file_name()
-            .unwrap_or_else(|| std::ffi::OsStr::new("clipboard.png"));
-        let destination = self.image_dir.join(file_name);
-        std::fs::copy(staging, &destination)?;
+        let fingerprint = image_fingerprint(std::fs::File::open(staging)?)?;
+        let destination = self.image_dir.join(format!("{fingerprint}.png"));
+        if !destination.exists() {
+            std::fs::copy(staging, &destination)?;
+        }
         let _ = std::fs::remove_file(staging);
         Ok(destination.to_string_lossy().into_owned())
     }
@@ -345,7 +354,7 @@ impl ClipboardApplication {
             return;
         }
 
-        let entries = self.query_entries("").unwrap_or_else(|error| {
+        let entries = self.query_entries("", None).unwrap_or_else(|error| {
             error!(%error, "failed to load clipboard popup history");
             Vec::new()
         });
@@ -447,5 +456,36 @@ impl ClipboardApplication {
             }
             Err(error) => error!(%error, "failed to open clipboard popup"),
         }
+    }
+}
+
+fn image_fingerprint(mut reader: impl Read) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::image_fingerprint;
+
+    #[test]
+    fn image_fingerprint_depends_on_content_instead_of_staging_path() {
+        let first = image_fingerprint(std::io::Cursor::new(b"same image bytes"))
+            .expect("fingerprint first image");
+        let second = image_fingerprint(std::io::Cursor::new(b"same image bytes"))
+            .expect("fingerprint second image");
+        let different = image_fingerprint(std::io::Cursor::new(b"different image bytes"))
+            .expect("fingerprint different image");
+
+        assert_eq!(first, second);
+        assert_ne!(first, different);
     }
 }

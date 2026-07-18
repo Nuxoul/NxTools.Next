@@ -237,16 +237,15 @@ impl ClipboardHistory {
     }
 
     pub fn recent(&self, limit: usize) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, content_type, text, image_path, image_width, image_height,
-                    file_paths_json, source_window_handle, source_process_id,
-                    source_process_name, source_window_title, captured_at_unix_ms, copy_count
-             FROM clipboard_items
-             ORDER BY captured_at_unix_ms DESC, id DESC
-             LIMIT ?1",
-        )?;
-        let rows = statement.query_map([limit as i64], map_item)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        self.query("", None, limit)
+    }
+
+    pub fn recent_by_kind(
+        &self,
+        kind: ClipboardKind,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        self.query("", Some(kind), limit)
     }
 
     pub fn search(
@@ -254,21 +253,40 @@ impl ClipboardHistory {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        if query.is_empty() {
-            return self.recent(limit);
-        }
+        self.query(query, None, limit)
+    }
 
+    pub fn search_by_kind(
+        &self,
+        query: &str,
+        kind: ClipboardKind,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        self.query(query, Some(kind), limit)
+    }
+
+    fn query(
+        &self,
+        query: &str,
+        kind: Option<ClipboardKind>,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
         let mut statement = self.connection.prepare(
             "SELECT id, content_type, text, image_path, image_width, image_height,
                     file_paths_json, source_window_handle, source_process_id,
                     source_process_name, source_window_title, captured_at_unix_ms, copy_count
              FROM clipboard_items
-             WHERE instr(lower(text), lower(?1)) > 0
-                OR instr(lower(file_paths_json), lower(?1)) > 0
+             WHERE (?1 IS NULL OR content_type = ?1)
+               AND (?2 = ''
+                    OR instr(lower(text), lower(?2)) > 0
+                    OR instr(lower(file_paths_json), lower(?2)) > 0)
              ORDER BY captured_at_unix_ms DESC, id DESC
-             LIMIT ?2",
+             LIMIT ?3",
         )?;
-        let rows = statement.query_map(params![query, limit as i64], map_item)?;
+        let rows = statement.query_map(
+            params![kind.map(ClipboardKind::as_str), query, limit as i64],
+            map_item,
+        )?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -511,5 +529,42 @@ mod tests {
         assert_eq!(items[0].file_paths.len(), 2);
         assert_eq!(items[1].kind, ClipboardKind::Image);
         assert_eq!((items[1].image_width, items[1].image_height), (640, 480));
+    }
+
+    #[test]
+    fn kind_filter_is_applied_before_the_result_limit() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let source = CaptureSource {
+            window_handle: 1,
+            process_id: 2,
+            process_name: "capture".into(),
+            window_title: "capture".into(),
+        };
+        history
+            .capture_image(ImageCapture {
+                image_path: "C:/data/older-image.png".into(),
+                width: 10,
+                height: 10,
+                source: source.clone(),
+                captured_at_unix_ms: 1,
+            })
+            .expect("capture image");
+        for index in 0..3 {
+            history
+                .capture(TextCapture {
+                    text: format!("newer text {index}"),
+                    source: source.clone(),
+                    captured_at_unix_ms: 10 + index,
+                })
+                .expect("capture text");
+        }
+
+        let images = history
+            .recent_by_kind(ClipboardKind::Image, 1)
+            .expect("filtered recent");
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].image_path, "C:/data/older-image.png");
     }
 }

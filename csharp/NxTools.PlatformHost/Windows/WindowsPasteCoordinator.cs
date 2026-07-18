@@ -46,13 +46,40 @@ internal sealed record PasteShortcutResult(
     int InputStructSize,
     IReadOnlyList<KeyboardInputStep> Steps);
 
-internal sealed record ClipboardPastePayload(
-    string Kind,
+internal abstract record ClipboardPastePayload(
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle)
+{
+    public abstract string Kind { get; }
+    public virtual int TextLength => 0;
+    public virtual int PathCount => 0;
+}
+
+internal sealed record TextClipboardPastePayload(
     string Text,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+{
+    public override string Kind => "text";
+    public override int TextLength => Text.Length;
+}
+
+internal sealed record FilesClipboardPastePayload(
     IReadOnlyList<string> Paths,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+{
+    public override string Kind => "files";
+    public override int PathCount => Paths.Count;
+}
+
+internal sealed record ImageClipboardPastePayload(
     string ImagePath,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle);
+    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+{
+    public override string Kind => "image";
+}
 
 internal interface IWindowsPasteOperations
 {
@@ -77,18 +104,18 @@ internal sealed class WindowsPasteCoordinator(
     private readonly IPlatformLog _log = log ?? NullPlatformLog.Instance;
 
     public WindowsCommandResult Execute(PasteTextCommand command, Guid correlationId = default)
-        => Execute(new ClipboardPastePayload(
-            "text", command.Text, [], "", command.TargetWindowHandle,
+        => Execute(new TextClipboardPastePayload(
+            command.Text, command.TargetWindowHandle,
             command.TargetFocusWindowHandle), correlationId);
 
     public WindowsCommandResult Execute(PasteFilesCommand command, Guid correlationId = default)
-        => Execute(new ClipboardPastePayload(
-            "files", "", command.Paths, "", command.TargetWindowHandle,
+        => Execute(new FilesClipboardPastePayload(
+            command.Paths, command.TargetWindowHandle,
             command.TargetFocusWindowHandle), correlationId);
 
     public WindowsCommandResult Execute(PasteImageCommand command, Guid correlationId = default)
-        => Execute(new ClipboardPastePayload(
-            "image", "", [], command.ImagePath, command.TargetWindowHandle,
+        => Execute(new ImageClipboardPastePayload(
+            command.ImagePath, command.TargetWindowHandle,
             command.TargetFocusWindowHandle), correlationId);
 
     internal WindowsCommandResult Execute(ClipboardPastePayload command, Guid correlationId)
@@ -98,8 +125,8 @@ internal sealed class WindowsPasteCoordinator(
             ["target_window"] = Hex(command.TargetWindowHandle),
             ["target_focus_window"] = Hex(command.TargetFocusWindowHandle),
             ["content_kind"] = command.Kind,
-            ["text_length"] = command.Text.Length,
-            ["path_count"] = command.Paths.Count,
+            ["text_length"] = command.TextLength,
+            ["path_count"] = command.PathCount,
             ["input_struct_size"] = WindowsPlatformAdapter.NativeInputSize
         });
         if (command.TargetWindowHandle == 0 || !operations.IsWindow(command.TargetWindowHandle))
