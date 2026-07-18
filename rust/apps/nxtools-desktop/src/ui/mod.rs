@@ -6,6 +6,7 @@ use gpui::{
 };
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::{Icon, IconName};
 use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
@@ -16,7 +17,6 @@ use history::history_row;
 
 pub(crate) const PANEL_WIDTH: f32 = 340.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
-const MATERIAL_SYMBOLS: &str = "Material Symbols Outlined";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PanelStatus {
@@ -49,15 +49,6 @@ impl ClipboardCategory {
             Self::Text => "文本",
             Self::Image => "图片",
             Self::Files => "文件",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Self::All => "grid_view",
-            Self::Text => "title",
-            Self::Image => "image",
-            Self::Files => "folder",
         }
     }
 }
@@ -589,12 +580,11 @@ impl Render for ClipboardPanel {
                                         .flex()
                                         .items_center()
                                         .gap_1()
-                                        .child(material_icon(
-                                            theme,
-                                            "vertical_align_top",
-                                            15.0,
-                                            false,
-                                        ))
+                                        .child(
+                                            Icon::new(IconName::ArrowUp)
+                                                .size(px(15.0))
+                                                .text_color(theme.text_secondary),
+                                        )
                                         .child("回到开头")
                                         .on_click(move |_event, _window, app| {
                                             scroll_to_top.scroll_to(Default::default());
@@ -619,7 +609,11 @@ impl Render for ClipboardPanel {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(material_icon(theme, "south_east", 14.0, false))
+                    .child(
+                        Icon::new(IconName::ResizeCorner)
+                            .size(px(14.0))
+                            .text_color(theme.text_muted),
+                    )
                     .on_mouse_down(gpui::MouseButton::Left, |_event, window, _cx| {
                         window.start_window_resize(ResizeEdge::BottomRight);
                     }),
@@ -654,12 +648,12 @@ fn category_tab(
         .rounded(px(5.0))
         .border_1()
         .border_color(if selected {
-            theme.accent_soft
+            theme.accent
         } else {
             gpui::rgba(0x00000000)
         })
         .bg(if selected {
-            theme.surface_raised
+            theme.accent_soft
         } else {
             gpui::rgba(0x00000000)
         })
@@ -671,27 +665,10 @@ fn category_tab(
         })
         .flex()
         .items_center()
-        .gap(px(5.0))
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
         .on_click(on_click)
-        .child(material_icon(theme, category.icon(), 14.0, selected))
         .child(label)
-}
-
-fn material_icon(theme: Theme, name: &'static str, size: f32, accented: bool) -> impl IntoElement {
-    div()
-        .font_family(MATERIAL_SYMBOLS)
-        .text_size(px(size))
-        .text_color(if accented {
-            theme.accent
-        } else {
-            theme.text_secondary
-        })
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(name)
 }
 
 pub(crate) fn panel_bounds(

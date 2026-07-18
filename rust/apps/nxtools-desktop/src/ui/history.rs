@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{App, ClickEvent, ObjectFit, Window, div, img, prelude::*, px};
 use gpui_component::tooltip::Tooltip;
+use gpui_component::{Icon, IconName};
 use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 
 use crate::theme::Theme;
@@ -10,9 +11,13 @@ use crate::theme::Theme;
 pub const TEXT_ROW_HEIGHT: f32 = 68.0;
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
-pub const IMAGE_ROW_CHROME_HEIGHT: f32 = 52.0;
+const ROW_VERTICAL_PADDING: f32 = 10.0;
+const METADATA_HEIGHT: f32 = 18.0;
+const CONTENT_GAP: f32 = 5.0;
+const IMAGE_WELL_VERTICAL_PADDING: f32 = 8.0;
+pub const IMAGE_ROW_CHROME_HEIGHT: f32 =
+    ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + IMAGE_WELL_VERTICAL_PADDING;
 pub const ROW_GAP: f32 = 5.0;
-const MATERIAL_SYMBOLS: &str = "Material Symbols Outlined";
 
 pub fn history_row(
     theme: Theme,
@@ -28,7 +33,7 @@ pub fn history_row(
     };
     let source_icon_path = entry.source.process_icon_path.clone();
     let relative_time = relative_time(entry.captured_at_unix_ms);
-    let usage = entry.copy_count.max(1).to_string();
+    let usage = (entry.copy_count > 1).then(|| format!("{}×", entry.copy_count));
     let card_height = row_card_height(&entry, available_image_width);
     let slot_height = card_height + ROW_GAP;
     let content = match entry.kind {
@@ -67,7 +72,7 @@ pub fn history_row(
                         .flex()
                         .items_center()
                         .gap(px(5.0))
-                        .child(usage_badge(theme, usage))
+                        .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
                         .child(source_icon(theme, source, source_icon_path, index))
                         .child(time_label(theme, relative_time))
                         .child(div().flex_1()),
@@ -164,11 +169,9 @@ fn source_icon(
     index: usize,
 ) -> impl IntoElement {
     let icon = if process_icon_path.is_empty() {
-        div()
-            .font_family(MATERIAL_SYMBOLS)
-            .text_size(px(15.0))
+        Icon::new(IconName::Frame)
+            .size(px(15.0))
             .text_color(theme.text_secondary)
-            .child("apps")
             .into_any_element()
     } else {
         img(PathBuf::from(process_icon_path))
@@ -238,7 +241,7 @@ fn image_preview_height(width: u32, height: u32, available_width: f32) -> f32 {
     let scale = 1.0_f32
         .min(available_width / width as f32)
         .min(IMAGE_PREVIEW_MAX_HEIGHT / height as f32);
-    (height as f32 * scale).max(28.0)
+    (height as f32 * scale).max(1.0)
 }
 
 fn relative_time(timestamp_ms: i64) -> String {
@@ -264,6 +267,7 @@ mod tests {
         assert_eq!(TEXT_ROW_HEIGHT, 68.0);
         assert_eq!(ROW_GAP, 5.0);
         assert_eq!(IMAGE_PREVIEW_MAX_HEIGHT, 270.0);
+        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 41.0);
     }
 
     #[test]
@@ -271,5 +275,6 @@ mod tests {
         assert!((image_preview_height(270, 33, 246.0) - 30.07).abs() < 0.01);
         assert_eq!(image_preview_height(100, 120, 246.0), 120.0);
         assert_eq!(image_preview_height(1_000, 2_000, 246.0), 270.0);
+        assert!((image_preview_height(1_000, 10, 246.0) - 2.46).abs() < 0.01);
     }
 }

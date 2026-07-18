@@ -19,7 +19,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
-            SingleWriter = true
+            SingleWriter = false
         });
     private readonly ManualResetEventSlim _started = new(false);
     private readonly Thread _thread;
@@ -147,6 +147,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private readonly NativeMethods.WinEventDelegate _foregroundCallback;
         private IntPtr _foregroundHook;
         private ForegroundContext? _pendingClipboardSource;
+        private Task _capturePublishTail = Task.CompletedTask;
         private int _clipboardReadAttempts;
         private bool _suppressNextClipboardUpdate;
 
@@ -286,9 +287,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 }
                 if (paths.Length > 0 || imageData is not null || !string.IsNullOrEmpty(text))
                 {
-                    var sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(source.ProcessId);
-                    _events.TryWrite(new ClipboardCapturedEvent(
-                        text, imageData, paths, sourceIconPath, source, capturedAt));
+                    QueueCapturedEvent(text, imageData, paths, source, capturedAt);
                 }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
@@ -303,6 +302,37 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     ["message"] = error.Message
                 });
             }
+        }
+
+        private void QueueCapturedEvent(
+            string? text,
+            ClipboardImageData? imageData,
+            string[] paths,
+            ForegroundContext source,
+            long capturedAt)
+        {
+            _capturePublishTail = _capturePublishTail.ContinueWith(
+                _ =>
+                {
+                    var sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(
+                        source.ProcessId,
+                        out var iconError);
+                    if (iconError is not null)
+                    {
+                        _log.Write("warning", "clipboard.source_icon_failed", null,
+                            new Dictionary<string, object?>
+                            {
+                                ["source_process_id"] = source.ProcessId,
+                                ["source_process_name"] = source.ProcessName,
+                                ["reason"] = iconError
+                            });
+                    }
+                    _events.TryWrite(new ClipboardCapturedEvent(
+                        text, imageData, paths, sourceIconPath, source, capturedAt));
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default);
         }
 
         private void OnForegroundChanged(

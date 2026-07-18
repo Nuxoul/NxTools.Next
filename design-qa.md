@@ -1,7 +1,8 @@
 # Clipboard panel design QA
 
-- Source visual truth: `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\81dba1d304a9da0d7161c1743d6ce02a029e9009bb54a81fba38bc20d22fdbaf.png`
-- Interaction/layout references: `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\ccb045a2747a53cf045e7ab58b0aa7ab72cd11f2acc25a3ee3380874267b95f0.png`, `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\7d4dc43ff13e3e2ca65e5cf77acf76d7c9636c8b24bcf8d6fe443411f29a1bd0.png`
+- Baseline/problem evidence: `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\81dba1d304a9da0d7161c1743d6ce02a029e9009bb54a81fba38bc20d22fdbaf.png`
+- Product design source: the existing NxTools.Next GPUI/Zed palette, typography hierarchy and compact shell.
+- Interaction/layout references (not pixel-copy targets): `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\ccb045a2747a53cf045e7ab58b0aa7ab72cd11f2acc25a3ee3380874267b95f0.png`, `C:\Users\Administrator\AppData\Local\NxTools\clipboard\images\7d4dc43ff13e3e2ca65e5cf77acf76d7c9636c8b24bcf8d6fe443411f29a1bd0.png`
 - Implementation screenshot: unavailable; the user owns GUI execution and requested that Codex not launch the application.
 - Viewport: 340 × 440 logical pixels.
 - State: dark clipboard panel with mixed text, image and file history.
@@ -31,13 +32,13 @@ Code and reference measurements confirm 8px shell padding, 6px section rhythm, c
 ## Comparison history
 
 1. Initial evidence: user screenshot identified P1 density, hierarchy and image-layout failures.
-2. Fixes: variable-height GPUI list, adaptive image rows, simplified metadata, Material Symbols icons, real process-icon extraction and quieter Zed-style surfaces.
+2. Fixes: variable-height GPUI list, adaptive image rows, simplified metadata, built-in GPUI component icons, real process-icon extraction and quieter Zed-style surfaces.
 3. Post-fix visual evidence: blocked because the GUI was not launched by request.
 
 ## Implementation checklist
 
 - Capture the revised panel in the same mixed-content state.
-- Verify Material Symbols ligatures and source process icons.
+- Verify built-in SVG icons and source process icons.
 - Check text/file row density and wide/tall image scaling.
 - Fix any remaining P1/P2 differences before marking visual QA passed.
 

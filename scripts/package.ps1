@@ -39,10 +39,11 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
+    Remove-Item (Join-Path $destination 'THIRD_PARTY_NOTICES.md') -Force -ErrorAction SilentlyContinue
     Copy-Item ".\target\$profile\nxtools-desktop.exe" (Join-Path $destination 'NxTools.exe')
     Copy-Item ".\target\$profile\nxtools-indexer.exe" (Join-Path $destination 'NxTools.Indexer.exe')
     Copy-Item ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" $destination
-    Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE', '.\THIRD_PARTY_NOTICES.md' $destination
+    Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE' $destination
 }
 finally {
     Pop-Location

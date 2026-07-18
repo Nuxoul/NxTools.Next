@@ -4,14 +4,12 @@ mod runtime;
 mod theme;
 mod ui;
 
-use std::borrow::Cow;
-
 use anyhow::{Context as _, Result};
 use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use gpui::{App, AppContext, Application};
 use gpui_component::{Theme, ThemeMode};
 use runtime::DesktopRuntime;
-use tracing::{info, warn};
+use tracing::info;
 
 fn run() -> Result<()> {
     let mut runtime = DesktopRuntime::initialize()?;
@@ -30,14 +28,6 @@ fn run() -> Result<()> {
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
     Application::new().run(move |cx: &mut App| {
-        if let Err(error) = cx
-            .text_system()
-            .add_fonts(vec![Cow::Borrowed(include_bytes!(
-                "../assets/MaterialSymbolsOutlined.ttf"
-            ))])
-        {
-            warn!(%error, "failed to load clipboard icon font");
-        }
         gpui_component::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
