@@ -104,6 +104,8 @@ pub struct Pong {
 pub enum PlatformEvent {
     ForegroundChanged(ForegroundContext),
     ClipboardTextCaptured(ClipboardTextCapture),
+    ClipboardImageCaptured(ClipboardImageCapture),
+    ClipboardFilesCaptured(ClipboardFilesCapture),
     ClipboardPanelRequested(ClipboardPanelRequest),
 }
 
@@ -124,6 +126,22 @@ pub struct ClipboardTextCapture {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardImageCapture {
+    pub staging_path: String,
+    pub width: u32,
+    pub height: u32,
+    pub source: ForegroundContext,
+    pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardFilesCapture {
+    pub paths: Vec<String>,
+    pub source: ForegroundContext,
+    pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClipboardPanelRequest {
     pub target: ForegroundContext,
     pub cursor_x: i32,
@@ -137,6 +155,8 @@ pub struct ClipboardPanelRequest {
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub enum PlatformCommand {
     PasteText(PasteTextCommand),
+    PasteFiles(PasteFilesCommand),
+    PasteImage(PasteImageCommand),
     SetWindowTopmost(SetWindowTopmostCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
 }
@@ -144,6 +164,20 @@ pub enum PlatformCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasteTextCommand {
     pub text: String,
+    pub target_window_handle: i64,
+    pub target_focus_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasteFilesCommand {
+    pub paths: Vec<String>,
+    pub target_window_handle: i64,
+    pub target_focus_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasteImageCommand {
+    pub image_path: String,
     pub target_window_handle: i64,
     pub target_focus_window_handle: i64,
 }
@@ -185,6 +219,16 @@ pub enum ProtocolError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_context() -> ForegroundContext {
+        ForegroundContext {
+            window_handle: 42,
+            focus_window_handle: 43,
+            process_id: 7,
+            process_name: "fixture".into(),
+            window_title: "fixture window".into(),
+        }
+    }
 
     #[test]
     fn hello_round_trips_with_correlation() {
@@ -279,6 +323,43 @@ mod tests {
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("paste command must decode");
         assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn image_and_files_round_trip_as_capture_and_paste_messages() {
+        for message in [
+            Message::PlatformEvent(PlatformEvent::ClipboardImageCaptured(
+                ClipboardImageCapture {
+                    staging_path: "C:/temp/image.png".into(),
+                    width: 640,
+                    height: 480,
+                    source: fixture_context(),
+                    captured_at_unix_ms: 10,
+                },
+            )),
+            Message::PlatformEvent(PlatformEvent::ClipboardFilesCaptured(
+                ClipboardFilesCapture {
+                    paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                    source: fixture_context(),
+                    captured_at_unix_ms: 11,
+                },
+            )),
+            Message::PlatformCommand(PlatformCommand::PasteFiles(PasteFilesCommand {
+                paths: vec!["C:/one.txt".into()],
+                target_window_handle: 5,
+                target_focus_window_handle: 6,
+            })),
+            Message::PlatformCommand(PlatformCommand::PasteImage(PasteImageCommand {
+                image_path: "C:/image.png".into(),
+                target_window_handle: 5,
+                target_focus_window_handle: 6,
+            })),
+        ] {
+            let envelope = Envelope::new(message);
+            let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+                .expect("multi-format message must decode");
+            assert_eq!(decoded, envelope);
+        }
     }
 
     #[test]

@@ -58,7 +58,29 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueuePaste(command, correlationId, cancellationToken);
+            .EnqueuePaste(new ClipboardPastePayload(
+                "text", command.Text, [], "", command.TargetWindowHandle,
+                command.TargetFocusWindowHandle), correlationId, cancellationToken);
+    }
+
+    public Task<WindowsCommandResult> PasteFilesAsync(
+        PasteFilesCommand command, Guid correlationId, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueuePaste(new ClipboardPastePayload(
+                "files", "", command.Paths, "", command.TargetWindowHandle,
+                command.TargetFocusWindowHandle), correlationId, cancellationToken);
+    }
+
+    public Task<WindowsCommandResult> PasteImageAsync(
+        PasteImageCommand command, Guid correlationId, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueuePaste(new ClipboardPastePayload(
+                "image", "", [], command.ImagePath, command.TargetWindowHandle,
+                command.TargetFocusWindowHandle), correlationId, cancellationToken);
     }
 
     public WindowsCommandResult SetWindowTopmost(SetWindowTopmostCommand command) =>
@@ -122,11 +144,11 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private readonly ForegroundContextProvider _foregroundContextProvider;
         private readonly IPlatformLog _log;
         private readonly ConcurrentQueue<PasteRequest> _pasteRequests = new();
-        private readonly ClipboardWriteSuppressor _writeSuppressor = new();
         private readonly NativeMethods.WinEventDelegate _foregroundCallback;
         private IntPtr _foregroundHook;
         private ForegroundContext? _pendingClipboardSource;
         private int _clipboardReadAttempts;
+        private bool _suppressNextClipboardUpdate;
 
         public bool ClipboardHotKeyAvailable { get; }
 
@@ -178,7 +200,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         }
 
         public Task<WindowsCommandResult> EnqueuePaste(
-            PasteTextCommand command,
+            ClipboardPastePayload command,
             Guid correlationId,
             CancellationToken cancellationToken)
         {
@@ -202,16 +224,21 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             switch (message.Msg)
             {
                 case WmClipboardUpdate:
+                    if (_suppressNextClipboardUpdate)
+                    {
+                        _suppressNextClipboardUpdate = false;
+                        return;
+                    }
                     _pendingClipboardSource = _foregroundContextProvider.Capture();
                     _clipboardReadAttempts = 0;
-                    TryPublishClipboardText();
+                    TryPublishClipboardContent();
                     return;
                 case WmHotKey when message.WParam.ToInt32() == ClipboardHotKeyId:
                     PublishPanelRequest();
                     return;
                 case WmTimer when message.WParam.ToInt64() == RetryTimerId:
                     _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
-                    TryPublishClipboardText();
+                    TryPublishClipboardContent();
                     return;
                 case WmExecutePaste:
                     DrainPasteRequests();
@@ -223,28 +250,63 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             base.WndProc(ref message);
         }
 
-        private void TryPublishClipboardText()
+        private void TryPublishClipboardContent()
         {
             try
             {
-                if (!Clipboard.ContainsText(TextDataFormat.UnicodeText))
-                {
-                    return;
-                }
-                var text = Clipboard.GetText(TextDataFormat.UnicodeText);
-                if (text.Length == 0 || _writeSuppressor.ConsumeIfMatches(text))
-                {
-                    return;
-                }
                 var source = _pendingClipboardSource ?? _foregroundContextProvider.Capture();
-                _events.TryWrite(new ClipboardTextCapturedEvent(
-                    text,
-                    source,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (Clipboard.ContainsFileDropList())
+                {
+                    var paths = Clipboard.GetFileDropList()
+                        .Cast<string>()
+                        .Where(static path => !string.IsNullOrWhiteSpace(path))
+                        .Take(1024)
+                        .ToArray();
+                    if (paths.Length > 0)
+                    {
+                        _events.TryWrite(new ClipboardFilesCapturedEvent(paths, source, capturedAt));
+                    }
+                    return;
+                }
+                if (Clipboard.ContainsImage())
+                {
+                    using var image = Clipboard.GetImage();
+                    if (image is not null)
+                    {
+                        var directory = Path.Combine(Path.GetTempPath(), "NxTools.Next", "clipboard-staging");
+                        Directory.CreateDirectory(directory);
+                        var path = Path.Combine(directory, $"{Guid.NewGuid():N}.png");
+                        image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                        _events.TryWrite(new ClipboardImageCapturedEvent(
+                            path,
+                            checked((uint)image.Width),
+                            checked((uint)image.Height),
+                            source,
+                            capturedAt));
+                    }
+                    return;
+                }
+                if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                {
+                    var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                    if (text.Length > 0)
+                    {
+                        _events.TryWrite(new ClipboardTextCapturedEvent(text, source, capturedAt));
+                    }
+                }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
             {
                 _ = NativeMethods.SetTimer(Handle, (UIntPtr)RetryTimerId, 40, IntPtr.Zero);
+            }
+            catch (Exception error)
+            {
+                _log.Write("error", "clipboard.capture_failed", null, new Dictionary<string, object?>
+                {
+                    ["exception_type"] = error.GetType().FullName,
+                    ["message"] = error.Message
+                });
             }
         }
 
@@ -297,21 +359,52 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             }
         }
 
-        private ClipboardWriteResult WriteClipboardText(string text)
+        private ClipboardWriteResult WriteClipboard(ClipboardPastePayload payload)
         {
             var attempts = new List<ClipboardWriteAttempt>();
             for (var attempt = 0; attempt < 5; attempt++)
             {
-                _writeSuppressor.SuppressNext(text);
                 try
                 {
-                    Clipboard.SetText(text, TextDataFormat.UnicodeText);
+                    _suppressNextClipboardUpdate = true;
+                    switch (payload.Kind)
+                    {
+                        case "text":
+                            Clipboard.SetText(payload.Text, TextDataFormat.UnicodeText);
+                            break;
+                        case "files":
+                            var paths = new System.Collections.Specialized.StringCollection();
+                            paths.AddRange(payload.Paths.Where(static path =>
+                                File.Exists(path) || Directory.Exists(path)).ToArray());
+                            if (paths.Count == 0)
+                            {
+                                _suppressNextClipboardUpdate = false;
+                                return new ClipboardWriteResult(false, "No pasted file paths still exist.", attempts);
+                            }
+                            Clipboard.SetFileDropList(paths);
+                            break;
+                        case "image":
+                            if (!File.Exists(payload.ImagePath))
+                            {
+                                _suppressNextClipboardUpdate = false;
+                                return new ClipboardWriteResult(false, "The clipboard image file no longer exists.", attempts);
+                            }
+                            using (var source = System.Drawing.Image.FromFile(payload.ImagePath))
+                            using (var image = new System.Drawing.Bitmap(source))
+                            {
+                                Clipboard.SetImage(image);
+                            }
+                            break;
+                        default:
+                            _suppressNextClipboardUpdate = false;
+                            return new ClipboardWriteResult(false, $"Unsupported clipboard content kind '{payload.Kind}'.", attempts);
+                    }
                     attempts.Add(new ClipboardWriteAttempt(attempt + 1, true, 0, null));
                     return new ClipboardWriteResult(true, null, attempts);
                 }
                 catch (ExternalException exception)
                 {
-                    _writeSuppressor.Cancel(text);
+                    _suppressNextClipboardUpdate = false;
                     attempts.Add(new ClipboardWriteAttempt(
                         attempt + 1,
                         false,
@@ -326,6 +419,16 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     }
                     Thread.Sleep(20);
                 }
+                catch (Exception exception)
+                {
+                    _suppressNextClipboardUpdate = false;
+                    attempts.Add(new ClipboardWriteAttempt(
+                        attempt + 1,
+                        false,
+                        exception.HResult,
+                        exception.Message));
+                    return new ClipboardWriteResult(false, exception.Message, attempts);
+                }
             }
             return new ClipboardWriteResult(false, "Could not open the Windows clipboard.", attempts);
         }
@@ -336,8 +439,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         uint IWindowsPasteOperations.GetClipboardSequenceNumber() =>
             NativeMethods.GetClipboardSequenceNumber();
 
-        ClipboardWriteResult IWindowsPasteOperations.WriteClipboardText(string text) =>
-            WriteClipboardText(text);
+        ClipboardWriteResult IWindowsPasteOperations.WriteClipboard(ClipboardPastePayload payload) =>
+            WriteClipboard(payload);
 
         bool IWindowsPasteOperations.TryActivateWindow(
             long targetWindowHandle,
@@ -385,33 +488,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         }
     }
 
-    private sealed class ClipboardWriteSuppressor
-    {
-        private string? _expectedText;
-
-        public void SuppressNext(string text) => _expectedText = text;
-
-        public bool ConsumeIfMatches(string text)
-        {
-            if (_expectedText is null || !string.Equals(_expectedText, text, StringComparison.Ordinal))
-            {
-                return false;
-            }
-            _expectedText = null;
-            return true;
-        }
-
-        public void Cancel(string text)
-        {
-            if (string.Equals(_expectedText, text, StringComparison.Ordinal))
-            {
-                _expectedText = null;
-            }
-        }
-    }
-
     private sealed record PasteRequest(
-        PasteTextCommand Command,
+        ClipboardPastePayload Command,
         Guid CorrelationId,
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);

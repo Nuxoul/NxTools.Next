@@ -14,6 +14,7 @@ internal static class Program
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
+            ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
@@ -97,6 +98,33 @@ internal static class Program
         Assert(json.Contains("\"text\":\"captured text\"", StringComparison.Ordinal));
         Assert(json.Contains("\"window_handle\":42", StringComparison.Ordinal));
         Assert(json.Contains("\"process_name\":\"notepad\"", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
+    private static Task MultiFormatPayloadsRoundTrip()
+    {
+        var filesEnvelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "paste_files",
+            Data = new { Paths = new[] { "C:/one.txt", "C:/two.txt" }, TargetWindowHandle = 4L, TargetFocusWindowHandle = 5L }
+        });
+        var files = PlatformCommandParser.ParsePasteFiles(filesEnvelope);
+        Assert(files.Paths.Count == 2 && files.TargetWindowHandle == 4);
+
+        var imageEnvelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "paste_image",
+            Data = new { ImagePath = "C:/image.png", TargetWindowHandle = 6L, TargetFocusWindowHandle = 7L }
+        });
+        var image = PlatformCommandParser.ParsePasteImage(imageEnvelope);
+        Assert(image.ImagePath == "C:/image.png" && image.TargetFocusWindowHandle == 7);
+
+        var captured = PlatformEventEnvelopeFactory.Create(new ClipboardImageCapturedEvent(
+            "C:/staging.png", 640, 480,
+            new ForegroundContext(1, 2, 3, "capture", "window"), 10));
+        var json = JsonSerializer.Serialize(captured, JsonDefaults.Options);
+        Assert(json.Contains("clipboard_image_captured", StringComparison.Ordinal));
+        Assert(json.Contains("\"width\":640", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 
@@ -360,7 +388,7 @@ internal static class Program
 
         public uint GetClipboardSequenceNumber() => 7;
 
-        public ClipboardWriteResult WriteClipboardText(string text) =>
+        public ClipboardWriteResult WriteClipboard(ClipboardPastePayload payload) =>
             new(true, null, [new ClipboardWriteAttempt(1, true, 0, null)]);
 
         public bool TryActivateWindow(long targetWindowHandle, long focusWindowHandle)

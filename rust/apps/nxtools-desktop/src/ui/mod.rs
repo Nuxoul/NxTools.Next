@@ -6,7 +6,7 @@ use gpui::{
     uniform_list,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use nxtools_clipboard::ClipboardItem;
+use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
@@ -28,6 +28,8 @@ enum PanelStatus {
 enum ClipboardCategory {
     All,
     Text,
+    Image,
+    Files,
 }
 
 impl PanelStatus {
@@ -40,6 +42,10 @@ impl PanelStatus {
 
     fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
+    }
+
+    fn should_render(&self) -> bool {
+        !matches!(self, Self::Ready(_))
     }
 }
 
@@ -135,7 +141,16 @@ impl ClipboardPanel {
             .application
             .update(cx, |application, _| application.query_entries(query))
         {
-            Ok(Ok(entries)) => self.entries = entries,
+            Ok(Ok(mut entries)) => {
+                let category = self.active_category;
+                entries.retain(|entry| match category {
+                    ClipboardCategory::All => true,
+                    ClipboardCategory::Text => entry.kind == ClipboardKind::Text,
+                    ClipboardCategory::Image => entry.kind == ClipboardKind::Image,
+                    ClipboardCategory::Files => entry.kind == ClipboardKind::Files,
+                });
+                self.entries = entries;
+            }
             Ok(Err(error)) => {
                 error!(%error, "failed to query clipboard popup history");
                 self.entries.clear();
@@ -147,6 +162,13 @@ impl ClipboardPanel {
                 self.status = PanelStatus::Error("剪贴板核心不可用".into());
             }
         }
+    }
+
+    fn select_category(&mut self, category: ClipboardCategory, cx: &mut Context<Self>) {
+        self.active_category = category;
+        let query = self.search_input.read(cx).value().to_string();
+        self.reload_entries(&query, cx);
+        cx.notify();
     }
 
     fn paste_entry(&mut self, entry: &ClipboardItem, _window: &mut Window, cx: &mut Context<Self>) {
@@ -228,6 +250,23 @@ impl ClipboardPanel {
         cx.notify();
     }
 
+    pub(crate) fn handle_foreground_changed(
+        &mut self,
+        popup_window_handle: i64,
+        foreground_window_handle: i64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if should_hide_for_foreground_change(
+            popup_window_handle,
+            foreground_window_handle,
+            self.pending_paste.is_some(),
+            self.is_open,
+        ) {
+            self.close(window, cx);
+        }
+    }
+
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.is_open {
             return;
@@ -271,6 +310,7 @@ impl Render for ClipboardPanel {
         let theme = self.theme;
         let entries_empty = self.entries.is_empty();
         let status_is_error = self.status.is_error();
+        let status_should_render = self.status.should_render();
         let status_label = self.status.label().to_owned();
         let summary = if self.target.process_name.is_empty() {
             format!("{} 条记录", self.entries.len())
@@ -282,6 +322,8 @@ impl Render for ClipboardPanel {
         let panel = cx.entity().downgrade();
         let all_category_panel = cx.entity().downgrade();
         let text_category_panel = cx.entity().downgrade();
+        let image_category_panel = cx.entity().downgrade();
+        let files_category_panel = cx.entity().downgrade();
         div()
             .relative()
             .size_full()
@@ -321,30 +363,32 @@ impl Render for ClipboardPanel {
                             .truncate()
                             .child(summary),
                     )
-                    .child(
-                        div()
-                            .max_w(px(150.0))
-                            .h(px(21.0))
-                            .px_2()
-                            .rounded(px(5.0))
-                            .border_1()
-                            .border_color(if status_is_error {
-                                theme.danger
-                            } else {
-                                theme.border
-                            })
-                            .bg(theme.surface_raised)
-                            .text_xs()
-                            .text_color(if status_is_error {
-                                theme.danger
-                            } else {
-                                theme.text_secondary
-                            })
-                            .flex()
-                            .items_center()
-                            .truncate()
-                            .child(status_label),
-                    ),
+                    .when(status_should_render, |header| {
+                        header.child(
+                            div()
+                                .max_w(px(150.0))
+                                .h(px(21.0))
+                                .px_2()
+                                .rounded(px(5.0))
+                                .border_1()
+                                .border_color(if status_is_error {
+                                    theme.danger
+                                } else {
+                                    theme.border
+                                })
+                                .bg(theme.surface_raised)
+                                .text_xs()
+                                .text_color(if status_is_error {
+                                    theme.danger
+                                } else {
+                                    theme.text_secondary
+                                })
+                                .flex()
+                                .items_center()
+                                .truncate()
+                                .child(status_label),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -359,8 +403,7 @@ impl Render for ClipboardPanel {
                         self.active_category == ClipboardCategory::All,
                         move |_event, _window, app| {
                             let _ = all_category_panel.update(app, |panel, cx| {
-                                panel.active_category = ClipboardCategory::All;
-                                cx.notify();
+                                panel.select_category(ClipboardCategory::All, cx);
                             });
                         },
                     ))
@@ -370,18 +413,31 @@ impl Render for ClipboardPanel {
                         self.active_category == ClipboardCategory::Text,
                         move |_event, _window, app| {
                             let _ = text_category_panel.update(app, |panel, cx| {
-                                panel.active_category = ClipboardCategory::Text;
-                                cx.notify();
+                                panel.select_category(ClipboardCategory::Text, cx);
                             });
                         },
                     ))
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child("当前阶段仅迁移文本"),
-                    ),
+                    .child(category_tab(
+                        theme,
+                        "图片",
+                        self.active_category == ClipboardCategory::Image,
+                        move |_event, _window, app| {
+                            let _ = image_category_panel.update(app, |panel, cx| {
+                                panel.select_category(ClipboardCategory::Image, cx);
+                            });
+                        },
+                    ))
+                    .child(category_tab(
+                        theme,
+                        "文件",
+                        self.active_category == ClipboardCategory::Files,
+                        move |_event, _window, app| {
+                            let _ = files_category_panel.update(app, |panel, cx| {
+                                panel.select_category(ClipboardCategory::Files, cx);
+                            });
+                        },
+                    ))
+                    .child(div().flex_1()),
             )
             .child(
                 div()
@@ -435,7 +491,7 @@ impl Render for ClipboardPanel {
                                 .justify_center()
                                 .text_sm()
                                 .text_color(theme.text_muted)
-                                .child("暂无纯文本历史"),
+                                .child("暂无剪贴板记录"),
                         )
                     })
                     .when(!entries_empty, |list| {
@@ -521,6 +577,19 @@ impl Render for ClipboardPanel {
                     }),
             )
     }
+}
+
+fn should_hide_for_foreground_change(
+    popup_window_handle: i64,
+    foreground_window_handle: i64,
+    paste_pending: bool,
+    is_open: bool,
+) -> bool {
+    is_open
+        && !paste_pending
+        && popup_window_handle != 0
+        && foreground_window_handle != 0
+        && foreground_window_handle != popup_window_handle
 }
 
 fn category_tab(
@@ -618,8 +687,19 @@ mod tests {
     #[test]
     fn panel_status_uses_typed_error_state() {
         assert!(!PanelStatus::Ready("ready".into()).is_error());
+        assert!(!PanelStatus::Ready("ready".into()).should_render());
         assert!(!PanelStatus::Pending("pending").is_error());
+        assert!(PanelStatus::Pending("pending").should_render());
         assert!(PanelStatus::Error("failed".into()).is_error());
+        assert!(PanelStatus::Error("failed".into()).should_render());
+    }
+
+    #[test]
+    fn external_foreground_window_hides_open_popup_but_paste_activation_does_not() {
+        assert!(should_hide_for_foreground_change(10, 20, false, true));
+        assert!(!should_hide_for_foreground_change(10, 20, true, true));
+        assert!(!should_hide_for_foreground_change(10, 10, false, true));
+        assert!(!should_hide_for_foreground_change(10, 20, false, false));
     }
 
     #[test]

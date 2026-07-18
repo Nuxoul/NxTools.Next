@@ -13,6 +13,7 @@ pub struct DesktopRuntime {
     pub config: AppConfig,
     pub platform_bridge: Option<nxtools_ipc::PlatformBridge>,
     pub clipboard_history: Option<ClipboardHistory>,
+    pub clipboard_image_dir: Option<PathBuf>,
     _instance: SingleInstanceGuard,
     _log_guard: LogGuard,
     _platform_host: Option<PlatformHostSupervisor>,
@@ -26,6 +27,9 @@ impl DesktopRuntime {
         let config = AppConfig::load_or_create(&paths)?;
         let clipboard_history = ClipboardHistory::open(paths.data_dir.join("clipboard.db"))
             .context("failed to open clipboard history")?;
+        let clipboard_image_dir = paths.data_dir.join("clipboard-images");
+        std::fs::create_dir_all(&clipboard_image_dir)
+            .context("failed to create clipboard image directory")?;
         let (platform_bridge, platform_server) = nxtools_ipc::platform_bridge(256);
         start_platform_server(config.platform_pipe_name.clone(), platform_server)?;
         let platform_host = PlatformHostSupervisor::launch_if_packaged()?;
@@ -35,6 +39,7 @@ impl DesktopRuntime {
             config,
             platform_bridge: Some(platform_bridge),
             clipboard_history: Some(clipboard_history),
+            clipboard_image_dir: Some(clipboard_image_dir),
             _instance: instance,
             _log_guard: log_guard,
             _platform_host: platform_host,

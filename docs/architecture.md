@@ -45,18 +45,19 @@ the envelope is versioned so payload encoding can change without blurring proces
 5. GPL repositories are behavioral references only. Zed's Apache-licensed GPUI crate is the
    sole Zed code dependency.
 
-## Clipboard text slice
+## Clipboard slice
 
 ```text
 Windows copy
-  -> C# observes text/source/focused HWND
-  -> Rust persists and deduplicates in SQLite
+  -> C# observes text, image or file-drop data plus its source window
+  -> C# stages image bytes; file paths remain platform metadata
+  -> Rust ingests staged images and persists typed history in SQLite
 
 Alt+C
   -> C# WM_HOTKEY captures target HWND + focused child HWND + cursor
   -> Rust opens a GPUI WindowKind::PopUp near the cursor
   -> user searches/clicks a Rust-owned history item
-  -> Rust sends paste_text(item, target, focused child)
+  -> Rust sends paste_text, paste_image or paste_files with the original target
   -> C# restores Windows focus and emits Ctrl+V
   -> C# returns a result correlated to the paste command
   -> GPUI popup closes on success, or stays open with an error on failure
@@ -65,11 +66,11 @@ Alt+C
 The Rust `ClipboardApplication` is the application-layer module: it owns SQLite history,
 search, platform notifications and commands. The GPUI `ClipboardPanel` only owns view state and
 translates search/click interactions into application intents. The C# PlatformHost owns the
-Windows-only topmost operation, focus restoration, modifier release, input injection and
-`WM_PASTE` fallback.
+Windows-only clipboard format extraction/write-back, topmost operation, focus restoration,
+modifier release, input injection and `WM_PASTE` fallback.
 
 The clipboard panel is not a page in an application main window. Its GPUI window does not exist
-until the global shortcut is pressed. Escape, a successful paste, or window deactivation hides
+until the global shortcut is pressed. Escape, a successful paste, or a foreground-window change hides
 the native panel without destroying its GPUI window. On the next shortcut, Rust creates the new
 panel and retains the previous hidden window until the asynchronous topmost result arrives. A
 topmost failure is nonfatal: the new panel stays usable and only the previous hidden panel is

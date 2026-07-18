@@ -46,11 +46,19 @@ internal sealed record PasteShortcutResult(
     int InputStructSize,
     IReadOnlyList<KeyboardInputStep> Steps);
 
+internal sealed record ClipboardPastePayload(
+    string Kind,
+    string Text,
+    IReadOnlyList<string> Paths,
+    string ImagePath,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle);
+
 internal interface IWindowsPasteOperations
 {
     bool IsWindow(long windowHandle);
     uint GetClipboardSequenceNumber();
-    ClipboardWriteResult WriteClipboardText(string text);
+    ClipboardWriteResult WriteClipboard(ClipboardPastePayload payload);
     PasteWindowSnapshot CaptureWindowState(long targetWindowHandle);
     bool TryActivateWindow(long targetWindowHandle, long focusWindowHandle);
     bool IsForegroundWindowForTarget(long targetWindowHandle);
@@ -69,12 +77,29 @@ internal sealed class WindowsPasteCoordinator(
     private readonly IPlatformLog _log = log ?? NullPlatformLog.Instance;
 
     public WindowsCommandResult Execute(PasteTextCommand command, Guid correlationId = default)
+        => Execute(new ClipboardPastePayload(
+            "text", command.Text, [], "", command.TargetWindowHandle,
+            command.TargetFocusWindowHandle), correlationId);
+
+    public WindowsCommandResult Execute(PasteFilesCommand command, Guid correlationId = default)
+        => Execute(new ClipboardPastePayload(
+            "files", "", command.Paths, "", command.TargetWindowHandle,
+            command.TargetFocusWindowHandle), correlationId);
+
+    public WindowsCommandResult Execute(PasteImageCommand command, Guid correlationId = default)
+        => Execute(new ClipboardPastePayload(
+            "image", "", [], command.ImagePath, command.TargetWindowHandle,
+            command.TargetFocusWindowHandle), correlationId);
+
+    internal WindowsCommandResult Execute(ClipboardPastePayload command, Guid correlationId)
     {
         Log("info", "paste.start", correlationId, new Dictionary<string, object?>()
         {
             ["target_window"] = Hex(command.TargetWindowHandle),
             ["target_focus_window"] = Hex(command.TargetFocusWindowHandle),
+            ["content_kind"] = command.Kind,
             ["text_length"] = command.Text.Length,
+            ["path_count"] = command.Paths.Count,
             ["input_struct_size"] = WindowsPlatformAdapter.NativeInputSize
         });
         if (command.TargetWindowHandle == 0 || !operations.IsWindow(command.TargetWindowHandle))
@@ -83,7 +108,7 @@ internal sealed class WindowsPasteCoordinator(
         }
 
         var clipboardBefore = operations.GetClipboardSequenceNumber();
-        var clipboardWrite = operations.WriteClipboardText(command.Text);
+        var clipboardWrite = operations.WriteClipboard(command);
         foreach (var attempt in clipboardWrite.Attempts)
         {
             Log(attempt.Success ? "info" : "warning", "paste.clipboard_write_attempt",

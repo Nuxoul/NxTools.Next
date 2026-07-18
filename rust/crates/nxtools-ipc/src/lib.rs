@@ -94,10 +94,14 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 6] = [
+            const SUPPORTED_CAPABILITIES: [&str; 10] = [
                 "foreground_context",
                 "clipboard_text_capture",
+                "clipboard_image_capture",
+                "clipboard_files_capture",
                 "paste_text",
+                "paste_image",
+                "paste_files",
                 "clipboard_panel_hotkey",
                 "window_topmost",
                 "window_visibility",

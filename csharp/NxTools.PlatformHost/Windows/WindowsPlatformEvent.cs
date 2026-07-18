@@ -9,6 +9,18 @@ internal sealed record ClipboardTextCapturedEvent(
     ForegroundContext Source,
     long CapturedAtUnixMs) : WindowsPlatformEvent;
 
+internal sealed record ClipboardImageCapturedEvent(
+    string StagingPath,
+    uint Width,
+    uint Height,
+    ForegroundContext Source,
+    long CapturedAtUnixMs) : WindowsPlatformEvent;
+
+internal sealed record ClipboardFilesCapturedEvent(
+    IReadOnlyList<string> Paths,
+    ForegroundContext Source,
+    long CapturedAtUnixMs) : WindowsPlatformEvent;
+
 internal sealed record ClipboardPanelRequestedEvent(
     ForegroundContext Target,
     int CursorX,

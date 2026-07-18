@@ -19,9 +19,47 @@ pub struct TextCapture {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageCapture {
+    pub image_path: String,
+    pub width: u32,
+    pub height: u32,
+    pub source: CaptureSource,
+    pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilesCapture {
+    pub paths: Vec<String>,
+    pub source: CaptureSource,
+    pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardKind {
+    Text,
+    Image,
+    Files,
+}
+
+impl ClipboardKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Files => "files",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardItem {
     pub id: i64,
+    pub kind: ClipboardKind,
     pub text: String,
+    pub image_path: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub file_paths: Vec<String>,
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
     pub copy_count: u32,
@@ -43,7 +81,12 @@ impl ClipboardHistory {
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS clipboard_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL DEFAULT 'text',
                 text TEXT NOT NULL,
+                image_path TEXT NOT NULL DEFAULT '',
+                image_width INTEGER NOT NULL DEFAULT 0,
+                image_height INTEGER NOT NULL DEFAULT 0,
+                file_paths_json TEXT NOT NULL DEFAULT '[]',
                 source_window_handle INTEGER NOT NULL,
                 source_process_id INTEGER NOT NULL,
                 source_process_name TEXT NOT NULL,
@@ -54,6 +97,11 @@ impl ClipboardHistory {
             CREATE INDEX IF NOT EXISTS idx_clipboard_items_recent
                 ON clipboard_items(captured_at_unix_ms DESC, id DESC);",
         )?;
+        ensure_column(&connection, "content_type", "TEXT NOT NULL DEFAULT 'text'")?;
+        ensure_column(&connection, "image_path", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_column(&connection, "image_width", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&connection, "image_height", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&connection, "file_paths_json", "TEXT NOT NULL DEFAULT '[]'")?;
         Ok(Self { connection })
     }
 
@@ -61,18 +109,86 @@ impl ClipboardHistory {
         &mut self,
         capture: TextCapture,
     ) -> Result<CaptureOutcome, ClipboardHistoryError> {
+        self.capture_payload(
+            ClipboardKind::Text,
+            capture.text,
+            String::new(),
+            0,
+            0,
+            Vec::new(),
+            capture.source,
+            capture.captured_at_unix_ms,
+        )
+    }
+
+    pub fn capture_image(
+        &mut self,
+        capture: ImageCapture,
+    ) -> Result<CaptureOutcome, ClipboardHistoryError> {
+        self.capture_payload(
+            ClipboardKind::Image,
+            String::new(),
+            capture.image_path,
+            capture.width,
+            capture.height,
+            Vec::new(),
+            capture.source,
+            capture.captured_at_unix_ms,
+        )
+    }
+
+    pub fn capture_files(
+        &mut self,
+        capture: FilesCapture,
+    ) -> Result<CaptureOutcome, ClipboardHistoryError> {
+        self.capture_payload(
+            ClipboardKind::Files,
+            String::new(),
+            String::new(),
+            0,
+            0,
+            capture.paths,
+            capture.source,
+            capture.captured_at_unix_ms,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn capture_payload(
+        &mut self,
+        kind: ClipboardKind,
+        text: String,
+        image_path: String,
+        image_width: u32,
+        image_height: u32,
+        file_paths: Vec<String>,
+        source: CaptureSource,
+        captured_at_unix_ms: i64,
+    ) -> Result<CaptureOutcome, ClipboardHistoryError> {
+        let file_paths_json = serde_json::to_string(&file_paths)?;
         let latest = self
             .connection
             .query_row(
-                "SELECT id, text FROM clipboard_items
+                "SELECT id, content_type, text, image_path, file_paths_json FROM clipboard_items
                  ORDER BY captured_at_unix_ms DESC, id DESC LIMIT 1",
                 [],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                },
             )
             .optional()?;
 
-        if let Some((id, latest_text)) = latest
-            && latest_text == capture.text
+        if let Some((id, latest_kind, latest_text, latest_image, latest_files)) = latest
+            && latest_kind == kind.as_str()
+            && latest_text == text
+            && latest_image == image_path
+            && latest_files == file_paths_json
         {
             self.connection.execute(
                 "UPDATE clipboard_items
@@ -84,11 +200,11 @@ impl ClipboardHistory {
                      copy_count = copy_count + 1
                  WHERE id = ?6",
                 params![
-                    capture.source.window_handle,
-                    capture.source.process_id,
-                    capture.source.process_name,
-                    capture.source.window_title,
-                    capture.captured_at_unix_ms,
+                    source.window_handle,
+                    source.process_id,
+                    source.process_name,
+                    source.window_title,
+                    captured_at_unix_ms,
                     id,
                 ],
             )?;
@@ -97,16 +213,22 @@ impl ClipboardHistory {
 
         self.connection.execute(
             "INSERT INTO clipboard_items (
-                text, source_window_handle, source_process_id, source_process_name,
+                content_type, text, image_path, image_width, image_height, file_paths_json,
+                source_window_handle, source_process_id, source_process_name,
                 source_window_title, captured_at_unix_ms, copy_count
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)",
             params![
-                capture.text,
-                capture.source.window_handle,
-                capture.source.process_id,
-                capture.source.process_name,
-                capture.source.window_title,
-                capture.captured_at_unix_ms,
+                kind.as_str(),
+                text,
+                image_path,
+                image_width,
+                image_height,
+                file_paths_json,
+                source.window_handle,
+                source.process_id,
+                source.process_name,
+                source.window_title,
+                captured_at_unix_ms,
             ],
         )?;
         let id = self.connection.last_insert_rowid();
@@ -116,7 +238,8 @@ impl ClipboardHistory {
 
     pub fn recent(&self, limit: usize) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
         let mut statement = self.connection.prepare(
-            "SELECT id, text, source_window_handle, source_process_id,
+            "SELECT id, content_type, text, image_path, image_width, image_height,
+                    file_paths_json, source_window_handle, source_process_id,
                     source_process_name, source_window_title, captured_at_unix_ms, copy_count
              FROM clipboard_items
              ORDER BY captured_at_unix_ms DESC, id DESC
@@ -136,10 +259,12 @@ impl ClipboardHistory {
         }
 
         let mut statement = self.connection.prepare(
-            "SELECT id, text, source_window_handle, source_process_id,
+            "SELECT id, content_type, text, image_path, image_width, image_height,
+                    file_paths_json, source_window_handle, source_process_id,
                     source_process_name, source_window_title, captured_at_unix_ms, copy_count
              FROM clipboard_items
              WHERE instr(lower(text), lower(?1)) > 0
+                OR instr(lower(file_paths_json), lower(?1)) > 0
              ORDER BY captured_at_unix_ms DESC, id DESC
              LIMIT ?2",
         )?;
@@ -150,7 +275,8 @@ impl ClipboardHistory {
     fn item_by_id(&self, id: i64) -> Result<ClipboardItem, ClipboardHistoryError> {
         self.connection
             .query_row(
-                "SELECT id, text, source_window_handle, source_process_id,
+                "SELECT id, content_type, text, image_path, image_width, image_height,
+                        file_paths_json, source_window_handle, source_process_id,
                         source_process_name, source_window_title, captured_at_unix_ms, copy_count
                  FROM clipboard_items WHERE id = ?1",
                 [id],
@@ -161,17 +287,28 @@ impl ClipboardHistory {
 }
 
 fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
+    let kind = match row.get::<_, String>(1)?.as_str() {
+        "image" => ClipboardKind::Image,
+        "files" => ClipboardKind::Files,
+        _ => ClipboardKind::Text,
+    };
+    let file_paths_json = row.get::<_, String>(6)?;
     Ok(ClipboardItem {
         id: row.get(0)?,
-        text: row.get(1)?,
+        kind,
+        text: row.get(2)?,
+        image_path: row.get(3)?,
+        image_width: row.get(4)?,
+        image_height: row.get(5)?,
+        file_paths: serde_json::from_str(&file_paths_json).unwrap_or_default(),
         source: CaptureSource {
-            window_handle: row.get(2)?,
-            process_id: row.get(3)?,
-            process_name: row.get(4)?,
-            window_title: row.get(5)?,
+            window_handle: row.get(7)?,
+            process_id: row.get(8)?,
+            process_name: row.get(9)?,
+            window_title: row.get(10)?,
         },
-        captured_at_unix_ms: row.get(6)?,
-        copy_count: row.get(7)?,
+        captured_at_unix_ms: row.get(11)?,
+        copy_count: row.get(12)?,
     })
 }
 
@@ -179,6 +316,26 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
 pub enum ClipboardHistoryError {
     #[error("clipboard database error: {0}")]
     Database(#[from] rusqlite::Error),
+    #[error("clipboard data serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+}
+
+fn ensure_column(
+    connection: &Connection,
+    name: &str,
+    definition: &str,
+) -> Result<(), rusqlite::Error> {
+    let mut statement = connection.prepare("PRAGMA table_info(clipboard_items)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|column| column == name) {
+        connection.execute(
+            &format!("ALTER TABLE clipboard_items ADD COLUMN {name} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -319,5 +476,40 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].text, "persist across restart");
         assert_eq!(items[0].source.window_title, "PowerShell");
+    }
+
+    #[test]
+    fn image_and_files_are_persisted_with_their_real_types() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let source = CaptureSource {
+            window_handle: 1,
+            process_id: 2,
+            process_name: "capture".into(),
+            window_title: "capture".into(),
+        };
+        history
+            .capture_image(ImageCapture {
+                image_path: "C:/data/image.png".into(),
+                width: 640,
+                height: 480,
+                source: source.clone(),
+                captured_at_unix_ms: 10,
+            })
+            .expect("capture image");
+        history
+            .capture_files(FilesCapture {
+                paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                source,
+                captured_at_unix_ms: 20,
+            })
+            .expect("capture files");
+
+        let items = history.recent(10).expect("recent");
+        assert_eq!(items[0].kind, ClipboardKind::Files);
+        assert_eq!(items[0].file_paths.len(), 2);
+        assert_eq!(items[1].kind, ClipboardKind::Image);
+        assert_eq!((items[1].image_width, items[1].image_height), (640, 480));
     }
 }

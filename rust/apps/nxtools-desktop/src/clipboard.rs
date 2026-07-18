@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
@@ -9,12 +10,14 @@ use gpui::{
 };
 use gpui_component::Root;
 use nxtools_clipboard::{
-    CaptureSource, ClipboardHistory, ClipboardHistoryError, ClipboardItem, TextCapture,
+    CaptureSource, ClipboardHistory, ClipboardHistoryError, ClipboardItem, ClipboardKind,
+    FilesCapture, ImageCapture, TextCapture,
 };
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
-    ClipboardPanelRequest, ForegroundContext, PasteTextCommand, PlatformCommand, PlatformEvent,
-    SetWindowTopmostCommand, SetWindowVisibilityCommand,
+    ClipboardPanelRequest, ForegroundContext, PasteFilesCommand, PasteImageCommand,
+    PasteTextCommand, PlatformCommand, PlatformEvent, SetWindowTopmostCommand,
+    SetWindowVisibilityCommand,
 };
 use tracing::{error, info};
 
@@ -23,6 +26,15 @@ use crate::ui::{ClipboardPanel, PANEL_HEIGHT, PANEL_WIDTH, native_window_handle,
 
 const HISTORY_LIMIT: usize = 500;
 const MAX_PANEL_REQUEST_AGE_MS: i64 = 2_000;
+
+fn map_source(source: ForegroundContext) -> CaptureSource {
+    CaptureSource {
+        window_handle: source.window_handle,
+        process_id: source.process_id,
+        process_name: source.process_name,
+        window_title: source.window_title,
+    }
+}
 
 pub struct ClipboardApplicationGlobal {
     _application: Entity<ClipboardApplication>,
@@ -40,6 +52,7 @@ impl Global for ClipboardApplicationGlobal {}
 
 pub struct ClipboardApplication {
     history: Rc<RefCell<ClipboardHistory>>,
+    image_dir: PathBuf,
     platform: Rc<PlatformBridge>,
     popup: PopupSession,
     _platform_task: Task<()>,
@@ -49,6 +62,7 @@ pub struct ClipboardApplication {
 struct PopupWindow {
     window: AnyWindowHandle,
     panel: WeakEntity<ClipboardPanel>,
+    native_window_handle: i64,
 }
 
 #[derive(Default)]
@@ -60,6 +74,7 @@ struct PopupSession {
 impl ClipboardApplication {
     pub fn new(
         history: ClipboardHistory,
+        image_dir: PathBuf,
         platform: PlatformBridge,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -83,6 +98,7 @@ impl ClipboardApplication {
 
         Self {
             history: Rc::new(RefCell::new(history)),
+            image_dir,
             platform,
             popup: PopupSession::default(),
             _platform_task: platform_task,
@@ -105,13 +121,24 @@ impl ClipboardApplication {
         entry: &ClipboardItem,
         target: &ForegroundContext,
     ) -> Result<uuid::Uuid, PlatformBridgeError> {
-        let command_id =
-            self.platform
-                .send_command(PlatformCommand::PasteText(PasteTextCommand {
-                    text: entry.text.clone(),
-                    target_window_handle: target.window_handle,
-                    target_focus_window_handle: target.focus_window_handle,
-                }))?;
+        let command = match entry.kind {
+            ClipboardKind::Text => PlatformCommand::PasteText(PasteTextCommand {
+                text: entry.text.clone(),
+                target_window_handle: target.window_handle,
+                target_focus_window_handle: target.focus_window_handle,
+            }),
+            ClipboardKind::Files => PlatformCommand::PasteFiles(PasteFilesCommand {
+                paths: entry.file_paths.clone(),
+                target_window_handle: target.window_handle,
+                target_focus_window_handle: target.focus_window_handle,
+            }),
+            ClipboardKind::Image => PlatformCommand::PasteImage(PasteImageCommand {
+                image_path: entry.image_path.clone(),
+                target_window_handle: target.window_handle,
+                target_focus_window_handle: target.focus_window_handle,
+            }),
+        };
+        let command_id = self.platform.send_command(command)?;
         info!(item_id = entry.id, %command_id, target = %target.process_name, "paste command sent");
         Ok(command_id)
     }
@@ -247,6 +274,31 @@ impl ClipboardApplication {
                     error!(%error, "failed to persist clipboard capture");
                 }
             }
+            PlatformEvent::ClipboardImageCaptured(capture) => {
+                match self.store_captured_image(&capture.staging_path) {
+                    Ok(image_path) => {
+                        if let Err(error) = self.history.borrow_mut().capture_image(ImageCapture {
+                            image_path,
+                            width: capture.width,
+                            height: capture.height,
+                            source: map_source(capture.source),
+                            captured_at_unix_ms: capture.captured_at_unix_ms,
+                        }) {
+                            error!(%error, "failed to persist clipboard image capture");
+                        }
+                    }
+                    Err(error) => error!(%error, "failed to ingest staged clipboard image"),
+                }
+            }
+            PlatformEvent::ClipboardFilesCaptured(capture) => {
+                if let Err(error) = self.history.borrow_mut().capture_files(FilesCapture {
+                    paths: capture.paths,
+                    source: map_source(capture.source),
+                    captured_at_unix_ms: capture.captured_at_unix_ms,
+                }) {
+                    error!(%error, "failed to persist clipboard files capture");
+                }
+            }
             PlatformEvent::ClipboardPanelRequested(request) => {
                 let request_age =
                     nxtools_ipc::unix_time_ms().saturating_sub(request.requested_at_unix_ms);
@@ -256,8 +308,33 @@ impl ClipboardApplication {
                     info!(request_age, "ignored stale clipboard panel request");
                 }
             }
-            PlatformEvent::ForegroundChanged(_) => {}
+            PlatformEvent::ForegroundChanged(foreground) => {
+                let Some(popup) = self.popup.lifecycle.current().cloned() else {
+                    return;
+                };
+                let _ = popup.window.update(cx, |_, window, app| {
+                    let _ = popup.panel.update(app, |panel, cx| {
+                        panel.handle_foreground_changed(
+                            popup.native_window_handle,
+                            foreground.window_handle,
+                            window,
+                            cx,
+                        );
+                    });
+                });
+            }
         }
+    }
+
+    fn store_captured_image(&self, staging_path: &str) -> std::io::Result<String> {
+        let staging = std::path::Path::new(staging_path);
+        let file_name = staging
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("clipboard.png"));
+        let destination = self.image_dir.join(file_name);
+        std::fs::copy(staging, &destination)?;
+        let _ = std::fs::remove_file(staging);
+        Ok(destination.to_string_lossy().into_owned())
     }
 
     fn show_panel(&mut self, request: ClipboardPanelRequest, cx: &mut Context<Self>) {
@@ -277,8 +354,10 @@ impl ClipboardApplication {
         let application = cx.entity().downgrade();
         let target = request.target.clone();
         let panel_slot = Rc::new(RefCell::new(None));
+        let native_window_slot = Rc::new(RefCell::new(None));
         let topmost_slot = Rc::new(RefCell::new(None));
         let opened_panel_slot = Rc::clone(&panel_slot);
+        let opened_native_window_slot = Rc::clone(&native_window_slot);
         let opened_topmost_slot = Rc::clone(&topmost_slot);
         let opened = cx.open_window(
             WindowOptions {
@@ -298,7 +377,9 @@ impl ClipboardApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                let topmost_result = if let Some(window_handle) = native_window_handle(window) {
+                let native_window = native_window_handle(window);
+                *opened_native_window_slot.borrow_mut() = native_window;
+                let topmost_result = if let Some(window_handle) = native_window {
                     platform
                         .send_command(PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
                             window_handle,
@@ -324,9 +405,11 @@ impl ClipboardApplication {
                     let _ = window.update(cx, |_, window, _| window.remove_window());
                     return;
                 };
+                let native_window_handle = native_window_slot.borrow_mut().take().unwrap_or(0);
                 let popup = PopupWindow {
                     window: window.into(),
                     panel,
+                    native_window_handle,
                 };
                 let Some(Ok(topmost_command)) = topmost_result else {
                     let reason = match topmost_result {

@@ -22,6 +22,28 @@ internal static class PlatformEventEnvelopeFactory
                     clipboard.CapturedAtUnixMs
                 }
             }),
+            ClipboardImageCapturedEvent image => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "clipboard_image_captured",
+                Data = new
+                {
+                    image.StagingPath,
+                    image.Width,
+                    image.Height,
+                    image.Source,
+                    image.CapturedAtUnixMs
+                }
+            }),
+            ClipboardFilesCapturedEvent files => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "clipboard_files_captured",
+                Data = new
+                {
+                    files.Paths,
+                    files.Source,
+                    files.CapturedAtUnixMs
+                }
+            }),
             ClipboardPanelRequestedEvent panel => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "clipboard_panel_requested",

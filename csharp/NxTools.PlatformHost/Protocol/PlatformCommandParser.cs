@@ -6,6 +6,14 @@ internal sealed record PasteTextCommand(
     string Text,
     long TargetWindowHandle,
     long TargetFocusWindowHandle);
+internal sealed record PasteFilesCommand(
+    IReadOnlyList<string> Paths,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle);
+internal sealed record PasteImageCommand(
+    string ImagePath,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle);
 
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowVisibilityCommand(long WindowHandle, bool Visible);
@@ -23,6 +31,23 @@ internal static class PlatformCommandParser
         var data = envelope.Payload.GetProperty("data");
         var parsed = data.Deserialize<PasteTextCommand>(JsonDefaults.Options);
         return parsed ?? throw new InvalidDataException("Paste command payload was empty.");
+    }
+
+    public static PasteFilesCommand ParsePasteFiles(ProtocolEnvelope envelope) =>
+        Parse<PasteFilesCommand>(envelope, "paste_files", "Files paste command payload was empty.");
+
+    public static PasteImageCommand ParsePasteImage(ProtocolEnvelope envelope) =>
+        Parse<PasteImageCommand>(envelope, "paste_image", "Image paste command payload was empty.");
+
+    private static T Parse<T>(ProtocolEnvelope envelope, string expected, string emptyMessage)
+    {
+        var command = GetCommandName(envelope);
+        if (command != expected)
+        {
+            throw new InvalidDataException($"Unsupported platform command '{command}'.");
+        }
+        var parsed = envelope.Payload.GetProperty("data").Deserialize<T>(JsonDefaults.Options);
+        return parsed ?? throw new InvalidDataException(emptyMessage);
     }
 
     public static SetWindowTopmostCommand ParseSetWindowTopmost(ProtocolEnvelope envelope)
