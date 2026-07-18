@@ -75,6 +75,13 @@ icons are extracted by the Windows adapter, content-addressed by Rust, and shown
 tooltip; the visual treatment remains NxTools.Next's Zed-inspired design rather than copying the
 reference Avalonia surface.
 
+Favorites, pins, edits and soft deletion remain Rust domain operations. GPUI sends typed item
+intents to `ClipboardApplication`; the application updates SQLite and reloads the current query.
+Pinned records sort before unpinned records, editing removes preserved rich formats and produces a
+plain-text record, and deletion clears the pin while retaining the favorite flag. The panel keeps
+only the most recently deleted id for immediate undo; a persistent recycle-bin surface is a later
+slice.
+
 The clipboard panel is not a page in an application main window. Its GPUI window does not exist
 until the global shortcut is pressed. Escape, a successful paste, or a foreground-window change hides
 the native panel without destroying its GPUI window. On the next shortcut, Rust creates the new

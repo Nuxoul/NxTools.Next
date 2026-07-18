@@ -13,12 +13,12 @@ adapter for APIs that are significantly safer or more maintainable through .NET 
 
 ## Repository status
 
-The first product vertical slice is a pure-text clipboard workflow. NxTools stays in the
-background, captures text through the Windows adapter, and opens a focused GPUI clipboard
-panel only when `Alt+C` is pressed. The former always-visible demo shell has been removed.
+The active product slice is the background clipboard workflow. NxTools captures text, images
+and file drops through the Windows adapter, persists typed history in Rust, and opens a focused
+GPUI panel only when `Alt+C` is pressed. The panel supports search, type filters, native/plain
+paste actions, favorites, pinning, text editing, soft deletion and immediate undo.
 
-Images, files, categories, favorites, downloads, Finder/Listary behavior and the floating
-assistant are intentionally not part of this slice.
+Downloads, Finder/Listary behavior and the floating assistant remain later vertical slices.
 
 ## Quick start
 

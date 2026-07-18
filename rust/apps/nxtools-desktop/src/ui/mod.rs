@@ -15,7 +15,7 @@ use tracing::{error, info};
 
 use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
-use history::history_row;
+use history::{ClipboardItemAction, history_row};
 
 pub(crate) const PANEL_WIDTH: f32 = 340.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
@@ -103,6 +103,9 @@ pub(crate) struct ClipboardPanel {
     list_is_scrolled: bool,
     list_width: f32,
     search_input: Entity<InputState>,
+    edit_input: Entity<InputState>,
+    editing_item_id: Option<i64>,
+    last_deleted_item_id: Option<i64>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -116,6 +119,11 @@ impl ClipboardPanel {
     ) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索剪贴板历史"));
         search_input.focus_handle(cx).focus(window);
+        let edit_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .auto_grow(5, 12)
+                .placeholder("输入剪贴板文本")
+        });
 
         let search_subscription = cx.subscribe_in(
             &search_input,
@@ -135,7 +143,16 @@ impl ClipboardPanel {
         });
         let keystroke_subscription = cx.observe_keystrokes(|this, event, window, cx| {
             if event.keystroke.key.eq_ignore_ascii_case("escape") {
-                this.close(window, cx);
+                if this.editing_item_id.is_some() {
+                    this.cancel_edit(window, cx);
+                } else {
+                    this.close(window, cx);
+                }
+            } else if this.editing_item_id.is_some()
+                && event.keystroke.key.eq_ignore_ascii_case("enter")
+                && event.keystroke.modifiers.control
+            {
+                this.save_edit(window, cx);
             }
         });
 
@@ -168,6 +185,9 @@ impl ClipboardPanel {
             list_is_scrolled: false,
             list_width: 0.0,
             search_input,
+            edit_input,
+            editing_item_id: None,
+            last_deleted_item_id: None,
             _subscriptions: vec![
                 search_subscription,
                 activation_subscription,
@@ -204,6 +224,154 @@ impl ClipboardPanel {
         self.active_category = category;
         let query = self.search_input.read(cx).value().to_string();
         self.reload_entries(&query, cx);
+        cx.notify();
+    }
+
+    fn refresh_entries(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_input.read(cx).value().to_string();
+        self.reload_entries(&query, cx);
+    }
+
+    fn handle_item_action(
+        &mut self,
+        entry: &ClipboardItem,
+        action: ClipboardItemAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action {
+            ClipboardItemAction::Edit => self.begin_edit(entry, window, cx),
+            ClipboardItemAction::TogglePinned => {
+                let result = self.application.update(cx, |application, _| {
+                    application.set_item_pinned(entry.id, !entry.is_pinned)
+                });
+                match result {
+                    Ok(Ok(_)) => {
+                        self.status = PanelStatus::Notice(if entry.is_pinned {
+                            "已取消置顶".into()
+                        } else {
+                            "已置顶".into()
+                        });
+                        self.refresh_entries(cx);
+                    }
+                    Ok(Err(error)) => self.item_action_failed("置顶", error, cx),
+                    Err(error) => self.application_action_failed("置顶", error, cx),
+                }
+            }
+            ClipboardItemAction::ToggleFavorite => {
+                let result = self.application.update(cx, |application, _| {
+                    application.set_item_favorite(entry.id, !entry.is_favorite)
+                });
+                match result {
+                    Ok(Ok(_)) => {
+                        self.status = PanelStatus::Notice(if entry.is_favorite {
+                            "已取消收藏".into()
+                        } else {
+                            "已收藏".into()
+                        });
+                        self.refresh_entries(cx);
+                    }
+                    Ok(Err(error)) => self.item_action_failed("收藏", error, cx),
+                    Err(error) => self.application_action_failed("收藏", error, cx),
+                }
+            }
+            ClipboardItemAction::Delete => {
+                let result = self
+                    .application
+                    .update(cx, |application, _| application.delete_item(entry.id));
+                match result {
+                    Ok(Ok(())) => {
+                        self.last_deleted_item_id = Some(entry.id);
+                        self.status = PanelStatus::Notice("已删除，可在底部撤销".into());
+                        self.refresh_entries(cx);
+                    }
+                    Ok(Err(error)) => self.item_action_failed("删除", error, cx),
+                    Err(error) => self.application_action_failed("删除", error, cx),
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn begin_edit(&mut self, entry: &ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
+        if entry.kind != ClipboardKind::Text {
+            self.status = PanelStatus::Error("只有文本条目可以编辑".into());
+            cx.notify();
+            return;
+        }
+        self.editing_item_id = Some(entry.id);
+        self.edit_input.update(cx, |state, cx| {
+            state.set_value(entry.text.clone(), window, cx)
+        });
+        self.edit_input.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
+    fn cancel_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.editing_item_id = None;
+        self.search_input.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
+    fn save_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(item_id) = self.editing_item_id else {
+            return;
+        };
+        let text = self.edit_input.read(cx).value().to_string();
+        let result = self.application.update(cx, |application, _| {
+            application.update_item_text(item_id, &text)
+        });
+        match result {
+            Ok(Ok(_)) => {
+                self.editing_item_id = None;
+                self.status = PanelStatus::Notice("文本已保存为纯文本".into());
+                self.refresh_entries(cx);
+                self.search_input.focus_handle(cx).focus(window);
+            }
+            Ok(Err(error)) => self.item_action_failed("保存", error, cx),
+            Err(error) => self.application_action_failed("保存", error, cx),
+        }
+        cx.notify();
+    }
+
+    fn restore_last_deleted(&mut self, cx: &mut Context<Self>) {
+        let Some(item_id) = self.last_deleted_item_id else {
+            return;
+        };
+        let result = self
+            .application
+            .update(cx, |application, _| application.restore_item(item_id));
+        match result {
+            Ok(Ok(_)) => {
+                self.last_deleted_item_id = None;
+                self.status = PanelStatus::Notice("已撤销删除".into());
+                self.refresh_entries(cx);
+            }
+            Ok(Err(error)) => self.item_action_failed("撤销删除", error, cx),
+            Err(error) => self.application_action_failed("撤销删除", error, cx),
+        }
+        cx.notify();
+    }
+
+    fn item_action_failed(
+        &mut self,
+        action: &str,
+        error: impl std::fmt::Display,
+        cx: &mut Context<Self>,
+    ) {
+        error!(%error, %action, "clipboard item action failed");
+        self.status = PanelStatus::Error(format!("{action}失败：{error}"));
+        cx.notify();
+    }
+
+    fn application_action_failed(
+        &mut self,
+        action: &str,
+        error: impl std::fmt::Display,
+        cx: &mut Context<Self>,
+    ) {
+        error!(%error, %action, "clipboard application became unavailable");
+        self.status = PanelStatus::Error(format!("{action}失败：剪贴板核心不可用"));
         cx.notify();
     }
 
@@ -375,6 +543,8 @@ impl Render for ClipboardPanel {
         let summary = self.active_category.label();
         let modifier_action = self.active_modifier_action;
         let is_scrolled = self.list_is_scrolled;
+        let is_editing = self.editing_item_id.is_some();
+        let can_undo_delete = self.last_deleted_item_id.is_some();
         let list_width = (window.viewport_size().width.as_f32() - 16.0).max(28.0);
         if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
             self.list_scroll.reset(self.entries.len());
@@ -389,6 +559,9 @@ impl Render for ClipboardPanel {
         let image_category_panel = cx.entity().downgrade();
         let files_category_panel = cx.entity().downgrade();
         let modifier_panel = cx.entity().downgrade();
+        let undo_panel = cx.entity().downgrade();
+        let cancel_edit_panel = cx.entity().downgrade();
+        let save_edit_panel = cx.entity().downgrade();
         div()
             .relative()
             .size_full()
@@ -594,6 +767,7 @@ impl Render for ClipboardPanel {
                                     return div().into_any_element();
                                 };
                                 let action_entry = entry.clone();
+                                let management_entry = entry.clone();
                                 let panel = history_panel.clone();
                                 let on_action = Rc::new(
                                     move |action: ClipboardAction,
@@ -605,8 +779,31 @@ impl Render for ClipboardPanel {
                                         });
                                     },
                                 );
-                                history_row(theme, entry, index, available_image_width, on_action)
-                                    .into_any_element()
+                                let management_panel = history_panel.clone();
+                                let on_management = Rc::new(
+                                    move |action: ClipboardItemAction,
+                                          _event: &gpui::ClickEvent,
+                                          window: &mut Window,
+                                          app: &mut App| {
+                                        let _ = management_panel.update(app, |this, cx| {
+                                            this.handle_item_action(
+                                                &management_entry,
+                                                action,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    },
+                                );
+                                history_row(
+                                    theme,
+                                    entry,
+                                    index,
+                                    available_image_width,
+                                    on_action,
+                                    on_management,
+                                )
+                                .into_any_element()
                             })
                             .w_full()
                             .h_full(),
@@ -616,7 +813,7 @@ impl Render for ClipboardPanel {
                         list.child(
                             div()
                                 .absolute()
-                                .bottom_2()
+                                .bottom(px(if can_undo_delete { 44.0 } else { 8.0 }))
                                 .left_0()
                                 .right_0()
                                 .flex()
@@ -653,8 +850,136 @@ impl Render for ClipboardPanel {
                                         }),
                                 ),
                         )
+                    })
+                    .when(can_undo_delete, |list| {
+                        list.child(
+                            div()
+                                .absolute()
+                                .bottom_2()
+                                .left_0()
+                                .right_0()
+                                .flex()
+                                .justify_center()
+                                .child(
+                                    div()
+                                        .id("undo-clipboard-delete")
+                                        .h(px(30.0))
+                                        .px_3()
+                                        .rounded(px(6.0))
+                                        .border_1()
+                                        .border_color(theme.border_active)
+                                        .bg(theme.surface_raised)
+                                        .shadow_md()
+                                        .cursor_pointer()
+                                        .hover(move |style| style.bg(theme.surface_hover))
+                                        .text_xs()
+                                        .text_color(theme.text)
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(
+                                            Icon::new(IconName::Undo)
+                                                .size(px(14.0))
+                                                .text_color(theme.accent),
+                                        )
+                                        .child("撤销删除")
+                                        .on_click(move |_event, _window, app| {
+                                            app.stop_propagation();
+                                            let _ = undo_panel.update(app, |panel, cx| {
+                                                panel.restore_last_deleted(cx);
+                                            });
+                                        }),
+                                ),
+                        )
                     }),
             )
+            .when(is_editing, |panel| {
+                panel.child(
+                    div()
+                        .absolute()
+                        .top(px(36.0))
+                        .left_2()
+                        .right_2()
+                        .bottom_2()
+                        .p_3()
+                        .rounded(px(7.0))
+                        .border_1()
+                        .border_color(theme.border_active)
+                        .bg(theme.canvas)
+                        .shadow_lg()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_sm()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .child("编辑文本"),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("保存后统一为纯文本"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_h_0()
+                                .p_2()
+                                .rounded(px(6.0))
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .child(
+                                    Input::new(&self.edit_input)
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .h(px(30.0))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("Ctrl+Enter 保存 · Esc 取消"),
+                                )
+                                .child(dialog_button(
+                                    theme,
+                                    "取消",
+                                    false,
+                                    move |_event, window, app| {
+                                        let _ = cancel_edit_panel.update(app, |panel, cx| {
+                                            panel.cancel_edit(window, cx);
+                                        });
+                                    },
+                                ))
+                                .child(dialog_button(
+                                    theme,
+                                    "保存",
+                                    true,
+                                    move |_event, window, app| {
+                                        let _ = save_edit_panel.update(app, |panel, cx| {
+                                            panel.save_edit(window, cx);
+                                        });
+                                    },
+                                )),
+                        ),
+                )
+            })
             .child(
                 div()
                     .absolute()
@@ -750,6 +1075,45 @@ fn category_tab(
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
         .on_click(on_click)
+        .child(label)
+}
+
+fn dialog_button(
+    theme: Theme,
+    label: &'static str,
+    primary: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(gpui::SharedString::from(format!(
+            "clipboard-dialog-button-{label}"
+        )))
+        .h(px(28.0))
+        .px_3()
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(if primary { theme.accent } else { theme.border })
+        .bg(if primary {
+            theme.accent_soft
+        } else {
+            theme.surface_raised
+        })
+        .text_xs()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(if primary {
+            theme.accent_text
+        } else {
+            theme.text_secondary
+        })
+        .cursor_pointer()
+        .flex()
+        .items_center()
+        .justify_center()
+        .hover(move |style| style.bg(theme.surface_hover))
+        .on_click(move |event, window, cx| {
+            cx.stop_propagation();
+            on_click(event, window, cx);
+        })
         .child(label)
 }
 

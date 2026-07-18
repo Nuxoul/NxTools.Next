@@ -1,6 +1,6 @@
 # Phase 1 verification record
 
-Date: 2026-07-17
+Date: 2026-07-18
 
 Machine: Windows 10.0.19045, AMD Radeon RX 580 2048SP
 
@@ -8,6 +8,8 @@ Machine: Windows 10.0.19045, AMD Radeon RX 580 2048SP
 
 - `cargo fmt --all --check`: pass
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass
+- `cargo test --workspace`: pass, including clipboard favorite/pin persistence, pinned-first
+  ordering, soft-delete/restore and plain-text edit behavior
 - Rust protocol/runtime tests: pass
 - .NET build with warnings as errors: pass
 - C# protocol wire and bounded-reader tests: pass
@@ -17,6 +19,7 @@ Machine: Windows 10.0.19045, AMD Radeon RX 580 2048SP
 - graceful desktop close stops the supervised PlatformHost: pass
 - forced/crashed parent termination is detected and the PlatformHost exits: pass
 - second desktop instance rejected with non-zero exit: pass
+- Release/package build with GPUI shaders: pass; package produced at `artifacts/win-x64`
 
 ## Performance baseline
 
@@ -31,8 +34,6 @@ This is a diagnostic baseline, not the `<1%` Release acceptance result.
 
 ## Open environment gates
 
-- Release/package build: blocked because this machine has no Windows SDK `fxc.exe`; the build
-  now fails during preflight with installation guidance.
 - Windows 10 and 11 per-monitor DPI: requires manual testing on both operating systems.
 - Chinese IME: the proof now contains a real GPUI input control; composition still requires
   manual verification with the target IMEs.

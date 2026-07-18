@@ -22,6 +22,16 @@ pub const IMAGE_ROW_CHROME_HEIGHT: f32 =
     ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + IMAGE_WELL_VERTICAL_PADDING;
 pub const ROW_GAP: f32 = 5.0;
 pub type HistoryActionHandler = Rc<dyn Fn(ClipboardAction, &ClickEvent, &mut Window, &mut App)>;
+pub type HistoryManagementHandler =
+    Rc<dyn Fn(ClipboardItemAction, &ClickEvent, &mut Window, &mut App)>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardItemAction {
+    Edit,
+    TogglePinned,
+    ToggleFavorite,
+    Delete,
+}
 
 pub fn history_row(
     theme: Theme,
@@ -29,6 +39,7 @@ pub fn history_row(
     index: usize,
     available_image_width: f32,
     on_action: HistoryActionHandler,
+    on_management: HistoryManagementHandler,
 ) -> impl IntoElement {
     let source = if entry.source.process_name.is_empty() {
         "未知来源".to_owned()
@@ -40,6 +51,9 @@ pub fn history_row(
     let usage = (entry.copy_count > 1).then(|| format!("{}×", entry.copy_count));
     let card_height = row_card_height(&entry, available_image_width);
     let slot_height = card_height + ROW_GAP;
+    let can_edit = entry.kind == ClipboardKind::Text;
+    let is_pinned = entry.is_pinned;
+    let is_favorite = entry.is_favorite;
     let content = match entry.kind {
         ClipboardKind::Text => text_content(theme, &entry),
         ClipboardKind::Image => image_content(theme, &entry, available_image_width),
@@ -50,7 +64,16 @@ pub fn history_row(
     let copy_action = Rc::clone(&on_action);
     let plain_action = Rc::clone(&on_action);
     let without_breaks_action = Rc::clone(&on_action);
+    let edit_action = Rc::clone(&on_management);
+    let pin_action = Rc::clone(&on_management);
+    let favorite_action = Rc::clone(&on_management);
+    let delete_action = Rc::clone(&on_management);
+    let menu_edit_action = Rc::clone(&on_management);
+    let menu_pin_action = Rc::clone(&on_management);
+    let menu_favorite_action = Rc::clone(&on_management);
+    let menu_delete_action = Rc::clone(&on_management);
     let without_breaks_disabled = entry.kind != ClipboardKind::Text;
+    let group_name = format!("history-row-actions-{index}");
 
     div()
         .id(("history-row-slot", index))
@@ -59,6 +82,7 @@ pub fn history_row(
         .child(
             div()
                 .id(("history-row", index))
+                .group(group_name.clone())
                 .h(px(card_height))
                 .px_2()
                 .py(px(5.0))
@@ -90,7 +114,64 @@ pub fn history_row(
                         .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
                         .child(source_icon(theme, source, source_icon_path, index))
                         .child(time_label(theme, relative_time))
-                        .child(div().flex_1()),
+                        .child(div().flex_1())
+                        .when(is_pinned, |row| {
+                            row.child(state_icon(theme, IconName::ArrowUp, "已置顶"))
+                        })
+                        .when(is_favorite, |row| {
+                            row.child(state_icon(theme, IconName::Star, "已收藏"))
+                        })
+                        .child(
+                            div()
+                                .invisible()
+                                .group_hover(group_name, |style| style.visible())
+                                .h(px(20.0))
+                                .flex()
+                                .items_center()
+                                .gap(px(2.0))
+                                .when(can_edit, |actions| {
+                                    actions.child(management_button(
+                                        theme,
+                                        IconName::Replace,
+                                        "编辑文本",
+                                        ClipboardItemAction::Edit,
+                                        edit_action,
+                                        false,
+                                    ))
+                                })
+                                .child(management_button(
+                                    theme,
+                                    IconName::ArrowUp,
+                                    if is_pinned { "取消置顶" } else { "置顶" },
+                                    ClipboardItemAction::TogglePinned,
+                                    pin_action,
+                                    is_pinned,
+                                ))
+                                .child(management_button(
+                                    theme,
+                                    if is_favorite {
+                                        IconName::StarOff
+                                    } else {
+                                        IconName::Star
+                                    },
+                                    if is_favorite {
+                                        "取消收藏"
+                                    } else {
+                                        "收藏"
+                                    },
+                                    ClipboardItemAction::ToggleFavorite,
+                                    favorite_action,
+                                    is_favorite,
+                                ))
+                                .child(management_button(
+                                    theme,
+                                    IconName::Delete,
+                                    "删除",
+                                    ClipboardItemAction::Delete,
+                                    delete_action,
+                                    false,
+                                )),
+                        ),
                 )
                 .child(content)
                 .context_menu(move |menu, _window, _cx| {
@@ -124,8 +205,90 @@ pub fn history_row(
                                 }
                             }),
                     )
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("编辑文本")
+                            .disabled(!can_edit)
+                            .on_click({
+                                let action = Rc::clone(&menu_edit_action);
+                                move |event, window, cx| {
+                                    action(ClipboardItemAction::Edit, event, window, cx);
+                                }
+                            }),
+                    )
+                    .item(
+                        PopupMenuItem::new(if is_pinned { "取消置顶" } else { "置顶" }).on_click({
+                            let action = Rc::clone(&menu_pin_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::TogglePinned, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        PopupMenuItem::new(if is_favorite {
+                            "取消收藏"
+                        } else {
+                            "收藏"
+                        })
+                        .on_click({
+                            let action = Rc::clone(&menu_favorite_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::ToggleFavorite, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(PopupMenuItem::new("删除").on_click({
+                        let action = Rc::clone(&menu_delete_action);
+                        move |event, window, cx| {
+                            action(ClipboardItemAction::Delete, event, window, cx);
+                        }
+                    }))
                 }),
         )
+}
+
+fn management_button(
+    theme: Theme,
+    icon: IconName,
+    tooltip: &'static str,
+    action: ClipboardItemAction,
+    handler: HistoryManagementHandler,
+    active: bool,
+) -> impl IntoElement {
+    div()
+        .id(gpui::SharedString::from(format!(
+            "clipboard-item-action-{tooltip}"
+        )))
+        .size(px(20.0))
+        .rounded(px(4.0))
+        .cursor_pointer()
+        .flex()
+        .items_center()
+        .justify_center()
+        .hover(move |style| style.bg(theme.surface_raised))
+        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+        .child(Icon::new(icon).size(px(13.0)).text_color(if active {
+            theme.accent
+        } else {
+            theme.text_secondary
+        }))
+        .on_click(move |event, window, cx| {
+            cx.stop_propagation();
+            handler(action, event, window, cx);
+        })
+}
+
+fn state_icon(theme: Theme, icon: IconName, tooltip: &'static str) -> impl IntoElement {
+    div()
+        .id(gpui::SharedString::from(format!(
+            "clipboard-state-icon-{tooltip}"
+        )))
+        .size(px(16.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+        .child(Icon::new(icon).size(px(12.0)).text_color(theme.accent))
 }
 
 fn action_from_click(event: &ClickEvent) -> Option<ClipboardAction> {

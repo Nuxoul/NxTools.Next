@@ -16,6 +16,8 @@ Phase 1 answers the risky architecture questions before product features are mig
 - Windows-enforced topmost popup and reference-derived clipboard visual tokens;
 - Rust-owned typed SQLite history for text, content-addressed images and file drops, with adjacent
   deduplication, type-aware queries and restart persistence;
+- Rust-owned favorites, pinned-first ordering, text editing, soft deletion and immediate undo,
+  exposed through shared GPUI hover actions and context menus;
 - correlated type-preserving click-to-paste commands with focus retries, modifier release and
   `WM_PASTE` fallback;
 - separate Rust indexer process placeholder;
@@ -38,8 +40,12 @@ Phase 1 answers the risky architecture questions before product features are mig
    opens it again.
 9. Repeat the paste-and-reopen cycle at least three times and confirm a topmost failure cannot
    terminate the background process.
-10. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
-11. Launch a second desktop instance and confirm it exits immediately.
+10. Favorite and pin records, restart the application, and confirm both flags persist and pinned
+    records stay first.
+11. Edit a text record and confirm it is saved as plain text; delete a record and confirm the
+    bottom undo action restores it without restoring its pin.
+12. Confirm Chinese input and labels at 100%, 125% and 150% scaling.
+13. Launch a second desktop instance and confirm it exits immediately.
 
 ## Exit criteria before clipboard migration
 
@@ -50,6 +56,5 @@ Phase 1 answers the risky architecture questions before product features are mig
 - debug and release builds are reproducible from a clean checkout.
 
 Measured results and remaining environment gates are recorded in
-[verification.md](verification.md). The current development machine does not have `fxc.exe`, so
-the Debug pipeline is verified but the formal Release/package exit criterion remains open until
-the Windows SDK is installed.
+[verification.md](verification.md). The Windows SDK shader compiler is now available and the
+Release package pipeline is part of the automated verification for each completed slice.

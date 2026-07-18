@@ -84,6 +84,9 @@ pub struct ClipboardItem {
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
     pub copy_count: u32,
+    pub is_favorite: bool,
+    pub is_pinned: bool,
+    pub deleted_at_unix_ms: Option<i64>,
 }
 
 pub fn action_text_payload(item: &ClipboardItem, action: ClipboardAction) -> Option<String> {
@@ -129,7 +132,10 @@ impl ClipboardHistory {
                 source_process_icon_path TEXT NOT NULL DEFAULT '',
                 source_window_title TEXT NOT NULL,
                 captured_at_unix_ms INTEGER NOT NULL,
-                copy_count INTEGER NOT NULL DEFAULT 1
+                copy_count INTEGER NOT NULL DEFAULT 1,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                deleted_at_unix_ms INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_clipboard_items_recent
                 ON clipboard_items(captured_at_unix_ms DESC, id DESC);
@@ -154,6 +160,13 @@ impl ClipboardHistory {
             &connection,
             "source_process_icon_path",
             "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(&connection, "is_favorite", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&connection, "is_pinned", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(
+            &connection,
+            "deleted_at_unix_ms",
+            "INTEGER NOT NULL DEFAULT 0",
         )?;
         Ok(Self { connection })
     }
@@ -227,6 +240,7 @@ impl ClipboardHistory {
         let latest = transaction
             .query_row(
                 "SELECT id, content_type, text, image_path, file_paths_json FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0
                  ORDER BY captured_at_unix_ms DESC, id DESC LIMIT 1",
                 [],
                 |row| {
@@ -340,13 +354,15 @@ impl ClipboardHistory {
             "SELECT id, content_type, text, image_path, image_width, image_height,
                     file_paths_json, source_window_handle, source_process_id,
                     source_process_name, source_process_icon_path, source_window_title,
-                    captured_at_unix_ms, copy_count
+                    captured_at_unix_ms, copy_count, is_favorite, is_pinned,
+                    deleted_at_unix_ms
              FROM clipboard_items
-             WHERE (?1 IS NULL OR content_type = ?1)
+             WHERE deleted_at_unix_ms = 0
+               AND (?1 IS NULL OR content_type = ?1)
                AND (?2 = ''
                     OR instr(lower(text), lower(?2)) > 0
                     OR instr(lower(file_paths_json), lower(?2)) > 0)
-             ORDER BY captured_at_unix_ms DESC, id DESC
+             ORDER BY is_pinned DESC, captured_at_unix_ms DESC, id DESC
              LIMIT ?3",
         )?;
         let rows = statement.query_map(
@@ -362,12 +378,108 @@ impl ClipboardHistory {
                 "SELECT id, content_type, text, image_path, image_width, image_height,
                         file_paths_json, source_window_handle, source_process_id,
                         source_process_name, source_process_icon_path, source_window_title,
-                        captured_at_unix_ms, copy_count
+                        captured_at_unix_ms, copy_count, is_favorite, is_pinned,
+                        deleted_at_unix_ms
                  FROM clipboard_items WHERE id = ?1",
                 [id],
                 map_item,
             )
             .map_err(Into::into)
+    }
+
+    pub fn set_favorite(
+        &mut self,
+        item_id: i64,
+        value: bool,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.set_flag(item_id, "is_favorite", value)
+    }
+
+    pub fn set_pinned(
+        &mut self,
+        item_id: i64,
+        value: bool,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.set_flag(item_id, "is_pinned", value)
+    }
+
+    fn set_flag(
+        &mut self,
+        item_id: i64,
+        column: &'static str,
+        value: bool,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        let changed = self.connection.execute(
+            &format!("UPDATE clipboard_items SET {column} = ?1 WHERE id = ?2"),
+            params![value, item_id],
+        )?;
+        if changed == 0 {
+            return Err(ClipboardHistoryError::ItemNotFound(item_id));
+        }
+        self.item_by_id(item_id)
+    }
+
+    pub fn soft_delete(
+        &mut self,
+        item_id: i64,
+        deleted_at_unix_ms: i64,
+    ) -> Result<(), ClipboardHistoryError> {
+        let changed = self.connection.execute(
+            "UPDATE clipboard_items
+             SET deleted_at_unix_ms = ?1, is_pinned = 0
+             WHERE id = ?2 AND deleted_at_unix_ms = 0",
+            params![deleted_at_unix_ms.max(1), item_id],
+        )?;
+        if changed == 0 {
+            return Err(ClipboardHistoryError::ItemNotFound(item_id));
+        }
+        Ok(())
+    }
+
+    pub fn restore(&mut self, item_id: i64) -> Result<ClipboardItem, ClipboardHistoryError> {
+        let changed = self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at_unix_ms = 0
+             WHERE id = ?1 AND deleted_at_unix_ms != 0",
+            [item_id],
+        )?;
+        if changed == 0 {
+            return Err(ClipboardHistoryError::ItemNotFound(item_id));
+        }
+        self.item_by_id(item_id)
+    }
+
+    pub fn update_text(
+        &mut self,
+        item_id: i64,
+        text: &str,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        if text.trim().is_empty() {
+            return Err(ClipboardHistoryError::EmptyTextEdit);
+        }
+        let transaction = self.connection.transaction()?;
+        let state = transaction
+            .query_row(
+                "SELECT content_type, deleted_at_unix_ms FROM clipboard_items WHERE id = ?1",
+                [item_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?;
+        let Some((kind, deleted_at)) = state else {
+            return Err(ClipboardHistoryError::ItemNotFound(item_id));
+        };
+        if kind != ClipboardKind::Text.as_str() || deleted_at != 0 {
+            return Err(ClipboardHistoryError::UnsupportedEdit(item_id));
+        }
+        transaction.execute(
+            "UPDATE clipboard_items SET text = ?1 WHERE id = ?2",
+            params![text, item_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM clipboard_item_formats WHERE clipboard_item_id = ?1",
+            [item_id],
+        )?;
+        transaction.commit()?;
+        self.item_by_id(item_id)
     }
 
     pub fn native_formats(
@@ -468,6 +580,12 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
         },
         captured_at_unix_ms: row.get(12)?,
         copy_count: row.get(13)?,
+        is_favorite: row.get::<_, i64>(14)? != 0,
+        is_pinned: row.get::<_, i64>(15)? != 0,
+        deleted_at_unix_ms: match row.get::<_, i64>(16)? {
+            0 => None,
+            timestamp => Some(timestamp),
+        },
     })
 }
 
@@ -477,6 +595,12 @@ pub enum ClipboardHistoryError {
     Database(#[from] rusqlite::Error),
     #[error("clipboard data serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("clipboard item {0} was not found")]
+    ItemNotFound(i64),
+    #[error("clipboard item {0} cannot be edited as text")]
+    UnsupportedEdit(i64),
+    #[error("clipboard text edit cannot be empty")]
+    EmptyTextEdit,
 }
 
 fn ensure_column(
@@ -524,6 +648,9 @@ mod tests {
             source: fixture_source(),
             captured_at_unix_ms: 1,
             copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
         };
         let files = ClipboardItem {
             id: 2,
@@ -536,6 +663,9 @@ mod tests {
             source: fixture_source(),
             captured_at_unix_ms: 2,
             copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
         };
 
         assert_eq!(
@@ -670,6 +800,138 @@ mod tests {
         assert!(matches!(first, CaptureOutcome::Inserted(_)));
         assert!(matches!(second, CaptureOutcome::Inserted(_)));
         assert_eq!(history.recent(10).expect("recent").len(), 2);
+    }
+
+    #[test]
+    fn favorite_and_pin_persist_with_pinned_items_ordered_first() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+
+        let first = history
+            .capture(TextCapture {
+                text: "older but pinned".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture first");
+        let CaptureOutcome::Inserted(first) = first else {
+            panic!("first capture must insert")
+        };
+        let second = history
+            .capture(TextCapture {
+                text: "newer and favorite".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture second");
+        let CaptureOutcome::Inserted(second) = second else {
+            panic!("second capture must insert")
+        };
+
+        history.set_pinned(first.id, true).expect("pin first");
+        history
+            .set_favorite(second.id, true)
+            .expect("favorite second");
+        drop(history);
+
+        let history = ClipboardHistory::open(&database).expect("reopen history");
+        let recent = history.recent(10).expect("recent");
+        assert_eq!(
+            recent.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [first.id, second.id]
+        );
+        assert!(recent[0].is_pinned);
+        assert!(!recent[0].is_favorite);
+        assert!(recent[1].is_favorite);
+        assert!(!recent[1].is_pinned);
+    }
+
+    #[test]
+    fn soft_delete_hides_and_unpins_an_item_until_restore() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let captured = history
+            .capture(TextCapture {
+                text: "recover me".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture item");
+        let CaptureOutcome::Inserted(item) = captured else {
+            panic!("capture must insert")
+        };
+        history.set_pinned(item.id, true).expect("pin item");
+        history.set_favorite(item.id, true).expect("favorite item");
+
+        history.soft_delete(item.id, 200).expect("soft delete");
+        assert!(history.recent(10).expect("recent after delete").is_empty());
+
+        let restored = history.restore(item.id).expect("restore item");
+        assert!(restored.is_favorite);
+        assert!(!restored.is_pinned);
+        assert_eq!(restored.deleted_at_unix_ms, None);
+        assert_eq!(
+            history.recent(10).expect("recent after restore"),
+            [restored]
+        );
+    }
+
+    #[test]
+    fn editing_text_converts_it_to_plain_text_and_rejects_non_text_items() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let captured = history
+            .capture(TextCapture {
+                text: "rich original".into(),
+                native_formats: vec![ClipboardNativeFormat {
+                    format_id: 49_152,
+                    format_name: "HTML Format".into(),
+                    data_path: "C:/formats/rich.bin".into(),
+                    size_bytes: 128,
+                    sort_order: 0,
+                }],
+                source: fixture_source(),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture text");
+        let CaptureOutcome::Inserted(text_item) = captured else {
+            panic!("text capture must insert")
+        };
+
+        let edited = history
+            .update_text(text_item.id, "edited plain text")
+            .expect("edit text");
+        assert_eq!(edited.text, "edited plain text");
+        assert!(
+            history
+                .native_formats(text_item.id)
+                .expect("formats")
+                .is_empty()
+        );
+
+        let image = history
+            .capture_image(ImageCapture {
+                image_path: "C:/images/capture.png".into(),
+                width: 100,
+                height: 80,
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture image");
+        let CaptureOutcome::Inserted(image_item) = image else {
+            panic!("image capture must insert")
+        };
+        assert!(matches!(
+            history.update_text(image_item.id, "not allowed"),
+            Err(ClipboardHistoryError::UnsupportedEdit(id)) if id == image_item.id
+        ));
     }
 
     #[test]

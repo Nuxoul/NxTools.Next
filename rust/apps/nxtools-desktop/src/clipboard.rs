@@ -130,6 +130,43 @@ impl ClipboardApplication {
         }
     }
 
+    pub(crate) fn set_item_favorite(
+        &self,
+        item_id: i64,
+        value: bool,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.history.borrow_mut().set_favorite(item_id, value)
+    }
+
+    pub(crate) fn set_item_pinned(
+        &self,
+        item_id: i64,
+        value: bool,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.history.borrow_mut().set_pinned(item_id, value)
+    }
+
+    pub(crate) fn delete_item(&self, item_id: i64) -> Result<(), ClipboardHistoryError> {
+        self.history
+            .borrow_mut()
+            .soft_delete(item_id, nxtools_ipc::unix_time_ms())
+    }
+
+    pub(crate) fn restore_item(
+        &self,
+        item_id: i64,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.history.borrow_mut().restore(item_id)
+    }
+
+    pub(crate) fn update_item_text(
+        &self,
+        item_id: i64,
+        text: &str,
+    ) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.history.borrow_mut().update_text(item_id, text)
+    }
+
     pub(crate) fn request_clipboard_action(
         &self,
         entry: &ClipboardItem,
@@ -660,6 +697,9 @@ mod asset_tests {
             },
             captured_at_unix_ms: 10,
             copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
         }
     }
 
