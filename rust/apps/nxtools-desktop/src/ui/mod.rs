@@ -8,10 +8,11 @@ use gpui::{
     Render, ResizeEdge, ScrollHandle, Subscription, WeakEntity, Window, div, list, point,
     prelude::*, px, size,
 };
+use gpui_component::Icon;
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
-use gpui_component::{Icon, IconName};
+use gpui_component::tooltip::Tooltip;
 use nxtools_clipboard::{
     BUILTIN_ALL_CATEGORY_ID, ClipboardAction, ClipboardCategory, ClipboardCategoryKind,
     ClipboardHistoryError, ClipboardItem, ClipboardKind,
@@ -20,8 +21,9 @@ use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
 use crate::clipboard::ClipboardApplication;
+use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use history::{CategorySourceOption, ClipboardItemAction, history_row};
+use history::{CategorySourceMenu, CategorySourceOption, ClipboardItemAction, history_row};
 
 pub(crate) const PANEL_WIDTH: f32 = 300.0;
 pub(crate) const PANEL_HEIGHT: f32 = 440.0;
@@ -77,13 +79,13 @@ impl Render for CategoryDrag {
     }
 }
 
-fn category_icon(kind: ClipboardCategoryKind) -> IconName {
+fn category_icon(kind: ClipboardCategoryKind) -> MaterialIcon {
     match kind {
-        ClipboardCategoryKind::All => IconName::LayoutDashboard,
-        ClipboardCategoryKind::Favorite => IconName::Star,
-        ClipboardCategoryKind::Text => IconName::ALargeSmall,
-        ClipboardCategoryKind::Image => IconName::Frame,
-        ClipboardCategoryKind::Files | ClipboardCategoryKind::Custom => IconName::Folder,
+        ClipboardCategoryKind::All => MaterialIcon::Dashboard,
+        ClipboardCategoryKind::Favorite => MaterialIcon::Star,
+        ClipboardCategoryKind::Text => MaterialIcon::TextFields,
+        ClipboardCategoryKind::Image => MaterialIcon::Image,
+        ClipboardCategoryKind::Files | ClipboardCategoryKind::Custom => MaterialIcon::Folder,
     }
 }
 
@@ -978,7 +980,8 @@ impl Render for ClipboardPanel {
                                     panel.begin_category_editor(None, window, cx);
                                 });
                             })
-                            .child(Icon::new(IconName::Plus).size(px(14.0))),
+                            .tooltip(|window, cx| Tooltip::new("新建分类").build(window, cx))
+                            .child(Icon::new(MaterialIcon::Add).size(px(14.0))),
                     ),
             )
             .child(
@@ -999,6 +1002,11 @@ impl Render for ClipboardPanel {
                             .px_2()
                             .flex()
                             .items_center()
+                            .child(
+                                Icon::new(MaterialIcon::Search)
+                                    .size(px(14.0))
+                                    .text_color(theme.text_muted),
+                            )
                             .child(
                                 div().min_w_0().flex_1().text_color(theme.text).child(
                                     Input::new(&self.search_input)
@@ -1055,7 +1063,14 @@ impl Render for ClipboardPanel {
                                 let action_entry = entry.clone();
                                 let management_entry = entry.clone();
                                 let process_name = entry.source.process_name.to_lowercase();
-                                let category_options = if process_name.is_empty() {
+                                let category_hint = if custom_categories.is_empty() {
+                                    Some("来源分类（请先新建分类）".to_owned())
+                                } else if process_name.is_empty() {
+                                    Some("来源分类（来源未知）".to_owned())
+                                } else {
+                                    None
+                                };
+                                let category_options = if category_hint.is_some() {
                                     Vec::new()
                                 } else {
                                     custom_categories
@@ -1103,7 +1118,10 @@ impl Render for ClipboardPanel {
                                     entry,
                                     index,
                                     available_image_width,
-                                    category_options,
+                                    CategorySourceMenu {
+                                        options: category_options,
+                                        unavailable_hint: category_hint,
+                                    },
                                     on_action,
                                     on_management,
                                 )
@@ -1140,7 +1158,7 @@ impl Render for ClipboardPanel {
                                         .items_center()
                                         .gap_1()
                                         .child(
-                                            Icon::new(IconName::ArrowUp)
+                                            Icon::new(MaterialIcon::ArrowUpward)
                                                 .size(px(15.0))
                                                 .text_color(theme.text_secondary),
                                         )
@@ -1182,7 +1200,7 @@ impl Render for ClipboardPanel {
                                         .items_center()
                                         .gap_1()
                                         .child(
-                                            Icon::new(IconName::Undo)
+                                            Icon::new(MaterialIcon::Undo)
                                                 .size(px(14.0))
                                                 .text_color(theme.accent),
                                         )
@@ -1372,7 +1390,7 @@ impl Render for ClipboardPanel {
                     .items_center()
                     .justify_center()
                     .child(
-                        Icon::new(IconName::ResizeCorner)
+                        Icon::new(MaterialIcon::OpenInFull)
                             .size(px(14.0))
                             .text_color(theme.text_muted),
                     )
@@ -1457,6 +1475,11 @@ fn category_tab(
     panel: WeakEntity<ClipboardPanel>,
 ) -> gpui::AnyElement {
     let label = category.name.clone();
+    let tooltip_label = if category.kind == ClipboardCategoryKind::Custom {
+        format!("{} · 拖动排序 · 右键管理", category.name)
+    } else {
+        format!("{} · 拖动排序", category.name)
+    };
     let icon = category_icon(category.kind);
     let category_id = category.id.clone();
     let click_category_id = category.id.clone();
@@ -1495,6 +1518,7 @@ fn category_tab(
         .gap_1()
         .cursor_pointer()
         .hover(move |style| style.bg(theme.surface_hover))
+        .tooltip(move |window, cx| Tooltip::new(tooltip_label.clone()).build(window, cx))
         .on_click({
             let panel = panel.clone();
             move |_event, _window, app| {

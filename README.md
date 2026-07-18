@@ -19,6 +19,9 @@ GPUI panel only when `Alt+C` is pressed. The panel supports search, type filters
 paste actions, favorites, pinning, text editing, soft deletion, immediate undo and persisted
 built-in/custom source categories with drag ordering.
 
+Clipboard controls use self-hosted Google Material Symbols SVG assets embedded in the desktop
+executable, so icons remain available offline and do not depend on a font installed on Windows.
+
 Downloads, Finder/Listary behavior and the floating assistant remain later vertical slices.
 
 ## Quick start
@@ -43,3 +46,4 @@ See [docs/architecture.md](docs/architecture.md) for ownership rules and
 ## License
 
 Licensed under either Apache License, Version 2.0 or MIT License at your option.
+Third-party asset attribution is recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

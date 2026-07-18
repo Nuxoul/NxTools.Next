@@ -69,6 +69,10 @@ translates search/click interactions into application intents. The C# PlatformHo
 Windows-only clipboard format extraction/write-back, topmost operation, focus restoration,
 modifier release, input injection and `WM_PASTE` fallback.
 
+The GPUI executable embeds the selected Google Material Symbols SVGs through its own `AssetSource`.
+Icons are presentation assets only: they do not introduce a web runtime or move behavior into the
+view layer. The source program remains responsible for supplying process icons for history rows.
+
 The popup uses a variable-height GPUI list: text and file rows remain compact, while image rows
 preserve aspect ratio without upscaling and cap the preview at 270 logical pixels. Source-process
 icons are extracted by the Windows adapter, content-addressed by Rust, and shown with a process-name

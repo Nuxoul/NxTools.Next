@@ -10,7 +10,7 @@ Machine: Windows 10.0.19045, AMD Radeon RX 580 2048SP
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass
 - `cargo test --workspace`: pass, including clipboard favorite/pin persistence, pinned-first
   ordering, soft-delete/restore, plain-text editing, category persistence/source filtering and
-  category wheel/drop behavior
+  category wheel/drop behavior, plus embedded Material Symbol availability
 - Rust protocol/runtime tests: pass
 - .NET build with warnings as errors: pass
 - C# protocol wire and bounded-reader tests: pass

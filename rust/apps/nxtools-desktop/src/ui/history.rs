@@ -3,11 +3,12 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{App, ClickEvent, ObjectFit, Window, div, img, prelude::*, px};
+use gpui_component::Icon;
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{Icon, IconName};
 use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
 
+use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::action_from_modifiers;
 
@@ -43,12 +44,18 @@ pub struct CategorySourceOption {
     pub included: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategorySourceMenu {
+    pub options: Vec<CategorySourceOption>,
+    pub unavailable_hint: Option<String>,
+}
+
 pub fn history_row(
     theme: Theme,
     entry: ClipboardItem,
     index: usize,
     available_image_width: f32,
-    category_options: Vec<CategorySourceOption>,
+    category_menu: CategorySourceMenu,
     on_action: HistoryActionHandler,
     on_management: HistoryManagementHandler,
 ) -> impl IntoElement {
@@ -129,10 +136,10 @@ pub fn history_row(
                         .child(time_label(theme, relative_time))
                         .child(div().flex_1())
                         .when(is_pinned, |row| {
-                            row.child(state_icon(theme, IconName::ArrowUp, "已置顶"))
+                            row.child(state_icon(theme, MaterialIcon::Keep, "已置顶"))
                         })
                         .when(is_favorite, |row| {
-                            row.child(state_icon(theme, IconName::Star, "已收藏"))
+                            row.child(state_icon(theme, MaterialIcon::Star, "已收藏"))
                         })
                         .child(
                             div()
@@ -150,7 +157,7 @@ pub fn history_row(
                                 .when(can_edit, |actions| {
                                     actions.child(management_button(
                                         theme,
-                                        IconName::Replace,
+                                        MaterialIcon::Edit,
                                         "编辑文本",
                                         ClipboardItemAction::Edit,
                                         edit_action,
@@ -159,7 +166,7 @@ pub fn history_row(
                                 })
                                 .child(management_button(
                                     theme,
-                                    IconName::ArrowUp,
+                                    MaterialIcon::Keep,
                                     if is_pinned { "取消置顶" } else { "置顶" },
                                     ClipboardItemAction::TogglePinned,
                                     pin_action,
@@ -167,11 +174,7 @@ pub fn history_row(
                                 ))
                                 .child(management_button(
                                     theme,
-                                    if is_favorite {
-                                        IconName::StarOff
-                                    } else {
-                                        IconName::Star
-                                    },
+                                    MaterialIcon::Star,
                                     if is_favorite {
                                         "取消收藏"
                                     } else {
@@ -183,7 +186,7 @@ pub fn history_row(
                                 ))
                                 .child(management_button(
                                     theme,
-                                    IconName::Delete,
+                                    MaterialIcon::Delete,
                                     "删除",
                                     ClipboardItemAction::Delete,
                                     delete_action,
@@ -267,10 +270,11 @@ pub fn history_row(
                                 action(ClipboardItemAction::Delete, event, window, cx);
                             }
                         }));
-                    if category_options.is_empty() {
-                        menu
+                    if let Some(category_hint) = category_menu.unavailable_hint.clone() {
+                        menu.separator()
+                            .item(PopupMenuItem::new(category_hint).disabled(true))
                     } else {
-                        let options = category_options.clone();
+                        let options = category_menu.options.clone();
                         let management = Rc::clone(&menu_category_action);
                         menu.separator().submenu(
                             "来源分类",
@@ -281,25 +285,22 @@ pub fn history_row(
                                     .clone()
                                     .into_iter()
                                     .fold(submenu, |submenu, option| {
-                                        let label = if option.included {
-                                            format!("✓ {}", option.name)
-                                        } else {
-                                            option.name.clone()
-                                        };
                                         let management = Rc::clone(&management);
-                                        submenu.item(PopupMenuItem::new(label).on_click(
-                                            move |event, window, cx| {
-                                                management(
-                                                    ClipboardItemAction::ToggleCategorySource {
-                                                        category_id: option.category_id.clone(),
-                                                        remove: option.included,
-                                                    },
-                                                    event,
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        ))
+                                        submenu.item(
+                                            PopupMenuItem::new(option.name.clone())
+                                                .checked(option.included)
+                                                .on_click(move |event, window, cx| {
+                                                    management(
+                                                        ClipboardItemAction::ToggleCategorySource {
+                                                            category_id: option.category_id.clone(),
+                                                            remove: option.included,
+                                                        },
+                                                        event,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                }),
+                                        )
                                     })
                             },
                         )
@@ -310,7 +311,7 @@ pub fn history_row(
 
 fn management_button(
     theme: Theme,
-    icon: IconName,
+    icon: MaterialIcon,
     tooltip: &'static str,
     action: ClipboardItemAction,
     handler: HistoryManagementHandler,
@@ -339,7 +340,7 @@ fn management_button(
         })
 }
 
-fn state_icon(theme: Theme, icon: IconName, tooltip: &'static str) -> impl IntoElement {
+fn state_icon(theme: Theme, icon: MaterialIcon, tooltip: &'static str) -> impl IntoElement {
     div()
         .id(gpui::SharedString::from(format!(
             "clipboard-state-icon-{tooltip}"
@@ -449,7 +450,7 @@ fn source_icon(
     index: usize,
 ) -> impl IntoElement {
     let icon = if process_icon_path.is_empty() {
-        Icon::new(IconName::Frame)
+        Icon::new(MaterialIcon::Image)
             .size(px(15.0))
             .text_color(theme.text_secondary)
             .into_any_element()

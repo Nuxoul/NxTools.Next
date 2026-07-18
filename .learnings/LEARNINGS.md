@@ -6,6 +6,37 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260718-002] correction
+
+**Logged**: 2026-07-18T12:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+NxTools.Next clipboard controls must use Google Material Symbols, and every GPUI icon asset must be embedded through an application `AssetSource`.
+
+### Details
+
+The UI used `gpui-component::IconName` without configuring `Application::with_assets`. The resulting SVG paths resolved against GPUI's empty default asset source, leaving category creation and management controls visually blank. The user also explicitly selected the Google Fonts Material Symbols library as the product icon source.
+
+### Suggested Action
+
+Use a typed Material Symbol map, embed selected official SVG files in the executable, and keep a test that loads every clipboard icon path through the real application asset source.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: rust/apps/nxtools-desktop/src/assets.rs, rust/apps/nxtools-desktop/src/icons.rs, rust/apps/nxtools-desktop/src/ui
+- Tags: gpui, icons, material-symbols, assets
+- Pattern-Key: frontend.verify_runtime_asset_source
+- Recurrence-Count: 1
+- First-Seen: 2026-07-18
+- Last-Seen: 2026-07-18
+
+---
+
 ## [LRN-20260718-001] correction
 
 **Logged**: 2026-07-18T09:35:00+08:00

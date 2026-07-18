@@ -1,10 +1,13 @@
+mod assets;
 mod clipboard;
+mod icons;
 mod popup_lifecycle;
 mod runtime;
 mod theme;
 mod ui;
 
 use anyhow::{Context as _, Result};
+use assets::NxToolsAssets;
 use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use gpui::{App, AppContext, Application};
 use gpui_component::{Theme, ThemeMode};
@@ -27,15 +30,22 @@ fn run() -> Result<()> {
         .context("desktop runtime did not provide a clipboard image directory")?;
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
-    Application::new().run(move |cx: &mut App| {
-        gpui_component::init(cx);
-        Theme::change(ThemeMode::Dark, None, cx);
+    Application::new()
+        .with_assets(NxToolsAssets)
+        .run(move |cx: &mut App| {
+            gpui_component::init(cx);
+            Theme::change(ThemeMode::Dark, None, cx);
 
-        let clipboard = cx.new(|cx| {
-            ClipboardApplication::new(clipboard_history, clipboard_asset_dir, platform_bridge, cx)
+            let clipboard = cx.new(|cx| {
+                ClipboardApplication::new(
+                    clipboard_history,
+                    clipboard_asset_dir,
+                    platform_bridge,
+                    cx,
+                )
+            });
+            cx.set_global(ClipboardApplicationGlobal::new(clipboard));
         });
-        cx.set_global(ClipboardApplicationGlobal::new(clipboard));
-    });
 
     drop(runtime);
     Ok(())

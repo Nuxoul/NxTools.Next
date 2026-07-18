@@ -4,6 +4,84 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-005] powershell-source-search-and-svg-fetch
+
+**Logged**: 2026-07-18T12:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+Two diagnostic commands used an invalid wildcard directory and an invalid PowerShell `foreach` pipeline; the raw SVG web reader also rejected valid SVG responses.
+
+### Error
+
+```text
+The filename, directory name, or volume label syntax is incorrect.
+An empty pipe element is not allowed.
+Failed to fetch raw.githubusercontent.com ... (400) OK.
+```
+
+### Context
+
+- The failures occurred while locating GPUI asset-source code and reading official Material Symbol SVG files.
+- No project source or asset was written by the failed commands.
+
+### Suggested Fix
+
+Enumerate wildcard directories before passing paths to `rg`, accumulate `foreach` results before piping, and use a strict single-request fallback for raw SVG responses.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/assets.rs
+
+### Resolution
+
+- **Resolved**: 2026-07-18T12:05:00+08:00
+- **Notes**: Switched to enumerated paths and successful strict requests, then embedded the verified SVG contents with `apply_patch`.
+
+---
+
+## [ERR-20260718-006] clipboard-history-row-argument-count
+
+**Logged**: 2026-07-18T12:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+Adding category-menu discoverability temporarily pushed `history_row` beyond the workspace's Clippy argument-count limit.
+
+### Error
+
+```text
+this function has too many arguments (8/7)
+```
+
+### Context
+
+- Command: `cargo clippy --workspace --all-targets -- -D warnings`
+- Category options and the unavailable hint were passed as two independent arguments.
+
+### Suggested Fix
+
+Model related category-menu state as one typed value instead of expanding the rendering function signature.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/history.rs
+
+### Resolution
+
+- **Resolved**: 2026-07-18T12:20:00+08:00
+- **Notes**: Introduced `CategorySourceMenu` to group options and unavailable state without suppressing Clippy.
+
+---
+
 ## [ERR-20260718-004] release-package-locked-destination
 
 **Logged**: 2026-07-18T11:10:00+08:00
