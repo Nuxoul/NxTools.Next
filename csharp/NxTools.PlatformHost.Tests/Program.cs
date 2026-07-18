@@ -15,9 +15,11 @@ internal static class Program
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
+            ("native clipboard format command preserves staged payload", NativeFormatPayloadRoundTrips),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("paste retries transient target activation", PasteRetriesTransientTargetActivation),
+            ("copy-only writes clipboard without activating target", CopyOnlyWritesWithoutActivatingTarget),
             ("native input layout matches Windows ABI", NativeInputLayoutMatchesWindowsAbi),
             ("paste diagnostics preserve correlation and Win32 error", PasteDiagnosticsPreserveCorrelationAndWin32Error),
             ("platform log writes structured JSON lines", PlatformLogWritesStructuredJsonLines),
@@ -80,6 +82,7 @@ internal static class Program
 
         var command = PlatformCommandParser.ParsePasteText(envelope);
         Assert(command.Text == "paste exactly this");
+        Assert(command.PasteAfterWrite);
         Assert(command.TargetWindowHandle == 42L);
         Assert(command.TargetFocusWindowHandle == 43L);
         return Task.CompletedTask;
@@ -136,6 +139,38 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task NativeFormatPayloadRoundTrips()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "paste_native_formats",
+            Data = new
+            {
+                Formats = new[]
+                {
+                    new
+                    {
+                        FormatId = 13U,
+                        FormatName = "",
+                        DataPath = "C:/formats/unicode.bin",
+                        SizeBytes = 24UL,
+                        SortOrder = 0U
+                    }
+                },
+                PasteAfterWrite = false,
+                TargetWindowHandle = 0L,
+                TargetFocusWindowHandle = 0L
+            }
+        });
+
+        var command = PlatformCommandParser.ParsePasteNativeFormats(envelope);
+        Assert(command.Formats.Count == 1);
+        Assert(command.Formats[0].FormatId == 13);
+        Assert(command.Formats[0].DataPath.EndsWith("unicode.bin", StringComparison.Ordinal));
+        Assert(!command.PasteAfterWrite);
+        return Task.CompletedTask;
+    }
+
     private static Task TopmostCommandPreservesNativeWindow()
     {
         var envelope = ProtocolEnvelope.Create("platform_command", new
@@ -185,6 +220,20 @@ internal static class Program
         Assert(result.Success);
         Assert(operations.ActivationAttempts == 2);
         Assert(operations.SendPasteCalls == 1);
+        Assert(operations.PostPasteCalls == 0);
+        return Task.CompletedTask;
+    }
+
+    private static Task CopyOnlyWritesWithoutActivatingTarget()
+    {
+        var operations = new FakePasteOperations();
+        var coordinator = new WindowsPasteCoordinator(operations);
+
+        var result = coordinator.Execute(new PasteTextCommand("copy", 0, 0, false));
+
+        Assert(result.Success);
+        Assert(operations.ActivationAttempts == 0);
+        Assert(operations.SendPasteCalls == 0);
         Assert(operations.PostPasteCalls == 0);
         return Task.CompletedTask;
     }
@@ -344,6 +393,7 @@ internal static class Program
     private static Task HotKeyCapabilityReflectsRegistration()
     {
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.PasteText));
+        Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.ClipboardNativeFormats));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.WindowTopmost));
         Assert(!PlatformCapabilities.Create(false).Contains(PlatformCapabilities.ClipboardPanelHotKey));
         Assert(PlatformCapabilities.Create(true).Contains(PlatformCapabilities.ClipboardPanelHotKey));

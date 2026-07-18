@@ -11,12 +11,14 @@ use gpui::{
 };
 use gpui_component::Root;
 use nxtools_clipboard::{
-    CaptureSource, ClipboardHistory, ClipboardHistoryError, ClipboardItem, ClipboardKind,
-    FilesCapture, ImageCapture, TextCapture,
+    CaptureSource, ClipboardAction, ClipboardHistory, ClipboardHistoryError, ClipboardItem,
+    ClipboardKind, ClipboardNativeFormat as StoredClipboardNativeFormat, FilesCapture,
+    ImageCapture, TextCapture, action_text_payload,
 };
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
-    ClipboardPanelRequest, ForegroundContext, PasteFilesCommand, PasteImageCommand,
+    ClipboardNativeFormat as ProtocolClipboardNativeFormat, ClipboardPanelRequest,
+    ForegroundContext, PasteFilesCommand, PasteImageCommand, PasteNativeFormatsCommand,
     PasteTextCommand, PlatformCommand, PlatformEvent, SetWindowTopmostCommand,
     SetWindowVisibilityCommand,
 };
@@ -124,30 +126,69 @@ impl ClipboardApplication {
         }
     }
 
-    pub(crate) fn request_paste(
+    pub(crate) fn request_clipboard_action(
         &self,
         entry: &ClipboardItem,
         target: &ForegroundContext,
-    ) -> Result<uuid::Uuid, PlatformBridgeError> {
-        let command = match entry.kind {
-            ClipboardKind::Text => PlatformCommand::PasteText(PasteTextCommand {
-                text: entry.text.clone(),
+        action: ClipboardAction,
+    ) -> anyhow::Result<uuid::Uuid> {
+        let paste_after_write = action != ClipboardAction::CopyOnly;
+        let native_formats = if matches!(
+            action,
+            ClipboardAction::OriginalPaste | ClipboardAction::CopyOnly
+        ) && entry.kind != ClipboardKind::Image
+        {
+            self.history.borrow().native_formats(entry.id)?
+        } else {
+            Vec::new()
+        };
+        let command = if !native_formats.is_empty() {
+            PlatformCommand::PasteNativeFormats(PasteNativeFormatsCommand {
+                formats: native_formats
+                    .into_iter()
+                    .map(|format| ProtocolClipboardNativeFormat {
+                        format_id: format.format_id,
+                        format_name: format.format_name,
+                        data_path: format.data_path,
+                        size_bytes: format.size_bytes,
+                        sort_order: format.sort_order,
+                    })
+                    .collect(),
+                paste_after_write,
                 target_window_handle: target.window_handle,
                 target_focus_window_handle: target.focus_window_handle,
-            }),
-            ClipboardKind::Files => PlatformCommand::PasteFiles(PasteFilesCommand {
-                paths: entry.file_paths.clone(),
+            })
+        } else if let Some(text) = action_text_payload(entry, action) {
+            PlatformCommand::PasteText(PasteTextCommand {
+                text,
+                paste_after_write,
                 target_window_handle: target.window_handle,
                 target_focus_window_handle: target.focus_window_handle,
-            }),
-            ClipboardKind::Image => PlatformCommand::PasteImage(PasteImageCommand {
-                image_path: entry.image_path.clone(),
-                target_window_handle: target.window_handle,
-                target_focus_window_handle: target.focus_window_handle,
-            }),
+            })
+        } else {
+            match entry.kind {
+                ClipboardKind::Text => PlatformCommand::PasteText(PasteTextCommand {
+                    text: entry.text.clone(),
+                    paste_after_write,
+                    target_window_handle: target.window_handle,
+                    target_focus_window_handle: target.focus_window_handle,
+                }),
+                ClipboardKind::Files => PlatformCommand::PasteFiles(PasteFilesCommand {
+                    paths: entry.file_paths.clone(),
+                    paste_after_write,
+                    target_window_handle: target.window_handle,
+                    target_focus_window_handle: target.focus_window_handle,
+                }),
+                ClipboardKind::Image => PlatformCommand::PasteImage(PasteImageCommand {
+                    image_path: entry.image_path.clone(),
+                    paste_after_write,
+                    target_window_handle: target.window_handle,
+                    target_focus_window_handle: target.focus_window_handle,
+                }),
+            }
         };
         let command_id = self.platform.send_command(command)?;
-        info!(item_id = entry.id, %command_id, target = %target.process_name, "paste command sent");
+        info!(item_id = entry.id, ?action, %command_id, target = %target.process_name, "clipboard action command sent");
         Ok(command_id)
     }
 
@@ -269,6 +310,7 @@ impl ClipboardApplication {
     fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
         match event {
             PlatformEvent::ClipboardCaptured(capture) => {
+                let native_formats = self.ingest_native_formats(capture.native_formats);
                 let process_icon_path = capture
                     .source_icon_staging_path
                     .as_deref()
@@ -281,6 +323,7 @@ impl ClipboardApplication {
                     }
                     if let Err(error) = self.history.borrow_mut().capture_files(FilesCapture {
                         paths: capture.paths,
+                        native_formats,
                         source,
                         captured_at_unix_ms: capture.captured_at_unix_ms,
                     }) {
@@ -294,6 +337,7 @@ impl ClipboardApplication {
                                     image_path,
                                     width: image.width,
                                     height: image.height,
+                                    native_formats,
                                     source,
                                     captured_at_unix_ms: capture.captured_at_unix_ms,
                                 })
@@ -307,6 +351,7 @@ impl ClipboardApplication {
                     && !text.is_empty()
                     && let Err(error) = self.history.borrow_mut().capture(TextCapture {
                         text,
+                        native_formats,
                         source,
                         captured_at_unix_ms: capture.captured_at_unix_ms,
                     })
@@ -343,6 +388,47 @@ impl ClipboardApplication {
 
     fn store_captured_image(&self, staging_path: &str) -> std::io::Result<String> {
         self.store_captured_asset(staging_path, "", true)
+    }
+
+    fn ingest_native_formats(
+        &self,
+        formats: Vec<ProtocolClipboardNativeFormat>,
+    ) -> Vec<StoredClipboardNativeFormat> {
+        formats
+            .into_iter()
+            .filter_map(|format| match self.store_native_format(&format.data_path) {
+                Ok(data_path) => Some(StoredClipboardNativeFormat {
+                    format_id: format.format_id,
+                    format_name: format.format_name,
+                    data_path,
+                    size_bytes: format.size_bytes,
+                    sort_order: format.sort_order,
+                }),
+                Err(error) => {
+                    error!(
+                        %error,
+                        format_id = format.format_id,
+                        size_bytes = format.size_bytes,
+                        "failed to ingest staged native clipboard format"
+                    );
+                    let _ = std::fs::remove_file(&format.data_path);
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn store_native_format(&self, staging_path: &str) -> std::io::Result<String> {
+        let staging = std::path::Path::new(staging_path);
+        let fingerprint = image_fingerprint(std::fs::File::open(staging)?)?;
+        let format_dir = self.image_dir.join("native-formats");
+        std::fs::create_dir_all(&format_dir)?;
+        let destination = format_dir.join(format!("{fingerprint}.bin"));
+        if !destination.exists() {
+            std::fs::copy(staging, &destination)?;
+        }
+        let _ = std::fs::remove_file(staging);
+        Ok(destination.to_string_lossy().into_owned())
     }
 
     fn store_source_icon(&self, staging_path: &str) -> std::io::Result<String> {

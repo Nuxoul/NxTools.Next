@@ -48,7 +48,8 @@ internal sealed record PasteShortcutResult(
 
 internal abstract record ClipboardPastePayload(
     long TargetWindowHandle,
-    long TargetFocusWindowHandle)
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite)
 {
     public abstract string Kind { get; }
     public virtual int TextLength => 0;
@@ -58,7 +59,8 @@ internal abstract record ClipboardPastePayload(
 internal sealed record TextClipboardPastePayload(
     string Text,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
 {
     public override string Kind => "text";
     public override int TextLength => Text.Length;
@@ -67,7 +69,8 @@ internal sealed record TextClipboardPastePayload(
 internal sealed record FilesClipboardPastePayload(
     IReadOnlyList<string> Paths,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
 {
     public override string Kind => "files";
     public override int PathCount => Paths.Count;
@@ -76,9 +79,19 @@ internal sealed record FilesClipboardPastePayload(
 internal sealed record ImageClipboardPastePayload(
     string ImagePath,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle)
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
 {
     public override string Kind => "image";
+}
+
+internal sealed record NativeFormatsClipboardPastePayload(
+    IReadOnlyList<ClipboardNativeFormatData> Formats,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
+{
+    public override string Kind => "native_formats";
 }
 
 internal interface IWindowsPasteOperations
@@ -106,17 +119,22 @@ internal sealed class WindowsPasteCoordinator(
     public WindowsCommandResult Execute(PasteTextCommand command, Guid correlationId = default)
         => Execute(new TextClipboardPastePayload(
             command.Text, command.TargetWindowHandle,
-            command.TargetFocusWindowHandle), correlationId);
+            command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
 
     public WindowsCommandResult Execute(PasteFilesCommand command, Guid correlationId = default)
         => Execute(new FilesClipboardPastePayload(
             command.Paths, command.TargetWindowHandle,
-            command.TargetFocusWindowHandle), correlationId);
+            command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
 
     public WindowsCommandResult Execute(PasteImageCommand command, Guid correlationId = default)
         => Execute(new ImageClipboardPastePayload(
             command.ImagePath, command.TargetWindowHandle,
-            command.TargetFocusWindowHandle), correlationId);
+            command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
+
+    public WindowsCommandResult Execute(PasteNativeFormatsCommand command, Guid correlationId = default)
+        => Execute(new NativeFormatsClipboardPastePayload(
+            command.Formats, command.TargetWindowHandle,
+            command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
 
     internal WindowsCommandResult Execute(ClipboardPastePayload command, Guid correlationId)
     {
@@ -127,9 +145,11 @@ internal sealed class WindowsPasteCoordinator(
             ["content_kind"] = command.Kind,
             ["text_length"] = command.TextLength,
             ["path_count"] = command.PathCount,
+            ["paste_after_write"] = command.PasteAfterWrite,
             ["input_struct_size"] = WindowsPlatformAdapter.NativeInputSize
         });
-        if (command.TargetWindowHandle == 0 || !operations.IsWindow(command.TargetWindowHandle))
+        if (command.PasteAfterWrite &&
+            (command.TargetWindowHandle == 0 || !operations.IsWindow(command.TargetWindowHandle)))
         {
             return Fail(correlationId, "paste.target_invalid", "The target window no longer exists.");
         }
@@ -167,6 +187,13 @@ internal sealed class WindowsPasteCoordinator(
             ["sequence_before"] = clipboardBefore,
             ["sequence_after"] = operations.GetClipboardSequenceNumber()
         });
+
+        if (!command.PasteAfterWrite)
+        {
+            Log("info", "clipboard.copy.completed", correlationId,
+                new Dictionary<string, object?> { ["content_kind"] = command.Kind });
+            return new WindowsCommandResult(true);
+        }
 
         var targetReady = false;
         for (var attempt = 0; attempt < ActivationAttempts; attempt++)

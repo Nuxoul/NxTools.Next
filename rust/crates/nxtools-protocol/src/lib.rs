@@ -121,9 +121,20 @@ pub struct ClipboardCapture {
     pub text: Option<String>,
     pub image: Option<ClipboardImageData>,
     pub paths: Vec<String>,
+    #[serde(default)]
+    pub native_formats: Vec<ClipboardNativeFormat>,
     pub source_icon_staging_path: Option<String>,
     pub source: ForegroundContext,
     pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardNativeFormat {
+    pub format_id: u32,
+    pub format_name: String,
+    pub data_path: String,
+    pub size_bytes: u64,
+    pub sort_order: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,13 +160,24 @@ pub enum PlatformCommand {
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),
+    PasteNativeFormats(PasteNativeFormatsCommand),
     SetWindowTopmost(SetWindowTopmostCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasteNativeFormatsCommand {
+    pub formats: Vec<ClipboardNativeFormat>,
+    pub paste_after_write: bool,
+    pub target_window_handle: i64,
+    pub target_focus_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasteTextCommand {
     pub text: String,
+    #[serde(default = "default_true")]
+    pub paste_after_write: bool,
     pub target_window_handle: i64,
     pub target_focus_window_handle: i64,
 }
@@ -163,6 +185,8 @@ pub struct PasteTextCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasteFilesCommand {
     pub paths: Vec<String>,
+    #[serde(default = "default_true")]
+    pub paste_after_write: bool,
     pub target_window_handle: i64,
     pub target_focus_window_handle: i64,
 }
@@ -170,8 +194,14 @@ pub struct PasteFilesCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasteImageCommand {
     pub image_path: String,
+    #[serde(default = "default_true")]
+    pub paste_after_write: bool,
     pub target_window_handle: i64,
     pub target_focus_window_handle: i64,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,6 +318,7 @@ mod tests {
                 text: Some("真实剪贴板内容".into()),
                 image: None,
                 paths: Vec::new(),
+                native_formats: Vec::new(),
                 source_icon_staging_path: None,
                 source: ForegroundContext {
                     window_handle: 42,
@@ -310,6 +341,7 @@ mod tests {
         let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
             PasteTextCommand {
                 text: "paste me".into(),
+                paste_after_write: false,
                 target_window_handle: 99,
                 target_focus_window_handle: 100,
             },
@@ -318,6 +350,10 @@ mod tests {
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("paste command must decode");
         assert_eq!(decoded, envelope);
+        let Message::PlatformCommand(PlatformCommand::PasteText(command)) = decoded.message else {
+            panic!("expected text clipboard command");
+        };
+        assert!(!command.paste_after_write);
     }
 
     #[test]
@@ -331,17 +367,20 @@ mod tests {
                     height: 480,
                 }),
                 paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                native_formats: Vec::new(),
                 source_icon_staging_path: Some("C:/temp/source.png".into()),
                 source: fixture_context(),
                 captured_at_unix_ms: 10,
             })),
             Message::PlatformCommand(PlatformCommand::PasteFiles(PasteFilesCommand {
                 paths: vec!["C:/one.txt".into()],
+                paste_after_write: true,
                 target_window_handle: 5,
                 target_focus_window_handle: 6,
             })),
             Message::PlatformCommand(PlatformCommand::PasteImage(PasteImageCommand {
                 image_path: "C:/image.png".into(),
+                paste_after_write: true,
                 target_window_handle: 5,
                 target_focus_window_handle: 6,
             })),
@@ -349,6 +388,42 @@ mod tests {
             let envelope = Envelope::new(message);
             let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
                 .expect("multi-format message must decode");
+            assert_eq!(decoded, envelope);
+        }
+    }
+
+    #[test]
+    fn native_clipboard_formats_round_trip_by_staged_file() {
+        let format = ClipboardNativeFormat {
+            format_id: 49_222,
+            format_name: "HTML Format".into(),
+            data_path: "C:/temp/html-format.bin".into(),
+            size_bytes: 128,
+            sort_order: 2,
+        };
+        let capture = Envelope::new(Message::PlatformEvent(PlatformEvent::ClipboardCaptured(
+            ClipboardCapture {
+                text: Some("formatted".into()),
+                image: None,
+                paths: Vec::new(),
+                native_formats: vec![format.clone()],
+                source_icon_staging_path: None,
+                source: fixture_context(),
+                captured_at_unix_ms: 12,
+            },
+        )));
+        let command = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::PasteNativeFormats(PasteNativeFormatsCommand {
+                formats: vec![format],
+                paste_after_write: false,
+                target_window_handle: 42,
+                target_focus_window_handle: 43,
+            }),
+        ));
+
+        for envelope in [capture, command] {
+            let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+                .expect("native clipboard payload must decode");
             assert_eq!(decoded, envelope);
         }
     }
@@ -410,6 +485,7 @@ mod tests {
         let command = Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
             PasteTextCommand {
                 text: "paste".into(),
+                paste_after_write: true,
                 target_window_handle: 9,
                 target_focus_window_handle: 10,
             },

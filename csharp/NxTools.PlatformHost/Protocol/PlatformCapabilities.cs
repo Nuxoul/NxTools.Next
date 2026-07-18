@@ -6,6 +6,7 @@ internal static class PlatformCapabilities
     public const string ClipboardTextCapture = "clipboard_text_capture";
     public const string ClipboardImageCapture = "clipboard_image_capture";
     public const string ClipboardFilesCapture = "clipboard_files_capture";
+    public const string ClipboardNativeFormats = "clipboard_native_formats";
     public const string PasteText = "paste_text";
     public const string PasteImage = "paste_image";
     public const string PasteFiles = "paste_files";
@@ -21,6 +22,7 @@ internal static class PlatformCapabilities
             ClipboardTextCapture,
             ClipboardImageCapture,
             ClipboardFilesCapture,
+            ClipboardNativeFormats,
             PasteText,
             PasteImage,
             PasteFiles,

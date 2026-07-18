@@ -4,6 +4,44 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260718-002] stale-platform-protocol-file-names
+
+**Logged**: 2026-07-18T10:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+Repository inspection referenced guessed protocol file names that do not exist.
+
+### Error
+
+```text
+Cannot find path '...Protocol\PlatformCommandProcessor.cs'
+Cannot find path '...Protocol\PlatformCommand.cs'
+```
+
+### Context
+
+- The actual command parsing and dispatch live in `PlatformCommandParser.cs` and `PlatformPipeClient.cs`.
+
+### Suggested Fix
+
+Run `rg --files` for the target directory before opening architecture-sensitive files.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: csharp/NxTools.PlatformHost/Protocol
+
+### Resolution
+
+- **Resolved**: 2026-07-18T10:06:00+08:00
+- **Notes**: Located the real parser and dispatcher from the repository file list.
+
+---
+
 ## [ERR-20260718-001] product-design-user-context-preflight-path
 
 **Logged**: 2026-07-18T09:35:00+08:00

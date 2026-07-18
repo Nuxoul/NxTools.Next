@@ -20,6 +20,7 @@ internal static class PlatformEventEnvelopeFactory
                     clipboard.Text,
                     clipboard.Image,
                     clipboard.Paths,
+                    NativeFormats = clipboard.NativeFormats ?? [],
                     clipboard.SourceIconStagingPath,
                     clipboard.Source,
                     clipboard.CapturedAtUnixMs

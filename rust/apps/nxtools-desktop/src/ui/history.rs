@@ -1,12 +1,15 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{App, ClickEvent, ObjectFit, Window, div, img, prelude::*, px};
+use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{Icon, IconName};
-use nxtools_clipboard::{ClipboardItem, ClipboardKind};
+use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
 
 use crate::theme::Theme;
+use crate::ui::action_from_modifiers;
 
 pub const TEXT_ROW_HEIGHT: f32 = 68.0;
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
@@ -18,13 +21,14 @@ const IMAGE_WELL_VERTICAL_PADDING: f32 = 8.0;
 pub const IMAGE_ROW_CHROME_HEIGHT: f32 =
     ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + IMAGE_WELL_VERTICAL_PADDING;
 pub const ROW_GAP: f32 = 5.0;
+pub type HistoryActionHandler = Rc<dyn Fn(ClipboardAction, &ClickEvent, &mut Window, &mut App)>;
 
 pub fn history_row(
     theme: Theme,
     entry: ClipboardItem,
     index: usize,
     available_image_width: f32,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    on_action: HistoryActionHandler,
 ) -> impl IntoElement {
     let source = if entry.source.process_name.is_empty() {
         "未知来源".to_owned()
@@ -41,6 +45,12 @@ pub fn history_row(
         ClipboardKind::Image => image_content(theme, &entry, available_image_width),
         ClipboardKind::Files => files_content(theme, &entry),
     };
+    let click_action = Rc::clone(&on_action);
+    let original_action = Rc::clone(&on_action);
+    let copy_action = Rc::clone(&on_action);
+    let plain_action = Rc::clone(&on_action);
+    let without_breaks_action = Rc::clone(&on_action);
+    let without_breaks_disabled = entry.kind != ClipboardKind::Text;
 
     div()
         .id(("history-row-slot", index))
@@ -62,7 +72,12 @@ pub fn history_row(
                         .bg(theme.surface_hover)
                         .border_color(theme.border_active)
                 })
-                .on_click(on_click)
+                .on_click(move |event, window, cx| {
+                    let Some(action) = action_from_click(event) else {
+                        return;
+                    };
+                    click_action(action, event, window, cx);
+                })
                 .flex()
                 .flex_col()
                 .gap(px(5.0))
@@ -77,8 +92,49 @@ pub fn history_row(
                         .child(time_label(theme, relative_time))
                         .child(div().flex_1()),
                 )
-                .child(content),
+                .child(content)
+                .context_menu(move |menu, _window, _cx| {
+                    menu.item(PopupMenuItem::new("原格式粘贴").on_click({
+                        let action = Rc::clone(&original_action);
+                        move |event, window, cx| {
+                            action(ClipboardAction::OriginalPaste, event, window, cx);
+                        }
+                    }))
+                    .item(PopupMenuItem::new("仅复制    Ctrl+单击").on_click({
+                        let action = Rc::clone(&copy_action);
+                        move |event, window, cx| {
+                            action(ClipboardAction::CopyOnly, event, window, cx);
+                        }
+                    }))
+                    .item(
+                        PopupMenuItem::new("纯文本 / 路径粘贴    Alt+单击").on_click({
+                            let action = Rc::clone(&plain_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::PlainText, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        PopupMenuItem::new("去除换行后粘贴    Shift+单击")
+                            .disabled(without_breaks_disabled)
+                            .on_click({
+                                let action = Rc::clone(&without_breaks_action);
+                                move |event, window, cx| {
+                                    action(ClipboardAction::WithoutLineBreaks, event, window, cx);
+                                }
+                            }),
+                    )
+                }),
         )
+}
+
+fn action_from_click(event: &ClickEvent) -> Option<ClipboardAction> {
+    let modifiers = event.modifiers();
+    if modifiers.modified() {
+        action_from_modifiers(modifiers)
+    } else {
+        Some(ClipboardAction::OriginalPaste)
+    }
 }
 
 fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {

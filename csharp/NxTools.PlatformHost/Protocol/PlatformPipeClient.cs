@@ -144,6 +144,10 @@ internal sealed class PlatformPipeClient(
                         PlatformCommandParser.ParsePasteImage(envelope),
                         envelope.Id,
                         cancellationToken),
+                    "paste_native_formats" => await platformAdapter.PasteNativeFormatsAsync(
+                        PlatformCommandParser.ParsePasteNativeFormats(envelope),
+                        envelope.Id,
+                        cancellationToken),
                     "set_window_topmost" => platformAdapter.SetWindowTopmost(
                         PlatformCommandParser.ParseSetWindowTopmost(envelope)),
                     "set_window_visibility" => platformAdapter.SetWindowVisibility(

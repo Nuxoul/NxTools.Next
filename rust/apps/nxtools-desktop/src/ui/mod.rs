@@ -1,5 +1,7 @@
 mod history;
 
+use std::rc::Rc;
+
 use gpui::{
     App, AppContext, Bounds, Context, Entity, Focusable, ListAlignment, ListState, Render,
     ResizeEdge, Subscription, WeakEntity, Window, div, list, point, prelude::*, px, size,
@@ -7,7 +9,7 @@ use gpui::{
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{Icon, IconName};
-use nxtools_clipboard::{ClipboardItem, ClipboardKind};
+use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
 use nxtools_protocol::{ClipboardPanelRequest, PlatformCommandResult};
 use tracing::{error, info};
 
@@ -21,6 +23,7 @@ pub(crate) const PANEL_HEIGHT: f32 = 440.0;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PanelStatus {
     Ready(String),
+    Notice(String),
     Pending(&'static str),
     Error(String),
 }
@@ -56,7 +59,7 @@ impl ClipboardCategory {
 impl PanelStatus {
     fn label(&self) -> &str {
         match self {
-            Self::Ready(label) | Self::Error(label) => label,
+            Self::Ready(label) | Self::Notice(label) | Self::Error(label) => label,
             Self::Pending(label) => label,
         }
     }
@@ -92,9 +95,10 @@ pub(crate) struct ClipboardPanel {
     target: nxtools_protocol::ForegroundContext,
     entries: Vec<ClipboardItem>,
     status: PanelStatus,
-    pending_paste: Option<uuid::Uuid>,
+    pending_action: Option<(uuid::Uuid, ClipboardAction)>,
     is_open: bool,
     active_category: ClipboardCategory,
+    active_modifier_action: Option<ClipboardAction>,
     list_scroll: ListState,
     list_is_scrolled: bool,
     list_width: f32,
@@ -125,7 +129,7 @@ impl ClipboardPanel {
             },
         );
         let activation_subscription = cx.observe_window_activation(window, |this, window, cx| {
-            if !window.is_window_active() && this.pending_paste.is_none() {
+            if !window.is_window_active() && this.pending_action.is_none() {
                 this.close(window, cx);
             }
         });
@@ -156,9 +160,10 @@ impl ClipboardPanel {
             target,
             entries,
             status,
-            pending_paste: None,
+            pending_action: None,
             is_open: true,
             active_category: ClipboardCategory::All,
+            active_modifier_action: None,
             list_scroll,
             list_is_scrolled: false,
             list_width: 0.0,
@@ -202,13 +207,19 @@ impl ClipboardPanel {
         cx.notify();
     }
 
-    fn paste_entry(&mut self, entry: &ClipboardItem, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.pending_paste.is_some() {
-            self.status = PanelStatus::Pending("正在等待粘贴结果…");
+    fn activate_entry(
+        &mut self,
+        entry: &ClipboardItem,
+        action: ClipboardAction,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_action.is_some() {
+            self.status = PanelStatus::Pending("正在等待剪贴板操作结果…");
             cx.notify();
             return;
         }
-        if self.target.window_handle == 0 {
+        if action != ClipboardAction::CopyOnly && self.target.window_handle == 0 {
             self.status = PanelStatus::Error("原目标窗口已经不可用".into());
             cx.notify();
             return;
@@ -216,11 +227,15 @@ impl ClipboardPanel {
         let target = self.target.clone();
         let entry = entry.clone();
         match self.application.update(cx, |application, _| {
-            application.request_paste(&entry, &target)
+            application.request_clipboard_action(&entry, &target, action)
         }) {
             Ok(Ok(command_id)) => {
-                self.pending_paste = Some(command_id);
-                self.status = PanelStatus::Pending("正在粘贴…");
+                self.pending_action = Some((command_id, action));
+                self.status = PanelStatus::Pending(if action == ClipboardAction::CopyOnly {
+                    "正在复制…"
+                } else {
+                    "正在粘贴…"
+                });
                 cx.notify();
             }
             Ok(Err(error)) => {
@@ -242,13 +257,22 @@ impl ClipboardPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pending_paste != Some(correlation_id) {
+        let Some((pending_id, action)) = self.pending_action else {
+            return;
+        };
+        if pending_id != correlation_id {
             return;
         }
-        self.pending_paste = None;
+        self.pending_action = None;
         if result.success {
-            info!(%correlation_id, "paste command completed");
-            self.close(window, cx);
+            info!(%correlation_id, ?action, "clipboard action completed");
+            if action == ClipboardAction::CopyOnly {
+                self.status = PanelStatus::Notice("已复制".into());
+                window.activate_window();
+                cx.notify();
+            } else {
+                self.close(window, cx);
+            }
         } else {
             let reason = result.error.unwrap_or_else(|| "Windows 未返回原因".into());
             error!(%correlation_id, %reason, "paste command failed");
@@ -291,7 +315,7 @@ impl ClipboardPanel {
         if should_hide_for_foreground_change(
             popup_window_handle,
             foreground_window_handle,
-            self.pending_paste.is_some(),
+            self.pending_action.is_some(),
             self.is_open,
         ) {
             self.close(window, cx);
@@ -344,6 +368,7 @@ impl Render for ClipboardPanel {
         let status_should_render = self.status.should_render();
         let status_label = self.status.label().to_owned();
         let summary = self.active_category.label();
+        let modifier_action = self.active_modifier_action;
         let is_scrolled = self.list_is_scrolled;
         let list_width = (window.viewport_size().width.as_f32() - 16.0).max(28.0);
         if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
@@ -358,6 +383,7 @@ impl Render for ClipboardPanel {
         let text_category_panel = cx.entity().downgrade();
         let image_category_panel = cx.entity().downgrade();
         let files_category_panel = cx.entity().downgrade();
+        let modifier_panel = cx.entity().downgrade();
         div()
             .relative()
             .size_full()
@@ -371,6 +397,15 @@ impl Render for ClipboardPanel {
             .flex()
             .flex_col()
             .gap(px(6.0))
+            .on_modifiers_changed(move |event, _window, app| {
+                let _ = modifier_panel.update(app, |panel, cx| {
+                    let action = action_from_modifiers(event.modifiers);
+                    if panel.active_modifier_action != action {
+                        panel.active_modifier_action = action;
+                        cx.notify();
+                    }
+                });
+            })
             .child(
                 div()
                     .id("clipboard-panel-header")
@@ -397,6 +432,22 @@ impl Render for ClipboardPanel {
                             .truncate()
                             .child(summary),
                     )
+                    .when_some(modifier_action, |header, action| {
+                        header.child(
+                            div()
+                                .h(px(21.0))
+                                .px_2()
+                                .rounded(px(5.0))
+                                .border_1()
+                                .border_color(theme.accent)
+                                .bg(theme.accent_soft)
+                                .text_xs()
+                                .text_color(theme.accent_text)
+                                .flex()
+                                .items_center()
+                                .child(modifier_action_label(action)),
+                        )
+                    })
                     .when(status_should_render, |header| {
                         header.child(
                             div()
@@ -537,17 +588,19 @@ impl Render for ClipboardPanel {
                                 let Some(entry) = entries.get(index).cloned() else {
                                     return div().into_any_element();
                                 };
-                                let paste_entry = entry.clone();
+                                let action_entry = entry.clone();
                                 let panel = history_panel.clone();
-                                let on_click =
-                                    move |_event: &gpui::ClickEvent,
+                                let on_action = Rc::new(
+                                    move |action: ClipboardAction,
+                                          _event: &gpui::ClickEvent,
                                           window: &mut Window,
                                           app: &mut App| {
                                         let _ = panel.update(app, |this, cx| {
-                                            this.paste_entry(&paste_entry, window, cx);
+                                            this.activate_entry(&action_entry, action, window, cx);
                                         });
-                                    };
-                                history_row(theme, entry, index, available_image_width, on_click)
+                                    },
+                                );
+                                history_row(theme, entry, index, available_image_width, on_action)
                                     .into_any_element()
                             })
                             .w_full()
@@ -632,6 +685,30 @@ fn should_hide_for_foreground_change(
         && popup_window_handle != 0
         && foreground_window_handle != 0
         && foreground_window_handle != popup_window_handle
+}
+
+fn action_from_modifiers(modifiers: gpui::Modifiers) -> Option<ClipboardAction> {
+    match (
+        modifiers.control,
+        modifiers.alt,
+        modifiers.shift,
+        modifiers.platform || modifiers.function,
+    ) {
+        (false, false, false, false) => None,
+        (true, false, false, false) => Some(ClipboardAction::CopyOnly),
+        (false, true, false, false) => Some(ClipboardAction::PlainText),
+        (false, false, true, false) => Some(ClipboardAction::WithoutLineBreaks),
+        _ => None,
+    }
+}
+
+fn modifier_action_label(action: ClipboardAction) -> &'static str {
+    match action {
+        ClipboardAction::CopyOnly => "Ctrl · 仅复制",
+        ClipboardAction::PlainText => "Alt · 纯文本",
+        ClipboardAction::WithoutLineBreaks => "Shift · 去换行",
+        ClipboardAction::OriginalPaste => "原格式粘贴",
+    }
 }
 
 fn category_tab(
@@ -731,6 +808,8 @@ mod tests {
     fn panel_status_uses_typed_error_state() {
         assert!(!PanelStatus::Ready("ready".into()).is_error());
         assert!(!PanelStatus::Ready("ready".into()).should_render());
+        assert!(!PanelStatus::Notice("copied".into()).is_error());
+        assert!(PanelStatus::Notice("copied".into()).should_render());
         assert!(!PanelStatus::Pending("pending").is_error());
         assert!(PanelStatus::Pending("pending").should_render());
         assert!(PanelStatus::Error("failed".into()).is_error());
@@ -749,5 +828,38 @@ mod tests {
     fn panel_metrics_match_the_reference_window() {
         assert_eq!(PANEL_WIDTH, 340.0);
         assert_eq!(PANEL_HEIGHT, 440.0);
+    }
+
+    #[test]
+    fn exactly_one_supported_modifier_selects_an_accelerated_action() {
+        assert_eq!(
+            action_from_modifiers(gpui::Modifiers {
+                control: true,
+                ..Default::default()
+            }),
+            Some(ClipboardAction::CopyOnly)
+        );
+        assert_eq!(
+            action_from_modifiers(gpui::Modifiers {
+                alt: true,
+                ..Default::default()
+            }),
+            Some(ClipboardAction::PlainText)
+        );
+        assert_eq!(
+            action_from_modifiers(gpui::Modifiers {
+                shift: true,
+                ..Default::default()
+            }),
+            Some(ClipboardAction::WithoutLineBreaks)
+        );
+        assert_eq!(
+            action_from_modifiers(gpui::Modifiers {
+                control: true,
+                shift: true,
+                ..Default::default()
+            }),
+            None
+        );
     }
 }

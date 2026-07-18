@@ -1,5 +1,7 @@
 namespace NxTools.PlatformHost.Windows;
 
+using NxTools.PlatformHost.Protocol;
+
 internal abstract record WindowsPlatformEvent;
 
 internal sealed record ForegroundChangedEvent(ForegroundContext Context) : WindowsPlatformEvent;
@@ -15,7 +17,8 @@ internal sealed record ClipboardCapturedEvent(
     IReadOnlyList<string> Paths,
     string? SourceIconStagingPath,
     ForegroundContext Source,
-    long CapturedAtUnixMs) : WindowsPlatformEvent;
+    long CapturedAtUnixMs,
+    IReadOnlyList<ClipboardNativeFormatData>? NativeFormats = null) : WindowsPlatformEvent;
 
 internal sealed record ClipboardPanelRequestedEvent(
     ForegroundContext Target,

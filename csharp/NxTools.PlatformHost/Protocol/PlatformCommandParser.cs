@@ -5,13 +5,27 @@ namespace NxTools.PlatformHost.Protocol;
 internal sealed record PasteTextCommand(
     string Text,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle);
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite = true);
 internal sealed record PasteFilesCommand(
     IReadOnlyList<string> Paths,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle);
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite = true);
 internal sealed record PasteImageCommand(
     string ImagePath,
+    long TargetWindowHandle,
+    long TargetFocusWindowHandle,
+    bool PasteAfterWrite = true);
+internal sealed record ClipboardNativeFormatData(
+    uint FormatId,
+    string FormatName,
+    string DataPath,
+    ulong SizeBytes,
+    uint SortOrder);
+internal sealed record PasteNativeFormatsCommand(
+    IReadOnlyList<ClipboardNativeFormatData> Formats,
+    bool PasteAfterWrite,
     long TargetWindowHandle,
     long TargetFocusWindowHandle);
 
@@ -38,6 +52,12 @@ internal static class PlatformCommandParser
 
     public static PasteImageCommand ParsePasteImage(ProtocolEnvelope envelope) =>
         Parse<PasteImageCommand>(envelope, "paste_image", "Image paste command payload was empty.");
+
+    public static PasteNativeFormatsCommand ParsePasteNativeFormats(ProtocolEnvelope envelope) =>
+        Parse<PasteNativeFormatsCommand>(
+            envelope,
+            "paste_native_formats",
+            "Native formats paste command payload was empty.");
 
     private static T Parse<T>(ProtocolEnvelope envelope, string expected, string emptyMessage)
     {

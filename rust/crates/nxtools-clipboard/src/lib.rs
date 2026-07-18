@@ -15,6 +15,7 @@ pub struct CaptureSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextCapture {
     pub text: String,
+    pub native_formats: Vec<ClipboardNativeFormat>,
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
 }
@@ -24,6 +25,7 @@ pub struct ImageCapture {
     pub image_path: String,
     pub width: u32,
     pub height: u32,
+    pub native_formats: Vec<ClipboardNativeFormat>,
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
 }
@@ -31,8 +33,18 @@ pub struct ImageCapture {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilesCapture {
     pub paths: Vec<String>,
+    pub native_formats: Vec<ClipboardNativeFormat>,
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardNativeFormat {
+    pub format_id: u32,
+    pub format_name: String,
+    pub data_path: String,
+    pub size_bytes: u64,
+    pub sort_order: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +52,14 @@ pub enum ClipboardKind {
     Text,
     Image,
     Files,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardAction {
+    OriginalPaste,
+    CopyOnly,
+    PlainText,
+    WithoutLineBreaks,
 }
 
 impl ClipboardKind {
@@ -64,6 +84,21 @@ pub struct ClipboardItem {
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
     pub copy_count: u32,
+}
+
+pub fn action_text_payload(item: &ClipboardItem, action: ClipboardAction) -> Option<String> {
+    match action {
+        ClipboardAction::OriginalPaste | ClipboardAction::CopyOnly => {
+            (item.kind == ClipboardKind::Text).then(|| item.text.clone())
+        }
+        ClipboardAction::PlainText => match item.kind {
+            ClipboardKind::Text => Some(item.text.clone()),
+            ClipboardKind::Image => Some(item.image_path.clone()),
+            ClipboardKind::Files => Some(item.file_paths.join("\r\n")),
+        },
+        ClipboardAction::WithoutLineBreaks => (item.kind == ClipboardKind::Text)
+            .then(|| item.text.replace("\r\n", "").replace(['\r', '\n'], "")),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +132,18 @@ impl ClipboardHistory {
                 copy_count INTEGER NOT NULL DEFAULT 1
             );
             CREATE INDEX IF NOT EXISTS idx_clipboard_items_recent
-                ON clipboard_items(captured_at_unix_ms DESC, id DESC);",
+                ON clipboard_items(captured_at_unix_ms DESC, id DESC);
+            CREATE TABLE IF NOT EXISTS clipboard_item_formats (
+                clipboard_item_id INTEGER NOT NULL,
+                format_id INTEGER NOT NULL,
+                format_name TEXT NOT NULL,
+                data_path TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL,
+                PRIMARY KEY (clipboard_item_id, format_id, format_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_clipboard_item_formats_item
+                ON clipboard_item_formats(clipboard_item_id, sort_order);",
         )?;
         ensure_column(&connection, "content_type", "TEXT NOT NULL DEFAULT 'text'")?;
         ensure_column(&connection, "image_path", "TEXT NOT NULL DEFAULT ''")?;
@@ -123,6 +169,7 @@ impl ClipboardHistory {
             0,
             0,
             Vec::new(),
+            capture.native_formats,
             capture.source,
             capture.captured_at_unix_ms,
         )
@@ -139,6 +186,7 @@ impl ClipboardHistory {
             capture.width,
             capture.height,
             Vec::new(),
+            capture.native_formats,
             capture.source,
             capture.captured_at_unix_ms,
         )
@@ -155,6 +203,7 @@ impl ClipboardHistory {
             0,
             0,
             capture.paths,
+            capture.native_formats,
             capture.source,
             capture.captured_at_unix_ms,
         )
@@ -169,12 +218,13 @@ impl ClipboardHistory {
         image_width: u32,
         image_height: u32,
         file_paths: Vec<String>,
+        native_formats: Vec<ClipboardNativeFormat>,
         source: CaptureSource,
         captured_at_unix_ms: i64,
     ) -> Result<CaptureOutcome, ClipboardHistoryError> {
         let file_paths_json = serde_json::to_string(&file_paths)?;
-        let latest = self
-            .connection
+        let transaction = self.connection.transaction()?;
+        let latest = transaction
             .query_row(
                 "SELECT id, content_type, text, image_path, file_paths_json FROM clipboard_items
                  ORDER BY captured_at_unix_ms DESC, id DESC LIMIT 1",
@@ -197,7 +247,7 @@ impl ClipboardHistory {
             && latest_image == image_path
             && latest_files == file_paths_json
         {
-            self.connection.execute(
+            transaction.execute(
                 "UPDATE clipboard_items
                  SET source_window_handle = ?1,
                      source_process_id = ?2,
@@ -217,10 +267,12 @@ impl ClipboardHistory {
                     id,
                 ],
             )?;
+            replace_native_formats(&transaction, id, &native_formats)?;
+            transaction.commit()?;
             return Ok(CaptureOutcome::Updated(self.item_by_id(id)?));
         }
 
-        self.connection.execute(
+        transaction.execute(
             "INSERT INTO clipboard_items (
                 content_type, text, image_path, image_width, image_height, file_paths_json,
                 source_window_handle, source_process_id, source_process_name,
@@ -241,7 +293,9 @@ impl ClipboardHistory {
                 captured_at_unix_ms,
             ],
         )?;
-        let id = self.connection.last_insert_rowid();
+        let id = transaction.last_insert_rowid();
+        replace_native_formats(&transaction, id, &native_formats)?;
+        transaction.commit()?;
         let item = self.item_by_id(id)?;
         Ok(CaptureOutcome::Inserted(item))
     }
@@ -314,6 +368,55 @@ impl ClipboardHistory {
             )
             .map_err(Into::into)
     }
+
+    pub fn native_formats(
+        &self,
+        item_id: i64,
+    ) -> Result<Vec<ClipboardNativeFormat>, ClipboardHistoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT format_id, format_name, data_path, size_bytes, sort_order
+             FROM clipboard_item_formats
+             WHERE clipboard_item_id = ?1
+             ORDER BY sort_order, format_id, format_name",
+        )?;
+        let formats = statement.query_map([item_id], |row| {
+            Ok(ClipboardNativeFormat {
+                format_id: row.get(0)?,
+                format_name: row.get(1)?,
+                data_path: row.get(2)?,
+                size_bytes: row.get::<_, i64>(3)?.max(0) as u64,
+                sort_order: row.get(4)?,
+            })
+        })?;
+        formats.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+}
+
+fn replace_native_formats(
+    transaction: &rusqlite::Transaction<'_>,
+    item_id: i64,
+    formats: &[ClipboardNativeFormat],
+) -> Result<(), rusqlite::Error> {
+    transaction.execute(
+        "DELETE FROM clipboard_item_formats WHERE clipboard_item_id = ?1",
+        [item_id],
+    )?;
+    let mut statement = transaction.prepare(
+        "INSERT INTO clipboard_item_formats (
+            clipboard_item_id, format_id, format_name, data_path, size_bytes, sort_order
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    for format in formats {
+        statement.execute(params![
+            item_id,
+            i64::from(format.format_id),
+            format.format_name,
+            format.data_path,
+            format.size_bytes.min(i64::MAX as u64) as i64,
+            i64::from(format.sort_order),
+        ])?;
+    }
+    Ok(())
 }
 
 fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
@@ -373,6 +476,61 @@ fn ensure_column(
 mod tests {
     use super::*;
 
+    fn fixture_source() -> CaptureSource {
+        CaptureSource {
+            window_handle: 1,
+            process_id: 2,
+            process_name: "fixture".into(),
+            process_icon_path: String::new(),
+            window_title: "fixture".into(),
+        }
+    }
+
+    #[test]
+    fn clipboard_actions_have_one_canonical_text_fallback() {
+        let text = ClipboardItem {
+            id: 1,
+            kind: ClipboardKind::Text,
+            text: "first\r\nsecond\nthird\rfourth".into(),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: Vec::new(),
+            source: fixture_source(),
+            captured_at_unix_ms: 1,
+            copy_count: 1,
+        };
+        let files = ClipboardItem {
+            id: 2,
+            kind: ClipboardKind::Files,
+            text: String::new(),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: vec!["C:\\one.txt".into(), "D:\\two.txt".into()],
+            source: fixture_source(),
+            captured_at_unix_ms: 2,
+            copy_count: 1,
+        };
+
+        assert_eq!(
+            action_text_payload(&text, ClipboardAction::PlainText).as_deref(),
+            Some("first\r\nsecond\nthird\rfourth")
+        );
+        assert_eq!(
+            action_text_payload(&text, ClipboardAction::WithoutLineBreaks).as_deref(),
+            Some("firstsecondthirdfourth")
+        );
+        assert_eq!(
+            action_text_payload(&files, ClipboardAction::PlainText).as_deref(),
+            Some("C:\\one.txt\r\nD:\\two.txt")
+        );
+        assert_eq!(
+            action_text_payload(&files, ClipboardAction::WithoutLineBreaks),
+            None
+        );
+    }
+
     #[test]
     fn captured_text_is_returned_as_the_most_recent_item() {
         let directory = tempfile::tempdir().expect("temp directory");
@@ -382,6 +540,7 @@ mod tests {
         let outcome = history
             .capture(TextCapture {
                 text: "first real clipboard item".into(),
+                native_formats: Vec::new(),
                 source: CaptureSource {
                     window_handle: 42,
                     process_id: 7,
@@ -413,6 +572,7 @@ mod tests {
         let first = history
             .capture(TextCapture {
                 text: "same text".into(),
+                native_formats: Vec::new(),
                 source: CaptureSource {
                     window_handle: 1,
                     process_id: 10,
@@ -430,6 +590,7 @@ mod tests {
         let duplicate = history
             .capture(TextCapture {
                 text: "same text".into(),
+                native_formats: Vec::new(),
                 source: CaptureSource {
                     window_handle: 2,
                     process_id: 20,
@@ -465,6 +626,7 @@ mod tests {
             history
                 .capture(TextCapture {
                     text: text.into(),
+                    native_formats: Vec::new(),
                     source: CaptureSource {
                         window_handle: 1,
                         process_id: 10,
@@ -496,6 +658,7 @@ mod tests {
             history
                 .capture(TextCapture {
                     text: "persist across restart".into(),
+                    native_formats: Vec::new(),
                     source: CaptureSource {
                         window_handle: 5,
                         process_id: 50,
@@ -532,6 +695,7 @@ mod tests {
                 image_path: "C:/data/image.png".into(),
                 width: 640,
                 height: 480,
+                native_formats: Vec::new(),
                 source: source.clone(),
                 captured_at_unix_ms: 10,
             })
@@ -539,6 +703,7 @@ mod tests {
         history
             .capture_files(FilesCapture {
                 paths: vec!["C:/one.txt".into(), "C:/two.txt".into()],
+                native_formats: Vec::new(),
                 source,
                 captured_at_unix_ms: 20,
             })
@@ -568,6 +733,7 @@ mod tests {
                 image_path: "C:/data/older-image.png".into(),
                 width: 10,
                 height: 10,
+                native_formats: Vec::new(),
                 source: source.clone(),
                 captured_at_unix_ms: 1,
             })
@@ -576,6 +742,7 @@ mod tests {
             history
                 .capture(TextCapture {
                     text: format!("newer text {index}"),
+                    native_formats: Vec::new(),
                     source: source.clone(),
                     captured_at_unix_ms: 10 + index,
                 })
@@ -587,5 +754,40 @@ mod tests {
             .expect("filtered recent");
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].image_path, "C:/data/older-image.png");
+    }
+
+    #[test]
+    fn native_formats_survive_capture_and_database_reopen() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let item_id = {
+            let mut history = ClipboardHistory::open(&database).expect("open history");
+            let outcome = history
+                .capture(TextCapture {
+                    text: "formatted".into(),
+                    native_formats: vec![ClipboardNativeFormat {
+                        format_id: 49_222,
+                        format_name: "HTML Format".into(),
+                        data_path: "C:/data/html-format.bin".into(),
+                        size_bytes: 128,
+                        sort_order: 1,
+                    }],
+                    source: fixture_source(),
+                    captured_at_unix_ms: 10,
+                })
+                .expect("capture text");
+            match outcome {
+                CaptureOutcome::Inserted(item) | CaptureOutcome::Updated(item) => item.id,
+            }
+        };
+
+        let reopened = ClipboardHistory::open(&database).expect("reopen history");
+        let formats = reopened
+            .native_formats(item_id)
+            .expect("load native formats");
+        assert_eq!(formats.len(), 1);
+        assert_eq!(formats[0].format_name, "HTML Format");
+        assert_eq!(formats[0].data_path, "C:/data/html-format.bin");
+        assert_eq!(formats[0].size_bytes, 128);
     }
 }

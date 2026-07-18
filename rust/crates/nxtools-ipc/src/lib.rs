@@ -94,11 +94,12 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 10] = [
+            const SUPPORTED_CAPABILITIES: [&str; 11] = [
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
                 "clipboard_files_capture",
+                "clipboard_native_formats",
                 "paste_text",
                 "paste_image",
                 "paste_files",
@@ -362,6 +363,7 @@ mod tests {
         let error = bridge
             .send_command(PlatformCommand::PasteText(PasteTextCommand {
                 text: "must not become stale".into(),
+                paste_after_write: true,
                 target_window_handle: 42,
                 target_focus_window_handle: 43,
             }))

@@ -60,7 +60,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueuePaste(new TextClipboardPastePayload(
                 command.Text, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle), correlationId, cancellationToken);
+                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
     }
 
     public Task<WindowsCommandResult> PasteFilesAsync(
@@ -70,7 +70,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueuePaste(new FilesClipboardPastePayload(
                 command.Paths, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle), correlationId, cancellationToken);
+                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
     }
 
     public Task<WindowsCommandResult> PasteImageAsync(
@@ -80,7 +80,17 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueuePaste(new ImageClipboardPastePayload(
                 command.ImagePath, command.TargetWindowHandle,
-                command.TargetFocusWindowHandle), correlationId, cancellationToken);
+                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
+    }
+
+    public Task<WindowsCommandResult> PasteNativeFormatsAsync(
+        PasteNativeFormatsCommand command, Guid correlationId, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueuePaste(new NativeFormatsClipboardPastePayload(
+                command.Formats, command.TargetWindowHandle,
+                command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId, cancellationToken);
     }
 
     public WindowsCommandResult SetWindowTopmost(SetWindowTopmostCommand command) =>
@@ -257,6 +267,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             {
                 var source = _pendingClipboardSource ?? _foregroundContextProvider.Capture();
                 var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var nativeFormats = NativeClipboardFormats.Capture(Handle);
                 var paths = Clipboard.ContainsFileDropList()
                     ? Clipboard.GetFileDropList()
                         .Cast<string>()
@@ -287,7 +298,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 }
                 if (paths.Length > 0 || imageData is not null || !string.IsNullOrEmpty(text))
                 {
-                    QueueCapturedEvent(text, imageData, paths, source, capturedAt);
+                    QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt);
                 }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
@@ -308,6 +319,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             string? text,
             ClipboardImageData? imageData,
             string[] paths,
+            IReadOnlyList<CapturedClipboardNativeFormat> nativeFormats,
             ForegroundContext source,
             long capturedAt)
         {
@@ -327,12 +339,48 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                                 ["reason"] = iconError
                             });
                     }
+                    var stagedFormats = StageNativeFormats(nativeFormats);
                     _events.TryWrite(new ClipboardCapturedEvent(
-                        text, imageData, paths, sourceIconPath, source, capturedAt));
+                        text, imageData, paths, sourceIconPath, source, capturedAt, stagedFormats));
                 },
                 CancellationToken.None,
                 TaskContinuationOptions.None,
                 TaskScheduler.Default);
+        }
+
+        private IReadOnlyList<ClipboardNativeFormatData> StageNativeFormats(
+            IReadOnlyList<CapturedClipboardNativeFormat> formats)
+        {
+            var staged = new List<ClipboardNativeFormatData>(formats.Count);
+            var directory = Path.Combine(
+                Path.GetTempPath(), "NxTools.Next", "clipboard-format-staging");
+            Directory.CreateDirectory(directory);
+            foreach (var format in formats)
+            {
+                try
+                {
+                    var path = Path.Combine(directory, $"{Guid.NewGuid():N}.bin");
+                    File.WriteAllBytes(path, format.Data);
+                    staged.Add(new ClipboardNativeFormatData(
+                        format.FormatId,
+                        format.FormatName,
+                        path,
+                        checked((ulong)format.Data.LongLength),
+                        format.SortOrder));
+                }
+                catch (Exception error)
+                {
+                    _log.Write("warning", "clipboard.native_format_stage_failed", null,
+                        new Dictionary<string, object?>
+                        {
+                            ["format_id"] = format.FormatId,
+                            ["size_bytes"] = format.Data.LongLength,
+                            ["exception_type"] = error.GetType().FullName,
+                            ["message"] = error.Message
+                        });
+                }
+            }
+            return staged;
         }
 
         private void OnForegroundChanged(
@@ -418,6 +466,16 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                             using (var image = new System.Drawing.Bitmap(source))
                             {
                                 Clipboard.SetImage(image);
+                            }
+                            break;
+                        case NativeFormatsClipboardPastePayload native:
+                            if (!NativeClipboardFormats.TryWrite(
+                                    Handle, native.Formats, out var nativeError, out var nativeHresult))
+                            {
+                                _suppressNextClipboardUpdate = false;
+                                throw new ExternalException(
+                                    nativeError ?? "Could not restore native clipboard formats.",
+                                    nativeHresult);
                             }
                             break;
                         default:
