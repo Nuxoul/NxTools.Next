@@ -41,7 +41,8 @@ was active when the panel opened.
 
 See [docs/architecture.md](docs/architecture.md) for ownership rules and
 [docs/phase-1.md](docs/phase-1.md) for the verification checklist, and
-[docs/building.md](docs/building.md) for toolchain details.
+[docs/building.md](docs/building.md) for toolchain details. Previously inspected behavior and source
+entry points are cataloged in [docs/reference-code](docs/reference-code/README.md).
 
 ## License
 

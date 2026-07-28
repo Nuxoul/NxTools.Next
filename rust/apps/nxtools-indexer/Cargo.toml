@@ -6,8 +6,23 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+memmap2.workspace = true
 nxtools-core = { path = "../../crates/nxtools-core" }
+nxtools-finder = { path = "../../crates/nxtools-finder" }
+nxtools-ipc = { path = "../../crates/nxtools-ipc" }
+nxtools-protocol = { path = "../../crates/nxtools-protocol" }
+rayon.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sysinfo.workspace = true
 tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+windows-service.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3.20.0"

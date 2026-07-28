@@ -29,8 +29,12 @@ internal sealed class PlatformPipeClient(
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"PlatformHost disconnected: {error.Message}");
-                log.Write("error", "ipc.disconnected", fields: new Dictionary<string, object?>
+                var level = DisconnectLogLevel(error);
+                if (level == "error")
+                {
+                    Console.Error.WriteLine($"PlatformHost disconnected: {error.Message}");
+                }
+                log.Write(level, "ipc.disconnected", fields: new Dictionary<string, object?>
                 {
                     ["exception_type"] = error.GetType().FullName,
                     ["message"] = error.Message,
@@ -40,6 +44,15 @@ internal sealed class PlatformPipeClient(
             }
         }
     }
+
+    internal static string DisconnectLogLevel(Exception error) =>
+        error is EndOfStreamException ? "info" : "error";
+
+    internal static bool ShouldLogCommandLifecycle(string commandName) =>
+        !string.Equals(
+            commandName,
+            "set_taskbar_progress",
+            StringComparison.Ordinal);
 
     private async Task RunSessionAsync(CancellationToken cancellationToken)
     {
@@ -64,7 +77,9 @@ internal sealed class PlatformPipeClient(
         {
             ClientName = "platform_host",
             ClientVersion = typeof(PlatformPipeClient).Assembly.GetName().Version?.ToString() ?? "0.1.0",
-            Capabilities = PlatformCapabilities.Create(platformAdapter.ClipboardHotKeyAvailable)
+            Capabilities = PlatformCapabilities.Create(
+                platformAdapter.ClipboardHotKeyAvailable,
+                platformAdapter.QuickLaunchHotKeyAvailable)
         });
         await WriteAsync(writer, hello, cancellationToken);
 
@@ -78,7 +93,9 @@ internal sealed class PlatformPipeClient(
         log.Write("info", "ipc.connected", fields: new Dictionary<string, object?>
         {
             ["pipe_name"] = pipeName,
-            ["capabilities"] = PlatformCapabilities.Create(platformAdapter.ClipboardHotKeyAvailable)
+            ["capabilities"] = PlatformCapabilities.Create(
+                platformAdapter.ClipboardHotKeyAvailable,
+                platformAdapter.QuickLaunchHotKeyAvailable)
         });
         using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var outgoing = Channel.CreateBounded<ProtocolEnvelope>(new BoundedChannelOptions(256)
@@ -109,6 +126,13 @@ internal sealed class PlatformPipeClient(
         ChannelWriter<ProtocolEnvelope> outgoing,
         CancellationToken cancellationToken)
     {
+        var commandDispatcher = new PlatformCommandSequenceDispatcher(error =>
+            log.Write("error", "command.detached_failed", fields: new Dictionary<string, object?>
+            {
+                ["exception_type"] = error.GetType().FullName,
+                ["message"] = error.Message,
+                ["stack_trace"] = error.StackTrace
+            }));
         while (!cancellationToken.IsCancellationRequested)
         {
             var envelope = await ReadAsync(reader, cancellationToken);
@@ -125,57 +149,135 @@ internal sealed class PlatformPipeClient(
             else if (envelope.Type == "platform_command")
             {
                 var commandName = PlatformCommandParser.GetCommandName(envelope);
-                var started = Stopwatch.GetTimestamp();
-                log.Write("info", "command.received", envelope.Id, new Dictionary<string, object?>
+                await commandDispatcher.DispatchAsync(commandName, async () =>
                 {
-                    ["command"] = commandName
-                });
-                var result = commandName switch
-                {
-                    "paste_text" => await platformAdapter.PasteTextAsync(
-                        PlatformCommandParser.ParsePasteText(envelope),
-                        envelope.Id,
-                        cancellationToken),
-                    "paste_files" => await platformAdapter.PasteFilesAsync(
-                        PlatformCommandParser.ParsePasteFiles(envelope),
-                        envelope.Id,
-                        cancellationToken),
-                    "paste_image" => await platformAdapter.PasteImageAsync(
-                        PlatformCommandParser.ParsePasteImage(envelope),
-                        envelope.Id,
-                        cancellationToken),
-                    "paste_native_formats" => await platformAdapter.PasteNativeFormatsAsync(
-                        PlatformCommandParser.ParsePasteNativeFormats(envelope),
-                        envelope.Id,
-                        cancellationToken),
-                    "set_window_topmost" => platformAdapter.SetWindowTopmost(
-                        PlatformCommandParser.ParseSetWindowTopmost(envelope)),
-                    "set_window_visibility" => platformAdapter.SetWindowVisibility(
-                        PlatformCommandParser.ParseSetWindowVisibility(envelope)),
-                    var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
-                };
-                await outgoing.WriteAsync(
-                    ProtocolEnvelope.Create(
-                        "platform_command_result",
-                        new
-                        {
-                            result.Success,
-                            result.Error
-                        },
-                        envelope.Id),
-                    cancellationToken);
-                log.Write(result.Success ? "info" : "error", "command.completed", envelope.Id,
-                    new Dictionary<string, object?>
+                    var started = Stopwatch.GetTimestamp();
+                    var logCommandLifecycle = ShouldLogCommandLifecycle(commandName);
+                    if (logCommandLifecycle)
                     {
-                        ["command"] = commandName,
-                        ["success"] = result.Success,
-                        ["error"] = result.Error,
-                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
-                    });
-                if (!result.Success)
-                {
-                    Console.Error.WriteLine($"Platform command '{commandName}' failed: {result.Error}");
-                }
+                        log.Write("info", "command.received", envelope.Id,
+                            new Dictionary<string, object?>
+                            {
+                                ["command"] = commandName
+                            });
+                    }
+                    var result = commandName switch
+                    {
+                        "paste_text" => await platformAdapter.PasteTextAsync(
+                            PlatformCommandParser.ParsePasteText(envelope),
+                            envelope.Id,
+                            cancellationToken),
+                        "paste_files" => await platformAdapter.PasteFilesAsync(
+                            PlatformCommandParser.ParsePasteFiles(envelope),
+                            envelope.Id,
+                            cancellationToken),
+                        "paste_image" => await platformAdapter.PasteImageAsync(
+                            PlatformCommandParser.ParsePasteImage(envelope),
+                            envelope.Id,
+                            cancellationToken),
+                        "paste_native_formats" => await platformAdapter.PasteNativeFormatsAsync(
+                            PlatformCommandParser.ParsePasteNativeFormats(envelope),
+                            envelope.Id,
+                            cancellationToken),
+                        "configure_clipboard" => await platformAdapter.ConfigureClipboardAsync(
+                            PlatformCommandParser.ParseConfigureClipboard(envelope),
+                            cancellationToken),
+                        "set_clipboard_hot_key_recording" =>
+                            await platformAdapter.SetClipboardHotKeyRecordingAsync(
+                                PlatformCommandParser.ParseSetClipboardHotKeyRecording(envelope),
+                                cancellationToken),
+                        "configure_quick_launch" => await platformAdapter.ConfigureQuickLaunchAsync(
+                            PlatformCommandParser.ParseConfigureQuickLaunch(envelope),
+                            cancellationToken),
+                        "set_quick_launch_hot_key_recording" =>
+                            await platformAdapter.SetQuickLaunchHotKeyRecordingAsync(
+                                PlatformCommandParser.ParseSetQuickLaunchHotKeyRecording(envelope),
+                                cancellationToken),
+                        "set_window_topmost" => platformAdapter.SetWindowTopmost(
+                            PlatformCommandParser.ParseSetWindowTopmost(envelope)),
+                        "set_window_no_activate" => platformAdapter.SetWindowNoActivate(
+                            PlatformCommandParser.ParseSetWindowNoActivate(envelope)),
+                        "set_window_bounds" => platformAdapter.SetWindowBounds(
+                            PlatformCommandParser.ParseSetWindowBounds(envelope)),
+                        "set_taskbar_progress" => platformAdapter.SetTaskbarProgress(
+                            PlatformCommandParser.ParseSetTaskbarProgress(envelope),
+                            envelope.Id),
+                        "place_file_dialog_search_window" =>
+                            platformAdapter.PlaceFileDialogSearchWindow(
+                                PlatformCommandParser.ParsePlaceFileDialogSearchWindow(envelope)),
+                        "set_window_owner" => platformAdapter.SetWindowOwner(
+                            PlatformCommandParser.ParseSetWindowOwner(envelope)),
+                        "set_window_visibility" => platformAdapter.SetWindowVisibility(
+                            PlatformCommandParser.ParseSetWindowVisibility(envelope)),
+                        "set_window_position" => platformAdapter.SetWindowPosition(
+                            PlatformCommandParser.ParseSetWindowPosition(envelope)),
+                        "activate_window" => platformAdapter.ActivateWindow(
+                            PlatformCommandParser.ParseActivateWindow(envelope)),
+                        "begin_window_resize" => platformAdapter.BeginWindowResize(
+                            PlatformCommandParser.ParseBeginWindowResize(envelope)),
+                        "begin_window_move" => platformAdapter.BeginWindowMove(
+                            PlatformCommandParser.ParseBeginWindowMove(envelope)),
+                        "begin_file_drag" => await platformAdapter.BeginFileDragAsync(
+                            PlatformCommandParser.ParseBeginFileDrag(envelope),
+                            envelope.Id,
+                            cancellationToken),
+                        "open_shell_target" => platformAdapter.OpenShellTarget(
+                            PlatformCommandParser.ParseOpenShellTarget(envelope)),
+                        "launch_process" => platformAdapter.LaunchProcess(
+                            PlatformCommandParser.ParseLaunchProcess(envelope)),
+                        "navigate_directory" => platformAdapter.NavigateDirectory(
+                            PlatformCommandParser.ParseNavigateDirectory(envelope)),
+                        "open_file_in_dialog" => platformAdapter.OpenFileInDialog(
+                            PlatformCommandParser.ParseOpenFileInDialog(envelope)),
+                        "query_shell_actions" => platformAdapter.QueryShellActions(
+                            PlatformCommandParser.ParseQueryShellActions(envelope)),
+                        "query_shell_submenu" => platformAdapter.QueryShellSubmenu(
+                            PlatformCommandParser.ParseQueryShellSubmenu(envelope)),
+                        "invoke_shell_action" => platformAdapter.InvokeShellAction(
+                            PlatformCommandParser.ParseInvokeShellAction(envelope)),
+                        "extract_shell_icon" => platformAdapter.ExtractShellIcon(
+                            PlatformCommandParser.ParseExtractShellIcon(envelope)),
+                        "pick_clipboard_archive_path" => platformAdapter.PickClipboardArchivePath(
+                            PlatformCommandParser.ParsePickClipboardArchivePath(envelope)),
+                        "pick_clipboard_storage_directory" => platformAdapter.PickClipboardStorageDirectory(
+                            PlatformCommandParser.ParsePickClipboardStorageDirectory(envelope)),
+                        "pick_directory" => platformAdapter.PickDirectory(
+                            PlatformCommandParser.ParsePickDirectory(envelope)),
+                        "pick_program" => platformAdapter.PickProgram(
+                            PlatformCommandParser.ParsePickProgram(envelope)),
+                        "ensure_indexer_service" => await platformAdapter.EnsureIndexerServiceAsync(
+                            PlatformCommandParser.ParseEnsureIndexerService(envelope),
+                            cancellationToken),
+                        var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
+                    };
+                    await outgoing.WriteAsync(
+                        ProtocolEnvelope.Create(
+                            "platform_command_result",
+                            new
+                            {
+                                result.Success,
+                                result.Error,
+                                result.Data
+                            },
+                            envelope.Id),
+                        cancellationToken);
+                    if (logCommandLifecycle)
+                    {
+                        log.Write(result.Success ? "info" : "error", "command.completed", envelope.Id,
+                            new Dictionary<string, object?>
+                            {
+                                ["command"] = commandName,
+                                ["success"] = result.Success,
+                                ["error"] = result.Error,
+                                ["has_data"] = !string.IsNullOrEmpty(result.Data),
+                                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                            });
+                    }
+                    if (!result.Success && logCommandLifecycle)
+                    {
+                        Console.Error.WriteLine($"Platform command '{commandName}' failed: {result.Error}");
+                    }
+                });
             }
         }
     }

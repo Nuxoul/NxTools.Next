@@ -1,0 +1,1088 @@
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
+
+use anyhow::{Context, Result, ensure};
+
+use crate::mft::{MftEntry, MftIdentity, MftSnapshot};
+
+const USN_REASON_FILE_DELETE: u32 = 0x0000_0200;
+const USN_REASON_RENAME_OLD_NAME: u32 = 0x0000_1000;
+const USN_REASON_RENAME_NEW_NAME: u32 = 0x0000_2000;
+const USN_REASON_FILE_CREATE: u32 = 0x0000_0100;
+const STRUCTURAL_REASON_MASK: u32 = USN_REASON_FILE_CREATE
+    | USN_REASON_FILE_DELETE
+    | USN_REASON_RENAME_OLD_NAME
+    | USN_REASON_RENAME_NEW_NAME;
+const MIN_OVERLAY_REBUILD_ENTRIES: usize = 4_096;
+const OVERLAY_REBUILD_BASE_DIVISOR: usize = 10;
+const MAX_RECURSIVE_WORK_UNITS_PER_BATCH: usize = 4_096;
+const ERROR_JOURNAL_ENTRY_DELETED_CODE: u32 = 1181;
+
+#[derive(Clone, Debug)]
+pub(crate) struct UsnRecord {
+    file_reference: u64,
+    parent_reference: u64,
+    name: String,
+    is_directory: bool,
+    kind: UsnRecordKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UsnRecordKind {
+    Upsert,
+    RenameOld,
+    Delete,
+}
+
+impl UsnRecord {
+    #[cfg(test)]
+    pub(crate) fn upsert(
+        file_reference: u64,
+        parent_reference: u64,
+        name: impl Into<String>,
+        is_directory: bool,
+    ) -> Self {
+        Self {
+            file_reference,
+            parent_reference,
+            name: name.into(),
+            is_directory,
+            kind: UsnRecordKind::Upsert,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn delete(file_reference: u64) -> Self {
+        Self {
+            file_reference,
+            parent_reference: 0,
+            name: String::new(),
+            is_directory: false,
+            kind: UsnRecordKind::Delete,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct JournalBatch {
+    pub journal_id: u64,
+    pub lowest_valid_usn: i64,
+    pub next_usn: i64,
+    pub records: Vec<UsnRecord>,
+}
+
+#[derive(Debug)]
+pub(crate) enum JournalApplyError {
+    RebuildRequired(String),
+}
+
+impl fmt::Display for JournalApplyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RebuildRequired(reason) => formatter.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for JournalApplyError {}
+
+#[derive(Debug)]
+pub(crate) enum JournalPoll {
+    NoChange,
+    CursorAdvanced(MftSnapshot),
+    Updated(MftSnapshot),
+    RebuildRequired(String),
+}
+
+pub(crate) fn apply_journal_batch(
+    snapshot: &MftSnapshot,
+    batch: JournalBatch,
+) -> std::result::Result<MftSnapshot, JournalApplyError> {
+    let Some(expected_journal) = snapshot.journal_id else {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} has no cached journal identity",
+            snapshot.mount_point
+        )));
+    };
+    let Some(start_usn) = snapshot.next_usn else {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} has no cached USN cursor",
+            snapshot.mount_point
+        )));
+    };
+    if expected_journal != batch.journal_id {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} journal changed from {} to {}",
+            snapshot.mount_point, expected_journal, batch.journal_id
+        )));
+    }
+    if start_usn < batch.lowest_valid_usn || start_usn > batch.next_usn {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} USN cursor {} is outside {}..{}",
+            snapshot.mount_point, start_usn, batch.lowest_valid_usn, batch.next_usn
+        )));
+    }
+
+    let mut updated = snapshot.clone();
+    let mut changed_directories = Vec::new();
+    let mut upserts = Vec::new();
+    let mut live_work = 0_usize;
+    let mut overlay_children = overlay_children_index(&updated);
+    for record in batch.records {
+        match record.kind {
+            // A rename's old and new records may straddle read buffers. Keeping the old row until
+            // RENAME_NEW arrives avoids publishing a half-applied directory tree.
+            UsnRecordKind::RenameOld => {}
+            UsnRecordKind::Delete => {
+                delete_visible_subtree(
+                    &mut updated,
+                    record.file_reference,
+                    &overlay_children,
+                    &mut live_work,
+                )?;
+            }
+            UsnRecordKind::Upsert => {
+                let was_visible = updated.visible_entry(record.file_reference).is_some();
+                let previous = updated.visible_entry(record.file_reference);
+                let path_changed = previous.as_ref().is_none_or(|entry| {
+                    entry.name != record.name
+                        || entry.identity.is_none_or(|identity| {
+                            identity.parent_reference != record.parent_reference
+                        })
+                });
+                let replacement = MftEntry {
+                    identity: Some(MftIdentity {
+                        file_reference: record.file_reference,
+                        parent_reference: record.parent_reference,
+                    }),
+                    path: String::new(),
+                    name: record.name,
+                    is_directory: record.is_directory,
+                    size_bytes: previous.as_ref().and_then(|entry| entry.size_bytes),
+                    modified_at_unix_ms: previous
+                        .as_ref()
+                        .and_then(|entry| entry.modified_at_unix_ms),
+                };
+                updated.overlay.deleted.remove(&record.file_reference);
+                updated
+                    .overlay
+                    .replacements
+                    .insert(record.file_reference, replacement);
+                overlay_children
+                    .entry(record.parent_reference)
+                    .or_default()
+                    .push(record.file_reference);
+                if !was_visible {
+                    updated.record_visible_insert();
+                }
+                upserts.push(record.file_reference);
+                if record.is_directory && path_changed {
+                    changed_directories.push(record.file_reference);
+                }
+            }
+        }
+    }
+
+    for file_reference in upserts {
+        if !refresh_visible_path(&mut updated, file_reference)? {
+            // A create/move can be followed by deletion of its parent in the same journal
+            // window. That transient row is no longer reachable from the indexed tree; hiding
+            // only that subtree is correct and avoids turning routine temp-file churn into a
+            // multi-million-row rebuild.
+            hide_unreachable_entry(
+                &mut updated,
+                file_reference,
+                &overlay_children,
+                &mut live_work,
+            )?;
+        }
+    }
+    for directory in changed_directories {
+        if updated.visible_entry(directory).is_none() {
+            continue;
+        }
+        refresh_descendant_paths(&mut updated, directory, &overlay_children, &mut live_work)?;
+    }
+    updated.next_usn = Some(batch.next_usn);
+    Ok(updated)
+}
+
+pub(crate) fn overlay_requires_compaction(snapshot: &MftSnapshot) -> bool {
+    let overlay_entries = snapshot.overlay.replacements.len() + snapshot.overlay.deleted.len();
+    let overlay_limit =
+        MIN_OVERLAY_REBUILD_ENTRIES.max(snapshot.base_len() / OVERLAY_REBUILD_BASE_DIVISOR);
+    overlay_entries > overlay_limit
+}
+
+fn refresh_visible_path(
+    snapshot: &mut MftSnapshot,
+    file_reference: u64,
+) -> std::result::Result<bool, JournalApplyError> {
+    let Some(path) = resolve_visible_path(snapshot, file_reference)? else {
+        return Ok(false);
+    };
+    let Some(entry) = snapshot.overlay.replacements.get_mut(&file_reference) else {
+        return Ok(false);
+    };
+    entry.path = path;
+    Ok(true)
+}
+
+fn resolve_visible_path(
+    snapshot: &MftSnapshot,
+    file_reference: u64,
+) -> std::result::Result<Option<String>, JournalApplyError> {
+    let mut current = file_reference;
+    let mut visiting = HashSet::new();
+    let mut names = Vec::new();
+    while !is_ntfs_root_reference(current) {
+        if !visiting.insert(current) {
+            return Ok(None);
+        }
+        let Some(entry) = snapshot.visible_entry(current) else {
+            return Ok(None);
+        };
+        let Some(identity) = entry.identity else {
+            return Ok(None);
+        };
+        names.push(entry.name.clone());
+        current = identity.parent_reference;
+    }
+    let mut path = snapshot.mount_point.clone();
+    for name in names.iter().rev() {
+        if !path.ends_with(['\\', '/']) {
+            path.push('\\');
+        }
+        path.push_str(name);
+    }
+    Ok(Some(path))
+}
+
+fn refresh_descendant_paths(
+    snapshot: &mut MftSnapshot,
+    directory_reference: u64,
+    overlay_children: &HashMap<u64, Vec<u64>>,
+    live_work: &mut usize,
+) -> std::result::Result<(), JournalApplyError> {
+    let mut queue = VecDeque::from([directory_reference]);
+    let mut visited = HashSet::from([directory_reference]);
+    while let Some(parent) = queue.pop_front() {
+        let parent_path = snapshot
+            .visible_entry(parent)
+            .map(|entry| entry.path.clone())
+            .ok_or_else(|| {
+                JournalApplyError::RebuildRequired(format!(
+                    "{} lost live directory reference {}",
+                    snapshot.mount_point, parent
+                ))
+            })?;
+        let children =
+            bounded_visible_child_candidates(snapshot, overlay_children, parent, *live_work)?;
+        for child in children {
+            if !visited.insert(child) {
+                continue;
+            }
+            reserve_recursive_work(snapshot, live_work)?;
+            let Some(entry) = snapshot.visible_entry(child) else {
+                continue;
+            };
+            if entry
+                .identity
+                .is_none_or(|identity| identity.parent_reference != parent)
+            {
+                continue;
+            }
+            let is_directory = entry.is_directory;
+            let mut replacement = entry;
+            let separator = if parent_path.ends_with(['\\', '/']) {
+                ""
+            } else {
+                "\\"
+            };
+            replacement.path = format!("{parent_path}{separator}{}", replacement.name);
+            snapshot.overlay.replacements.insert(child, replacement);
+            if is_directory {
+                queue.push_back(child);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn delete_visible_subtree(
+    snapshot: &mut MftSnapshot,
+    root: u64,
+    overlay_children: &HashMap<u64, Vec<u64>>,
+    live_work: &mut usize,
+) -> std::result::Result<(), JournalApplyError> {
+    let mut queue = VecDeque::from([root]);
+    let mut visited = HashSet::new();
+    while let Some(parent) = queue.pop_front() {
+        if !visited.insert(parent) {
+            continue;
+        }
+        reserve_recursive_work(snapshot, live_work)?;
+        let children =
+            bounded_visible_child_candidates(snapshot, overlay_children, parent, *live_work)?;
+        queue.extend(children.into_iter().filter(|child| {
+            snapshot
+                .visible_entry(*child)
+                .and_then(|entry| entry.identity)
+                .is_some_and(|identity| identity.parent_reference == parent)
+        }));
+        let was_visible = snapshot.visible_entry(parent).is_some();
+        snapshot.overlay.replacements.remove(&parent);
+        if snapshot.contains_base_reference(parent) {
+            snapshot.overlay.deleted.insert(parent);
+        } else {
+            snapshot.overlay.deleted.remove(&parent);
+        }
+        if was_visible {
+            snapshot.record_visible_delete();
+        }
+    }
+    Ok(())
+}
+
+fn hide_unreachable_entry(
+    snapshot: &mut MftSnapshot,
+    file_reference: u64,
+    overlay_children: &HashMap<u64, Vec<u64>>,
+    live_work: &mut usize,
+) -> std::result::Result<(), JournalApplyError> {
+    let Some(entry) = snapshot.visible_entry(file_reference) else {
+        return Ok(());
+    };
+    if entry.is_directory && snapshot.contains_base_reference(file_reference) {
+        return delete_visible_subtree(snapshot, file_reference, overlay_children, live_work);
+    }
+    snapshot.overlay.replacements.remove(&file_reference);
+    if snapshot.contains_base_reference(file_reference) {
+        snapshot.overlay.deleted.insert(file_reference);
+    } else {
+        snapshot.overlay.deleted.remove(&file_reference);
+    }
+    snapshot.record_visible_delete();
+    Ok(())
+}
+
+fn overlay_children_index(snapshot: &MftSnapshot) -> HashMap<u64, Vec<u64>> {
+    let mut children = HashMap::<u64, Vec<u64>>::new();
+    for identity in snapshot
+        .overlay
+        .replacements
+        .values()
+        .filter_map(|entry| entry.identity)
+    {
+        children
+            .entry(identity.parent_reference)
+            .or_default()
+            .push(identity.file_reference);
+    }
+    children
+}
+
+fn bounded_visible_child_candidates(
+    snapshot: &MftSnapshot,
+    overlay_children: &HashMap<u64, Vec<u64>>,
+    parent: u64,
+    mutations_used: usize,
+) -> std::result::Result<Vec<u64>, JournalApplyError> {
+    let base = snapshot.base_children(parent);
+    let replacements = overlay_children
+        .get(&parent)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let candidate_count = base.len().saturating_add(replacements.len());
+    let remaining = MAX_RECURSIVE_WORK_UNITS_PER_BATCH.saturating_sub(mutations_used);
+    if candidate_count > remaining {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} directory reference {} has at least {} child candidates; rebuilding before expansion",
+            snapshot.mount_point, parent, candidate_count
+        )));
+    }
+    let mut children = Vec::with_capacity(candidate_count);
+    children.extend_from_slice(&base);
+    children.extend_from_slice(replacements);
+    Ok(children)
+}
+
+fn reserve_recursive_work(
+    snapshot: &MftSnapshot,
+    live_work: &mut usize,
+) -> std::result::Result<(), JournalApplyError> {
+    *live_work = live_work.saturating_add(1);
+    if *live_work > MAX_RECURSIVE_WORK_UNITS_PER_BATCH {
+        return Err(JournalApplyError::RebuildRequired(format!(
+            "{} recursive journal update exceeded {} bounded work units; rebuilding snapshot",
+            snapshot.mount_point, MAX_RECURSIVE_WORK_UNITS_PER_BATCH
+        )));
+    }
+    Ok(())
+}
+
+fn is_ntfs_root_reference(file_reference: u64) -> bool {
+    const MFT_RECORD_NUMBER_MASK: u64 = (1_u64 << 48) - 1;
+    file_reference & MFT_RECORD_NUMBER_MASK == 5
+}
+
+pub(crate) fn parse_journal_records(buffer: &[u8]) -> Result<(i64, Vec<UsnRecord>)> {
+    ensure!(buffer.len() >= 8, "USN journal batch omitted its cursor");
+    let next_usn = read_i64(buffer, 0)?;
+    let mut records = Vec::new();
+    let mut offset = 8;
+    while offset < buffer.len() {
+        ensure!(
+            buffer.len() - offset >= 60,
+            "USN journal record header was truncated"
+        );
+        let record_length = read_u32(buffer, offset)? as usize;
+        ensure!(record_length >= 60, "USN journal record length was invalid");
+        let record_end = offset
+            .checked_add(record_length)
+            .context("USN journal record length overflowed")?;
+        ensure!(
+            record_end <= buffer.len(),
+            "USN journal record exceeded its batch"
+        );
+        let major_version = read_u16(buffer, offset + 4)?;
+        ensure!(
+            major_version == 2,
+            "unsupported USN record version {major_version}"
+        );
+        let name_length = read_u16(buffer, offset + 56)? as usize;
+        let name_offset = read_u16(buffer, offset + 58)? as usize;
+        ensure!(
+            name_length.is_multiple_of(2),
+            "USN record name was not UTF-16 aligned"
+        );
+        ensure!(
+            name_offset >= 60 && name_offset.is_multiple_of(2),
+            "USN record name offset was invalid"
+        );
+        let name_start = offset
+            .checked_add(name_offset)
+            .context("USN name offset overflowed")?;
+        let name_end = name_start
+            .checked_add(name_length)
+            .context("USN name length overflowed")?;
+        ensure!(
+            name_end <= record_end,
+            "USN record name exceeded its record"
+        );
+        let name = String::from_utf16_lossy(
+            &buffer[name_start..name_end]
+                .chunks_exact(2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect::<Vec<_>>(),
+        );
+        let reason = read_u32(buffer, offset + 40)?;
+        let kind = if reason & USN_REASON_FILE_DELETE != 0 {
+            UsnRecordKind::Delete
+        } else if reason & USN_REASON_RENAME_OLD_NAME != 0 {
+            UsnRecordKind::RenameOld
+        } else {
+            UsnRecordKind::Upsert
+        };
+        records.push(UsnRecord {
+            file_reference: read_u64(buffer, offset + 8)?,
+            parent_reference: read_u64(buffer, offset + 16)?,
+            name,
+            is_directory: read_u32(buffer, offset + 52)? & 0x10 != 0,
+            kind,
+        });
+        offset = record_end;
+    }
+    Ok((next_usn, records))
+}
+
+fn read_u16(buffer: &[u8], offset: usize) -> Result<u16> {
+    let bytes = buffer.get(offset..offset + 2).context("missing USN u16")?;
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn read_u32(buffer: &[u8], offset: usize) -> Result<u32> {
+    let bytes = buffer.get(offset..offset + 4).context("missing USN u32")?;
+    Ok(u32::from_le_bytes(bytes.try_into().expect("four bytes")))
+}
+
+fn read_u64(buffer: &[u8], offset: usize) -> Result<u64> {
+    let bytes = buffer.get(offset..offset + 8).context("missing USN u64")?;
+    Ok(u64::from_le_bytes(bytes.try_into().expect("eight bytes")))
+}
+
+fn read_i64(buffer: &[u8], offset: usize) -> Result<i64> {
+    let bytes = buffer.get(offset..offset + 8).context("missing USN i64")?;
+    Ok(i64::from_le_bytes(bytes.try_into().expect("eight bytes")))
+}
+
+#[cfg(windows)]
+pub(crate) fn poll_snapshot(snapshot: &MftSnapshot) -> Result<JournalPoll> {
+    windows::poll_snapshot(snapshot)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn poll_snapshot(_snapshot: &MftSnapshot) -> Result<JournalPoll> {
+    Ok(JournalPoll::NoChange)
+}
+
+fn classify_usn_read_failure(mount_point: &str, code: u32) -> Result<JournalPoll> {
+    if code == ERROR_JOURNAL_ENTRY_DELETED_CODE {
+        return Ok(JournalPoll::RebuildRequired(format!(
+            "USN journal entry was deleted by Windows (Win32 {code})"
+        )));
+    }
+    Err(anyhow::anyhow!(
+        "read USN journal for {mount_point} failed with Win32 {code}"
+    ))
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod windows {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use std::ptr::{null, null_mut};
+
+    use anyhow::{Context, Result, ensure};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GENERIC_READ, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::{
+        FSCTL_QUERY_USN_JOURNAL, FSCTL_READ_USN_JOURNAL, READ_USN_JOURNAL_DATA_V0,
+        USN_JOURNAL_DATA_V0,
+    };
+
+    use super::{
+        JournalApplyError, JournalBatch, JournalPoll, MftSnapshot, STRUCTURAL_REASON_MASK,
+        apply_journal_batch, classify_usn_read_failure, parse_journal_records,
+    };
+
+    const JOURNAL_BUFFER_BYTES: usize = 256 * 1024;
+    const MAX_READS_PER_POLL: usize = 4;
+
+    struct VolumeHandle(HANDLE);
+
+    impl Drop for VolumeHandle {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    pub(super) fn poll_snapshot(snapshot: &MftSnapshot) -> Result<JournalPoll> {
+        let (Some(journal_id), Some(start_usn)) = (snapshot.journal_id, snapshot.next_usn) else {
+            return Ok(JournalPoll::RebuildRequired(format!(
+                "{} has no resumable USN cursor",
+                snapshot.mount_point
+            )));
+        };
+        let handle = open_volume(&snapshot.mount_point)?;
+        let journal = query_journal(handle.0)?;
+        if journal.UsnJournalID != journal_id
+            || start_usn < journal.LowestValidUsn
+            || start_usn > journal.NextUsn
+        {
+            return Ok(JournalPoll::RebuildRequired(format!(
+                "{} USN journal can no longer resume at {}",
+                snapshot.mount_point, start_usn
+            )));
+        }
+        if start_usn == journal.NextUsn {
+            return Ok(JournalPoll::NoChange);
+        }
+
+        let mut cursor = start_usn;
+        let mut records = Vec::new();
+        let mut buffer = vec![0_u8; JOURNAL_BUFFER_BYTES];
+        let mut reads = 0_usize;
+        while cursor < journal.NextUsn && reads < MAX_READS_PER_POLL {
+            let request = READ_USN_JOURNAL_DATA_V0 {
+                StartUsn: cursor,
+                ReasonMask: STRUCTURAL_REASON_MASK,
+                ReturnOnlyOnClose: 0,
+                Timeout: 0,
+                BytesToWaitFor: 0,
+                UsnJournalID: journal_id,
+            };
+            let mut returned = 0_u32;
+            let success = unsafe {
+                DeviceIoControl(
+                    handle.0,
+                    FSCTL_READ_USN_JOURNAL,
+                    (&raw const request).cast::<c_void>(),
+                    size_of::<READ_USN_JOURNAL_DATA_V0>() as u32,
+                    buffer.as_mut_ptr().cast::<c_void>(),
+                    buffer.len() as u32,
+                    &raw mut returned,
+                    null_mut(),
+                )
+            };
+            if success == 0 {
+                return classify_usn_read_failure(&snapshot.mount_point, unsafe { GetLastError() });
+            }
+            ensure!(
+                returned as usize <= buffer.len(),
+                "USN journal read overflowed its buffer"
+            );
+            let (next, mut batch) = parse_journal_records(&buffer[..returned as usize])?;
+            ensure!(next >= cursor, "USN journal cursor moved backwards");
+            records.append(&mut batch);
+            if next == cursor {
+                break;
+            }
+            cursor = next;
+            reads += 1;
+        }
+        if cursor == start_usn && records.is_empty() {
+            return Ok(JournalPoll::NoChange);
+        }
+        let content_changed = !records.is_empty();
+        match apply_journal_batch(
+            snapshot,
+            JournalBatch {
+                journal_id,
+                lowest_valid_usn: journal.LowestValidUsn,
+                next_usn: cursor,
+                records,
+            },
+        ) {
+            Ok(updated) if content_changed => Ok(JournalPoll::Updated(updated)),
+            Ok(updated) => Ok(JournalPoll::CursorAdvanced(updated)),
+            Err(JournalApplyError::RebuildRequired(reason)) => {
+                Ok(JournalPoll::RebuildRequired(reason))
+            }
+        }
+    }
+
+    fn open_volume(mount_point: &str) -> Result<VolumeHandle> {
+        let drive = mount_point
+            .chars()
+            .next()
+            .context("mount point omitted drive")?;
+        let device = format!(r"\\.\{}:", drive.to_ascii_uppercase());
+        let wide = device
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                null(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(anyhow::anyhow!(
+                "open {} for USN polling failed with Win32 {}",
+                mount_point,
+                unsafe { GetLastError() }
+            ));
+        }
+        Ok(VolumeHandle(handle))
+    }
+
+    fn query_journal(handle: HANDLE) -> Result<USN_JOURNAL_DATA_V0> {
+        let mut journal = USN_JOURNAL_DATA_V0::default();
+        let mut returned = 0_u32;
+        let success = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_QUERY_USN_JOURNAL,
+                null(),
+                0,
+                (&raw mut journal).cast::<c_void>(),
+                size_of::<USN_JOURNAL_DATA_V0>() as u32,
+                &raw mut returned,
+                null_mut(),
+            )
+        };
+        if success == 0 {
+            return Err(anyhow::anyhow!(
+                "query USN journal failed with Win32 {}",
+                unsafe { GetLastError() }
+            ));
+        }
+        ensure!(
+            returned as usize >= size_of::<USN_JOURNAL_DATA_V0>(),
+            "USN journal query was truncated"
+        );
+        Ok(journal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mft::{MftEntry, MftIdentity, MftSnapshot};
+    use nxtools_protocol::{IndexSearchContext, IndexSearchRequest};
+
+    fn entry(
+        file_reference: u64,
+        parent_reference: u64,
+        path: &str,
+        is_directory: bool,
+    ) -> MftEntry {
+        MftEntry {
+            identity: Some(MftIdentity {
+                file_reference,
+                parent_reference,
+            }),
+            path: path.into(),
+            name: path.rsplit('\\').next().unwrap_or(path).into(),
+            is_directory,
+            size_bytes: None,
+            modified_at_unix_ms: None,
+        }
+    }
+
+    #[test]
+    fn deleted_journal_entry_requests_a_scoped_rebuild_instead_of_staying_partial() {
+        let result = classify_usn_read_failure(r"C:\", 1181)
+            .expect("ERROR_JOURNAL_ENTRY_DELETED must be recoverable");
+
+        assert!(matches!(
+            result,
+            JournalPoll::RebuildRequired(reason)
+                if reason.contains("1181") && reason.contains("deleted by Windows")
+        ));
+    }
+
+    fn snapshot() -> MftSnapshot {
+        MftSnapshot::from_entries(
+            r"C:\",
+            Some(17),
+            Some(100),
+            vec![
+                entry(10, 5, r"C:\Work", true),
+                entry(11, 10, r"C:\Work\notes.txt", false),
+            ],
+        )
+    }
+
+    #[test]
+    fn create_rename_move_and_delete_are_visible_in_the_published_overlay() {
+        let created = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: vec![UsnRecord::upsert(12, 10, "draft.txt", false)],
+            },
+        )
+        .expect("valid create batch");
+        assert_eq!(
+            created.visible_entry(12).expect("created entry").path,
+            r"C:\Work\draft.txt"
+        );
+
+        let renamed = apply_journal_batch(
+            &created,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 120,
+                records: vec![UsnRecord::upsert(10, 5, "Projects", true)],
+            },
+        )
+        .expect("valid directory rename");
+        assert_eq!(
+            renamed.visible_entry(10).expect("renamed directory").path,
+            r"C:\Projects"
+        );
+        assert_eq!(
+            renamed.visible_entry(11).expect("renamed descendant").path,
+            r"C:\Projects\notes.txt"
+        );
+        let query = IndexSearchRequest {
+            generation: 1,
+            query: "notes".into(),
+            limit: 20,
+            context: IndexSearchContext {
+                directory: None,
+                preferred_directory: None,
+                include_files: true,
+                include_directories: true,
+            },
+        };
+        let results = crate::search_snapshots_while(
+            std::slice::from_ref(&renamed),
+            &nxtools_protocol::IndexSettings::default(),
+            &query,
+            || true,
+        )
+        .expect("current query");
+        assert_eq!(results[0].path, r"C:\Projects\notes.txt");
+
+        let moved = apply_journal_batch(
+            &renamed,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 130,
+                records: vec![UsnRecord::upsert(12, 5, "draft.txt", false)],
+            },
+        )
+        .expect("valid move");
+        assert_eq!(
+            moved.visible_entry(12).expect("moved entry").path,
+            r"C:\draft.txt"
+        );
+
+        let deleted = apply_journal_batch(
+            &moved,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 140,
+                records: vec![UsnRecord::delete(12)],
+            },
+        )
+        .expect("valid delete");
+        assert!(deleted.visible_entry(12).is_none());
+        assert_eq!(deleted.next_usn, Some(140));
+    }
+
+    #[test]
+    fn unreachable_transient_rows_are_hidden_without_rebuilding_the_snapshot() {
+        let updated = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: vec![
+                    UsnRecord::upsert(12, 99, "already-deleted.tmp", false),
+                    UsnRecord::upsert(11, 99, "moved-then-deleted.tmp", false),
+                ],
+            },
+        )
+        .expect("unreachable transient rows do not invalidate the base snapshot");
+
+        assert!(updated.visible_entry(12).is_none());
+        assert!(updated.visible_entry(11).is_none());
+        assert_eq!(updated.visible_len(), 1);
+        assert_eq!(updated.next_usn, Some(110));
+    }
+
+    #[test]
+    fn thousands_of_unreachable_new_files_cancel_out_without_tombstone_growth() {
+        let records = (1_000..6_000)
+            .map(|file_reference| {
+                UsnRecord::upsert(
+                    file_reference,
+                    99,
+                    format!("transient-{file_reference}.tmp"),
+                    false,
+                )
+            })
+            .collect();
+        let updated = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records,
+            },
+        )
+        .expect("new transient rows cancel out instead of requesting compaction");
+
+        assert_eq!(updated.visible_len(), 2);
+        assert!(updated.overlay.replacements.is_empty());
+        assert!(updated.overlay.deleted.is_empty());
+    }
+
+    #[test]
+    fn changed_journal_or_expired_cursor_requires_a_full_rebuild() {
+        let changed = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 18,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: Vec::new(),
+            },
+        )
+        .expect_err("journal identity changed");
+        assert!(matches!(changed, JournalApplyError::RebuildRequired(_)));
+
+        let expired = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 101,
+                next_usn: 110,
+                records: Vec::new(),
+            },
+        )
+        .expect_err("cursor expired");
+        assert!(matches!(expired, JournalApplyError::RebuildRequired(_)));
+    }
+
+    #[test]
+    fn malformed_journal_record_is_rejected_before_overlay_publication() {
+        let mut buffer = vec![0_u8; 8 + 60];
+        buffer[..8].copy_from_slice(&110_i64.to_le_bytes());
+        buffer[8..12].copy_from_slice(&80_u32.to_le_bytes());
+        buffer[12..14].copy_from_slice(&2_u16.to_le_bytes());
+
+        assert!(parse_journal_records(&buffer).is_err());
+    }
+
+    #[test]
+    fn an_oversized_live_overlay_requests_compaction_instead_of_growing_forever() {
+        let mut crowded = snapshot();
+        for offset in 0..MIN_OVERLAY_REBUILD_ENTRIES {
+            crowded.overlay.replacements.insert(
+                1_000 + offset as u64,
+                entry(
+                    1_000 + offset as u64,
+                    5,
+                    &format!(r"C:\{offset}.txt"),
+                    false,
+                ),
+            );
+        }
+
+        let updated = apply_journal_batch(
+            &crowded,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: vec![UsnRecord::upsert(10_000, 5, "next.txt", false)],
+            },
+        )
+        .expect("the latest journal changes remain searchable before compaction");
+
+        assert!(overlay_requires_compaction(&updated));
+        assert!(updated.visible_entry(10_000).is_some());
+    }
+
+    #[test]
+    fn a_bounded_read_batch_with_many_direct_upserts_remains_incremental() {
+        let records = (0..=MAX_RECURSIVE_WORK_UNITS_PER_BATCH)
+            .map(|offset| {
+                UsnRecord::upsert(30_000 + offset as u64, 5, format!("{offset}.txt"), false)
+            })
+            .collect();
+
+        let mut base_entries = Vec::with_capacity(50_000);
+        base_entries.extend((0..50_000).map(|offset| {
+            entry(
+                100_000 + offset as u64,
+                5,
+                &format!(r"C:\base-{offset}.txt"),
+                false,
+            )
+        }));
+        let base = MftSnapshot::from_entries(r"C:\", Some(17), Some(100), base_entries);
+        let updated = apply_journal_batch(
+            &base,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records,
+            },
+        )
+        .expect("direct records from a bounded journal read must not force a rebuild");
+
+        assert_eq!(updated.next_usn, Some(110));
+        assert_eq!(
+            updated.overlay.replacements.len(),
+            MAX_RECURSIVE_WORK_UNITS_PER_BATCH + 1
+        );
+    }
+
+    #[test]
+    fn a_large_directory_change_requests_rebuild_before_unbounded_descendant_work() {
+        let mut entries = vec![entry(10, 5, r"C:\Large", true)];
+        entries.extend((0..=MAX_RECURSIVE_WORK_UNITS_PER_BATCH).map(|offset| {
+            entry(
+                20_000 + offset as u64,
+                10,
+                &format!(r"C:\Large\{offset}.txt"),
+                false,
+            )
+        }));
+        let large = MftSnapshot::from_entries(r"C:\", Some(17), Some(100), entries);
+
+        let result = apply_journal_batch(
+            &large,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: vec![UsnRecord::upsert(10, 5, "Renamed", true)],
+            },
+        )
+        .expect_err("large subtree mutation must switch to a background rebuild");
+
+        assert!(result.to_string().contains("rebuilding before expansion"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_real_windows_usn_boundary_observes_a_new_file_or_is_actionably_denied() {
+        let executable = std::env::current_exe().expect("current test executable");
+        let mount_point = executable
+            .components()
+            .next()
+            .map(|component| format!("{}\\", component.as_os_str().to_string_lossy()))
+            .expect("test executable drive");
+        let snapshot = match crate::mft::scan_volume(&mount_point) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                let message = error.to_string();
+                assert!(
+                    message.contains("管理员权限") && message.contains("Win32 5"),
+                    "unexpected MFT boundary failure: {message}"
+                );
+                return;
+            }
+        };
+        let file_name = format!(
+            "nxtools-usn-boundary-{}-{}.tmp",
+            std::process::id(),
+            snapshot.next_usn.unwrap_or_default()
+        );
+        let path = executable
+            .parent()
+            .expect("test executable directory")
+            .join(&file_name);
+        std::fs::write(&path, b"usn boundary").expect("create USN boundary file");
+
+        let result = poll_snapshot(&snapshot);
+        let _ = std::fs::remove_file(&path);
+        match result {
+            Ok(JournalPoll::Updated(updated)) => assert!(
+                updated
+                    .overlay
+                    .replacements
+                    .values()
+                    .any(|entry| entry.name == file_name),
+                "new file was not published from the real USN journal"
+            ),
+            Ok(other) => panic!("real USN boundary did not publish the new file: {other:?}"),
+            Err(error) => {
+                let message = error.to_string();
+                assert!(
+                    message.contains("Win32 5"),
+                    "unexpected USN boundary failure: {message}"
+                );
+            }
+        }
+    }
+}

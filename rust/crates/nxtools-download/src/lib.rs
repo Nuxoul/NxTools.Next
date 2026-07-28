@@ -1,0 +1,862 @@
+use std::path::PathBuf;
+
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+use thiserror::Error;
+use uuid::Uuid;
+
+mod artifact;
+mod capacity;
+mod engine;
+mod http;
+mod message;
+mod rate_limit;
+mod storage;
+
+pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
+pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
+pub use engine::{DownloadEngine, DownloadEngineError, DownloadEngineTask};
+pub use http::{
+    DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
+    DownloadSegmentTransferProgress, DownloadSegmentTransferRequest, DownloadTransferContext,
+    DownloadTransferControl, DownloadTransferOutcome, DownloadTransferProgress, HttpDownloadClient,
+    HttpDownloadError,
+};
+pub use message::{
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadCommand,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadCommandResult, DownloadEvent,
+    DownloadEventEnvelope, DownloadEventSequenceError, DownloadEventSequencer, DownloadFault,
+    DownloadFaultCode, DownloadProbe, DownloadProgress, DownloadQuery, DownloadSnapshot,
+    DownloadSubmitMode, DownloadTaskAction,
+};
+pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
+pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DownloadTaskId(Uuid);
+
+impl DownloadTaskId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub const fn from_uuid(value: Uuid) -> Self {
+        Self(value)
+    }
+
+    pub const fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for DownloadTaskId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestOrigin {
+    Ui,
+    Cli,
+    Browser,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadRequestHeader {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadRequest {
+    pub source_url: String,
+    pub save_directory: PathBuf,
+    pub file_name: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<DownloadRequestHeader>,
+    pub cookie: Option<String>,
+    pub referrer: Option<String>,
+    pub connection_limit: Option<u16>,
+    #[serde(default)]
+    pub speed_limit_bytes_per_second: Option<u64>,
+    pub scheduled_at_unix_ms: Option<i64>,
+}
+
+impl DownloadRequest {
+    pub fn validate(&self) -> Result<(), DownloadRequestError> {
+        let parsed =
+            url::Url::parse(&self.source_url).map_err(|_| DownloadRequestError::InvalidUrl)?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(DownloadRequestError::UnsupportedScheme(
+                parsed.scheme().to_owned(),
+            ));
+        }
+        if self.save_directory.as_os_str().is_empty() {
+            return Err(DownloadRequestError::MissingSaveDirectory);
+        }
+        if let Some(file_name) = &self.file_name
+            && !is_safe_windows_file_name(file_name)
+        {
+            return Err(DownloadRequestError::InvalidFileName);
+        }
+        if let Some(limit) = self.connection_limit
+            && !(1..=64).contains(&limit)
+        {
+            return Err(DownloadRequestError::InvalidConnectionLimit(limit));
+        }
+        if self.speed_limit_bytes_per_second == Some(0) {
+            return Err(DownloadRequestError::InvalidSpeedLimit);
+        }
+        if self.headers.iter().any(|header| {
+            header.name.is_empty()
+                || header.name.contains([':', '\r', '\n'])
+                || header.value.contains(['\r', '\n'])
+        }) || self
+            .cookie
+            .as_deref()
+            .is_some_and(|value| value.contains(['\r', '\n']))
+            || self
+                .referrer
+                .as_deref()
+                .is_some_and(|value| value.contains(['\r', '\n']))
+        {
+            return Err(DownloadRequestError::InvalidHeader);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DownloadRequestError {
+    #[error("download URL is invalid")]
+    InvalidUrl,
+    #[error("download URL scheme is not supported: {0}")]
+    UnsupportedScheme(String),
+    #[error("download save directory is required")]
+    MissingSaveDirectory,
+    #[error("download file name must be a single safe path component")]
+    InvalidFileName,
+    #[error("download connection limit must be between 1 and 64, got {0}")]
+    InvalidConnectionLimit(u16),
+    #[error("download speed limit must be greater than zero; omit it for unlimited")]
+    InvalidSpeedLimit,
+    #[error("download request contains an invalid header")]
+    InvalidHeader,
+}
+
+pub(crate) fn is_safe_windows_file_name(file_name: &str) -> bool {
+    if file_name.is_empty()
+        || file_name == "."
+        || file_name == ".."
+        || file_name.ends_with(['.', ' '])
+        || file_name.encode_utf16().count() > 255
+        || file_name
+            .chars()
+            .any(|character| character < ' ' || r#"<>:"/\|?*"#.contains(character))
+    {
+        return false;
+    }
+
+    let stem = file_name
+        .split_once('.')
+        .map_or(file_name, |(stem, _)| stem)
+        .to_ascii_uppercase();
+    !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        && !(stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0')
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferProtocol {
+    Http,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ResourceValidator {
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TransferPlan {
+    protocol: TransferProtocol,
+    final_url: String,
+    total_bytes: Option<u64>,
+    supports_ranges: bool,
+    validator: ResourceValidator,
+    segments: Vec<DownloadSegment>,
+}
+
+impl TransferPlan {
+    pub fn new(
+        protocol: TransferProtocol,
+        final_url: String,
+        total_bytes: Option<u64>,
+        supports_ranges: bool,
+        validator: ResourceValidator,
+        mut segments: Vec<DownloadSegment>,
+    ) -> Result<Self, TransferPlanError> {
+        segments.sort_by_key(|segment| (segment.start_byte(), segment.index()));
+
+        for (position, segment) in segments.iter().enumerate() {
+            if segments[..position]
+                .iter()
+                .any(|candidate| candidate.index() == segment.index())
+            {
+                return Err(TransferPlanError::DuplicateSegmentIndex {
+                    segment_index: segment.index(),
+                });
+            }
+
+            if let Some(total_bytes) = total_bytes
+                && segment.end_byte() >= total_bytes
+            {
+                return Err(TransferPlanError::SegmentOutOfBounds {
+                    segment_index: segment.index(),
+                    end_byte: segment.end_byte(),
+                    total_bytes,
+                });
+            }
+        }
+
+        for pair in segments.windows(2) {
+            let previous = &pair[0];
+            let next = &pair[1];
+            if next.start_byte() <= previous.end_byte() {
+                return Err(TransferPlanError::OverlappingSegments {
+                    previous_index: previous.index(),
+                    next_index: next.index(),
+                });
+            }
+        }
+
+        Ok(Self {
+            protocol,
+            final_url,
+            total_bytes,
+            supports_ranges,
+            validator,
+            segments,
+        })
+    }
+
+    pub const fn protocol(&self) -> TransferProtocol {
+        self.protocol
+    }
+
+    pub fn final_url(&self) -> &str {
+        &self.final_url
+    }
+
+    pub const fn total_bytes(&self) -> Option<u64> {
+        self.total_bytes
+    }
+
+    pub const fn supports_ranges(&self) -> bool {
+        self.supports_ranges
+    }
+
+    pub const fn validator(&self) -> &ResourceValidator {
+        &self.validator
+    }
+
+    pub fn segments(&self) -> &[DownloadSegment] {
+        &self.segments
+    }
+
+    pub fn split_segment_after_checkpoint(
+        &mut self,
+        segment_index: u32,
+        new_segment_index: u32,
+        minimum_segment_bytes: u64,
+    ) -> Result<(), TransferPlanError> {
+        if minimum_segment_bytes == 0 {
+            return Err(TransferPlanError::InvalidMinimumSegmentBytes);
+        }
+        let position = self
+            .segments
+            .iter()
+            .position(|segment| segment.index() == segment_index)
+            .ok_or(TransferPlanError::SegmentNotFound { segment_index })?;
+        let segment = &self.segments[position];
+        if segment.state != DownloadSegmentState::Waiting {
+            return Err(TransferPlanError::SegmentNotWaiting { segment_index });
+        }
+        let remaining_bytes = segment.len() - segment.downloaded_bytes();
+        let required_bytes = minimum_segment_bytes
+            .checked_mul(2)
+            .ok_or(TransferPlanError::SplitSizeOverflow)?;
+        if remaining_bytes < required_bytes {
+            return Err(TransferPlanError::InsufficientSplitTail {
+                segment_index,
+                remaining_bytes,
+                required_bytes,
+            });
+        }
+
+        let remaining_start = segment
+            .start_byte()
+            .checked_add(segment.downloaded_bytes())
+            .ok_or(TransferPlanError::SplitSizeOverflow)?;
+        let left_remaining_bytes = remaining_bytes / 2;
+        let reduced_end = remaining_start
+            .checked_add(left_remaining_bytes - 1)
+            .ok_or(TransferPlanError::SplitSizeOverflow)?;
+        let new_start = reduced_end
+            .checked_add(1)
+            .ok_or(TransferPlanError::SplitSizeOverflow)?;
+        let reduced = DownloadSegment::new(
+            segment.index(),
+            segment.start_byte(),
+            reduced_end,
+            segment.downloaded_bytes(),
+            DownloadSegmentState::Waiting,
+        )?;
+        let added = DownloadSegment::new(
+            new_segment_index,
+            new_start,
+            segment.end_byte(),
+            0,
+            DownloadSegmentState::Waiting,
+        )?;
+        let mut segments = self.segments.clone();
+        segments[position] = reduced;
+        segments.push(added);
+        *self = Self::new(
+            self.protocol,
+            self.final_url.clone(),
+            self.total_bytes,
+            self.supports_ranges,
+            self.validator.clone(),
+            segments,
+        )?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for TransferPlan {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = TransferPlanWire::deserialize(deserializer)?;
+        Self::new(
+            wire.protocol,
+            wire.final_url,
+            wire.total_bytes,
+            wire.supports_ranges,
+            wire.validator,
+            wire.segments,
+        )
+        .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+struct TransferPlanWire {
+    protocol: TransferProtocol,
+    final_url: String,
+    total_bytes: Option<u64>,
+    supports_ranges: bool,
+    validator: ResourceValidator,
+    segments: Vec<DownloadSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TransferPlanError {
+    #[error(transparent)]
+    Segment(#[from] DownloadSegmentError),
+    #[error("download segment {segment_index} does not exist")]
+    SegmentNotFound { segment_index: u32 },
+    #[error("download segment {segment_index} must be waiting before it can be split")]
+    SegmentNotWaiting { segment_index: u32 },
+    #[error("minimum split segment size must be greater than zero")]
+    InvalidMinimumSegmentBytes,
+    #[error("download segment split size overflowed")]
+    SplitSizeOverflow,
+    #[error(
+        "download segment {segment_index} has {remaining_bytes} bytes remaining; splitting requires at least {required_bytes}"
+    )]
+    InsufficientSplitTail {
+        segment_index: u32,
+        remaining_bytes: u64,
+        required_bytes: u64,
+    },
+    #[error("download segment index {segment_index} is duplicated")]
+    DuplicateSegmentIndex { segment_index: u32 },
+    #[error("download segments overlap: segment {previous_index} overlaps segment {next_index}")]
+    OverlappingSegments {
+        previous_index: u32,
+        next_index: u32,
+    },
+    #[error(
+        "download segment {segment_index} ends at {end_byte}, outside resource length {total_bytes}"
+    )]
+    SegmentOutOfBounds {
+        segment_index: u32,
+        end_byte: u64,
+        total_bytes: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadSegmentState {
+    Waiting,
+    Active,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DownloadSegment {
+    index: u32,
+    start_byte: u64,
+    end_byte: u64,
+    downloaded_bytes: u64,
+    pub state: DownloadSegmentState,
+}
+
+impl DownloadSegment {
+    pub fn new(
+        index: u32,
+        start_byte: u64,
+        end_byte: u64,
+        downloaded_bytes: u64,
+        state: DownloadSegmentState,
+    ) -> Result<Self, DownloadSegmentError> {
+        if end_byte < start_byte {
+            return Err(DownloadSegmentError::InvalidRange {
+                start_byte,
+                end_byte,
+            });
+        }
+        let Some(length) = end_byte
+            .checked_sub(start_byte)
+            .and_then(|difference| difference.checked_add(1))
+        else {
+            return Err(DownloadSegmentError::RangeTooLarge);
+        };
+        if downloaded_bytes > length {
+            return Err(DownloadSegmentError::ProgressExceedsRange {
+                downloaded_bytes,
+                length,
+            });
+        }
+        Ok(Self {
+            index,
+            start_byte,
+            end_byte,
+            downloaded_bytes,
+            state,
+        })
+    }
+
+    pub fn len(&self) -> u64 {
+        self.end_byte - self.start_byte + 1
+    }
+
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
+    pub fn downloaded_bytes(&self) -> u64 {
+        self.downloaded_bytes
+    }
+
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+
+    pub fn start_byte(&self) -> u64 {
+        self.start_byte
+    }
+
+    pub fn end_byte(&self) -> u64 {
+        self.end_byte
+    }
+}
+
+impl<'de> Deserialize<'de> for DownloadSegment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = DownloadSegmentWire::deserialize(deserializer)?;
+        Self::new(
+            wire.index,
+            wire.start_byte,
+            wire.end_byte,
+            wire.downloaded_bytes,
+            wire.state,
+        )
+        .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+struct DownloadSegmentWire {
+    index: u32,
+    start_byte: u64,
+    end_byte: u64,
+    downloaded_bytes: u64,
+    state: DownloadSegmentState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DownloadSegmentError {
+    #[error("download segment range is invalid: {start_byte}..={end_byte}")]
+    InvalidRange { start_byte: u64, end_byte: u64 },
+    #[error("download segment progress {downloaded_bytes} exceeds range length {length}")]
+    ProgressExceedsRange { downloaded_bytes: u64, length: u64 },
+    #[error("download segment range is too large")]
+    RangeTooLarge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveConnection {
+    pub id: u32,
+    pub segment_index: u32,
+    pub started_at_unix_ms: i64,
+    pub downloaded_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadAttempt {
+    pub number: u32,
+    pub started_at_unix_ms: i64,
+    pub finished_at_unix_ms: Option<i64>,
+    pub error: Option<DownloadAttemptError>,
+    pub retry_at_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadAttemptError {
+    pub category: DownloadAttemptErrorCategory,
+    pub message: String,
+    pub retryable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadAttemptErrorCategory {
+    Network,
+    Protocol,
+    Storage,
+    Permission,
+    DiskFull,
+    FileInUse,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadQueue {
+    pub id: String,
+    pub name: String,
+    pub position: i32,
+    pub max_concurrent_tasks: Option<u16>,
+    pub connection_limit: Option<u16>,
+    pub speed_limit_bytes_per_second: Option<u64>,
+    pub default_save_directory: Option<PathBuf>,
+    pub schedule: Option<DownloadSchedule>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSchedule {
+    pub eligible_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadArtifactKind {
+    TemporaryFile,
+    FinalFile,
+    MediaTrack,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadArtifactState {
+    Pending,
+    Committed,
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadArtifact {
+    pub id: String,
+    pub kind: DownloadArtifactKind,
+    pub state: DownloadArtifactState,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStatus {
+    Created,
+    Probing,
+    Waiting,
+    Downloading,
+    Paused,
+    Finalizing,
+    Verifying,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl DownloadStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Cancelled)
+    }
+
+    fn can_transition_to(self, next: Self) -> bool {
+        match self {
+            Self::Created => matches!(next, Self::Probing | Self::Cancelled),
+            Self::Probing => {
+                matches!(
+                    next,
+                    Self::Waiting | Self::Paused | Self::Failed | Self::Cancelled
+                )
+            }
+            Self::Waiting => {
+                matches!(
+                    next,
+                    Self::Downloading | Self::Paused | Self::Failed | Self::Cancelled
+                )
+            }
+            Self::Downloading => {
+                matches!(
+                    next,
+                    Self::Paused | Self::Finalizing | Self::Failed | Self::Cancelled
+                )
+            }
+            Self::Paused => matches!(next, Self::Waiting | Self::Cancelled),
+            Self::Finalizing => {
+                matches!(
+                    next,
+                    Self::Verifying | Self::Completed | Self::Failed | Self::Cancelled
+                )
+            }
+            Self::Verifying => {
+                matches!(next, Self::Completed | Self::Failed | Self::Cancelled)
+            }
+            Self::Failed => matches!(next, Self::Waiting | Self::Cancelled),
+            Self::Completed | Self::Cancelled => false,
+        }
+    }
+
+    fn was_interrupted(self) -> bool {
+        INTERRUPTED_DOWNLOAD_STATUSES.contains(&self)
+    }
+
+    pub(crate) const fn storage_name(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Probing => "probing",
+            Self::Waiting => "waiting",
+            Self::Downloading => "downloading",
+            Self::Paused => "paused",
+            Self::Finalizing => "finalizing",
+            Self::Verifying => "verifying",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+pub(crate) const INTERRUPTED_DOWNLOAD_STATUSES: [DownloadStatus; 4] = [
+    DownloadStatus::Probing,
+    DownloadStatus::Downloading,
+    DownloadStatus::Finalizing,
+    DownloadStatus::Verifying,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DownloadTask {
+    id: DownloadTaskId,
+    request: DownloadRequest,
+    origin: RequestOrigin,
+    status: DownloadStatus,
+    created_at_unix_ms: i64,
+    updated_at_unix_ms: i64,
+    completed_at_unix_ms: Option<i64>,
+}
+
+impl DownloadTask {
+    pub fn new(request: DownloadRequest, origin: RequestOrigin, now_unix_ms: i64) -> Self {
+        Self {
+            id: DownloadTaskId::new(),
+            request,
+            origin,
+            status: DownloadStatus::Created,
+            created_at_unix_ms: now_unix_ms,
+            updated_at_unix_ms: now_unix_ms,
+            completed_at_unix_ms: None,
+        }
+    }
+
+    pub fn transition_to(
+        &mut self,
+        next: DownloadStatus,
+        now_unix_ms: i64,
+    ) -> Result<(), DownloadTaskError> {
+        if !self.status.can_transition_to(next) {
+            return Err(DownloadTaskError::InvalidTransition {
+                from: self.status,
+                to: next,
+            });
+        }
+
+        self.status = next;
+        self.updated_at_unix_ms = now_unix_ms;
+        if next == DownloadStatus::Completed {
+            self.completed_at_unix_ms = Some(now_unix_ms);
+        }
+        Ok(())
+    }
+
+    pub const fn id(&self) -> DownloadTaskId {
+        self.id
+    }
+
+    pub fn request(&self) -> &DownloadRequest {
+        &self.request
+    }
+
+    pub(crate) fn set_speed_limit(&mut self, bytes_per_second: Option<u64>, now_unix_ms: i64) {
+        self.request.speed_limit_bytes_per_second = bytes_per_second;
+        self.updated_at_unix_ms = now_unix_ms;
+    }
+
+    pub const fn origin(&self) -> RequestOrigin {
+        self.origin
+    }
+
+    pub const fn status(&self) -> DownloadStatus {
+        self.status
+    }
+
+    pub const fn created_at_unix_ms(&self) -> i64 {
+        self.created_at_unix_ms
+    }
+
+    pub const fn updated_at_unix_ms(&self) -> i64 {
+        self.updated_at_unix_ms
+    }
+
+    pub const fn completed_at_unix_ms(&self) -> Option<i64> {
+        self.completed_at_unix_ms
+    }
+
+    pub fn recover_interrupted(&mut self, now_unix_ms: i64) -> bool {
+        if !self.status.was_interrupted() {
+            return false;
+        }
+
+        self.status = DownloadStatus::Paused;
+        self.updated_at_unix_ms = now_unix_ms;
+        true
+    }
+
+    pub(crate) fn restore(
+        id: DownloadTaskId,
+        request: DownloadRequest,
+        origin: RequestOrigin,
+        status: DownloadStatus,
+        created_at_unix_ms: i64,
+        updated_at_unix_ms: i64,
+        completed_at_unix_ms: Option<i64>,
+    ) -> Result<Self, DownloadTaskInvariantError> {
+        let task = Self {
+            id,
+            request,
+            origin,
+            status,
+            created_at_unix_ms,
+            updated_at_unix_ms,
+            completed_at_unix_ms,
+        };
+        task.validate_invariants()?;
+        Ok(task)
+    }
+
+    fn validate_invariants(&self) -> Result<(), DownloadTaskInvariantError> {
+        self.request
+            .validate()
+            .map_err(DownloadTaskInvariantError::InvalidRequest)?;
+        if self.updated_at_unix_ms < self.created_at_unix_ms {
+            return Err(DownloadTaskInvariantError::TimestampOrder);
+        }
+        match (self.status, self.completed_at_unix_ms) {
+            (DownloadStatus::Completed, Some(completed_at))
+                if completed_at >= self.created_at_unix_ms =>
+            {
+                Ok(())
+            }
+            (DownloadStatus::Completed, _) => {
+                Err(DownloadTaskInvariantError::MissingCompletionTimestamp)
+            }
+            (_, Some(_)) => Err(DownloadTaskInvariantError::UnexpectedCompletionTimestamp),
+            (_, None) => Ok(()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DownloadTask {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = DownloadTaskWire::deserialize(deserializer)?;
+        Self::restore(
+            wire.id,
+            wire.request,
+            wire.origin,
+            wire.status,
+            wire.created_at_unix_ms,
+            wire.updated_at_unix_ms,
+            wire.completed_at_unix_ms,
+        )
+        .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+struct DownloadTaskWire {
+    id: DownloadTaskId,
+    request: DownloadRequest,
+    origin: RequestOrigin,
+    status: DownloadStatus,
+    created_at_unix_ms: i64,
+    updated_at_unix_ms: i64,
+    completed_at_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DownloadTaskInvariantError {
+    #[error("stored download request is invalid: {0}")]
+    InvalidRequest(DownloadRequestError),
+    #[error("download task timestamps are out of order")]
+    TimestampOrder,
+    #[error("completed download task has no valid completion timestamp")]
+    MissingCompletionTimestamp,
+    #[error("non-completed download task has a completion timestamp")]
+    UnexpectedCompletionTimestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DownloadTaskError {
+    #[error("invalid download task transition from {from:?} to {to:?}")]
+    InvalidTransition {
+        from: DownloadStatus,
+        to: DownloadStatus,
+    },
+}

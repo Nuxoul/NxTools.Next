@@ -81,6 +81,7 @@ internal static class NativeClipboardFormats
     public static bool TryWrite(
         IntPtr owner,
         IReadOnlyList<ClipboardNativeFormatData> formats,
+        string? imagePathFallback,
         out string? error,
         out int hresult)
     {
@@ -89,64 +90,191 @@ internal static class NativeClipboardFormats
         try
         {
             var payloads = LoadPayloads(formats);
-            if (payloads.Count == 0)
+            if (!string.IsNullOrWhiteSpace(imagePathFallback))
             {
-                error = "No native clipboard formats were available.";
-                return false;
-            }
-            if (!OpenClipboard(owner))
-            {
-                hresult = Marshal.GetHRForLastWin32Error();
-                error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
-                return false;
-            }
-            try
-            {
-                if (!EmptyClipboard())
+                if (!File.Exists(imagePathFallback))
                 {
-                    hresult = Marshal.GetHRForLastWin32Error();
-                    error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                    error = "The fallback clipboard image file no longer exists.";
                     return false;
                 }
-                foreach (var payload in payloads.OrderBy(static item => item.SortOrder))
-                {
-                    var memory = GlobalAlloc(GmemMoveable, new UIntPtr((uint)payload.Data.Length));
-                    if (memory == IntPtr.Zero)
-                    {
-                        hresult = Marshal.GetHRForLastWin32Error();
-                        error = "Could not allocate native clipboard memory.";
-                        return false;
-                    }
-                    var pointer = GlobalLock(memory);
-                    if (pointer == IntPtr.Zero)
-                    {
-                        _ = GlobalFree(memory);
-                        hresult = Marshal.GetHRForLastWin32Error();
-                        error = "Could not lock native clipboard memory.";
-                        return false;
-                    }
-                    Marshal.Copy(payload.Data, 0, pointer, payload.Data.Length);
-                    _ = GlobalUnlock(memory);
-                    if (SetClipboardData(payload.FormatId, memory) == IntPtr.Zero)
-                    {
-                        _ = GlobalFree(memory);
-                        hresult = Marshal.GetHRForLastWin32Error();
-                        error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
-                        return false;
-                    }
-                }
-                return true;
+                payloads.RemoveAll(static payload => payload.FormatId == 15);
+                payloads.Add(new NativePayload(
+                    15,
+                    ClipboardFileDropPayload.Encode([Path.GetFullPath(imagePathFallback)]),
+                    payloads.Count == 0 ? 0 : checked(payloads.Max(static item => item.SortOrder) + 1)));
             }
-            finally
-            {
-                _ = CloseClipboard();
-            }
+            return TryWritePayloads(owner, payloads, out error, out hresult);
         }
         catch (Exception exception)
         {
             hresult = exception.HResult;
             error = exception.Message;
             return false;
+        }
+    }
+
+    public static bool TryRewriteWithPng(
+        IntPtr owner,
+        IReadOnlyList<CapturedClipboardNativeFormat> formats,
+        byte[] pngData,
+        out uint pngFormat,
+        out string? error,
+        out int hresult)
+    {
+        pngFormat = 0;
+        error = null;
+        hresult = 0;
+        try
+        {
+            if (pngData.Length == 0)
+            {
+                error = "The PNG compatibility payload was empty.";
+                return false;
+            }
+            pngFormat = RegisterClipboardFormat("PNG");
+            if (pngFormat == 0)
+            {
+                hresult = Marshal.GetHRForLastWin32Error();
+                error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                return false;
+            }
+
+            var payloads = new List<NativePayload>(formats.Count + 1)
+            {
+                new(pngFormat, pngData, 0)
+            };
+            payloads.AddRange(formats
+                .Where(format => format.Data.Length > 0 &&
+                    !string.Equals(format.FormatName, "PNG", StringComparison.OrdinalIgnoreCase))
+                .Select(format => new NativePayload(
+                    format.FormatId,
+                    format.Data,
+                    checked(format.SortOrder + 1))));
+            return TryWritePayloads(owner, payloads, out error, out hresult);
+        }
+        catch (Exception exception)
+        {
+            hresult = exception.HResult;
+            error = exception.Message;
+            return false;
+        }
+    }
+
+    public static bool TryRewriteWithImageFallbacks(
+        IntPtr owner,
+        IReadOnlyList<CapturedClipboardNativeFormat> formats,
+        byte[] pngData,
+        string imagePathFallback,
+        out IReadOnlyList<CapturedClipboardNativeFormat> rewrittenFormats,
+        out string? error,
+        out int hresult)
+    {
+        rewrittenFormats = formats;
+        error = null;
+        hresult = 0;
+        try
+        {
+            var pngFormat = formats
+                .FirstOrDefault(static format => string.Equals(
+                    format.FormatName, "PNG", StringComparison.OrdinalIgnoreCase))?.FormatId ?? 0;
+            if (pngFormat == 0)
+            {
+                if (pngData.Length == 0)
+                {
+                    error = "The PNG compatibility payload was empty.";
+                    return false;
+                }
+                pngFormat = RegisterClipboardFormat("PNG");
+                if (pngFormat == 0)
+                {
+                    hresult = Marshal.GetHRForLastWin32Error();
+                    error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                    return false;
+                }
+            }
+
+            var rewritten = formats.ToList();
+            ClipboardImageCompatibility.AddCompatibilityFallbacks(
+                rewritten, pngFormat, pngData, Path.GetFullPath(imagePathFallback));
+            var payloads = rewritten
+                .Where(static format => format.Data.Length > 0)
+                .Select(static format => new NativePayload(
+                    format.FormatId, format.Data, format.SortOrder))
+                .ToList();
+            if (!TryWritePayloads(owner, payloads, out error, out hresult))
+            {
+                return false;
+            }
+            rewrittenFormats = rewritten;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            hresult = exception.HResult;
+            error = exception.Message;
+            return false;
+        }
+    }
+
+    private static bool TryWritePayloads(
+        IntPtr owner,
+        IReadOnlyList<NativePayload> payloads,
+        out string? error,
+        out int hresult)
+    {
+        error = null;
+        hresult = 0;
+        if (payloads.Count == 0)
+        {
+            error = "No native clipboard formats were available.";
+            return false;
+        }
+        if (!OpenClipboard(owner))
+        {
+            hresult = Marshal.GetHRForLastWin32Error();
+            error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+            return false;
+        }
+        try
+        {
+            if (!EmptyClipboard())
+            {
+                hresult = Marshal.GetHRForLastWin32Error();
+                error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                return false;
+            }
+            foreach (var payload in payloads.OrderBy(static item => item.SortOrder))
+            {
+                var memory = GlobalAlloc(GmemMoveable, new UIntPtr((uint)payload.Data.Length));
+                if (memory == IntPtr.Zero)
+                {
+                    hresult = Marshal.GetHRForLastWin32Error();
+                    error = "Could not allocate native clipboard memory.";
+                    return false;
+                }
+                var pointer = GlobalLock(memory);
+                if (pointer == IntPtr.Zero)
+                {
+                    _ = GlobalFree(memory);
+                    hresult = Marshal.GetHRForLastWin32Error();
+                    error = "Could not lock native clipboard memory.";
+                    return false;
+                }
+                Marshal.Copy(payload.Data, 0, pointer, payload.Data.Length);
+                _ = GlobalUnlock(memory);
+                if (SetClipboardData(payload.FormatId, memory) == IntPtr.Zero)
+                {
+                    _ = GlobalFree(memory);
+                    hresult = Marshal.GetHRForLastWin32Error();
+                    error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                    return false;
+                }
+            }
+            return true;
+        }
+        finally
+        {
+            _ = CloseClipboard();
         }
     }
 

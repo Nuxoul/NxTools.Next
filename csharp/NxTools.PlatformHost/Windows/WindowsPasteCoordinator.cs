@@ -80,6 +80,7 @@ internal sealed record ImageClipboardPastePayload(
     string ImagePath,
     long TargetWindowHandle,
     long TargetFocusWindowHandle,
+    bool IncludeFileDropFallback,
     bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
 {
     public override string Kind => "image";
@@ -87,6 +88,7 @@ internal sealed record ImageClipboardPastePayload(
 
 internal sealed record NativeFormatsClipboardPastePayload(
     IReadOnlyList<ClipboardNativeFormatData> Formats,
+    string? ImagePathFallback,
     long TargetWindowHandle,
     long TargetFocusWindowHandle,
     bool PasteAfterWrite) : ClipboardPastePayload(TargetWindowHandle, TargetFocusWindowHandle, PasteAfterWrite)
@@ -129,11 +131,12 @@ internal sealed class WindowsPasteCoordinator(
     public WindowsCommandResult Execute(PasteImageCommand command, Guid correlationId = default)
         => Execute(new ImageClipboardPastePayload(
             command.ImagePath, command.TargetWindowHandle,
-            command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
+            command.TargetFocusWindowHandle, command.IncludeFileDropFallback,
+            command.PasteAfterWrite), correlationId);
 
     public WindowsCommandResult Execute(PasteNativeFormatsCommand command, Guid correlationId = default)
         => Execute(new NativeFormatsClipboardPastePayload(
-            command.Formats, command.TargetWindowHandle,
+            command.Formats, command.ImagePathFallback, command.TargetWindowHandle,
             command.TargetFocusWindowHandle, command.PasteAfterWrite), correlationId);
 
     internal WindowsCommandResult Execute(ClipboardPastePayload command, Guid correlationId)
@@ -207,13 +210,13 @@ internal sealed class WindowsPasteCoordinator(
                 operations.IsForegroundWindowForTarget(command.TargetWindowHandle);
             Log(targetReady ? "info" : "warning", "paste.activation_attempt", correlationId,
                 new Dictionary<string, object?>()
-            {
-                ["attempt"] = attempt + 1,
-                ["activated"] = activated,
-                ["target_ready"] = targetReady,
-                ["before"] = before,
-                ["after"] = after
-            });
+                {
+                    ["attempt"] = attempt + 1,
+                    ["activated"] = activated,
+                    ["target_ready"] = targetReady,
+                    ["before"] = before,
+                    ["after"] = after
+                });
             if (targetReady)
             {
                 break;
@@ -230,13 +233,13 @@ internal sealed class WindowsPasteCoordinator(
             var post = operations.PostPaste(pasteTarget);
             Log("error", "paste.wm_paste_fallback", correlationId,
                 new Dictionary<string, object?>()
-            {
-                ["reason"] = "target_activation_failed",
-                ["target_window"] = Hex(pasteTarget),
-                ["posted"] = post.Posted,
-                ["win32_error"] = post.Win32Error,
-                ["error"] = post.Error
-            });
+                {
+                    ["reason"] = "target_activation_failed",
+                    ["target_window"] = Hex(pasteTarget),
+                    ["posted"] = post.Posted,
+                    ["win32_error"] = post.Win32Error,
+                    ["error"] = post.Error
+                });
             return UnconfirmedFallback(
                 correlationId,
                 "Could not restore the target window",
@@ -264,13 +267,13 @@ internal sealed class WindowsPasteCoordinator(
             var post = operations.PostPaste(pasteTarget);
             Log("error", "paste.wm_paste_fallback", correlationId,
                 new Dictionary<string, object?>()
-            {
-                ["reason"] = "modifiers_remained_pressed",
-                ["target_window"] = Hex(pasteTarget),
-                ["posted"] = post.Posted,
-                ["win32_error"] = post.Win32Error,
-                ["error"] = post.Error
-            });
+                {
+                    ["reason"] = "modifiers_remained_pressed",
+                    ["target_window"] = Hex(pasteTarget),
+                    ["posted"] = post.Posted,
+                    ["win32_error"] = post.Win32Error,
+                    ["error"] = post.Error
+                });
             return UnconfirmedFallback(
                 correlationId,
                 "Activation modifiers remained pressed",
@@ -298,15 +301,15 @@ internal sealed class WindowsPasteCoordinator(
         var firstInputError = shortcut.Steps.FirstOrDefault(step => step.Sent == 0)?.Win32Error ?? 0;
         Log("error", "paste.wm_paste_fallback", correlationId,
             new Dictionary<string, object?>()
-        {
-            ["reason"] = "send_input_incomplete",
-            ["target_window"] = Hex(pasteTarget),
-            ["posted"] = inputPost.Posted,
-            ["win32_error"] = inputPost.Win32Error,
-            ["error"] = inputPost.Error,
-            ["sent"] = shortcut.Sent,
-            ["expected"] = PasteInputCount
-        });
+            {
+                ["reason"] = "send_input_incomplete",
+                ["target_window"] = Hex(pasteTarget),
+                ["posted"] = inputPost.Posted,
+                ["win32_error"] = inputPost.Win32Error,
+                ["error"] = inputPost.Error,
+                ["sent"] = shortcut.Sent,
+                ["expected"] = PasteInputCount
+            });
         return UnconfirmedFallback(
             correlationId,
             $"SendInput accepted {shortcut.Sent}/{PasteInputCount} events (Win32={firstInputError})",

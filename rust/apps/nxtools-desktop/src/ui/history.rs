@@ -2,14 +2,23 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpui::{App, ClickEvent, ObjectFit, Window, div, img, prelude::*, px};
+use gpui::{
+    AnyElement, App, Bounds, ClickEvent, Corner, ObjectFit, Pixels, Point, Rgba, Window, div, img,
+    point, prelude::*, px,
+};
 use gpui_component::Icon;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::menu::DropdownMenu;
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
-use nxtools_clipboard::{ClipboardAction, ClipboardItem, ClipboardKind};
+use nxtools_clipboard::{
+    ClipboardAction, ClipboardItem, ClipboardKind, ClipboardOpenTarget, ClipboardOpenTargetKind,
+    resolve_open_targets,
+};
+use nxtools_core::ClipboardModifierActions;
 
 use crate::icons::MaterialIcon;
-use crate::theme::Theme;
+use crate::theme::{COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, Theme};
 use crate::ui::action_from_modifiers;
 
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
@@ -27,6 +36,16 @@ pub const ROW_GAP: f32 = 4.0;
 pub type HistoryActionHandler = Rc<dyn Fn(ClipboardAction, &ClickEvent, &mut Window, &mut App)>;
 pub type HistoryManagementHandler =
     Rc<dyn Fn(ClipboardItemAction, &ClickEvent, &mut Window, &mut App)>;
+pub type HistoryOpenHandler = Rc<dyn Fn(ClipboardOpenTarget, &ClickEvent, &mut Window, &mut App)>;
+pub type HistoryPreviewHandler =
+    Rc<dyn Fn(bool, ClipboardItem, Bounds<Pixels>, Point<Pixels>, f32, &mut App)>;
+
+pub struct HistoryRowHandlers {
+    pub action: HistoryActionHandler,
+    pub management: HistoryManagementHandler,
+    pub open: HistoryOpenHandler,
+    pub preview: HistoryPreviewHandler,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipboardItemAction {
@@ -55,10 +74,16 @@ pub fn history_row(
     entry: ClipboardItem,
     index: usize,
     available_image_width: f32,
+    modifier_actions: ClipboardModifierActions,
     category_menu: CategorySourceMenu,
-    on_action: HistoryActionHandler,
-    on_management: HistoryManagementHandler,
+    handlers: HistoryRowHandlers,
 ) -> impl IntoElement {
+    let HistoryRowHandlers {
+        action: on_action,
+        management: on_management,
+        open: on_open,
+        preview: on_preview,
+    } = handlers;
     let source = if entry.source.process_name.is_empty() {
         "未知来源".to_owned()
     } else {
@@ -72,6 +97,7 @@ pub fn history_row(
     let can_edit = entry.kind == ClipboardKind::Text;
     let is_pinned = entry.is_pinned;
     let is_favorite = entry.is_favorite;
+    let open_targets = resolve_open_targets(&entry);
     let content = match entry.kind {
         ClipboardKind::Text => text_content(theme, &entry),
         ClipboardKind::Image => image_content(theme, &entry, available_image_width),
@@ -93,6 +119,7 @@ pub fn history_row(
     let menu_category_action = Rc::clone(&on_management);
     let without_breaks_disabled = entry.kind != ClipboardKind::Text;
     let group_name = format!("history-row-actions-{index}");
+    let preview_entry = entry.clone();
 
     div()
         .id(("history-row-slot", index))
@@ -105,18 +132,34 @@ pub fn history_row(
                 .h(px(card_height))
                 .px(px(7.0))
                 .py(px(4.0))
-                .rounded(px(6.0))
+                .rounded(px(COMPACT_RADIUS))
                 .border_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.surface)
+                .border_color(history_row_border(theme, false))
+                .bg(history_row_background(theme, false))
+                .overflow_hidden()
                 .cursor_pointer()
                 .hover(move |style| {
                     style
-                        .bg(theme.surface_hover)
-                        .border_color(theme.border_active)
+                        .bg(history_row_background(theme, true))
+                        .border_color(history_row_border(theme, true))
+                })
+                .on_hover(move |hovered, window, cx| {
+                    let panel_bounds = window.bounds();
+                    let mouse = window.mouse_position();
+                    on_preview(
+                        *hovered,
+                        preview_entry.clone(),
+                        panel_bounds,
+                        point(
+                            panel_bounds.origin.x + mouse.x,
+                            panel_bounds.origin.y + mouse.y,
+                        ),
+                        window.scale_factor(),
+                        cx,
+                    );
                 })
                 .on_click(move |event, window, cx| {
-                    let Some(action) = action_from_click(event) else {
+                    let Some(action) = action_from_click(event, modifier_actions) else {
                         return;
                     };
                     click_action(action, event, window, cx);
@@ -154,6 +197,14 @@ pub fn history_row(
                                 .flex()
                                 .items_center()
                                 .gap(px(2.0))
+                                .when(!open_targets.is_empty(), |actions| {
+                                    actions.child(open_targets_button(
+                                        theme,
+                                        index,
+                                        open_targets,
+                                        on_open,
+                                    ))
+                                })
                                 .when(can_edit, |actions| {
                                     actions.child(management_button(
                                         theme,
@@ -197,6 +248,7 @@ pub fn history_row(
                 .child(content)
                 .context_menu(move |menu, window, cx| {
                     let menu = menu
+                        .min_w(px(0.0))
                         .item(PopupMenuItem::new("粘贴").on_click({
                             let action = Rc::clone(&original_action);
                             move |event, window, cx| {
@@ -270,17 +322,18 @@ pub fn history_row(
                                 action(ClipboardItemAction::Delete, event, window, cx);
                             }
                         }));
-                    if let Some(category_hint) = category_menu.unavailable_hint.clone() {
-                        menu.separator()
-                            .item(PopupMenuItem::new(category_hint).disabled(true))
-                    } else {
-                        let options = category_menu.options.clone();
-                        let management = Rc::clone(&menu_category_action);
-                        menu.separator().submenu(
-                            "来源分类",
-                            window,
-                            cx,
-                            move |submenu, _window, _cx| {
+                    let options = category_menu.options.clone();
+                    let unavailable_hint = category_menu.unavailable_hint.clone();
+                    let management = Rc::clone(&menu_category_action);
+                    menu.separator().submenu(
+                        "来源分类",
+                        window,
+                        cx,
+                        move |submenu, _window, _cx| {
+                            let submenu = submenu.min_w(px(0.0));
+                            if let Some(hint) = unavailable_hint.clone() {
+                                submenu.item(PopupMenuItem::new(hint).disabled(true))
+                            } else {
                                 options
                                     .clone()
                                     .into_iter()
@@ -302,11 +355,98 @@ pub fn history_row(
                                                 }),
                                         )
                                     })
-                            },
-                        )
-                    }
+                            }
+                        },
+                    )
                 }),
         )
+}
+
+fn open_targets_button(
+    theme: Theme,
+    index: usize,
+    targets: Vec<ClipboardOpenTarget>,
+    handler: HistoryOpenHandler,
+) -> AnyElement {
+    let single_target_tooltip = targets.first().map(open_target_tooltip).unwrap_or("打开");
+    let button = Button::new(("clipboard-open-target", index))
+        .ghost()
+        .compact()
+        .h(px(20.0))
+        .w(px(20.0))
+        .p_0()
+        .tooltip(if targets.len() == 1 {
+            single_target_tooltip
+        } else {
+            "选择并打开"
+        })
+        .icon(
+            Icon::new(MaterialIcon::OpenInNew)
+                .size(px(13.0))
+                .text_color(theme.text_secondary),
+        );
+    if targets.len() == 1 {
+        let target = targets[0].clone();
+        button
+            .on_click(move |event, window, cx| {
+                cx.stop_propagation();
+                handler(target.clone(), event, window, cx);
+            })
+            .into_any_element()
+    } else {
+        button
+            .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
+                targets.clone().into_iter().fold(
+                    menu.min_w(px(180.0)).max_w(px(320.0)),
+                    |menu, target| {
+                        let handler = Rc::clone(&handler);
+                        let label = format!(
+                            "{}  {}",
+                            open_target_menu_prefix(&target.kind),
+                            compact_target_label(&target.value)
+                        );
+                        menu.item(
+                            PopupMenuItem::new(label).on_click(move |event, window, cx| {
+                                cx.stop_propagation();
+                                handler(target.clone(), event, window, cx);
+                            }),
+                        )
+                    },
+                )
+            })
+            .into_any_element()
+    }
+}
+
+fn open_target_tooltip(target: &ClipboardOpenTarget) -> &'static str {
+    match target.kind {
+        ClipboardOpenTargetKind::RegistryKey => "跳转到注册表项",
+        ClipboardOpenTargetKind::SystemTool => "运行系统工具",
+        ClipboardOpenTargetKind::Directory => "打开目录",
+        ClipboardOpenTargetKind::File => "在资源管理器中定位",
+        ClipboardOpenTargetKind::Web => "打开链接",
+    }
+}
+
+fn open_target_menu_prefix(kind: &ClipboardOpenTargetKind) -> &'static str {
+    match kind {
+        ClipboardOpenTargetKind::RegistryKey => "注册表",
+        ClipboardOpenTargetKind::SystemTool => "系统工具",
+        ClipboardOpenTargetKind::Directory => "目录",
+        ClipboardOpenTargetKind::File => "文件",
+        ClipboardOpenTargetKind::Web => "链接",
+    }
+}
+
+fn compact_target_label(value: &str) -> String {
+    const MAX_CHARS: usize = 42;
+    let mut characters = value.chars();
+    let prefix = characters.by_ref().take(MAX_CHARS).collect::<String>();
+    if characters.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
 }
 
 fn management_button(
@@ -353,10 +493,13 @@ fn state_icon(theme: Theme, icon: MaterialIcon, tooltip: &'static str) -> impl I
         .child(Icon::new(icon).size(px(12.0)).text_color(theme.accent))
 }
 
-fn action_from_click(event: &ClickEvent) -> Option<ClipboardAction> {
+fn action_from_click(
+    event: &ClickEvent,
+    modifier_actions: ClipboardModifierActions,
+) -> Option<ClipboardAction> {
     let modifiers = event.modifiers();
     if modifiers.modified() {
-        action_from_modifiers(modifiers)
+        action_from_modifiers(modifiers, modifier_actions)
     } else {
         Some(ClipboardAction::OriginalPaste)
     }
@@ -364,6 +507,7 @@ fn action_from_click(event: &ClickEvent) -> Option<ClipboardAction> {
 
 fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
     let character_count = entry.text.chars().count();
+    let summary = single_line_summary(&entry.text);
     div()
         .min_w_0()
         .h(px(TEXT_CONTENT_HEIGHT))
@@ -374,14 +518,18 @@ fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
             div()
                 .min_w_0()
                 .flex_1()
-                .text_size(px(12.0))
+                .text_size(px(RESULT_TITLE_SIZE))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.text)
                 .truncate()
-                .child(entry.text.clone()),
+                .child(summary),
         )
         .child(metric_chip(theme, format!("{character_count} 字符")))
         .into_any_element()
+}
+
+fn single_line_summary(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn files_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
@@ -406,7 +554,7 @@ fn files_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
             div()
                 .min_w_0()
                 .flex_1()
-                .text_size(px(12.0))
+                .text_size(px(RESULT_TITLE_SIZE))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.text)
                 .truncate()
@@ -423,23 +571,33 @@ fn image_content(
 ) -> gpui::AnyElement {
     let preview_height =
         image_preview_height(entry.image_width, entry.image_height, available_image_width);
+    let image_path = PathBuf::from(&entry.image_path);
+    let image_exists = image_path.is_file();
     div()
         .w_full()
         .h(px(preview_height + 8.0))
         .p(px(4.0))
-        .rounded(px(5.0))
-        .border_1()
-        .border_color(theme.border_subtle)
+        .rounded(px(COMPACT_RADIUS))
         .bg(theme.image_well)
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            img(PathBuf::from(&entry.image_path))
-                .w_full()
-                .h_full()
-                .object_fit(ObjectFit::Contain),
-        )
+        .when(image_exists, |preview| {
+            preview.child(
+                img(image_path)
+                    .w_full()
+                    .h_full()
+                    .object_fit(ObjectFit::Contain),
+            )
+        })
+        .when(!image_exists, |preview| {
+            preview.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child("图片文件已失效"),
+            )
+        })
         .into_any_element()
 }
 
@@ -473,11 +631,11 @@ fn source_icon(
 fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
     div()
         .min_w(px(20.0))
-        .h(px(18.0))
-        .px(px(6.0))
-        .rounded(px(9.0))
-        .bg(theme.surface_raised)
-        .text_size(px(9.0))
+        .h(px(16.0))
+        .px(px(4.0))
+        .rounded(px(3.0))
+        .bg(theme.element)
+        .text_size(px(META_TEXT_SIZE))
         .text_color(theme.text_secondary)
         .flex()
         .items_center()
@@ -486,16 +644,28 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
         .child(text)
 }
 
+fn history_row_border(theme: Theme, hovered: bool) -> Rgba {
+    if hovered {
+        theme.border
+    } else {
+        theme.border_subtle
+    }
+}
+
+fn history_row_background(theme: Theme, hovered: bool) -> Rgba {
+    if hovered {
+        theme.surface_hover
+    } else {
+        theme.surface_raised
+    }
+}
+
 fn time_label(theme: Theme, text: String) -> impl IntoElement {
     div()
         .max_w(px(92.0))
         .h(px(18.0))
-        .px(px(7.0))
-        .rounded(px(9.0))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface_raised)
-        .text_size(px(9.0))
+        .px(px(2.0))
+        .text_size(px(META_TEXT_SIZE))
         .text_color(theme.text_muted)
         .flex()
         .items_center()
@@ -506,12 +676,10 @@ fn time_label(theme: Theme, text: String) -> impl IntoElement {
 fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
     div()
         .h(px(18.0))
-        .px(px(7.0))
-        .rounded(px(9.0))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface_raised)
-        .text_size(px(9.0))
+        .px(px(5.0))
+        .rounded(px(3.0))
+        .bg(theme.element)
+        .text_size(px(META_TEXT_SIZE))
         .text_color(theme.text_muted)
         .flex()
         .items_center()
@@ -569,5 +737,38 @@ mod tests {
         assert_eq!(image_preview_height(100, 120, 246.0), 120.0);
         assert_eq!(image_preview_height(1_000, 2_000, 246.0), 270.0);
         assert!((image_preview_height(1_000, 10, 246.0) - 2.46).abs() < 0.01);
+        assert_eq!(image_preview_height(100, 120, 186.0), 120.0);
+        assert_eq!(image_preview_height(100, 120, 506.0), 120.0);
+        assert_eq!(image_preview_height(900, 1_800, 186.0), 270.0);
+    }
+
+    #[test]
+    fn history_text_summary_is_always_one_visual_line() {
+        assert_eq!(
+            single_line_summary("第一行\r\n第二行\t第三段"),
+            "第一行 第二行 第三段"
+        );
+    }
+
+    #[test]
+    fn history_rows_use_launcher_style_neutral_layering() {
+        let theme = Theme::zed_dark();
+        assert_eq!(history_row_border(theme, false), theme.border_subtle);
+        assert_eq!(history_row_border(theme, true), theme.border);
+        assert_eq!(history_row_background(theme, false), theme.surface_raised);
+        assert_eq!(history_row_background(theme, true), theme.surface_hover);
+
+        let source = include_str!("history.rs");
+        for function in ["fn image_content(", "fn time_label(", "fn metric_chip("] {
+            let body = source
+                .split(function)
+                .nth(1)
+                .and_then(|source| source.split("\n}").next())
+                .expect("visual helper source");
+            assert!(
+                !body.contains(".border_1()"),
+                "{function} should not add a nested outline"
+            );
+        }
     }
 }

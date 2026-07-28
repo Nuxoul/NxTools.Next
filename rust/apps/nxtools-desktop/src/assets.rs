@@ -8,6 +8,15 @@ pub struct NxToolsAssets;
 impl AssetSource for NxToolsAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         let bytes: Option<&'static [u8]> = match path {
+            "material-symbols/calculate.svg" => {
+                Some(include_bytes!("../assets/material-symbols/calculate.svg"))
+            }
+            "material-symbols/data-object.svg" => {
+                Some(include_bytes!("../assets/material-symbols/data-object.svg"))
+            }
+            "material-symbols/language.svg" => {
+                Some(include_bytes!("../assets/material-symbols/language.svg"))
+            }
             "material-symbols/dashboard.svg" => {
                 Some(include_bytes!("../assets/material-symbols/dashboard.svg"))
             }
@@ -44,9 +53,36 @@ impl AssetSource for NxToolsAssets {
             "material-symbols/open-in-full.svg" => Some(include_bytes!(
                 "../assets/material-symbols/open-in-full.svg"
             )),
+            "material-symbols/open-in-new.svg" => {
+                Some(include_bytes!("../assets/material-symbols/open-in-new.svg"))
+            }
             "material-symbols/search.svg" => {
                 Some(include_bytes!("../assets/material-symbols/search.svg"))
             }
+            "material-symbols/history.svg" => {
+                Some(include_bytes!("../assets/material-symbols/history.svg"))
+            }
+            "material-symbols/manage-search.svg" => Some(include_bytes!(
+                "../assets/material-symbols/manage-search.svg"
+            )),
+            "material-symbols/download.svg" => {
+                Some(include_bytes!("../assets/material-symbols/download.svg"))
+            }
+            "material-symbols/content-copy.svg" => Some(include_bytes!(
+                "../assets/material-symbols/content-copy.svg"
+            )),
+            "material-symbols/content-paste.svg" => Some(include_bytes!(
+                "../assets/material-symbols/content-paste.svg"
+            )),
+            "material-symbols/close.svg" => {
+                Some(include_bytes!("../assets/material-symbols/close.svg"))
+            }
+            "material-symbols/info.svg" => {
+                Some(include_bytes!("../assets/material-symbols/info.svg"))
+            }
+            "material-symbols/progress-activity.svg" => Some(include_bytes!(
+                "../assets/material-symbols/progress-activity.svg"
+            )),
             "material-symbols/check.svg" | "icons/check.svg" => {
                 Some(include_bytes!("../assets/material-symbols/check.svg"))
             }
@@ -71,8 +107,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_clipboard_material_symbols_are_embedded() {
+    fn all_material_symbols_are_embedded() {
         let paths = [
+            "material-symbols/calculate.svg",
+            "material-symbols/data-object.svg",
+            "material-symbols/language.svg",
             "material-symbols/dashboard.svg",
             "material-symbols/star.svg",
             "material-symbols/text-fields.svg",
@@ -85,7 +124,17 @@ mod tests {
             "material-symbols/arrow-upward.svg",
             "material-symbols/undo.svg",
             "material-symbols/open-in-full.svg",
+            "material-symbols/open-in-new.svg",
             "material-symbols/search.svg",
+            "material-symbols/history.svg",
+            "material-symbols/manage-search.svg",
+            "material-symbols/download.svg",
+            "material-symbols/content-copy.svg",
+            "material-symbols/content-paste.svg",
+            "material-symbols/check.svg",
+            "material-symbols/close.svg",
+            "material-symbols/info.svg",
+            "material-symbols/progress-activity.svg",
             "icons/check.svg",
             "icons/chevron-right.svg",
             "icons/circle-x.svg",

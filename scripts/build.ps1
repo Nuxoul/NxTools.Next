@@ -56,6 +56,9 @@ if ($Configuration -eq 'Release') {
 
 Push-Location $root
 try {
+    & '.\tests\architecture\quick-launch-lifecycle.ps1'
+    & '.\tests\architecture\indexer-lifecycle.ps1'
+
     cargo fmt --all --check
     Assert-NativeSuccess 'cargo fmt'
 
@@ -74,6 +77,19 @@ try {
         cargo test --workspace
     }
     Assert-NativeSuccess 'cargo test'
+
+    if ($Configuration -eq 'Release') {
+        cargo build --release -p nxtools-desktop -p nxtools-indexer
+        Assert-NativeSuccess 'cargo release binaries'
+        & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
+            -Profile 'release'
+    }
+    else {
+        cargo build -p nxtools-desktop -p nxtools-indexer
+        Assert-NativeSuccess 'cargo debug binaries'
+        & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
+            -Profile 'debug'
+    }
 
     dotnet build '.\csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj' -c $Configuration
     Assert-NativeSuccess 'dotnet build'

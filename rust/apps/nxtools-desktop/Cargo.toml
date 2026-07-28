@@ -6,17 +6,29 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+async-channel.workspace = true
+chrono.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+imagesize.workspace = true
 nxtools-clipboard = { path = "../../crates/nxtools-clipboard" }
 nxtools-core = { path = "../../crates/nxtools-core" }
+nxtools-download = { path = "../../crates/nxtools-download" }
+nxtools-download-ipc = { path = "../../crates/nxtools-download-ipc" }
+nxtools-finder = { path = "../../crates/nxtools-finder" }
 nxtools-ipc = { path = "../../crates/nxtools-ipc" }
 nxtools-protocol = { path = "../../crates/nxtools-protocol" }
 raw-window-handle.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+unicode-width.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+tempfile = "3.20.0"
 
 [lints]
 workspace = true

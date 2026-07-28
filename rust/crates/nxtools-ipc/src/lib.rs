@@ -1,3 +1,4 @@
+use std::io::{BufRead, Write};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -15,6 +16,14 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tracing::{info, warn};
+
+#[cfg(windows)]
+mod local_pipe;
+#[cfg(windows)]
+pub use local_pipe::{
+    INDEXER_PIPE_NAME, LocalPipeConnection, accept_current_user_pipe, accept_local_indexer_pipe,
+    connect_local_indexer_pipe, connect_local_pipe,
+};
 
 pub struct PlatformBridge {
     notifications: Receiver<PlatformNotification>,
@@ -76,6 +85,7 @@ impl PlatformBridge {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformNotification {
+    Connected,
     Event(PlatformEvent),
     CommandResult {
         correlation_id: uuid::Uuid,
@@ -94,7 +104,7 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 11] = [
+            const SUPPORTED_CAPABILITIES: [&str; 25] = [
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
@@ -104,8 +114,22 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
                 "paste_image",
                 "paste_files",
                 "clipboard_panel_hotkey",
+                "clipboard_configuration",
+                "quick_launch_panel_hotkey",
+                "quick_launch_configuration",
+                "clipboard_archive_picker",
+                "clipboard_storage_picker",
                 "window_topmost",
+                "window_no_activate",
+                "window_bounds",
                 "window_visibility",
+                "window_position",
+                "shell_icon_extraction",
+                "shell_context_actions",
+                "directory_navigation",
+                "file_dialog_search",
+                "window_activation",
+                "indexer_service_management",
             ];
             let accepted_capabilities = hello
                 .capabilities
@@ -135,6 +159,8 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
         | Message::Pong(_)
         | Message::PlatformCommand(_)
         | Message::PlatformCommandResult(_)
+        | Message::IndexerCommand(_)
+        | Message::IndexerEvent(_)
         | Message::Error(_) => return None,
     };
     Some(Envelope::reply_to(message, response))
@@ -190,6 +216,11 @@ async fn handle_connection(
 
     endpoint.connected.store(true, Ordering::Release);
     let _connection = ConnectionState::new(endpoint);
+    endpoint
+        .notifications
+        .send(PlatformNotification::Connected)
+        .await
+        .context("desktop platform notification receiver closed")?;
 
     loop {
         tokio::select! {
@@ -302,6 +333,38 @@ pub fn unix_time_ms() -> i64 {
         .unwrap_or_default()
 }
 
+pub fn read_bounded_sync_frame(reader: &mut impl BufRead) -> Result<Option<String>> {
+    let mut frame = Vec::with_capacity(4096);
+    loop {
+        let available = reader.fill_buf().context("failed to read IPC frame")?;
+        if available.is_empty() {
+            if frame.is_empty() {
+                return Ok(None);
+            }
+            anyhow::bail!("IPC peer disconnected in the middle of a frame");
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let payload_bytes = newline.unwrap_or(available.len());
+        if frame.len() + payload_bytes > MAX_FRAME_BYTES {
+            anyhow::bail!("IPC peer sent a frame larger than {MAX_FRAME_BYTES} bytes");
+        }
+        frame.extend_from_slice(&available[..payload_bytes]);
+        reader.consume(payload_bytes + usize::from(newline.is_some()));
+        if newline.is_some() {
+            return String::from_utf8(frame)
+                .map(Some)
+                .context("IPC frame was not valid UTF-8");
+        }
+    }
+}
+
+pub fn write_envelope_sync(writer: &mut impl Write, envelope: &Envelope) -> Result<()> {
+    writer
+        .write_all(envelope.encode_line()?.as_bytes())
+        .context("failed to write IPC frame")?;
+    writer.flush().context("failed to flush IPC frame")
+}
+
 #[cfg(test)]
 mod tests {
     use nxtools_protocol::{Hello, Message, PasteTextCommand, Ping, PlatformCommand};
@@ -319,9 +382,16 @@ mod tests {
                 "unknown".into(),
                 "paste_text".into(),
                 "clipboard_panel_hotkey".into(),
+                "clipboard_configuration".into(),
+                "quick_launch_panel_hotkey".into(),
+                "quick_launch_configuration".into(),
                 "foreground_context".into(),
                 "window_topmost".into(),
                 "window_visibility".into(),
+                "window_position".into(),
+                "shell_context_actions".into(),
+                "directory_navigation".into(),
+                "file_dialog_search".into(),
             ],
         }));
         let response = dispatch(&request).expect("hello response");
@@ -335,9 +405,16 @@ mod tests {
                 "clipboard_text_capture",
                 "paste_text",
                 "clipboard_panel_hotkey",
+                "clipboard_configuration",
+                "quick_launch_panel_hotkey",
+                "quick_launch_configuration",
                 "foreground_context",
                 "window_topmost",
-                "window_visibility"
+                "window_visibility",
+                "window_position",
+                "shell_context_actions",
+                "directory_navigation",
+                "file_dialog_search"
             ]
         );
         assert_eq!(response.correlation_id, Some(request.id));

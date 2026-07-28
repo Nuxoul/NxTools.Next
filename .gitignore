@@ -1,5 +1,7 @@
 /target/
 /artifacts/
+/.diagnostics/
+/target-ui-check/
 **/bin/
 **/obj/
 .idea/

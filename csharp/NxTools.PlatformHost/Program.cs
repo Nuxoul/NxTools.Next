@@ -9,7 +9,32 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        IndexerServiceInstaller.PinCurrentProcessImage();
+        if (TryParseElevatedDirectoryHelper(
+                args,
+                out var helperPipeName,
+                out var helperAuthenticationToken))
+        {
+            return ElevatedDirectoryNavigationHelper.Run(
+                helperPipeName!,
+                helperAuthenticationToken!);
+        }
+        if (TryParseElevatedDirectoryHelperBroker(
+                args,
+                out var helperSessionId,
+                out helperPipeName,
+                out helperAuthenticationToken))
+        {
+            return ElevatedHelperProcessBroker.Launch(
+                helperSessionId,
+                helperPipeName!,
+                helperAuthenticationToken!);
+        }
         using var log = PlatformLog.CreateDefault();
+        if (TryParseIndexerServiceInstall(args, out var indexerPath))
+        {
+            return IndexerServiceInstaller.InstallElevated(indexerPath!, log);
+        }
         log.Write("info", "process.start", fields: new Dictionary<string, object?>
         {
             ["version"] = typeof(Program).Assembly.GetName().Version?.ToString(),
@@ -51,6 +76,56 @@ internal static class Program
             await parentMonitor;
             log.Write("info", "process.stop");
         }
+    }
+
+    private static bool TryParseIndexerServiceInstall(
+        IReadOnlyList<string> args,
+        out string? indexerPath)
+    {
+        indexerPath = null;
+        if (args.Count != 2 || args[0] != "--install-indexer-service")
+        {
+            return false;
+        }
+        indexerPath = args[1];
+        return true;
+    }
+
+    private static bool TryParseElevatedDirectoryHelper(
+        IReadOnlyList<string> args,
+        out string? pipeName,
+        out string? authenticationToken)
+    {
+        pipeName = null;
+        authenticationToken = null;
+        if (args.Count != 3 ||
+            args[0] != "--elevated-directory-helper")
+        {
+            return false;
+        }
+        pipeName = args[1];
+        authenticationToken = args[2];
+        return true;
+    }
+
+    private static bool TryParseElevatedDirectoryHelperBroker(
+        IReadOnlyList<string> args,
+        out uint sessionId,
+        out string? pipeName,
+        out string? authenticationToken)
+    {
+        sessionId = 0;
+        pipeName = null;
+        authenticationToken = null;
+        if (args.Count != 4 ||
+            args[0] != "--launch-elevated-directory-helper" ||
+            !uint.TryParse(args[1], out sessionId))
+        {
+            return false;
+        }
+        pipeName = args[2];
+        authenticationToken = args[3];
+        return true;
     }
 
     private static int? ParseParentProcessId(IReadOnlyList<string> args)

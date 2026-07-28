@@ -1,0 +1,17 @@
+[package]
+name = "nxtools-finder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+nxtools-core = { path = "../nxtools-core" }
+rusqlite.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile = "3.20.0"
+
+[lints]
+workspace = true

@@ -1,8 +1,20 @@
+mod archive;
+mod storage;
+
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use thiserror::Error;
+
+pub use archive::{
+    ClipboardArchiveError, ClipboardArchiveExportReport, ClipboardArchiveImportReport,
+};
+pub use storage::{
+    ClipboardDatabaseBackupReport, ClipboardDatabaseCompactionReport, ClipboardStorageError,
+    ClipboardStorageMigrationReport,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaptureSource {
@@ -53,6 +65,66 @@ pub enum ClipboardKind {
     Text,
     Image,
     Files,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClipboardSearchScope {
+    #[default]
+    Content,
+    Extended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardCapturePolicy {
+    pub enabled: bool,
+    pub capture_images: bool,
+    pub capture_files: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardRetentionPolicy {
+    pub max_items: usize,
+    pub retention_days: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardCleanupReport {
+    pub soft_deleted: usize,
+    pub purged: usize,
+    pub purged_asset_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardUsage {
+    pub item_id: i64,
+    pub last_used_at_unix_ms: i64,
+    pub use_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardHistoryPage {
+    pub items: Vec<ClipboardItem>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ClipboardHistoryCounts {
+    pub total: usize,
+    pub text: usize,
+    pub images: usize,
+    pub files: usize,
+}
+
+impl ClipboardCapturePolicy {
+    pub fn allows(self, kind: ClipboardKind) -> bool {
+        self.enabled
+            && match kind {
+                ClipboardKind::Text => true,
+                ClipboardKind::Image => self.capture_images,
+                ClipboardKind::Files => self.capture_files,
+            }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +215,206 @@ pub struct ClipboardItem {
     pub deleted_at_unix_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardOpenTargetKind {
+    Web,
+    Directory,
+    File,
+    RegistryKey,
+    SystemTool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardOpenTarget {
+    pub value: String,
+    pub kind: ClipboardOpenTargetKind,
+}
+
+impl ClipboardOpenTarget {
+    pub fn select_in_explorer(&self) -> bool {
+        self.kind == ClipboardOpenTargetKind::File
+    }
+}
+
+pub fn resolve_open_targets(item: &ClipboardItem) -> Vec<ClipboardOpenTarget> {
+    let mut targets = Vec::new();
+    let mut seen = HashSet::new();
+
+    for path in &item.file_paths {
+        push_path_target(path, &mut targets, &mut seen);
+    }
+    if item.kind == ClipboardKind::Text {
+        for url in extract_web_urls(&item.text) {
+            push_target(
+                ClipboardOpenTarget {
+                    value: url,
+                    kind: ClipboardOpenTargetKind::Web,
+                },
+                &mut targets,
+                &mut seen,
+            );
+        }
+        for line in item.text.lines() {
+            if let Some(value) = normalize_registry_key(line) {
+                push_target(
+                    ClipboardOpenTarget {
+                        value,
+                        kind: ClipboardOpenTargetKind::RegistryKey,
+                    },
+                    &mut targets,
+                    &mut seen,
+                );
+                continue;
+            }
+            if let Some(value) = normalize_system_tool(line) {
+                push_target(
+                    ClipboardOpenTarget {
+                        value,
+                        kind: ClipboardOpenTargetKind::SystemTool,
+                    },
+                    &mut targets,
+                    &mut seen,
+                );
+                continue;
+            }
+            push_path_target(line, &mut targets, &mut seen);
+            for quoted in quoted_segments(line) {
+                push_path_target(quoted, &mut targets, &mut seen);
+            }
+        }
+    }
+    targets
+}
+
+fn normalize_registry_key(candidate: &str) -> Option<String> {
+    let value = candidate.trim().trim_matches(['"', '\'']);
+    let value = value.strip_prefix("计算机\\").unwrap_or(value);
+    let value = if value
+        .get(.."Computer\\".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Computer\\"))
+    {
+        &value["Computer\\".len()..]
+    } else {
+        value
+    };
+    let (root, remainder) = value.split_once('\\').unwrap_or((value, ""));
+    let canonical_root = match root.to_ascii_uppercase().as_str() {
+        "HKLM" | "HKEY_LOCAL_MACHINE" => "HKEY_LOCAL_MACHINE",
+        "HKCU" | "HKEY_CURRENT_USER" => "HKEY_CURRENT_USER",
+        "HKCR" | "HKEY_CLASSES_ROOT" => "HKEY_CLASSES_ROOT",
+        "HKU" | "HKEY_USERS" => "HKEY_USERS",
+        "HKCC" | "HKEY_CURRENT_CONFIG" => "HKEY_CURRENT_CONFIG",
+        _ => return None,
+    };
+    Some(if remainder.is_empty() {
+        canonical_root.to_owned()
+    } else {
+        format!("{canonical_root}\\{remainder}")
+    })
+}
+
+fn normalize_system_tool(candidate: &str) -> Option<String> {
+    let value = candidate.trim().to_ascii_lowercase();
+    let executable = match value.as_str() {
+        "msconfig" | "msconfig.exe" => "msconfig.exe",
+        "taskmgr" | "taskmgr.exe" => "taskmgr.exe",
+        "services.msc" => "services.msc",
+        "devmgmt.msc" => "devmgmt.msc",
+        "diskmgmt.msc" => "diskmgmt.msc",
+        "eventvwr" | "eventvwr.msc" => "eventvwr.msc",
+        "compmgmt.msc" => "compmgmt.msc",
+        "gpedit.msc" => "gpedit.msc",
+        "secpol.msc" => "secpol.msc",
+        "optionalfeatures" | "optionalfeatures.exe" => "optionalfeatures.exe",
+        "cleanmgr" | "cleanmgr.exe" => "cleanmgr.exe",
+        "dxdiag" | "dxdiag.exe" => "dxdiag.exe",
+        "winver" | "winver.exe" => "winver.exe",
+        "resmon" | "resmon.exe" => "resmon.exe",
+        "perfmon" | "perfmon.exe" => "perfmon.exe",
+        "mrt" | "mrt.exe" => "mrt.exe",
+        _ => return None,
+    };
+    Some(executable.to_owned())
+}
+
+fn push_path_target(
+    candidate: &str,
+    targets: &mut Vec<ClipboardOpenTarget>,
+    seen: &mut HashSet<String>,
+) {
+    let value = candidate.trim().trim_matches(['"', '\'']);
+    if value.is_empty() {
+        return;
+    }
+    let path = Path::new(value);
+    let kind = if path.is_file() {
+        ClipboardOpenTargetKind::File
+    } else if path.is_dir() {
+        ClipboardOpenTargetKind::Directory
+    } else {
+        return;
+    };
+    push_target(
+        ClipboardOpenTarget {
+            value: value.to_owned(),
+            kind,
+        },
+        targets,
+        seen,
+    );
+}
+
+fn push_target(
+    target: ClipboardOpenTarget,
+    targets: &mut Vec<ClipboardOpenTarget>,
+    seen: &mut HashSet<String>,
+) {
+    if seen.insert(target.value.to_lowercase()) {
+        targets.push(target);
+    }
+}
+
+fn extract_web_urls(text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut offset = 0;
+    while offset < text.len() {
+        let remaining = &text[offset..];
+        let next_http = remaining.find("http://");
+        let next_https = remaining.find("https://");
+        let Some(start) = [next_http, next_https].into_iter().flatten().min() else {
+            break;
+        };
+        let absolute_start = offset + start;
+        let tail = &text[absolute_start..];
+        let end = tail
+            .char_indices()
+            .find_map(|(index, character)| {
+                (character.is_whitespace()
+                    || matches!(
+                        character,
+                        '"' | '\'' | '<' | '>' | '，' | '。' | '；' | '！' | '？' | '）' | '】'
+                    ))
+                .then_some(index)
+            })
+            .unwrap_or(tail.len());
+        let url = tail[..end].trim_end_matches(|character: char| {
+            matches!(
+                character,
+                '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}'
+            )
+        });
+        if url.len() > "https://".len() {
+            urls.push(url.to_owned());
+        }
+        offset = absolute_start + end.max(1);
+    }
+    urls
+}
+
+fn quoted_segments(line: &str) -> impl Iterator<Item = &str> {
+    line.split('"').skip(1).step_by(2)
+}
+
 pub fn action_text_payload(item: &ClipboardItem, action: ClipboardAction) -> Option<String> {
     match action {
         ClipboardAction::OriginalPaste | ClipboardAction::CopyOnly => {
@@ -166,6 +438,7 @@ pub enum CaptureOutcome {
 
 pub struct ClipboardHistory {
     connection: Connection,
+    database_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +449,9 @@ enum ClipboardItemFlag {
 
 impl ClipboardHistory {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ClipboardHistoryError> {
-        let connection = Connection::open(path)?;
+        let database_path = path.as_ref().to_owned();
+        let connection = Connection::open(&database_path)?;
+        connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS clipboard_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -192,7 +467,9 @@ impl ClipboardHistory {
                 source_process_icon_path TEXT NOT NULL DEFAULT '',
                 source_window_title TEXT NOT NULL,
                 captured_at_unix_ms INTEGER NOT NULL,
+                last_used_at_unix_ms INTEGER NOT NULL DEFAULT 0,
                 copy_count INTEGER NOT NULL DEFAULT 1,
+                use_count INTEGER NOT NULL DEFAULT 0,
                 is_favorite INTEGER NOT NULL DEFAULT 0,
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 deleted_at_unix_ms INTEGER NOT NULL DEFAULT 0
@@ -224,7 +501,11 @@ impl ClipboardHistory {
                 PRIMARY KEY (category_id, process_name)
             );
             CREATE INDEX IF NOT EXISTS idx_clipboard_category_sources_category
-                ON clipboard_category_sources(category_id);",
+                ON clipboard_category_sources(category_id);
+            CREATE TABLE IF NOT EXISTS clipboard_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );",
         )?;
         ensure_column(&connection, "content_type", "TEXT NOT NULL DEFAULT 'text'")?;
         ensure_column(&connection, "image_path", "TEXT NOT NULL DEFAULT ''")?;
@@ -240,11 +521,59 @@ impl ClipboardHistory {
         ensure_column(&connection, "is_pinned", "INTEGER NOT NULL DEFAULT 0")?;
         ensure_column(
             &connection,
+            "last_used_at_unix_ms",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(&connection, "use_count", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(
+            &connection,
             "deleted_at_unix_ms",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        connection.execute(
+            "UPDATE clipboard_items
+             SET last_used_at_unix_ms = captured_at_unix_ms
+             WHERE last_used_at_unix_ms = 0",
+            [],
+        )?;
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clipboard_items_usage
+             ON clipboard_items(is_pinned DESC, last_used_at_unix_ms DESC,
+                                captured_at_unix_ms DESC, id DESC)",
+            [],
+        )?;
         seed_builtin_categories(&connection)?;
-        Ok(Self { connection })
+        promote_legacy_single_image_rows(&connection)?;
+        Ok(Self {
+            connection,
+            database_path,
+        })
+    }
+
+    pub fn database_path(&self) -> &Path {
+        &self.database_path
+    }
+
+    pub fn create_database_backup(
+        &self,
+        backup_directory: &Path,
+    ) -> Result<ClipboardDatabaseBackupReport, ClipboardStorageError> {
+        storage::create_database_backup(self, backup_directory)
+    }
+
+    pub fn compact_database(
+        &mut self,
+        backup_directory: &Path,
+    ) -> Result<ClipboardDatabaseCompactionReport, ClipboardStorageError> {
+        storage::compact_database(self, backup_directory)
+    }
+
+    pub fn migrate_storage(
+        &self,
+        source_asset_root: &Path,
+        destination_root: &Path,
+    ) -> Result<ClipboardStorageMigrationReport, ClipboardStorageError> {
+        storage::migrate_storage(self, source_asset_root, destination_root)
     }
 
     pub fn capture(
@@ -313,42 +642,47 @@ impl ClipboardHistory {
     ) -> Result<CaptureOutcome, ClipboardHistoryError> {
         let file_paths_json = serde_json::to_string(&file_paths)?;
         let transaction = self.connection.transaction()?;
-        let latest = transaction
-            .query_row(
-                "SELECT id, content_type, text, image_path, file_paths_json FROM clipboard_items
-                 WHERE deleted_at_unix_ms = 0
-                 ORDER BY captured_at_unix_ms DESC, id DESC LIMIT 1",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                    ))
-                },
-            )
-            .optional()?;
+        let matching_payload_ids = {
+            let mut statement = transaction.prepare(
+                "SELECT id FROM clipboard_items
+                 WHERE content_type = ?1 AND text = ?2 AND image_path = ?3
+                   AND file_paths_json = ?4
+                 ORDER BY CASE WHEN deleted_at_unix_ms = 0 THEN 0 ELSE 1 END,
+                          captured_at_unix_ms DESC, id DESC",
+            )?;
+            statement
+                .query_map(
+                    params![kind.as_str(), text, image_path, file_paths_json],
+                    |row| row.get::<_, i64>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut matching_id = None;
+        for id in matching_payload_ids {
+            if native_formats_match(&transaction, id, &native_formats)? {
+                matching_id = Some(id);
+                break;
+            }
+        }
 
-        if let Some((id, latest_kind, latest_text, latest_image, latest_files)) = latest
-            && latest_kind == kind.as_str()
-            && latest_text == text
-            && latest_image == image_path
-            && latest_files == file_paths_json
-            && native_formats_match(&transaction, id, &native_formats)?
-        {
+        if let Some(id) = matching_id {
             transaction.execute(
                 "UPDATE clipboard_items
-                 SET source_window_handle = ?1,
-                     source_process_id = ?2,
-                     source_process_name = ?3,
-                     source_process_icon_path = ?4,
-                     source_window_title = ?5,
-                     captured_at_unix_ms = ?6,
-                     copy_count = copy_count + 1
-                 WHERE id = ?7",
+                 SET image_width = ?1,
+                     image_height = ?2,
+                     source_window_handle = ?3,
+                     source_process_id = ?4,
+                     source_process_name = ?5,
+                     source_process_icon_path = ?6,
+                     source_window_title = ?7,
+                     captured_at_unix_ms = ?8,
+                     last_used_at_unix_ms = ?8,
+                     copy_count = copy_count + 1,
+                     deleted_at_unix_ms = 0
+                 WHERE id = ?9",
                 params![
+                    image_width,
+                    image_height,
                     source.window_handle,
                     source.process_id,
                     source.process_name,
@@ -367,8 +701,9 @@ impl ClipboardHistory {
             "INSERT INTO clipboard_items (
                 content_type, text, image_path, image_width, image_height, file_paths_json,
                 source_window_handle, source_process_id, source_process_name,
-                source_process_icon_path, source_window_title, captured_at_unix_ms, copy_count
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1)",
+                source_process_icon_path, source_window_title, captured_at_unix_ms, copy_count,
+                last_used_at_unix_ms, use_count
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1, ?12, 0)",
             params![
                 kind.as_str(),
                 text,
@@ -392,7 +727,44 @@ impl ClipboardHistory {
     }
 
     pub fn recent(&self, limit: usize) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query("", None, false, None, limit)
+        self.query("", None, false, None, ClipboardSearchScope::Content, limit)
+    }
+
+    pub fn counts(&self) -> Result<ClipboardHistoryCounts, ClipboardHistoryError> {
+        self.connection
+            .query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(content_type = 'text'), 0),
+                        COALESCE(SUM(content_type = 'image'), 0),
+                        COALESCE(SUM(content_type = 'files'), 0)
+                 FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0",
+                [],
+                |row| {
+                    Ok(ClipboardHistoryCounts {
+                        total: row.get::<_, i64>(0)? as usize,
+                        text: row.get::<_, i64>(1)? as usize,
+                        images: row.get::<_, i64>(2)? as usize,
+                        files: row.get::<_, i64>(3)? as usize,
+                    })
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn export_archive(
+        &self,
+        destination: &Path,
+    ) -> Result<ClipboardArchiveExportReport, ClipboardArchiveError> {
+        archive::export_archive(self, destination)
+    }
+
+    pub fn import_archive(
+        &mut self,
+        archive_path: &Path,
+        asset_root: &Path,
+    ) -> Result<ClipboardArchiveImportReport, ClipboardArchiveError> {
+        archive::import_archive(self, archive_path, asset_root)
     }
 
     pub fn recent_by_kind(
@@ -400,7 +772,14 @@ impl ClipboardHistory {
         kind: ClipboardKind,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query("", Some(kind), false, None, limit)
+        self.query(
+            "",
+            Some(kind),
+            false,
+            None,
+            ClipboardSearchScope::Content,
+            limit,
+        )
     }
 
     pub fn search(
@@ -408,7 +787,29 @@ impl ClipboardHistory {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(query, None, false, None, limit)
+        self.query(
+            query,
+            None,
+            false,
+            None,
+            ClipboardSearchScope::Content,
+            limit,
+        )
+    }
+
+    pub fn search_extended(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        self.query(
+            query,
+            None,
+            false,
+            None,
+            ClipboardSearchScope::Extended,
+            limit,
+        )
     }
 
     pub fn search_by_kind(
@@ -417,7 +818,14 @@ impl ClipboardHistory {
         kind: ClipboardKind,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(query, Some(kind), false, None, limit)
+        self.query(
+            query,
+            Some(kind),
+            false,
+            None,
+            ClipboardSearchScope::Content,
+            limit,
+        )
     }
 
     pub fn categories(&self) -> Result<Vec<ClipboardCategory>, ClipboardHistoryError> {
@@ -608,22 +1016,104 @@ impl ClipboardHistory {
         category_id: &str,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        self.query_category_with_scope(query, category_id, ClipboardSearchScope::Content, limit)
+    }
+
+    pub fn query_category_with_scope(
+        &self,
+        query: &str,
+        category_id: &str,
+        search_scope: ClipboardSearchScope,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
         let category = self.category_by_id(category_id)?;
         match category.kind {
-            ClipboardCategoryKind::All => self.query(query, None, false, None, limit),
-            ClipboardCategoryKind::Favorite => self.query(query, None, true, None, limit),
-            ClipboardCategoryKind::Text => {
-                self.query(query, Some(ClipboardKind::Text), false, None, limit)
+            ClipboardCategoryKind::All => self.query(query, None, false, None, search_scope, limit),
+            ClipboardCategoryKind::Favorite => {
+                self.query(query, None, true, None, search_scope, limit)
             }
-            ClipboardCategoryKind::Image => {
-                self.query(query, Some(ClipboardKind::Image), false, None, limit)
-            }
-            ClipboardCategoryKind::Files => {
-                self.query(query, Some(ClipboardKind::Files), false, None, limit)
-            }
+            ClipboardCategoryKind::Text => self.query(
+                query,
+                Some(ClipboardKind::Text),
+                false,
+                None,
+                search_scope,
+                limit,
+            ),
+            ClipboardCategoryKind::Image => self.query(
+                query,
+                Some(ClipboardKind::Image),
+                false,
+                None,
+                search_scope,
+                limit,
+            ),
+            ClipboardCategoryKind::Files => self.query(
+                query,
+                Some(ClipboardKind::Files),
+                false,
+                None,
+                search_scope,
+                limit,
+            ),
             ClipboardCategoryKind::Custom => {
-                self.query(query, None, false, Some(category_id), limit)
+                self.query(query, None, false, Some(category_id), search_scope, limit)
             }
+        }
+    }
+
+    pub fn query_category_page(
+        &self,
+        query: &str,
+        category_id: &str,
+        search_scope: ClipboardSearchScope,
+        offset: usize,
+        limit: usize,
+    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
+        let category = self.category_by_id(category_id)?;
+        match category.kind {
+            ClipboardCategoryKind::All => {
+                self.query_page(query, None, false, None, search_scope, offset, limit)
+            }
+            ClipboardCategoryKind::Favorite => {
+                self.query_page(query, None, true, None, search_scope, offset, limit)
+            }
+            ClipboardCategoryKind::Text => self.query_page(
+                query,
+                Some(ClipboardKind::Text),
+                false,
+                None,
+                search_scope,
+                offset,
+                limit,
+            ),
+            ClipboardCategoryKind::Image => self.query_page(
+                query,
+                Some(ClipboardKind::Image),
+                false,
+                None,
+                search_scope,
+                offset,
+                limit,
+            ),
+            ClipboardCategoryKind::Files => self.query_page(
+                query,
+                Some(ClipboardKind::Files),
+                false,
+                None,
+                search_scope,
+                offset,
+                limit,
+            ),
+            ClipboardCategoryKind::Custom => self.query_page(
+                query,
+                None,
+                false,
+                Some(category_id),
+                search_scope,
+                offset,
+                limit,
+            ),
         }
     }
 
@@ -647,6 +1137,84 @@ impl ClipboardHistory {
         kind: Option<ClipboardKind>,
         favorite_only: bool,
         source_category_id: Option<&str>,
+        search_scope: ClipboardSearchScope,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        self.query_items(
+            query,
+            kind,
+            favorite_only,
+            source_category_id,
+            search_scope,
+            0,
+            limit,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn query_page(
+        &self,
+        query: &str,
+        kind: Option<ClipboardKind>,
+        favorite_only: bool,
+        source_category_id: Option<&str>,
+        search_scope: ClipboardSearchScope,
+        offset: usize,
+        limit: usize,
+    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
+        let total = self.connection.query_row(
+            "SELECT COUNT(*)
+             FROM clipboard_items
+             WHERE deleted_at_unix_ms = 0
+               AND (?1 IS NULL OR content_type = ?1)
+               AND (?2 = 0 OR is_favorite = 1)
+               AND (?3 IS NULL OR EXISTS (
+                    SELECT 1 FROM clipboard_category_sources AS category_source
+                    WHERE category_source.category_id = ?3
+                      AND category_source.process_name = clipboard_items.source_process_name
+               ))
+               AND (?4 = ''
+                    OR instr(lower(text), lower(?4)) > 0
+                    OR (?5 = 1 AND (
+                        instr(lower(image_path), lower(?4)) > 0
+                        OR instr(lower(file_paths_json), lower(?4)) > 0
+                        OR instr(lower(source_process_name), lower(?4)) > 0
+                        OR instr(lower(source_window_title), lower(?4)) > 0
+                    )))",
+            params![
+                kind.map(ClipboardKind::as_str),
+                favorite_only,
+                source_category_id,
+                query,
+                search_scope == ClipboardSearchScope::Extended,
+            ],
+            |row| row.get::<_, i64>(0),
+        )? as usize;
+        let items = self.query_items(
+            query,
+            kind,
+            favorite_only,
+            source_category_id,
+            search_scope,
+            offset,
+            limit.clamp(1, 500),
+        )?;
+        Ok(ClipboardHistoryPage {
+            has_more: offset.saturating_add(items.len()) < total,
+            items,
+            total,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn query_items(
+        &self,
+        query: &str,
+        kind: Option<ClipboardKind>,
+        favorite_only: bool,
+        source_category_id: Option<&str>,
+        search_scope: ClipboardSearchScope,
+        offset: usize,
         limit: usize,
     ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
         let mut statement = self.connection.prepare(
@@ -666,9 +1234,15 @@ impl ClipboardHistory {
                ))
                AND (?4 = ''
                     OR instr(lower(text), lower(?4)) > 0
-                    OR instr(lower(file_paths_json), lower(?4)) > 0)
-             ORDER BY is_pinned DESC, captured_at_unix_ms DESC, id DESC
-             LIMIT ?5",
+                    OR (?5 = 1 AND (
+                        instr(lower(image_path), lower(?4)) > 0
+                        OR instr(lower(file_paths_json), lower(?4)) > 0
+                        OR instr(lower(source_process_name), lower(?4)) > 0
+                        OR instr(lower(source_window_title), lower(?4)) > 0
+                    )))
+             ORDER BY is_pinned DESC, last_used_at_unix_ms DESC,
+                      captured_at_unix_ms DESC, id DESC
+             LIMIT ?6 OFFSET ?7",
         )?;
         let rows = statement.query_map(
             params![
@@ -676,7 +1250,9 @@ impl ClipboardHistory {
                 favorite_only,
                 source_category_id,
                 query,
-                limit as i64
+                search_scope == ClipboardSearchScope::Extended,
+                limit as i64,
+                offset as i64,
             ],
             map_item,
         )?;
@@ -762,6 +1338,134 @@ impl ClipboardHistory {
             return Err(ClipboardHistoryError::ItemNotFound(item_id));
         }
         self.item_by_id(item_id)
+    }
+
+    pub fn mark_used(
+        &mut self,
+        item_id: i64,
+        used_at_unix_ms: i64,
+    ) -> Result<ClipboardUsage, ClipboardHistoryError> {
+        let changed = self.connection.execute(
+            "UPDATE clipboard_items
+             SET last_used_at_unix_ms = ?1, use_count = use_count + 1
+             WHERE id = ?2 AND deleted_at_unix_ms = 0",
+            params![used_at_unix_ms, item_id],
+        )?;
+        if changed == 0 {
+            return Err(ClipboardHistoryError::ItemNotFound(item_id));
+        }
+        self.connection
+            .query_row(
+                "SELECT id, last_used_at_unix_ms, use_count
+                 FROM clipboard_items WHERE id = ?1",
+                [item_id],
+                |row| {
+                    Ok(ClipboardUsage {
+                        item_id: row.get(0)?,
+                        last_used_at_unix_ms: row.get(1)?,
+                        use_count: row.get(2)?,
+                    })
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn cleanup(
+        &mut self,
+        policy: ClipboardRetentionPolicy,
+        now_unix_ms: i64,
+    ) -> Result<ClipboardCleanupReport, ClipboardHistoryError> {
+        const DAY_MS: i64 = 86_400_000;
+        let max_items = policy.max_items.clamp(100, 100_000);
+        let retention_days = policy.retention_days.clamp(1, 3650);
+        let cutoff = now_unix_ms.saturating_sub(i64::from(retention_days) * DAY_MS);
+        let purge_days = retention_days.max(30);
+        let purge_cutoff = now_unix_ms.saturating_sub(i64::from(purge_days) * DAY_MS);
+        let transaction = self.connection.transaction()?;
+
+        let expired = transaction.execute(
+            "UPDATE clipboard_items
+             SET deleted_at_unix_ms = ?1
+             WHERE deleted_at_unix_ms = 0
+               AND is_favorite = 0
+               AND is_pinned = 0
+               AND last_used_at_unix_ms < ?2",
+            params![now_unix_ms, cutoff],
+        )?;
+        let overflow = transaction.execute(
+            "UPDATE clipboard_items
+             SET deleted_at_unix_ms = ?1
+             WHERE deleted_at_unix_ms = 0 AND id IN (
+                 SELECT id FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0
+                   AND is_favorite = 0
+                   AND is_pinned = 0
+                 ORDER BY last_used_at_unix_ms DESC, captured_at_unix_ms DESC, id DESC
+                 LIMIT -1 OFFSET ?2
+             )",
+            params![now_unix_ms, max_items as i64],
+        )?;
+
+        let purged = {
+            let mut statement = transaction.prepare(
+                "SELECT id, image_path, source_process_icon_path FROM clipboard_items
+                 WHERE deleted_at_unix_ms > 0 AND deleted_at_unix_ms < ?1",
+            )?;
+            statement
+                .query_map([purge_cutoff], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut candidate_assets = HashSet::new();
+        for (id, image_path, source_icon_path) in &purged {
+            if !image_path.is_empty() {
+                candidate_assets.insert(image_path.clone());
+            }
+            if !source_icon_path.is_empty() {
+                candidate_assets.insert(source_icon_path.clone());
+            }
+            let mut statement = transaction.prepare(
+                "SELECT data_path FROM clipboard_item_formats
+                 WHERE clipboard_item_id = ?1 AND data_path != ''",
+            )?;
+            let paths = statement
+                .query_map([id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            candidate_assets.extend(paths);
+        }
+        for (id, _, _) in &purged {
+            transaction.execute(
+                "DELETE FROM clipboard_item_formats WHERE clipboard_item_id = ?1",
+                [id],
+            )?;
+            transaction.execute("DELETE FROM clipboard_items WHERE id = ?1", [id])?;
+        }
+        let mut purged_asset_paths = Vec::new();
+        for path in candidate_assets {
+            let still_referenced = transaction.query_row(
+                "SELECT
+                    EXISTS(SELECT 1 FROM clipboard_items
+                           WHERE image_path = ?1 OR source_process_icon_path = ?1)
+                    OR EXISTS(SELECT 1 FROM clipboard_item_formats WHERE data_path = ?1)",
+                [&path],
+                |row| row.get::<_, i64>(0),
+            )? != 0;
+            if !still_referenced {
+                purged_asset_paths.push(path);
+            }
+        }
+        purged_asset_paths.sort();
+        transaction.commit()?;
+        Ok(ClipboardCleanupReport {
+            soft_deleted: expired + overflow,
+            purged: purged.len(),
+            purged_asset_paths,
+        })
     }
 
     pub fn update_text(
@@ -961,6 +1665,84 @@ fn seed_builtin_categories(connection: &Connection) -> Result<(), rusqlite::Erro
     transaction.commit()
 }
 
+fn promote_legacy_single_image_rows(connection: &Connection) -> Result<(), ClipboardHistoryError> {
+    let migration_complete = connection
+        .query_row(
+            "SELECT value FROM clipboard_metadata WHERE key = 'single_image_file_promotion_v1'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_some();
+    if migration_complete {
+        return Ok(());
+    }
+    let candidates = {
+        let mut statement = connection.prepare(
+            "SELECT id, file_paths_json FROM clipboard_items WHERE content_type = 'files'",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, paths_json) in candidates {
+        let paths = serde_json::from_str::<Vec<String>>(&paths_json).unwrap_or_default();
+        let Some(path) = paths.first().filter(|_| paths.len() == 1) else {
+            continue;
+        };
+        if !is_existing_image_path(path) {
+            continue;
+        }
+        connection.execute(
+            "UPDATE clipboard_items
+             SET content_type = 'image', image_path = ?2, image_width = 0,
+                 image_height = 0, file_paths_json = '[]'
+             WHERE id = ?1 AND content_type = 'files'",
+            params![id, path],
+        )?;
+    }
+    connection.execute(
+        "INSERT OR REPLACE INTO clipboard_metadata (key, value)
+         VALUES ('single_image_file_promotion_v1', 'complete')",
+        [],
+    )?;
+    Ok(())
+}
+
+fn is_existing_image_path(value: &str) -> bool {
+    use std::io::Read as _;
+
+    let path = Path::new(value);
+    if !path.is_file() {
+        return false;
+    }
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "bmp" | "gif" | "webp" | "tif" | "tiff"
+            )
+        })
+    {
+        return true;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut header = [0_u8; 12];
+    let Ok(read) = file.read(&mut header) else {
+        return false;
+    };
+    (read >= 8 && header[..8] == [137, 80, 78, 71, 13, 10, 26, 10])
+        || (read >= 3 && header[..3] == [0xff, 0xd8, 0xff])
+        || (read >= 6 && matches!(&header[..6], b"GIF87a" | b"GIF89a"))
+        || (read >= 2 && header[..2] == *b"BM")
+        || (read >= 12 && header[..4] == *b"RIFF" && header[8..12] == *b"WEBP")
+}
+
 #[derive(Debug, Error)]
 pub enum ClipboardHistoryError {
     #[error("clipboard database error: {0}")]
@@ -1027,6 +1809,25 @@ fn ensure_column(
 mod tests {
     use super::*;
 
+    #[test]
+    fn capture_policy_controls_optional_kinds_without_disabling_text() {
+        let policy = ClipboardCapturePolicy {
+            enabled: true,
+            capture_images: false,
+            capture_files: true,
+        };
+        assert!(policy.allows(ClipboardKind::Text));
+        assert!(!policy.allows(ClipboardKind::Image));
+        assert!(policy.allows(ClipboardKind::Files));
+
+        let disabled = ClipboardCapturePolicy {
+            enabled: false,
+            ..policy
+        };
+        assert!(!disabled.allows(ClipboardKind::Text));
+        assert!(!disabled.allows(ClipboardKind::Files));
+    }
+
     fn fixture_source() -> CaptureSource {
         fixture_source_for("fixture")
     }
@@ -1039,6 +1840,99 @@ mod tests {
             process_icon_path: String::new(),
             window_title: "fixture".into(),
         }
+    }
+
+    #[test]
+    fn open_targets_include_multiple_urls_and_existing_paths() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let file = directory.path().join("one.txt");
+        std::fs::write(&file, "fixture").expect("write fixture");
+        let item = ClipboardItem {
+            id: 1,
+            kind: ClipboardKind::Text,
+            text: format!(
+                "打开 https://example.com/a，然后 http://example.org/b。\n{}",
+                file.display()
+            ),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: Vec::new(),
+            source: fixture_source(),
+            captured_at_unix_ms: 1,
+            copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
+        };
+
+        let targets = resolve_open_targets(&item);
+        assert_eq!(targets.len(), 3);
+        assert_eq!(targets[0].value, "https://example.com/a");
+        assert_eq!(targets[1].value, "http://example.org/b");
+        assert_eq!(targets[2].kind, ClipboardOpenTargetKind::File);
+        assert!(targets[2].select_in_explorer());
+    }
+
+    #[test]
+    fn open_targets_recognize_registry_keys_and_safe_windows_tools() {
+        let item = ClipboardItem {
+            id: 1,
+            kind: ClipboardKind::Text,
+            text: "计算机\\HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\ProfSvc\nmsconfig\ncmd /c whoami".into(),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: Vec::new(),
+            source: fixture_source(),
+            captured_at_unix_ms: 1,
+            copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
+        };
+
+        let targets = resolve_open_targets(&item);
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].kind, ClipboardOpenTargetKind::RegistryKey);
+        assert_eq!(
+            targets[0].value,
+            "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\ProfSvc"
+        );
+        assert_eq!(targets[1].kind, ClipboardOpenTargetKind::SystemTool);
+        assert_eq!(targets[1].value, "msconfig.exe");
+    }
+
+    #[test]
+    fn legacy_single_image_file_rows_are_promoted_on_reopen() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let image = directory.path().join("qq-capture.png");
+        std::fs::write(&image, [137, 80, 78, 71, 13, 10, 26, 10]).expect("write image signature");
+        let database = directory.path().join("clipboard.db");
+        {
+            let mut history = ClipboardHistory::open(&database).expect("open history");
+            history
+                .capture_files(FilesCapture {
+                    paths: vec![image.to_string_lossy().into_owned()],
+                    native_formats: Vec::new(),
+                    source: fixture_source_for("qq"),
+                    captured_at_unix_ms: 1,
+                })
+                .expect("capture legacy file row");
+            history
+                .connection
+                .execute(
+                    "DELETE FROM clipboard_metadata WHERE key = 'single_image_file_promotion_v1'",
+                    [],
+                )
+                .expect("simulate pre-migration database");
+        }
+
+        let history = ClipboardHistory::open(&database).expect("reopen history");
+        let items = history.recent(10).expect("recent items");
+        assert_eq!(items[0].kind, ClipboardKind::Image);
+        assert_eq!(items[0].image_path, image.to_string_lossy());
+        assert!(items[0].file_paths.is_empty());
     }
 
     #[test]
@@ -1174,6 +2068,60 @@ mod tests {
     }
 
     #[test]
+    fn non_adjacent_duplicate_reuses_and_revives_the_existing_record() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+
+        let CaptureOutcome::Inserted(first) = history
+            .capture(TextCapture {
+                text: "reuse me".into(),
+                native_formats: Vec::new(),
+                source: fixture_source_for("first-app"),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture first")
+        else {
+            panic!("first capture must insert");
+        };
+        history
+            .set_favorite(first.id, true)
+            .expect("favorite first record");
+        history
+            .soft_delete(first.id, 150)
+            .expect("soft delete first record");
+        history
+            .capture(TextCapture {
+                text: "different content".into(),
+                native_formats: Vec::new(),
+                source: fixture_source_for("middle-app"),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture middle record");
+
+        let CaptureOutcome::Updated(reused) = history
+            .capture(TextCapture {
+                text: "reuse me".into(),
+                native_formats: Vec::new(),
+                source: fixture_source_for("last-app"),
+                captured_at_unix_ms: 300,
+            })
+            .expect("recapture first content")
+        else {
+            panic!("a global duplicate must update its existing record");
+        };
+
+        assert_eq!(reused.id, first.id);
+        assert_eq!(reused.copy_count, 2);
+        assert!(reused.is_favorite);
+        assert_eq!(reused.deleted_at_unix_ms, None);
+        assert_eq!(reused.source.process_name, "last-app");
+        let recent = history.recent(10).expect("recent after global duplicate");
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, first.id);
+    }
+
+    #[test]
     fn equal_visible_text_with_different_native_formats_stays_distinct() {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("clipboard.db");
@@ -1253,6 +2201,44 @@ mod tests {
         assert!(!recent[0].is_favorite);
         assert!(recent[1].is_favorite);
         assert!(!recent[1].is_pinned);
+    }
+
+    #[test]
+    fn marking_an_item_used_moves_it_to_the_front_and_counts_activations() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+
+        let CaptureOutcome::Inserted(first) = history
+            .capture(TextCapture {
+                text: "first".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture first")
+        else {
+            panic!("first capture must insert");
+        };
+        history
+            .capture(TextCapture {
+                text: "second".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture second");
+
+        let first_use = history.mark_used(first.id, 300).expect("mark first used");
+        let second_use = history
+            .mark_used(first.id, 400)
+            .expect("mark first used again");
+
+        assert_eq!(first_use.use_count, 1);
+        assert_eq!(first_use.last_used_at_unix_ms, 300);
+        assert_eq!(second_use.use_count, 2);
+        assert_eq!(second_use.last_used_at_unix_ms, 400);
+        assert_eq!(history.recent(10).expect("recent")[0].id, first.id);
     }
 
     #[test]
@@ -1595,6 +2581,304 @@ mod tests {
     }
 
     #[test]
+    fn extended_search_is_opt_in_for_asset_and_source_metadata() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+
+        history
+            .capture_image(ImageCapture {
+                image_path: "C:/captures/dragon-boss.png".into(),
+                width: 640,
+                height: 360,
+                native_formats: Vec::new(),
+                source: CaptureSource {
+                    window_handle: 1,
+                    process_id: 2,
+                    process_name: "SnippingTool.exe".into(),
+                    process_icon_path: String::new(),
+                    window_title: "截图工具".into(),
+                },
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture image");
+        history
+            .capture(TextCapture {
+                text: "opaque content".into(),
+                native_formats: Vec::new(),
+                source: CaptureSource {
+                    window_handle: 3,
+                    process_id: 4,
+                    process_name: "Rider64.exe".into(),
+                    process_icon_path: String::new(),
+                    window_title: "NxTools – clipboard.rs".into(),
+                },
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture source fixture");
+
+        assert!(
+            history
+                .search("dragon-boss", 10)
+                .expect("plain search")
+                .is_empty()
+        );
+        assert!(
+            history
+                .search("rider64", 10)
+                .expect("plain search")
+                .is_empty()
+        );
+        assert_eq!(
+            history.search("opaque", 10).expect("content search").len(),
+            1
+        );
+        assert_eq!(
+            history
+                .search_extended("dragon-boss", 10)
+                .expect("image search")
+                .len(),
+            1
+        );
+        assert_eq!(
+            history
+                .search_extended("rider64", 10)
+                .expect("source search")
+                .len(),
+            1
+        );
+        assert_eq!(
+            history
+                .search_extended("clipboard.rs", 10)
+                .expect("title search")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn category_pages_are_bounded_complete_and_report_the_filtered_total() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        for index in 0..105 {
+            history
+                .capture(TextCapture {
+                    text: format!("paged item {index:03}"),
+                    native_formats: Vec::new(),
+                    source: fixture_source(),
+                    captured_at_unix_ms: index + 1,
+                })
+                .expect("capture page fixture");
+        }
+
+        let first = history
+            .query_category_page(
+                "paged item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                0,
+                40,
+            )
+            .expect("first page");
+        let second = history
+            .query_category_page(
+                "paged item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                40,
+                40,
+            )
+            .expect("second page");
+        let last = history
+            .query_category_page(
+                "paged item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                80,
+                40,
+            )
+            .expect("last page");
+
+        assert_eq!(
+            (first.items.len(), second.items.len(), last.items.len()),
+            (40, 40, 25)
+        );
+        assert_eq!((first.total, second.total, last.total), (105, 105, 105));
+        assert!(first.has_more && second.has_more && !last.has_more);
+        let ids = first
+            .items
+            .iter()
+            .chain(&second.items)
+            .chain(&last.items)
+            .map(|item| item.id)
+            .collect::<HashSet<_>>();
+        assert_eq!(ids.len(), 105);
+    }
+
+    #[test]
+    fn history_counts_cover_every_visible_kind_without_loading_the_rows() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let CaptureOutcome::Inserted(text) = history
+            .capture(TextCapture {
+                text: "counted text".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 1,
+            })
+            .expect("capture text")
+        else {
+            panic!("text fixture must insert");
+        };
+        history
+            .capture_image(ImageCapture {
+                image_path: "C:/counted.png".into(),
+                width: 10,
+                height: 10,
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 2,
+            })
+            .expect("capture image");
+        history
+            .capture_files(FilesCapture {
+                paths: vec!["C:/counted.txt".into()],
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 3,
+            })
+            .expect("capture files");
+        history.soft_delete(text.id, 4).expect("delete text");
+
+        assert_eq!(
+            history.counts().expect("history counts"),
+            ClipboardHistoryCounts {
+                total: 2,
+                text: 0,
+                images: 1,
+                files: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn portable_archive_moves_images_icons_and_native_formats_between_storage_roots() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let source_root = directory.path().join("source-assets");
+        let target_root = directory.path().join("target-assets");
+        std::fs::create_dir_all(source_root.join("native-formats")).expect("source asset root");
+        let image = source_root.join("image.png");
+        let icon = source_root.join("source-icon.png");
+        let native = source_root.join("native-formats").join("format.bin");
+        std::fs::write(&image, b"portable image bytes").expect("write image");
+        std::fs::write(&icon, b"portable icon bytes").expect("write icon");
+        std::fs::write(&native, b"portable native format").expect("write native format");
+
+        let source_db = directory.path().join("source.db");
+        let mut source = ClipboardHistory::open(&source_db).expect("open source history");
+        source
+            .capture_image(ImageCapture {
+                image_path: image.to_string_lossy().into_owned(),
+                width: 320,
+                height: 180,
+                native_formats: vec![ClipboardNativeFormat {
+                    format_id: 8,
+                    format_name: "CF_DIB".into(),
+                    data_path: native.to_string_lossy().into_owned(),
+                    size_bytes: 22,
+                    sort_order: 0,
+                }],
+                source: CaptureSource {
+                    process_icon_path: icon.to_string_lossy().into_owned(),
+                    ..fixture_source_for("source-app")
+                },
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture image fixture");
+        source
+            .capture(TextCapture {
+                text: "portable text".into(),
+                native_formats: Vec::new(),
+                source: fixture_source_for("editor"),
+                captured_at_unix_ms: 200,
+            })
+            .expect("capture text fixture");
+        let archive = directory.path().join("portable.nxtclip");
+
+        let exported = source
+            .export_archive(&archive)
+            .expect("export portable archive");
+        assert_eq!(exported.item_count, 2);
+        assert_eq!(exported.asset_count, 3);
+
+        let target_db = directory.path().join("target.db");
+        let mut target = ClipboardHistory::open(&target_db).expect("open target history");
+        let imported = target
+            .import_archive(&archive, &target_root)
+            .expect("import portable archive");
+        assert_eq!((imported.inserted, imported.updated), (2, 0));
+        let items = target.recent(10).expect("target history");
+        assert_eq!(items.len(), 2);
+        let imported_image = items
+            .iter()
+            .find(|item| item.kind == ClipboardKind::Image)
+            .expect("imported image");
+        assert!(Path::new(&imported_image.image_path).starts_with(&target_root));
+        assert_eq!(
+            std::fs::read(&imported_image.image_path).expect("read imported image"),
+            b"portable image bytes"
+        );
+        assert!(Path::new(&imported_image.source.process_icon_path).starts_with(&target_root));
+        let formats = target
+            .native_formats(imported_image.id)
+            .expect("imported formats");
+        assert_eq!(formats.len(), 1);
+        assert!(Path::new(&formats[0].data_path).starts_with(&target_root));
+        assert_eq!(
+            std::fs::read(&formats[0].data_path).expect("read imported format"),
+            b"portable native format"
+        );
+
+        let reimported = target
+            .import_archive(&archive, &target_root)
+            .expect("reimport portable archive");
+        assert_eq!((reimported.inserted, reimported.updated), (0, 2));
+        assert_eq!(target.recent(10).expect("deduplicated history").len(), 2);
+    }
+
+    #[test]
+    fn archive_import_rejects_asset_paths_that_escape_the_managed_directory() {
+        use std::io::Write as _;
+
+        let directory = tempfile::tempdir().expect("temp directory");
+        let archive_path = directory.path().join("unsafe.nxtclip");
+        let output = std::fs::File::create(&archive_path).expect("create archive");
+        let mut archive = zip::ZipWriter::new(output);
+        archive
+            .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .expect("start manifest");
+        archive
+            .write_all(
+                br#"{"version":1,"items":[{"kind":"image","text":"","image_entry":"images/../../escape.png","image_width":1,"image_height":1,"file_paths":[],"source":{"window_handle":0,"process_id":0,"process_name":"test","icon_entry":null,"window_title":""},"captured_at_unix_ms":1,"is_favorite":false,"is_pinned":false,"formats":[]}]}"#,
+            )
+            .expect("write manifest");
+        archive.finish().expect("finish archive");
+
+        let mut history =
+            ClipboardHistory::open(directory.path().join("history.db")).expect("open history");
+        let asset_root = directory.path().join("assets");
+        let error = history
+            .import_archive(&archive_path, &asset_root)
+            .expect_err("unsafe entry must be rejected");
+
+        assert!(matches!(error, ClipboardArchiveError::Invalid(_)));
+        assert!(!directory.path().join("escape.png").exists());
+        assert!(history.recent(10).expect("empty history").is_empty());
+    }
+
+    #[test]
     fn history_survives_closing_and_reopening_the_database() {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("clipboard.db");
@@ -1734,5 +3018,389 @@ mod tests {
         assert_eq!(formats[0].format_name, "HTML Format");
         assert_eq!(formats[0].data_path, "C:/data/html-format.bin");
         assert_eq!(formats[0].size_bytes, 128);
+    }
+
+    #[test]
+    fn retention_soft_deletes_expired_items_but_protects_favorites_and_pins() {
+        const DAY_MS: i64 = 86_400_000;
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let mut captured = Vec::new();
+        for (text, captured_at) in [
+            ("expired normal", DAY_MS),
+            ("expired favorite", DAY_MS + 1),
+            ("expired pinned", DAY_MS + 2),
+            ("recent normal", 35 * DAY_MS),
+        ] {
+            let CaptureOutcome::Inserted(item) = history
+                .capture(TextCapture {
+                    text: text.into(),
+                    native_formats: Vec::new(),
+                    source: fixture_source(),
+                    captured_at_unix_ms: captured_at,
+                })
+                .expect("capture retention fixture")
+            else {
+                panic!("fixture must insert")
+            };
+            captured.push(item);
+        }
+        history
+            .set_favorite(captured[1].id, true)
+            .expect("favorite expired item");
+        history
+            .set_pinned(captured[2].id, true)
+            .expect("pin expired item");
+
+        let report = history
+            .cleanup(
+                ClipboardRetentionPolicy {
+                    max_items: 1000,
+                    retention_days: 30,
+                },
+                40 * DAY_MS,
+            )
+            .expect("apply retention");
+
+        assert_eq!(report.soft_deleted, 1);
+        let visible = history.recent(10).expect("visible history");
+        assert_eq!(visible.len(), 3);
+        assert!(visible.iter().any(|item| item.text == "expired favorite"));
+        assert!(visible.iter().any(|item| item.text == "expired pinned"));
+        assert!(visible.iter().any(|item| item.text == "recent normal"));
+        assert!(history.restore(captured[0].id).is_ok());
+    }
+
+    #[test]
+    fn retention_soft_deletes_oldest_normal_items_over_the_limit() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        for index in 0..102 {
+            history
+                .capture(TextCapture {
+                    text: format!("retention item {index}"),
+                    native_formats: Vec::new(),
+                    source: fixture_source(),
+                    captured_at_unix_ms: index + 1,
+                })
+                .expect("capture retention fixture");
+        }
+
+        let report = history
+            .cleanup(
+                ClipboardRetentionPolicy {
+                    max_items: 100,
+                    retention_days: 3650,
+                },
+                1_000,
+            )
+            .expect("apply retention");
+
+        assert_eq!(report.soft_deleted, 2);
+        let visible = history.recent(200).expect("visible history");
+        assert_eq!(visible.len(), 100);
+        assert_eq!(
+            visible.last().map(|item| item.text.as_str()),
+            Some("retention item 2")
+        );
+    }
+
+    #[test]
+    fn retention_physically_purges_old_deleted_rows_and_reports_image_files() {
+        const DAY_MS: i64 = 86_400_000;
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let image_path = directory.path().join("old-image.png");
+        let CaptureOutcome::Inserted(image) = history
+            .capture_image(ImageCapture {
+                image_path: image_path.to_string_lossy().into_owned(),
+                width: 100,
+                height: 80,
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: DAY_MS,
+            })
+            .expect("capture image fixture")
+        else {
+            panic!("fixture must insert")
+        };
+        history
+            .soft_delete(image.id, 2 * DAY_MS)
+            .expect("soft delete image");
+
+        let report = history
+            .cleanup(
+                ClipboardRetentionPolicy {
+                    max_items: 1000,
+                    retention_days: 30,
+                },
+                40 * DAY_MS,
+            )
+            .expect("apply purge");
+
+        assert_eq!(report.purged, 1);
+        assert_eq!(
+            report.purged_asset_paths,
+            vec![image_path.to_string_lossy()]
+        );
+        let remaining_rows = history
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1",
+                [image.id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count purged rows");
+        assert_eq!(remaining_rows, 0);
+    }
+
+    #[test]
+    fn retention_reports_only_asset_files_without_remaining_database_references() {
+        const DAY_MS: i64 = 86_400_000;
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let common_image = "C:/assets/common.png";
+        let common_icon = "C:/assets/common-icon.png";
+        let common_native = "C:/assets/common-format.bin";
+        let unique_image = "C:/assets/unique.png";
+        let unique_icon = "C:/assets/unique-icon.png";
+        let unique_native = "C:/assets/unique-format.bin";
+        let format = |path: &str, id: u32| ClipboardNativeFormat {
+            format_id: id,
+            format_name: format!("format-{id}"),
+            data_path: path.into(),
+            size_bytes: 10,
+            sort_order: id,
+        };
+        let source = |icon: &str| CaptureSource {
+            process_icon_path: icon.into(),
+            ..fixture_source()
+        };
+
+        let CaptureOutcome::Inserted(shared_deleted) = history
+            .capture_image(ImageCapture {
+                image_path: common_image.into(),
+                width: 100,
+                height: 80,
+                native_formats: vec![format(common_native, 1)],
+                source: source(common_icon),
+                captured_at_unix_ms: DAY_MS,
+            })
+            .expect("capture shared deleted row")
+        else {
+            panic!("fixture must insert");
+        };
+        let CaptureOutcome::Inserted(shared_live) = history
+            .capture_image(ImageCapture {
+                image_path: common_image.into(),
+                width: 100,
+                height: 80,
+                native_formats: vec![
+                    format(common_native, 1),
+                    format("C:/assets/live-extra.bin", 2),
+                ],
+                source: source(common_icon),
+                captured_at_unix_ms: DAY_MS + 1,
+            })
+            .expect("capture shared live row")
+        else {
+            panic!("fixture must insert");
+        };
+        let CaptureOutcome::Inserted(unique_deleted) = history
+            .capture_image(ImageCapture {
+                image_path: unique_image.into(),
+                width: 120,
+                height: 90,
+                native_formats: vec![format(unique_native, 3)],
+                source: source(unique_icon),
+                captured_at_unix_ms: DAY_MS + 2,
+            })
+            .expect("capture unique deleted row")
+        else {
+            panic!("fixture must insert");
+        };
+        history
+            .set_favorite(shared_live.id, true)
+            .expect("protect shared live row");
+        history
+            .soft_delete(shared_deleted.id, 2 * DAY_MS)
+            .expect("delete shared row");
+        history
+            .soft_delete(unique_deleted.id, 2 * DAY_MS)
+            .expect("delete unique row");
+
+        let report = history
+            .cleanup(
+                ClipboardRetentionPolicy {
+                    max_items: 1000,
+                    retention_days: 30,
+                },
+                40 * DAY_MS,
+            )
+            .expect("purge old deleted rows");
+        let assets = report
+            .purged_asset_paths
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        assert_eq!(
+            assets,
+            HashSet::from([
+                unique_image.to_owned(),
+                unique_icon.to_owned(),
+                unique_native.to_owned(),
+            ])
+        );
+        assert!(!assets.contains(common_image));
+        assert!(!assets.contains(common_icon));
+        assert!(!assets.contains(common_native));
+    }
+
+    #[test]
+    fn database_compaction_creates_a_readable_backup_before_vacuum() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        history
+            .capture(TextCapture {
+                text: "survives database maintenance".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 42,
+            })
+            .expect("capture maintenance fixture");
+
+        let report = history
+            .compact_database(&directory.path().join("backups"))
+            .expect("compact database");
+
+        assert!(report.backup_path.is_file());
+        assert!(report.before_bytes > 0);
+        assert_eq!(
+            report.after_bytes,
+            std::fs::metadata(&database)
+                .expect("read compacted database metadata")
+                .len()
+        );
+        let backup = ClipboardHistory::open(&report.backup_path).expect("open backup");
+        assert_eq!(
+            backup.recent(10).expect("read backup")[0].text,
+            "survives database maintenance"
+        );
+    }
+
+    #[test]
+    fn storage_migration_preserves_history_metadata_and_managed_assets() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let source_root = directory.path().join("source");
+        let source_assets = source_root.join("clipboard-images");
+        std::fs::create_dir_all(source_assets.join("native-formats")).expect("source assets");
+        let image = source_assets.join("image.png");
+        let icon = source_assets.join("source-icon.png");
+        let native = source_assets.join("native-formats/format.bin");
+        std::fs::write(&image, b"migration image").expect("image fixture");
+        std::fs::write(&icon, b"migration icon").expect("icon fixture");
+        std::fs::write(&native, b"migration native").expect("native fixture");
+        let mut source =
+            ClipboardHistory::open(source_root.join("clipboard.db")).expect("source history");
+        let CaptureOutcome::Inserted(item) = source
+            .capture_image(ImageCapture {
+                image_path: image.to_string_lossy().into_owned(),
+                width: 200,
+                height: 100,
+                native_formats: vec![ClipboardNativeFormat {
+                    format_id: 8,
+                    format_name: "CF_DIB".into(),
+                    data_path: native.to_string_lossy().into_owned(),
+                    size_bytes: 16,
+                    sort_order: 0,
+                }],
+                source: CaptureSource {
+                    process_icon_path: icon.to_string_lossy().into_owned(),
+                    ..fixture_source_for("migration-app")
+                },
+                captured_at_unix_ms: 100,
+            })
+            .expect("capture migration fixture")
+        else {
+            panic!("fixture must insert");
+        };
+        source
+            .set_favorite(item.id, true)
+            .expect("favorite fixture");
+        source.set_pinned(item.id, true).expect("pin fixture");
+        let category = source
+            .create_category("工作")
+            .expect("custom category fixture");
+
+        let destination = directory.path().join("destination");
+        let report = source
+            .migrate_storage(&source_assets, &destination)
+            .expect("migrate storage");
+
+        assert_eq!(report.item_count, 1);
+        assert_eq!(report.asset_count, 3);
+        assert!(image.is_file(), "migration must not remove source data");
+        let target = ClipboardHistory::open(destination.join("clipboard.db"))
+            .expect("open migrated history");
+        let migrated = &target.recent(10).expect("migrated items")[0];
+        assert!(migrated.is_favorite && migrated.is_pinned);
+        assert!(Path::new(&migrated.image_path).starts_with(destination.join("clipboard-images")));
+        assert!(
+            Path::new(&migrated.source.process_icon_path)
+                .starts_with(destination.join("clipboard-images"))
+        );
+        let formats = target
+            .native_formats(migrated.id)
+            .expect("migrated formats");
+        assert!(Path::new(&formats[0].data_path).starts_with(destination.join("clipboard-images")));
+        assert!(
+            target
+                .categories()
+                .expect("migrated categories")
+                .iter()
+                .any(|candidate| candidate.id == category.id)
+        );
+    }
+
+    #[test]
+    fn storage_migration_rejects_a_nonempty_destination_without_changing_either_side() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let source_root = directory.path().join("source");
+        let source_assets = source_root.join("clipboard-images");
+        std::fs::create_dir_all(&source_assets).expect("source assets");
+        let mut source =
+            ClipboardHistory::open(source_root.join("clipboard.db")).expect("source history");
+        source
+            .capture(TextCapture {
+                text: "source remains current".into(),
+                native_formats: Vec::new(),
+                source: fixture_source(),
+                captured_at_unix_ms: 1,
+            })
+            .expect("source fixture");
+        let destination = directory.path().join("occupied");
+        std::fs::create_dir_all(&destination).expect("destination");
+        let marker = destination.join("do-not-touch.txt");
+        std::fs::write(&marker, b"existing data").expect("marker");
+
+        let result = source.migrate_storage(&source_assets, &destination);
+
+        assert!(matches!(
+            result,
+            Err(ClipboardStorageError::InvalidDestination(_))
+        ));
+        assert_eq!(
+            std::fs::read(&marker).expect("marker remains"),
+            b"existing data"
+        );
+        assert_eq!(
+            source.recent(10).expect("source remains readable")[0].text,
+            "source remains current"
+        );
     }
 }

@@ -16,6 +16,7 @@ internal sealed record PasteImageCommand(
     string ImagePath,
     long TargetWindowHandle,
     long TargetFocusWindowHandle,
+    bool IncludeFileDropFallback = true,
     bool PasteAfterWrite = true);
 internal sealed record ClipboardNativeFormatData(
     uint FormatId,
@@ -27,10 +28,76 @@ internal sealed record PasteNativeFormatsCommand(
     IReadOnlyList<ClipboardNativeFormatData> Formats,
     bool PasteAfterWrite,
     long TargetWindowHandle,
-    long TargetFocusWindowHandle);
+    long TargetFocusWindowHandle,
+    string? ImagePathFallback = null);
+internal sealed record ConfigureClipboardCommand(
+    IReadOnlyList<string> HotkeyModifiers,
+    string HotkeyKey,
+    string HotkeyDisplay,
+    IReadOnlyList<string> ExcludedProcesses);
+internal sealed record SetClipboardHotKeyRecordingCommand(bool Recording);
+internal sealed record ConfigureQuickLaunchCommand(
+    bool Enabled,
+    IReadOnlyList<string> HotkeyModifiers,
+    string HotkeyKey,
+    string HotkeyDisplay,
+    bool AutoQuickSwitchEnabled = true,
+    bool FileDialogSearchEnabled = true);
+internal sealed record SetQuickLaunchHotKeyRecordingCommand(bool Recording);
 
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
+internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
+internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
+internal sealed record SetTaskbarProgressCommand(
+    long WindowHandle,
+    string State,
+    ulong Completed,
+    ulong Total);
+internal sealed record PlaceFileDialogSearchWindowCommand(
+    long WindowHandle,
+    long OwnerWindowHandle,
+    int VisibleWidth,
+    int VisibleHeight,
+    int BottomOverlap);
+internal sealed record SetWindowOwnerCommand(long WindowHandle, long OwnerWindowHandle);
 internal sealed record SetWindowVisibilityCommand(long WindowHandle, bool Visible);
+internal sealed record SetWindowPositionCommand(long WindowHandle, int X, int Y);
+internal sealed record ActivateWindowCommand(long WindowHandle);
+internal sealed record BeginWindowResizeCommand(long WindowHandle);
+internal sealed record BeginWindowMoveCommand(long WindowHandle);
+internal sealed record BeginFileDragCommand(string Path, long SourceWindowHandle);
+internal sealed record OpenShellTargetCommand(string Target, string Action);
+internal sealed record LaunchProcessCommand(
+    string Executable,
+    IReadOnlyList<string> Arguments,
+    string? WorkingDirectory,
+    bool RunAsAdmin = false,
+    bool RunSilently = false);
+internal sealed record NavigateDirectoryCommand(
+    string Host,
+    long WindowHandle,
+    string TargetDirectory,
+    string? HostContextId = null);
+internal sealed record NavigateExplorerCommand(long WindowHandle, string TargetDirectory);
+internal sealed record NavigateDesktopCommand(long WindowHandle, string TargetDirectory);
+internal sealed record NavigateFileDialogCommand(long WindowHandle, string TargetDirectory);
+internal sealed record OpenFileInDialogCommand(long WindowHandle, string FilePath);
+internal sealed record NavigateThirdPartyFileManagerCommand(
+    long WindowHandle,
+    string TargetDirectory,
+    string? HostContextId);
+internal sealed record QueryShellActionsCommand(string Target);
+internal sealed record QueryShellSubmenuCommand(string SessionId, uint SubmenuId);
+internal sealed record InvokeShellActionCommand(
+    string SessionId,
+    uint CommandId,
+    long OwnerWindowHandle);
+internal sealed record ExtractShellIconCommand(string Target, uint Size);
+internal sealed record PickClipboardArchivePathCommand(string Mode, string SuggestedFileName);
+internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirectory);
+internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title);
+internal sealed record PickProgramCommand(string CurrentPath);
+internal sealed record EnsureIndexerServiceCommand;
 
 internal static class PlatformCommandParser
 {
@@ -58,6 +125,32 @@ internal static class PlatformCommandParser
             envelope,
             "paste_native_formats",
             "Native formats paste command payload was empty.");
+
+    public static ConfigureClipboardCommand ParseConfigureClipboard(ProtocolEnvelope envelope) =>
+        Parse<ConfigureClipboardCommand>(
+            envelope,
+            "configure_clipboard",
+            "Clipboard configuration command payload was empty.");
+
+    public static SetClipboardHotKeyRecordingCommand ParseSetClipboardHotKeyRecording(
+        ProtocolEnvelope envelope) =>
+        Parse<SetClipboardHotKeyRecordingCommand>(
+            envelope,
+            "set_clipboard_hot_key_recording",
+            "Clipboard hotkey recording command payload was empty.");
+
+    public static ConfigureQuickLaunchCommand ParseConfigureQuickLaunch(ProtocolEnvelope envelope) =>
+        Parse<ConfigureQuickLaunchCommand>(
+            envelope,
+            "configure_quick_launch",
+            "Quick-launch configuration command payload was empty.");
+
+    public static SetQuickLaunchHotKeyRecordingCommand ParseSetQuickLaunchHotKeyRecording(
+        ProtocolEnvelope envelope) =>
+        Parse<SetQuickLaunchHotKeyRecordingCommand>(
+            envelope,
+            "set_quick_launch_hot_key_recording",
+            "Quick-launch hotkey recording command payload was empty.");
 
     private static T Parse<T>(ProtocolEnvelope envelope, string expected, string emptyMessage)
     {
@@ -94,6 +187,127 @@ internal static class PlatformCommandParser
         var data = envelope.Payload.GetProperty("data");
         var parsed = data.Deserialize<SetWindowVisibilityCommand>(JsonDefaults.Options);
         return parsed ?? throw new InvalidDataException("Visibility command payload was empty.");
+    }
+
+    public static SetWindowNoActivateCommand ParseSetWindowNoActivate(ProtocolEnvelope envelope) =>
+        Parse<SetWindowNoActivateCommand>(
+            envelope,
+            "set_window_no_activate",
+            "No-activate command payload was empty.");
+
+    public static SetWindowBoundsCommand ParseSetWindowBounds(ProtocolEnvelope envelope) =>
+        Parse<SetWindowBoundsCommand>(
+            envelope,
+            "set_window_bounds",
+            "Window-bounds command payload was empty.");
+
+    public static SetTaskbarProgressCommand ParseSetTaskbarProgress(ProtocolEnvelope envelope) =>
+        Parse<SetTaskbarProgressCommand>(
+            envelope,
+            "set_taskbar_progress",
+            "Taskbar-progress command payload was empty.");
+
+    public static PlaceFileDialogSearchWindowCommand ParsePlaceFileDialogSearchWindow(
+        ProtocolEnvelope envelope) =>
+        Parse<PlaceFileDialogSearchWindowCommand>(
+            envelope,
+            "place_file_dialog_search_window",
+            "File-dialog search placement payload was empty.");
+
+    public static SetWindowOwnerCommand ParseSetWindowOwner(ProtocolEnvelope envelope) =>
+        Parse<SetWindowOwnerCommand>(
+            envelope,
+            "set_window_owner",
+            "Window-owner command payload was empty.");
+
+    public static BeginWindowResizeCommand ParseBeginWindowResize(ProtocolEnvelope envelope) =>
+        Parse<BeginWindowResizeCommand>(envelope, "begin_window_resize", "Resize command payload was empty.");
+
+    public static BeginWindowMoveCommand ParseBeginWindowMove(ProtocolEnvelope envelope) =>
+        Parse<BeginWindowMoveCommand>(envelope, "begin_window_move", "Move command payload was empty.");
+
+    public static BeginFileDragCommand ParseBeginFileDrag(ProtocolEnvelope envelope) =>
+        Parse<BeginFileDragCommand>(
+            envelope,
+            "begin_file_drag",
+            "File-drag command payload was empty.");
+
+    public static SetWindowPositionCommand ParseSetWindowPosition(ProtocolEnvelope envelope) =>
+        Parse<SetWindowPositionCommand>(envelope, "set_window_position", "Window position payload was empty.");
+
+    public static ActivateWindowCommand ParseActivateWindow(ProtocolEnvelope envelope) =>
+        Parse<ActivateWindowCommand>(envelope, "activate_window", "Activate window payload was empty.");
+
+    public static OpenShellTargetCommand ParseOpenShellTarget(ProtocolEnvelope envelope) =>
+        Parse<OpenShellTargetCommand>(envelope, "open_shell_target", "Open target command payload was empty.");
+
+    public static LaunchProcessCommand ParseLaunchProcess(ProtocolEnvelope envelope) =>
+        Parse<LaunchProcessCommand>(
+            envelope,
+            "launch_process",
+            "Process launch command payload was empty.");
+
+    public static NavigateDirectoryCommand ParseNavigateDirectory(ProtocolEnvelope envelope) =>
+        Parse<NavigateDirectoryCommand>(
+            envelope,
+            "navigate_directory",
+            "Directory navigation command payload was empty.");
+
+    public static OpenFileInDialogCommand ParseOpenFileInDialog(ProtocolEnvelope envelope) =>
+        Parse<OpenFileInDialogCommand>(
+            envelope,
+            "open_file_in_dialog",
+            "File-dialog open command payload was empty.");
+
+    public static QueryShellActionsCommand ParseQueryShellActions(ProtocolEnvelope envelope) =>
+        Parse<QueryShellActionsCommand>(
+            envelope, "query_shell_actions", "Shell action query payload was empty.");
+
+    public static QueryShellSubmenuCommand ParseQueryShellSubmenu(ProtocolEnvelope envelope) =>
+        Parse<QueryShellSubmenuCommand>(
+            envelope, "query_shell_submenu", "Shell submenu query payload was empty.");
+
+    public static InvokeShellActionCommand ParseInvokeShellAction(ProtocolEnvelope envelope) =>
+        Parse<InvokeShellActionCommand>(
+            envelope, "invoke_shell_action", "Shell action invocation payload was empty.");
+
+    public static ExtractShellIconCommand ParseExtractShellIcon(ProtocolEnvelope envelope) =>
+        Parse<ExtractShellIconCommand>(envelope, "extract_shell_icon", "Shell icon command payload was empty.");
+
+    public static PickClipboardArchivePathCommand ParsePickClipboardArchivePath(
+        ProtocolEnvelope envelope) =>
+        Parse<PickClipboardArchivePathCommand>(
+            envelope,
+            "pick_clipboard_archive_path",
+            "Clipboard archive picker payload was empty.");
+
+    public static PickClipboardStorageDirectoryCommand ParsePickClipboardStorageDirectory(
+        ProtocolEnvelope envelope) =>
+        Parse<PickClipboardStorageDirectoryCommand>(
+            envelope,
+            "pick_clipboard_storage_directory",
+            "Clipboard storage picker payload was empty.");
+
+    public static PickDirectoryCommand ParsePickDirectory(ProtocolEnvelope envelope) =>
+        Parse<PickDirectoryCommand>(
+            envelope,
+            "pick_directory",
+            "Directory picker payload was empty.");
+
+    public static PickProgramCommand ParsePickProgram(ProtocolEnvelope envelope) =>
+        Parse<PickProgramCommand>(
+            envelope,
+            "pick_program",
+            "Program picker payload was empty.");
+
+    public static EnsureIndexerServiceCommand ParseEnsureIndexerService(ProtocolEnvelope envelope)
+    {
+        var command = GetCommandName(envelope);
+        if (command != "ensure_indexer_service")
+        {
+            throw new InvalidDataException($"Unsupported platform command '{command}'.");
+        }
+        return new EnsureIndexerServiceCommand();
     }
 
     public static string GetCommandName(ProtocolEnvelope envelope)
