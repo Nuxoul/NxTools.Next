@@ -15,7 +15,10 @@ mod storage;
 
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
 pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
-pub use engine::{DownloadEngine, DownloadEngineError, DownloadEngineTask};
+pub use engine::{
+    DownloadEngine, DownloadEngineError, DownloadEngineTask, DownloadScheduleMoment,
+    daily_schedule_window_contains,
+};
 pub use http::{
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
     DownloadSegmentTransferProgress, DownloadSegmentTransferRequest, DownloadTransferContext,
@@ -566,11 +569,86 @@ pub struct DownloadQueue {
     pub speed_limit_bytes_per_second: Option<u64>,
     pub default_save_directory: Option<PathBuf>,
     pub schedule: Option<DownloadSchedule>,
+    pub is_running: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadSchedule {
-    pub eligible_at_unix_ms: i64,
+    pub daily: DownloadDailySchedule,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadDailySchedule {
+    pub days: Vec<DownloadWeekday>,
+    pub start_minute: u16,
+    pub stop_minute: u16,
+    pub enabled_start: bool,
+    pub enabled_stop: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadWeekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl DownloadWeekday {
+    pub const ALL: [Self; 7] = [
+        Self::Monday,
+        Self::Tuesday,
+        Self::Wednesday,
+        Self::Thursday,
+        Self::Friday,
+        Self::Saturday,
+        Self::Sunday,
+    ];
+
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            Self::Monday => "周一",
+            Self::Tuesday => "周二",
+            Self::Wednesday => "周三",
+            Self::Thursday => "周四",
+            Self::Friday => "周五",
+            Self::Saturday => "周六",
+            Self::Sunday => "周日",
+        }
+    }
+}
+
+impl DownloadDailySchedule {
+    pub fn validate(&self) -> Result<(), DownloadScheduleError> {
+        if self.days.is_empty() {
+            return Err(DownloadScheduleError::NoDays);
+        }
+        if self.start_minute >= 24 * 60 {
+            return Err(DownloadScheduleError::InvalidMinute {
+                field: "start_minute",
+                value: self.start_minute,
+            });
+        }
+        if self.stop_minute >= 24 * 60 {
+            return Err(DownloadScheduleError::InvalidMinute {
+                field: "stop_minute",
+                value: self.stop_minute,
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DownloadScheduleError {
+    #[error("daily schedule must include at least one weekday")]
+    NoDays,
+    #[error("daily schedule {field} must be a minute within the local day, got {value}")]
+    InvalidMinute { field: &'static str, value: u16 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -734,6 +812,11 @@ impl DownloadTask {
 
     pub(crate) fn set_speed_limit(&mut self, bytes_per_second: Option<u64>, now_unix_ms: i64) {
         self.request.speed_limit_bytes_per_second = bytes_per_second;
+        self.updated_at_unix_ms = now_unix_ms;
+    }
+
+    pub(crate) fn clear_scheduled_start(&mut self, now_unix_ms: i64) {
+        self.request.scheduled_at_unix_ms = None;
         self.updated_at_unix_ms = now_unix_ms;
     }
 

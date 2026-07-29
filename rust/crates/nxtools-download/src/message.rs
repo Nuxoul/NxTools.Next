@@ -5,8 +5,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    DownloadQueue, DownloadRequest, DownloadStatus, DownloadTask, DownloadTaskId, RequestOrigin,
-    ResourceValidator,
+    DownloadQueue, DownloadRequest, DownloadSchedule, DownloadStatus, DownloadTask, DownloadTaskId,
+    RequestOrigin, ResourceValidator,
 };
 
 pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 1;
@@ -92,6 +92,10 @@ pub enum DownloadQueueAction {
     SetMaxConcurrent {
         queue_id: String,
         max_concurrent_tasks: u16,
+    },
+    SetSchedule {
+        queue_id: String,
+        schedule: Option<DownloadSchedule>,
     },
 }
 

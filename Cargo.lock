@@ -4072,6 +4072,7 @@ name = "nxtools-download"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "chrono",
  "reqwest",
  "rusqlite",
  "serde",

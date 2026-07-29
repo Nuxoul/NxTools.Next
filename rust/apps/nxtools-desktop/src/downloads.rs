@@ -3,20 +3,22 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use chrono::{Local, NaiveDateTime, TimeZone};
 use gpui::{
-    AnyWindowHandle, Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render,
-    Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowControlArea,
-    WindowDecorations, WindowKind, WindowOptions, div, prelude::*, px, size,
+    AnyElement, AnyWindowHandle, App, Context, Entity, EventEmitter, FontWeight, IntoElement,
+    MouseButton, Render, Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowControlArea, WindowDecorations, WindowKind, WindowOptions, div, prelude::*, px, size,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{Disableable, Icon, PixelsExt, Root, Sizable};
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEngine, DownloadEngineTask,
-    DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress, DownloadQuery,
-    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadStatus,
-    DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, RequestOrigin,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
+    DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
+    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
+    DownloadSchedule, DownloadSnapshot, DownloadStatus, DownloadSubmitMode, DownloadTaskAction,
+    DownloadTaskId, DownloadWeekday, RequestOrigin,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -48,20 +50,21 @@ struct DownloadSubmitPresentationPlan {
 fn submit_presentation_plan(
     mode: DownloadSubmitMode,
     task_id: DownloadTaskId,
+    delayed: bool,
 ) -> DownloadSubmitPresentationPlan {
     DownloadSubmitPresentationPlan {
         close_source_window: true,
-        deferred_task_window: (mode == DownloadSubmitMode::StartNow).then_some(task_id),
+        deferred_task_window: (mode == DownloadSubmitMode::StartNow && !delayed).then_some(task_id),
     }
 }
 
-fn should_open_cli_progress_window(
+fn should_open_admitted_progress_window(
     known_to_desktop: bool,
+    awaiting_delayed_progress: bool,
     origin: RequestOrigin,
     status: DownloadStatus,
 ) -> bool {
-    !known_to_desktop
-        && origin == RequestOrigin::Cli
+    (awaiting_delayed_progress || (!known_to_desktop && origin == RequestOrigin::Cli))
         && matches!(
             status,
             DownloadStatus::Probing
@@ -104,7 +107,9 @@ pub(crate) struct DownloadApplication {
     notifications: Entity<NotificationCenter>,
     default_directory: PathBuf,
     tasks: Vec<DownloadEngineTask>,
+    queues: Vec<DownloadQueue>,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
+    awaiting_delayed_progress: HashSet<DownloadTaskId>,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
     #[allow(
@@ -113,6 +118,7 @@ pub(crate) struct DownloadApplication {
     )]
     delete_confirmation_windows: HashMap<DownloadTaskId, AnyWindowHandle>,
     new_download_window: Option<AnyWindowHandle>,
+    schedule_window: Option<AnyWindowHandle>,
     show_completion_window: bool,
     pending_directory_picker: Option<uuid::Uuid>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
@@ -131,11 +137,22 @@ impl DownloadApplication {
         show_completion_window: bool,
         cx: &mut Context<Self>,
     ) -> Self {
-        let tasks = load_download_tasks(&engine).unwrap_or_else(|error| {
-            warn!(%error, "could not load the download snapshot for the desktop");
-            Vec::new()
-        });
+        let (tasks, queues) = match load_download_snapshot(&engine) {
+            Ok(snapshot) => (snapshot.task_details, snapshot.queues),
+            Err(error) => {
+                warn!(%error, "could not load the download snapshot for the desktop");
+                (Vec::new(), Vec::new())
+            }
+        };
         let mut task_window_lifecycle = DownloadWindowLifecycle::default();
+        let awaiting_delayed_progress = tasks
+            .iter()
+            .filter(|task| {
+                task.task.origin() == RequestOrigin::Ui
+                    && task.task.request().scheduled_at_unix_ms.is_some()
+            })
+            .map(|task| task.task.id())
+            .collect();
         let mut notified_terminal_states = HashSet::new();
         for task in &tasks {
             let task_id = task.task.id();
@@ -178,11 +195,14 @@ impl DownloadApplication {
             notifications,
             default_directory,
             tasks,
+            queues,
             latest_progress: HashMap::new(),
+            awaiting_delayed_progress,
             task_window_lifecycle,
             task_windows: HashMap::new(),
             delete_confirmation_windows: HashMap::new(),
             new_download_window: None,
+            schedule_window: None,
             show_completion_window,
             pending_directory_picker: None,
             notified_terminal_states,
@@ -193,6 +213,10 @@ impl DownloadApplication {
 
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
         &self.tasks
+    }
+
+    fn default_queue(&self) -> Option<&DownloadQueue> {
+        self.queues.iter().find(|queue| queue.id == "default")
     }
 
     fn task(&self, task_id: DownloadTaskId) -> Option<&DownloadEngineTask> {
@@ -211,6 +235,8 @@ impl DownloadApplication {
         mode: DownloadSubmitMode,
         cx: &mut Context<Self>,
     ) -> Result<DownloadTaskId, String> {
+        let delayed_progress =
+            mode == DownloadSubmitMode::StartNow && request.scheduled_at_unix_ms.is_some();
         let outcome = self.execute(DownloadCommand::Submit { request, mode });
         let task_id = match outcome {
             DownloadCommandOutcome::Accepted {
@@ -219,6 +245,9 @@ impl DownloadApplication {
             DownloadCommandOutcome::Rejected { fault } => return Err(fault.message),
             _ => return Err("下载引擎返回了无效的提交结果".into()),
         };
+        if delayed_progress {
+            self.awaiting_delayed_progress.insert(task_id);
+        }
         self.refresh(cx);
         info!(
             task_id = %task_id.as_uuid(),
@@ -347,6 +376,32 @@ impl DownloadApplication {
                     cx,
                 );
             }
+        }
+    }
+
+    fn set_default_queue_schedule(
+        &mut self,
+        schedule: Option<DownloadSchedule>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        match self.execute(DownloadCommand::Queue {
+            action: DownloadQueueAction::SetSchedule {
+                queue_id: "default".into(),
+                schedule,
+            },
+        }) {
+            DownloadCommandOutcome::QueueChanged { .. } => {
+                self.refresh(cx);
+                Ok(())
+            }
+            DownloadCommandOutcome::Rejected { fault } => {
+                self.action_error("无法保存每日计划", fault.message, cx)
+            }
+            _ => self.action_error(
+                "无法保存每日计划",
+                "下载引擎返回了无效的队列操作结果".into(),
+                cx,
+            ),
         }
     }
 
@@ -625,6 +680,59 @@ impl DownloadApplication {
         }
     }
 
+    pub(crate) fn open_schedule_window(&mut self, cx: &mut Context<Self>) {
+        if let Some(window) = self.schedule_window {
+            if window
+                .update(cx, |_, window, _| {
+                    window.activate_window();
+                    window.refresh();
+                })
+                .is_ok()
+            {
+                return;
+            }
+            self.schedule_window = None;
+        }
+        let application = cx.entity();
+        let window_size = size(px(430.0), px(326.0));
+        let window_bounds = WindowBounds::centered(window_size, cx);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(window_bounds),
+                titlebar: None,
+                focus: true,
+                show: true,
+                kind: WindowKind::Normal,
+                is_movable: true,
+                is_resizable: false,
+                is_minimizable: false,
+                display_id: None,
+                window_background: WindowBackgroundAppearance::Opaque,
+                app_id: Some("NxTools.DownloadSchedule".into()),
+                window_min_size: Some(window_size),
+                window_decorations: Some(WindowDecorations::Client),
+                tabbing_identifier: None,
+            },
+            move |window, cx| {
+                let view = cx.new(|cx| DownloadScheduleView::new(application, window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            },
+        );
+        match opened {
+            Ok(window) => self.schedule_window = Some(window.into()),
+            Err(error) => {
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "download-schedule-window",
+                        "无法打开每日计划",
+                        error.to_string(),
+                        cx,
+                    );
+                });
+            }
+        }
+    }
+
     pub(crate) fn request_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
         let phase = self
             .task(task_id)
@@ -870,11 +978,13 @@ impl DownloadApplication {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let Ok(tasks) = load_download_tasks(&self.engine) else {
+        let Ok(snapshot) = load_download_snapshot(&self.engine) else {
             return;
         };
+        let tasks = snapshot.task_details;
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
+        self.queues = snapshot.queues;
         let task_states = self
             .tasks
             .iter()
@@ -906,14 +1016,19 @@ impl DownloadApplication {
             );
         }
         self.last_event_sequence = sequence;
-        let external_progress_task = match &envelope.event {
+        let admitted_progress_task = match &envelope.event {
             DownloadEvent::TaskChanged { task } => {
                 let known_to_desktop = self
                     .tasks
                     .iter()
                     .any(|candidate| candidate.task.id() == task.id());
-                should_open_cli_progress_window(known_to_desktop, task.origin(), task.status())
-                    .then_some(task.id())
+                should_open_admitted_progress_window(
+                    known_to_desktop,
+                    self.awaiting_delayed_progress.contains(&task.id()),
+                    task.origin(),
+                    task.status(),
+                )
+                .then_some(task.id())
             }
             _ => None,
         };
@@ -923,15 +1038,22 @@ impl DownloadApplication {
             }
             DownloadEvent::TaskRemoved { task_id } => {
                 self.latest_progress.remove(&task_id);
+                self.awaiting_delayed_progress.remove(&task_id);
                 let directive = self.task_window_lifecycle.task_removed(task_id);
                 self.apply_task_window_directive(task_id, directive, cx);
             }
-            DownloadEvent::TaskChanged { .. }
-            | DownloadEvent::CommandRejected { .. }
-            | DownloadEvent::SnapshotRequired { .. } => {}
+            DownloadEvent::TaskChanged { task } => {
+                if matches!(
+                    task.status(),
+                    DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+                ) {
+                    self.awaiting_delayed_progress.remove(&task.id());
+                }
+            }
+            DownloadEvent::CommandRejected { .. } | DownloadEvent::SnapshotRequired { .. } => {}
         }
         self.refresh(cx);
-        if let Some(task_id) = external_progress_task {
+        if let Some(task_id) = admitted_progress_task {
             let still_active = self.task(task_id).is_some_and(|task| {
                 matches!(
                     task.task.status(),
@@ -943,6 +1065,7 @@ impl DownloadApplication {
                 )
             });
             if still_active {
+                self.awaiting_delayed_progress.remove(&task_id);
                 let directive = self.task_window_lifecycle.request_progress(task_id);
                 self.apply_task_window_directive(task_id, directive, cx);
             }
@@ -999,7 +1122,7 @@ fn raise_terminal_window_without_activation(platform: &PlatformBridge, window_ha
     }));
 }
 
-fn load_download_tasks(engine: &DownloadEngine) -> Result<Vec<DownloadEngineTask>, String> {
+fn load_download_snapshot(engine: &DownloadEngine) -> Result<DownloadSnapshot, String> {
     let result = engine.handle_command(DownloadCommandEnvelope {
         protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
         request_id: uuid::Uuid::new_v4(),
@@ -1009,10 +1132,449 @@ fn load_download_tasks(engine: &DownloadEngine) -> Result<Vec<DownloadEngineTask
         },
     });
     match result.outcome {
-        DownloadCommandOutcome::Snapshot(snapshot) => Ok(snapshot.task_details),
+        DownloadCommandOutcome::Snapshot(snapshot) => Ok(snapshot),
         DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
         _ => Err("下载引擎返回了无效的快照结果".into()),
     }
+}
+
+struct DownloadScheduleView {
+    theme: Theme,
+    application: Entity<DownloadApplication>,
+    start_time: Entity<InputState>,
+    stop_time: Entity<InputState>,
+    days: HashSet<DownloadWeekday>,
+    enabled_start: bool,
+    enabled_stop: bool,
+    queue_running: bool,
+    saving: bool,
+    error: Option<String>,
+}
+
+impl DownloadScheduleView {
+    fn new(
+        application: Entity<DownloadApplication>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let queue = application.read(cx).default_queue().cloned();
+        let daily = queue
+            .as_ref()
+            .and_then(|queue| queue.schedule.as_ref())
+            .map(|schedule| schedule.daily.clone());
+        let start_minute = daily
+            .as_ref()
+            .map_or(2 * 60 + 30, |daily| daily.start_minute);
+        let stop_minute = daily
+            .as_ref()
+            .map_or(7 * 60 + 30, |daily| daily.stop_minute);
+        let start_time = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(format_clock_minute(start_minute))
+                .placeholder("HH:MM")
+        });
+        let stop_time = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(format_clock_minute(stop_minute))
+                .placeholder("HH:MM")
+        });
+        let days = daily.as_ref().map_or_else(
+            || DownloadWeekday::ALL.into_iter().collect(),
+            |daily| daily.days.iter().copied().collect(),
+        );
+        Self {
+            theme: Theme::zed_dark(),
+            application,
+            start_time,
+            stop_time,
+            days,
+            enabled_start: daily.as_ref().is_some_and(|daily| daily.enabled_start),
+            enabled_stop: daily.as_ref().is_some_and(|daily| daily.enabled_stop),
+            queue_running: queue.is_none_or(|queue| queue.is_running),
+            saving: false,
+            error: None,
+        }
+    }
+
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let schedule = match build_download_schedule(
+            self.enabled_start,
+            self.enabled_stop,
+            &self.days,
+            self.start_time.read(cx).value().trim(),
+            self.stop_time.read(cx).value().trim(),
+        ) {
+            Ok(schedule) => schedule,
+            Err(error) => {
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        self.saving = true;
+        self.error = None;
+        let result = self.application.update(cx, |application, cx| {
+            application.set_default_queue_schedule(schedule, cx)
+        });
+        match result {
+            Ok(()) => window.remove_window(),
+            Err(error) => {
+                self.saving = false;
+                self.error = Some(error);
+                cx.notify();
+            }
+        }
+    }
+}
+
+impl Render for DownloadScheduleView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let mut weekdays = div().flex().items_center().gap(px(4.0));
+        for (index, day) in DownloadWeekday::ALL.into_iter().enumerate() {
+            let selected = self.days.contains(&day);
+            weekdays = weekdays.child(
+                div()
+                    .id(("download-schedule-day", index))
+                    .w(px(38.0))
+                    .h(px(26.0))
+                    .rounded(px(4.0))
+                    .border_1()
+                    .border_color(if selected {
+                        theme.accent
+                    } else {
+                        theme.border_subtle
+                    })
+                    .bg(if selected {
+                        theme.accent_soft
+                    } else {
+                        theme.canvas
+                    })
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(10.0))
+                    .text_color(if selected {
+                        theme.accent_text
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(day.short_label())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this.days.insert(day) {
+                            this.days.remove(&day);
+                        }
+                        this.error = None;
+                        cx.notify();
+                    })),
+            );
+        }
+        let start_control = schedule_trigger_row(
+            theme,
+            "自动开始",
+            "到点后启动等待队列",
+            self.enabled_start,
+            &self.start_time,
+            "download-schedule-start-toggle",
+            cx.listener(|this, _, _, cx| {
+                this.enabled_start = !this.enabled_start;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        let stop_control = schedule_trigger_row(
+            theme,
+            "自动停止",
+            "到点后暂停活动任务",
+            self.enabled_stop,
+            &self.stop_time,
+            "download-schedule-stop-toggle",
+            cx.listener(|this, _, _, cx| {
+                this.enabled_stop = !this.enabled_stop;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        div()
+            .size_full()
+            .bg(theme.canvas)
+            .text_color(theme.text)
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(34.0))
+                    .pl(px(14.0))
+                    .border_b_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .window_control_area(WindowControlArea::Drag)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("每日计划"),
+                    )
+                    .child(download_window_close_button(theme)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .px(px(14.0))
+                    .py(px(10.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .h(px(32.0))
+                            .px(px(9.0))
+                            .rounded(px(4.0))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.surface)
+                            .flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(10.0))
+                                    .text_color(theme.text_secondary)
+                                    .child("默认下载队列"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(9.5))
+                                    .text_color(if self.queue_running {
+                                        theme.success
+                                    } else {
+                                        theme.text_muted
+                                    })
+                                    .child(if self.queue_running {
+                                        "运行中"
+                                    } else {
+                                        "计划暂停"
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .h(px(44.0))
+                            .px(px(9.0))
+                            .rounded(px(4.0))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.surface)
+                            .flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .w(px(82.0))
+                                    .text_size(px(10.0))
+                                    .text_color(theme.text_secondary)
+                                    .child("生效星期"),
+                            )
+                            .child(weekdays),
+                    )
+                    .child(start_control)
+                    .child(stop_control)
+                    .when_some(self.error.clone(), |body, error| {
+                        body.child(download_inline_error(theme, error))
+                    }),
+            )
+            .child(
+                div()
+                    .h(px(44.0))
+                    .px(px(14.0))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            .child("本地时间 · 支持跨午夜"),
+                    )
+                    .child(
+                        Button::new("download-schedule-cancel")
+                            .label("取消")
+                            .small()
+                            .ghost()
+                            .disabled(self.saving)
+                            .on_click(|_, window, _| window.remove_window()),
+                    )
+                    .child(
+                        Button::new("download-schedule-save")
+                            .label(if self.saving {
+                                "正在应用…"
+                            } else {
+                                "应用"
+                            })
+                            .small()
+                            .primary()
+                            .disabled(self.saving)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.save(window, cx);
+                            })),
+                    ),
+            )
+    }
+}
+
+fn schedule_trigger_row(
+    theme: Theme,
+    title: &'static str,
+    description: &'static str,
+    enabled: bool,
+    input: &Entity<InputState>,
+    id: &'static str,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    div()
+        .h(px(44.0))
+        .px(px(9.0))
+        .rounded(px(4.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .items_center()
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap(px(1.0))
+                .child(div().text_size(px(10.0)).child(title))
+                .child(
+                    div()
+                        .text_size(px(9.0))
+                        .text_color(theme.text_muted)
+                        .child(description),
+                ),
+        )
+        .child(
+            div()
+                .id(id)
+                .h(px(24.0))
+                .w(px(50.0))
+                .mr(px(7.0))
+                .rounded(px(4.0))
+                .border_1()
+                .border_color(if enabled {
+                    theme.accent
+                } else {
+                    theme.border_subtle
+                })
+                .bg(if enabled {
+                    theme.accent_soft
+                } else {
+                    theme.canvas
+                })
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(9.5))
+                .text_color(if enabled {
+                    theme.accent_text
+                } else {
+                    theme.text_muted
+                })
+                .child(if enabled { "开启" } else { "关闭" })
+                .on_click(on_toggle),
+        )
+        .child(if enabled {
+            div()
+                .w(px(82.0))
+                .h(px(28.0))
+                .rounded(px(4.0))
+                .border_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.canvas)
+                .px(px(6.0))
+                .flex()
+                .items_center()
+                .child(
+                    Input::new(input)
+                        .appearance(false)
+                        .bordered(false)
+                        .focus_bordered(false),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .w(px(82.0))
+                .text_size(px(9.5))
+                .text_color(theme.text_muted)
+                .text_center()
+                .child("未启用")
+                .into_any_element()
+        })
+        .into_any_element()
+}
+
+fn parse_clock_minute(value: &str) -> Result<u16, &'static str> {
+    let Some((hours, minutes)) = value.split_once(':') else {
+        return Err("请输入 HH:MM");
+    };
+    let hours = hours.parse::<u16>().map_err(|_| "请输入 HH:MM")?;
+    let minutes = minutes.parse::<u16>().map_err(|_| "请输入 HH:MM")?;
+    if hours >= 24 || minutes >= 60 {
+        return Err("时间必须在 00:00 到 23:59 之间");
+    }
+    Ok(hours * 60 + minutes)
+}
+
+fn build_download_schedule(
+    enabled_start: bool,
+    enabled_stop: bool,
+    days: &HashSet<DownloadWeekday>,
+    start_time: &str,
+    stop_time: &str,
+) -> Result<Option<DownloadSchedule>, String> {
+    if !enabled_start && !enabled_stop {
+        return Ok(None);
+    }
+    if days.is_empty() {
+        return Err("至少选择一个生效星期".into());
+    }
+    let start_minute = if enabled_start {
+        parse_clock_minute(start_time).map_err(|error| format!("开始时间：{error}"))?
+    } else {
+        0
+    };
+    let stop_minute = if enabled_stop {
+        parse_clock_minute(stop_time).map_err(|error| format!("停止时间：{error}"))?
+    } else {
+        0
+    };
+    Ok(Some(DownloadSchedule {
+        daily: DownloadDailySchedule {
+            days: DownloadWeekday::ALL
+                .into_iter()
+                .filter(|day| days.contains(day))
+                .collect(),
+            start_minute,
+            stop_minute,
+            enabled_start,
+            enabled_stop,
+        },
+    }))
+}
+
+fn format_clock_minute(value: u16) -> String {
+    format!("{:02}:{:02}", value / 60, value % 60)
 }
 
 struct NewDownloadView {
@@ -1021,6 +1583,7 @@ struct NewDownloadView {
     url: Entity<InputState>,
     directory: Entity<InputState>,
     file_name: Entity<InputState>,
+    scheduled_at: Entity<InputState>,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     probing: bool,
@@ -1046,6 +1609,9 @@ impl NewDownloadView {
         });
         let file_name =
             cx.new(|cx| InputState::new(window, cx).placeholder("可选；留空时使用服务器文件名"));
+        let scheduled_at = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("可选；例如 2026-07-30 09:30（本地时间）")
+        });
         let subscription = cx.subscribe_in(
             &application,
             window,
@@ -1064,6 +1630,7 @@ impl NewDownloadView {
             url,
             directory,
             file_name,
+            scheduled_at,
             confirmed_request: None,
             probe: None,
             probing: false,
@@ -1078,9 +1645,25 @@ impl NewDownloadView {
         let url = self.url.read(cx).value().trim().to_owned();
         let directory = self.directory.read(cx).value().trim().to_owned();
         let file_name = self.file_name.read(cx).value().trim().to_owned();
+        let scheduled_at = self.scheduled_at.read(cx).value().trim().to_owned();
         if url.is_empty() || directory.is_empty() {
             return Err("下载地址和保存目录不能为空".into());
         }
+        let scheduled_at_unix_ms = if scheduled_at.is_empty() {
+            None
+        } else {
+            let local = NaiveDateTime::parse_from_str(&scheduled_at, "%Y-%m-%d %H:%M")
+                .map_err(|_| "计划时间格式应为 YYYY-MM-DD HH:MM，例如 2026-07-30 09:30")?;
+            let resolved = Local
+                .from_local_datetime(&local)
+                .single()
+                .ok_or("计划时间在当前本地时区无效或存在歧义，请换一个时间")?;
+            let unix_ms = resolved.timestamp_millis();
+            if unix_ms <= Local::now().timestamp_millis() {
+                return Err("计划时间必须晚于当前时间".into());
+            }
+            Some(unix_ms)
+        };
         let request = DownloadRequest {
             source_url: url,
             save_directory: PathBuf::from(directory),
@@ -1090,7 +1673,7 @@ impl NewDownloadView {
             referrer: None,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
-            scheduled_at_unix_ms: None,
+            scheduled_at_unix_ms,
         };
         request.validate().map_err(|error| error.to_string())?;
         Ok(request)
@@ -1240,11 +1823,12 @@ impl NewDownloadView {
         let view = cx.entity().downgrade();
         info!(?mode, "scheduling download task submission");
         cx.defer(move |cx| {
+            let delayed = request.scheduled_at_unix_ms.is_some();
             let result =
                 application.update(cx, |application, cx| application.submit(request, mode, cx));
             match result {
                 Ok(task_id) => {
-                    let plan = submit_presentation_plan(mode, task_id);
+                    let plan = submit_presentation_plan(mode, task_id, delayed);
                     if plan.close_source_window {
                         let _ = source_window.update(cx, |_, window, _| window.remove_window());
                     }
@@ -1404,7 +1988,8 @@ impl Render for NewDownloadView {
                                                 }),
                                         ),
                                 )
-                                .child(download_input_field(theme, "文件名", &self.file_name)),
+                                .child(download_input_field(theme, "文件名", &self.file_name))
+                                .child(download_input_field(theme, "稍后下载", &self.scheduled_at)),
                         )
                         .child(
                             div()
@@ -1571,7 +2156,8 @@ fn download_inline_error(theme: Theme, error: String) -> impl IntoElement {
         .max_w_full()
         .text_size(px(9.5))
         .text_color(theme.danger)
-        .truncate()
+        .whitespace_normal()
+        .line_clamp(2)
         .child(error)
 }
 
@@ -1593,7 +2179,7 @@ fn format_download_size(bytes: u64) -> String {
 
 fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
     if confirmed {
-        size(px(500.0), px(246.0))
+        size(px(500.0), px(278.0))
     } else {
         size(px(500.0), px(176.0))
     }
@@ -2439,7 +3025,7 @@ mod tests {
         let task_id = DownloadTaskId::new();
 
         assert_eq!(
-            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id),
+            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, false),
             DownloadSubmitPresentationPlan {
                 close_source_window: true,
                 deferred_task_window: Some(task_id),
@@ -2452,11 +3038,59 @@ mod tests {
         let task_id = DownloadTaskId::new();
 
         assert_eq!(
-            submit_presentation_plan(DownloadSubmitMode::QueueOnly, task_id),
+            submit_presentation_plan(DownloadSubmitMode::QueueOnly, task_id, false),
             DownloadSubmitPresentationPlan {
                 close_source_window: true,
                 deferred_task_window: None,
             }
+        );
+    }
+
+    #[test]
+    fn delayed_submission_closes_the_add_window_without_opening_progress_early() {
+        let task_id = DownloadTaskId::new();
+
+        assert_eq!(
+            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, true),
+            DownloadSubmitPresentationPlan {
+                close_source_window: true,
+                deferred_task_window: None,
+            }
+        );
+    }
+
+    #[test]
+    fn daily_schedule_draft_preserves_independent_triggers_and_weekday_order() {
+        let days = [DownloadWeekday::Friday, DownloadWeekday::Monday]
+            .into_iter()
+            .collect();
+        let schedule = build_download_schedule(true, false, &days, "22:30", "invalid")
+            .expect("build start-only schedule")
+            .expect("enabled schedule");
+        assert!(schedule.daily.enabled_start);
+        assert!(!schedule.daily.enabled_stop);
+        assert_eq!(schedule.daily.start_minute, 22 * 60 + 30);
+        assert_eq!(
+            schedule.daily.days,
+            vec![DownloadWeekday::Monday, DownloadWeekday::Friday]
+        );
+    }
+
+    #[test]
+    fn daily_schedule_draft_rejects_missing_days_and_invalid_enabled_time() {
+        let no_days = HashSet::new();
+        assert_eq!(
+            build_download_schedule(true, true, &no_days, "09:00", "17:00"),
+            Err("至少选择一个生效星期".into())
+        );
+        let weekdays = [DownloadWeekday::Monday].into_iter().collect();
+        assert_eq!(
+            build_download_schedule(false, true, &weekdays, "ignored", "24:00"),
+            Err("停止时间：时间必须在 00:00 到 23:59 之间".into())
+        );
+        assert_eq!(
+            build_download_schedule(false, false, &no_days, "ignored", "ignored"),
+            Ok(None)
         );
     }
 
@@ -2469,24 +3103,34 @@ mod tests {
             DownloadStatus::Finalizing,
             DownloadStatus::Verifying,
         ] {
-            assert!(should_open_cli_progress_window(
+            assert!(should_open_admitted_progress_window(
+                false,
                 false,
                 RequestOrigin::Cli,
                 status
             ));
         }
-        assert!(!should_open_cli_progress_window(
+        assert!(!should_open_admitted_progress_window(
             true,
+            false,
             RequestOrigin::Cli,
             DownloadStatus::Downloading
         ));
-        assert!(!should_open_cli_progress_window(
+        assert!(!should_open_admitted_progress_window(
+            false,
             false,
             RequestOrigin::Cli,
             DownloadStatus::Created
         ));
-        assert!(!should_open_cli_progress_window(
+        assert!(!should_open_admitted_progress_window(
             false,
+            false,
+            RequestOrigin::Ui,
+            DownloadStatus::Downloading
+        ));
+        assert!(should_open_admitted_progress_window(
+            true,
+            true,
             RequestOrigin::Ui,
             DownloadStatus::Downloading
         ));
@@ -2577,7 +3221,7 @@ mod tests {
         );
         assert_eq!(
             (confirmed.width.as_f32(), confirmed.height.as_f32()),
-            (500.0, 246.0)
+            (500.0, 278.0)
         );
     }
 

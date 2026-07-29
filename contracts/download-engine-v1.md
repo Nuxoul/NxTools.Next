@@ -45,10 +45,18 @@ Batch actions are `pause`, `resume`, `cancel`, `remove` and `remove_with_artifac
 IDs are processed once and the typed result contains one success or fault for every distinct target
 in request order. Valid targets are not rolled back because another target was rejected.
 
-Queue actions move a stable multi-selection to `top`, `up`, `down` or `bottom`, or change the
-positive maximum task concurrency. Moving selected tasks preserves their relative order. Priority
-does not preempt active transfers; lowering concurrency applies to later admission instead of
-forcibly pausing an active task.
+Queue actions move a stable multi-selection to `top`, `up`, `down` or `bottom`, change the
+positive maximum task concurrency, or replace a queue's daily start/stop schedule. Moving selected
+tasks preserves their relative order. Priority does not preempt active transfers; lowering
+concurrency applies to later admission instead of forcibly pausing an active task.
+
+A one-time request schedule is an absolute UTC Unix-millisecond admission time. A future task is
+durable but ineligible until the Rust engine reaches that time; a restart retains the due time.
+Manual resume clears the delay and manual pause cancels it. A daily queue schedule uses local
+wall-clock minutes, selected weekdays and independent start/stop enablement. Its window is
+start-inclusive and stop-exclusive, and supports crossing midnight; automatic stop therefore
+applies exactly at its configured local minute. It pauses active work without marking it as
+manually paused, so the next scheduled start can resume it.
 
 For both speed-limit commands, a positive byte-per-second value enables the limit and `null`
 restores unlimited transfer. Zero is rejected rather than being given two meanings. The request ID
@@ -78,7 +86,7 @@ Phase 1 accepts HTTP and HTTPS only. A request contains:
 - optional Cookie and Referrer;
 - optional connection limit from 1 through 64;
 - optional positive per-task speed limit in bytes per second;
-- optional schedule timestamp.
+- optional absolute UTC Unix-millisecond schedule timestamp.
 
 Header names/values, Cookie and Referrer reject CR/LF injection. The request is an intent; it does
 not become a task until submission is accepted.

@@ -101,8 +101,11 @@ fn newer_schema_is_rejected_before_journal_mode_can_be_changed() {
     let temporary = tempfile::tempdir().expect("create temporary directory");
     let database_path = temporary.path().join("newer.sqlite3");
     let raw = rusqlite::Connection::open(&database_path).expect("create newer database");
-    raw.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA user_version = 3;")
-        .expect("mark database as newer");
+    let newer_version = DOWNLOAD_SCHEMA_VERSION + 1;
+    raw.execute_batch(&format!(
+        "PRAGMA journal_mode = DELETE; PRAGMA user_version = {newer_version};"
+    ))
+    .expect("mark database as newer");
     drop(raw);
 
     let error = match SqliteDownloadStore::open(&database_path) {
@@ -112,9 +115,9 @@ fn newer_schema_is_rejected_before_journal_mode_can_be_changed() {
     assert!(matches!(
         error,
         DownloadStorageError::UnsupportedSchema {
-            current: 3,
+            current,
             supported: DOWNLOAD_SCHEMA_VERSION,
-        }
+        } if current == newer_version
     ));
 
     let raw = rusqlite::Connection::open(&database_path).expect("reopen raw database");

@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEngine, DownloadEvent,
-    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadStatus,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, RequestOrigin, SqliteDownloadStore,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
+    DownloadEvent, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadSchedule,
+    DownloadScheduleMoment, DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
+    DownloadWeekday, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes};
 
@@ -25,6 +26,294 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
     }
+}
+
+#[tokio::test]
+async fn delayed_submission_stays_dormant_until_its_due_time_then_enters_the_queue() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let due_at_unix_ms = 9_000_000_000_000_i64;
+    let mut delayed = request(&server, directory.path().to_path_buf());
+    delayed.scheduled_at_unix_ms = Some(due_at_unix_ms);
+
+    let task_id = engine
+        .submit(delayed, RequestOrigin::Ui)
+        .expect("accept delayed submission");
+    let before_due = engine
+        .task(task_id)
+        .expect("read delayed task")
+        .expect("delayed task exists");
+    assert_eq!(before_due.task.status(), DownloadStatus::Created);
+    assert!(!before_due.queue_eligible);
+    assert_eq!(
+        before_due.task.request().scheduled_at_unix_ms,
+        Some(due_at_unix_ms)
+    );
+
+    engine
+        .process_due_schedules_at(due_at_unix_ms)
+        .expect("release task at due time");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let after_due = engine
+        .task(task_id)
+        .expect("read released task")
+        .expect("released task exists");
+    assert_ne!(after_due.task.status(), DownloadStatus::Created);
+    assert!(
+        !after_due.queue_eligible,
+        "queue admission consumes eligibility once a transfer slot is assigned"
+    );
+    assert_eq!(after_due.task.request().scheduled_at_unix_ms, None);
+}
+
+#[tokio::test]
+async fn delayed_submission_survives_restart_and_is_released_when_it_becomes_due() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database = directory.path().join("downloads.db");
+    let due_at_unix_ms = 9_000_000_000_000_i64;
+    let task_id = {
+        let engine = DownloadEngine::open(&database).expect("open first engine");
+        let mut delayed = request(&server, directory.path().join("artifact"));
+        delayed.scheduled_at_unix_ms = Some(due_at_unix_ms);
+        engine
+            .submit(delayed, RequestOrigin::Ui)
+            .expect("accept delayed submission")
+    };
+
+    let reopened = DownloadEngine::open(&database).expect("reopen engine");
+    let restored = reopened
+        .task(task_id)
+        .expect("read restored task")
+        .expect("restored task exists");
+    assert_eq!(restored.task.status(), DownloadStatus::Created);
+    assert!(!restored.queue_eligible);
+    assert_eq!(
+        restored.task.request().scheduled_at_unix_ms,
+        Some(due_at_unix_ms)
+    );
+
+    reopened
+        .process_due_schedules_at(due_at_unix_ms)
+        .expect("release restored delayed submission");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let released = reopened
+        .task(task_id)
+        .expect("read released restored task")
+        .expect("released task exists");
+    assert_ne!(released.task.status(), DownloadStatus::Created);
+    assert_eq!(released.task.request().scheduled_at_unix_ms, None);
+}
+
+#[test]
+fn daily_schedule_window_handles_normal_and_cross_midnight_selected_days() {
+    let normal = DownloadDailySchedule {
+        days: vec![DownloadWeekday::Monday],
+        start_minute: 9 * 60,
+        stop_minute: 17 * 60,
+        enabled_start: true,
+        enabled_stop: true,
+    };
+    assert!(daily_schedule_window_contains(
+        &normal,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 9 * 60,
+        }
+    ));
+    assert!(!daily_schedule_window_contains(
+        &normal,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 17 * 60,
+        }
+    ));
+    assert!(!daily_schedule_window_contains(
+        &normal,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Tuesday,
+            minute_of_day: 9 * 60,
+        }
+    ));
+
+    let overnight = DownloadDailySchedule {
+        days: vec![DownloadWeekday::Friday],
+        start_minute: 22 * 60,
+        stop_minute: 2 * 60,
+        enabled_start: true,
+        enabled_stop: true,
+    };
+    assert!(daily_schedule_window_contains(
+        &overnight,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Friday,
+            minute_of_day: 23 * 60,
+        }
+    ));
+    assert!(daily_schedule_window_contains(
+        &overnight,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Saturday,
+            minute_of_day: 60,
+        }
+    ));
+    assert!(!daily_schedule_window_contains(
+        &overnight,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Saturday,
+            minute_of_day: 2 * 60,
+        }
+    ));
+    assert!(!daily_schedule_window_contains(
+        &overnight,
+        DownloadScheduleMoment {
+            weekday: DownloadWeekday::Saturday,
+            minute_of_day: 3 * 60,
+        }
+    ));
+}
+
+#[tokio::test]
+async fn daily_queue_window_releases_queue_only_tasks_and_stops_after_the_window() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let task_id = engine
+        .enqueue(
+            request(&server, directory.path().to_path_buf()),
+            RequestOrigin::Ui,
+        )
+        .expect("queue task without immediate admission");
+    engine
+        .set_queue_schedule(
+            "default",
+            Some(DownloadSchedule {
+                daily: DownloadDailySchedule {
+                    days: vec![DownloadWeekday::Monday],
+                    start_minute: 9 * 60,
+                    stop_minute: 17 * 60,
+                    enabled_start: true,
+                    enabled_stop: true,
+                },
+            }),
+        )
+        .expect("save daily queue schedule");
+
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 18 * 60,
+        })
+        .expect("close queue outside the daily window");
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 9 * 60,
+        })
+        .expect("open queue at start boundary");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_ne!(
+        engine
+            .task(task_id)
+            .expect("read scheduled task")
+            .expect("task exists")
+            .task
+            .status(),
+        DownloadStatus::Created
+    );
+
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 17 * 60,
+        })
+        .expect("close queue at the stop boundary");
+    let snapshot = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Snapshot {
+            query: Default::default(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(snapshot) = snapshot.outcome else {
+        panic!("snapshot expected");
+    };
+    assert!(!snapshot.queues[0].is_running);
+}
+
+#[tokio::test]
+async fn manual_pause_is_not_overridden_by_the_next_daily_start() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut queued = request(&server, directory.path().to_path_buf());
+    queued.speed_limit_bytes_per_second = Some(1);
+    let task_id = engine
+        .enqueue(queued, RequestOrigin::Ui)
+        .expect("queue task");
+    engine
+        .set_queue_schedule(
+            "default",
+            Some(DownloadSchedule {
+                daily: DownloadDailySchedule {
+                    days: vec![DownloadWeekday::Monday],
+                    start_minute: 9 * 60,
+                    stop_minute: 17 * 60,
+                    enabled_start: true,
+                    enabled_stop: true,
+                },
+            }),
+        )
+        .expect("save schedule");
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 18 * 60,
+        })
+        .expect("close queue");
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 9 * 60,
+        })
+        .expect("start queue");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    engine.pause(task_id).expect("manually pause task");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("read manually paused task")
+            .expect("task exists")
+            .task
+            .status(),
+        DownloadStatus::Paused
+    );
+
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 18 * 60,
+        })
+        .expect("close next window");
+    engine
+        .process_daily_schedules_at(DownloadScheduleMoment {
+            weekday: DownloadWeekday::Monday,
+            minute_of_day: 9 * 60,
+        })
+        .expect("open next window");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("read task after next start")
+            .expect("task exists")
+            .task
+            .status(),
+        DownloadStatus::Paused
+    );
 }
 
 #[tokio::test]

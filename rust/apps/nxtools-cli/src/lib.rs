@@ -4,9 +4,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use nxtools_download::{
-    DownloadBatchAction, DownloadCommand, DownloadCommandOutcome, DownloadEngineTask,
-    DownloadEvent, DownloadFault, DownloadFaultCode, DownloadQuery, DownloadRequest,
-    DownloadRequestHeader, DownloadStatus, DownloadSubmitMode, DownloadTaskId,
+    DownloadBatchAction, DownloadCommand, DownloadCommandOutcome, DownloadDailySchedule,
+    DownloadEngineTask, DownloadEvent, DownloadFault, DownloadFaultCode, DownloadQuery,
+    DownloadQueueAction, DownloadRequest, DownloadRequestHeader, DownloadSchedule, DownloadStatus,
+    DownloadSubmitMode, DownloadTaskId, DownloadWeekday,
 };
 use nxtools_download_ipc::{
     DOWNLOAD_PIPE_NAME, DownloadIpcClient, DownloadIpcProtocolIncompatible, command_envelope,
@@ -46,6 +47,11 @@ pub enum CliCommand {
         action: CliAction,
         task_ids: Vec<DownloadTaskId>,
         delete_file: bool,
+        json: bool,
+    },
+    Schedule {
+        queue_id: String,
+        schedule: Option<DownloadSchedule>,
         json: bool,
     },
 }
@@ -116,11 +122,130 @@ where
         "resume" => parse_action(CliAction::Resume, args),
         "cancel" => parse_action(CliAction::Cancel, args),
         "remove" => parse_action(CliAction::Remove, args),
+        "schedule" => parse_schedule(args),
         _ => Err(CliError::syntax(format!(
             "unknown download command '{command}'\n{}",
             usage()
         ))),
     }
+}
+
+fn parse_schedule(args: Vec<String>) -> Result<CliCommand, CliError> {
+    let mut queue_id = "default".to_owned();
+    let mut start = None;
+    let mut stop = None;
+    let mut days = None;
+    let mut disable = false;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--queue" => {
+                index += 1;
+                queue_id = required_value(&args, index, "--queue")?.to_owned();
+            }
+            "--start" => {
+                index += 1;
+                start = Some(parse_clock_minute(required_value(
+                    &args, index, "--start",
+                )?)?);
+            }
+            "--stop" => {
+                index += 1;
+                stop = Some(parse_clock_minute(required_value(&args, index, "--stop")?)?);
+            }
+            "--days" => {
+                index += 1;
+                days = Some(parse_weekdays(required_value(&args, index, "--days")?)?);
+            }
+            "--disable" => disable = true,
+            "--json" => json = true,
+            option => {
+                return Err(CliError::syntax(format!(
+                    "unknown schedule option '{option}'"
+                )));
+            }
+        }
+        index += 1;
+    }
+    if disable {
+        if start.is_some() || stop.is_some() || days.is_some() {
+            return Err(CliError::syntax(
+                "--disable cannot be combined with --start, --stop or --days",
+            ));
+        }
+        return Ok(CliCommand::Schedule {
+            queue_id,
+            schedule: None,
+            json,
+        });
+    }
+    if start.is_none() && stop.is_none() {
+        return Err(CliError::syntax(
+            "schedule requires at least one of --start HH:MM or --stop HH:MM",
+        ));
+    }
+    let days = days.unwrap_or_else(all_weekdays);
+    Ok(CliCommand::Schedule {
+        queue_id,
+        schedule: Some(DownloadSchedule {
+            daily: DownloadDailySchedule {
+                days,
+                start_minute: start.unwrap_or_default(),
+                stop_minute: stop.unwrap_or_default(),
+                enabled_start: start.is_some(),
+                enabled_stop: stop.is_some(),
+            },
+        }),
+        json,
+    })
+}
+
+fn parse_clock_minute(value: &str) -> Result<u16, CliError> {
+    let Some((hours, minutes)) = value.split_once(':') else {
+        return Err(CliError::syntax("时间必须为 HH:MM，例如 09:30"));
+    };
+    let hours = hours
+        .parse::<u16>()
+        .map_err(|_| CliError::syntax("时间必须为 HH:MM，例如 09:30"))?;
+    let minutes = minutes
+        .parse::<u16>()
+        .map_err(|_| CliError::syntax("时间必须为 HH:MM，例如 09:30"))?;
+    if hours >= 24 || minutes >= 60 {
+        return Err(CliError::syntax("时间必须在 00:00 到 23:59 之间"));
+    }
+    Ok(hours * 60 + minutes)
+}
+
+fn parse_weekdays(value: &str) -> Result<Vec<DownloadWeekday>, CliError> {
+    let mut days = Vec::new();
+    for value in value.split(',').map(str::trim) {
+        let day = match value.to_ascii_lowercase().as_str() {
+            "mon" | "monday" => DownloadWeekday::Monday,
+            "tue" | "tuesday" => DownloadWeekday::Tuesday,
+            "wed" | "wednesday" => DownloadWeekday::Wednesday,
+            "thu" | "thursday" => DownloadWeekday::Thursday,
+            "fri" | "friday" => DownloadWeekday::Friday,
+            "sat" | "saturday" => DownloadWeekday::Saturday,
+            "sun" | "sunday" => DownloadWeekday::Sunday,
+            _ => {
+                return Err(CliError::syntax(
+                    "--days 使用逗号分隔的 mon,tue,wed,thu,fri,sat,sun",
+                ));
+            }
+        };
+        if !days.contains(&day) {
+            days.push(day);
+        }
+    }
+    if days.is_empty() {
+        return Err(CliError::syntax("--days 至少包含一个星期"));
+    }
+    Ok(days)
+}
+
+fn all_weekdays() -> Vec<DownloadWeekday> {
+    DownloadWeekday::ALL.to_vec()
 }
 
 fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand, CliError> {
@@ -333,6 +458,11 @@ pub fn run(command: CliCommand, executable: &Path) -> Result<(), CliError> {
             delete_file,
             json,
         } => run_action(&mut client, action, task_ids, delete_file, json),
+        CliCommand::Schedule {
+            queue_id,
+            schedule,
+            json,
+        } => run_schedule(&mut client, queue_id, schedule, json),
     };
     match result {
         Err(mut error) if json_output && !error.message.is_empty() => {
@@ -358,8 +488,42 @@ impl CliCommand {
             Self::Add { json, .. }
             | Self::List { json, .. }
             | Self::Show { json, .. }
-            | Self::Action { json, .. } => *json,
+            | Self::Action { json, .. }
+            | Self::Schedule { json, .. } => *json,
         }
+    }
+}
+
+fn run_schedule(
+    client: &mut DownloadIpcClient,
+    queue_id: String,
+    schedule: Option<DownloadSchedule>,
+    json_output: bool,
+) -> Result<(), CliError> {
+    let result = client
+        .command(command_envelope(DownloadCommand::Queue {
+            action: DownloadQueueAction::SetSchedule { queue_id, schedule },
+        }))
+        .map_err(CliError::host)?;
+    let request_id = result.request_id;
+    match result.outcome {
+        DownloadCommandOutcome::QueueChanged { queue } => {
+            if json_output {
+                print_json(request_id, true, Some(json!({ "queue": queue })), None);
+            } else if queue.schedule.is_some() {
+                println!("已更新队列“{}”的每日计划", queue.name);
+            } else {
+                println!("已关闭队列“{}”的每日计划", queue.name);
+            }
+            Ok(())
+        }
+        DownloadCommandOutcome::Rejected { fault } => {
+            print_fault(request_id, &fault, json_output);
+            let mut error = error_from_fault(fault, false);
+            error.message.clear();
+            Err(error)
+        }
+        _ => Err(unexpected_result("schedule")),
     }
 }
 
@@ -930,7 +1094,9 @@ pub fn usage() -> &'static str {
   NxTools.Cli.exe download list [--active|--completed|--failed] [--json]
   NxTools.Cli.exe download show <id> [--watch] [--json]
   NxTools.Cli.exe download pause|resume|cancel <id...> [--json]
-  NxTools.Cli.exe download remove <id...> [--delete-file] [--json]"
+  NxTools.Cli.exe download remove <id...> [--delete-file] [--json]
+  NxTools.Cli.exe download schedule [--queue <id>] [--start HH:MM] [--stop HH:MM] [--days mon,tue,...] [--json]
+  NxTools.Cli.exe download schedule [--queue <id>] --disable [--json]"
 }
 
 #[cfg(test)]
@@ -984,6 +1150,40 @@ mod tests {
         )
         .expect_err("unsupported URL must fail during parsing");
         assert_eq!(error.exit_code, EXIT_SYNTAX);
+    }
+
+    #[test]
+    fn schedule_parses_cross_midnight_weekdays_and_disable_mode() {
+        let parsed = parse_args(
+            [
+                "download", "schedule", "--start", "22:30", "--stop", "02:15", "--days", "fri,sat",
+            ],
+            PathBuf::new(),
+        )
+        .expect("parse daily schedule");
+        let CliCommand::Schedule {
+            queue_id,
+            schedule: Some(schedule),
+            ..
+        } = parsed
+        else {
+            panic!("daily schedule expected");
+        };
+        assert_eq!(queue_id, "default");
+        let daily = schedule.daily;
+        assert_eq!(daily.start_minute, 22 * 60 + 30);
+        assert_eq!(daily.stop_minute, 2 * 60 + 15);
+        assert_eq!(
+            daily.days,
+            vec![DownloadWeekday::Friday, DownloadWeekday::Saturday]
+        );
+
+        let parsed =
+            parse_args(["schedule", "--disable"], PathBuf::new()).expect("parse schedule disable");
+        assert!(matches!(
+            parsed,
+            CliCommand::Schedule { schedule: None, .. }
+        ));
     }
 
     #[test]

@@ -1454,6 +1454,22 @@ impl MainWindow {
                     )
                     .child(div().flex_1())
                     .child(
+                        Button::new("download-schedule")
+                            .icon(Icon::new(MaterialIcon::History))
+                            .label("计划")
+                            .small()
+                            .compact()
+                            .ghost()
+                            .on_click({
+                                let download_application = self.downloads.clone();
+                                move |_, _, cx| {
+                                    let _ = download_application.update(cx, |application, cx| {
+                                        application.open_schedule_window(cx);
+                                    });
+                                }
+                            }),
+                    )
+                    .child(
                         Button::new("download-new-task")
                             .icon(Icon::new(MaterialIcon::Add))
                             .label("新建下载")

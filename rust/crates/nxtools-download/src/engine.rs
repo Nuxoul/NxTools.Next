@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use thiserror::Error;
 use tracing::{info, warn};
 
@@ -15,16 +16,17 @@ use crate::storage::StoredTransferState;
 use crate::{
     ArtifactAllocation, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
     DownloadBatchAction, DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandOutcome, DownloadCommandResult, DownloadEvent, DownloadEventEnvelope,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
+    DownloadCommandOutcome, DownloadCommandResult, DownloadDailySchedule, DownloadEvent,
+    DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
+    DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
     DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
-    DownloadSegment, DownloadSegmentError, DownloadSegmentState, DownloadSegmentTransferControl,
-    DownloadSegmentTransferOutcome, DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError,
-    DownloadStorageError, DownloadStorageRequirement, DownloadSubmitMode, DownloadTask,
-    DownloadTaskAction, DownloadTaskError, DownloadTaskId, DownloadTransferContext,
-    DownloadTransferControl, HttpDownloadClient, HttpDownloadError, RequestOrigin,
-    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadSchedule, DownloadSegment, DownloadSegmentError, DownloadSegmentState,
+    DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
+    DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
+    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskError, DownloadTaskId,
+    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, HttpDownloadClient,
+    HttpDownloadError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
+    TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -41,6 +43,8 @@ struct DownloadEngineInner {
     capacity_probe: Arc<dyn StorageCapacityProbe>,
     tasks: Mutex<HashMap<DownloadTaskId, EngineTaskState>>,
     scheduler_gate: Mutex<()>,
+    schedule_wake_generation: AtomicU64,
+    daily_schedule_wake_generation: AtomicU64,
     event_sender: async_channel::Sender<DownloadEventEnvelope>,
     event_receiver: Mutex<Option<async_channel::Receiver<DownloadEventEnvelope>>>,
     event_subscribers: Mutex<Vec<async_channel::Sender<DownloadEventEnvelope>>>,
@@ -113,6 +117,45 @@ pub struct DownloadEngineTask {
     pub temporary_path: Option<PathBuf>,
     #[serde(default)]
     pub queue_eligible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DownloadScheduleMoment {
+    pub weekday: DownloadWeekday,
+    pub minute_of_day: u16,
+}
+
+impl DownloadScheduleMoment {
+    fn now_local() -> Self {
+        let now = Local::now();
+        Self {
+            weekday: weekday_from_chrono(now.weekday()),
+            minute_of_day: u16::try_from(now.hour() * 60 + now.minute())
+                .expect("local clock minute is within a day"),
+        }
+    }
+}
+
+/// Returns whether a daily start/stop window contains a local weekday and minute. The start
+/// endpoint is inclusive and the stop endpoint is exclusive, so an automatic stop configured for
+/// 07:30 is applied when the local clock reaches 07:30.
+pub fn daily_schedule_window_contains(
+    schedule: &DownloadDailySchedule,
+    moment: DownloadScheduleMoment,
+) -> bool {
+    if !schedule.enabled_start || !schedule.enabled_stop {
+        return false;
+    }
+    if schedule.start_minute <= schedule.stop_minute {
+        return schedule.days.contains(&moment.weekday)
+            && moment.minute_of_day >= schedule.start_minute
+            && moment.minute_of_day < schedule.stop_minute;
+    }
+    if moment.minute_of_day >= schedule.start_minute {
+        return schedule.days.contains(&moment.weekday);
+    }
+    let previous_day = previous_weekday(moment.weekday);
+    schedule.days.contains(&previous_day) && moment.minute_of_day < schedule.stop_minute
 }
 
 impl DownloadEngine {
@@ -205,12 +248,21 @@ impl DownloadEngine {
                 capacity_probe,
                 tasks: Mutex::new(tasks),
                 scheduler_gate: Mutex::new(()),
+                schedule_wake_generation: AtomicU64::new(0),
+                daily_schedule_wake_generation: AtomicU64::new(0),
                 event_sender,
                 event_receiver: Mutex::new(Some(event_receiver)),
                 event_subscribers: Mutex::new(Vec::new()),
                 event_sequencer: DownloadEventSequencer::new(0),
             }),
         };
+        if let Err(error) = engine.process_due_schedules_at(now_unix_ms()) {
+            warn!(
+                event = "download.schedule.startup_due_release_failed",
+                error = %error,
+                "due delayed downloads remain durable for the next scheduler wake"
+            );
+        }
         let correlation_id = uuid::Uuid::new_v4();
         for queue in engine.inner.store.load_queues()? {
             if let Err(error) = engine.schedule_queue(&queue.id, correlation_id) {
@@ -223,6 +275,15 @@ impl DownloadEngine {
                 );
             }
         }
+        if let Err(error) = engine.process_daily_schedules_at(DownloadScheduleMoment::now_local()) {
+            warn!(
+                event = "download.schedule.daily_startup_reconcile_failed",
+                error = %error,
+                "daily queue schedule remains durable for the next wake"
+            );
+        }
+        engine.refresh_delayed_schedule_wake()?;
+        engine.refresh_daily_schedule_wake()?;
         Ok(engine)
     }
 
@@ -544,6 +605,11 @@ impl DownloadEngine {
                 );
                 queue
             }
+            DownloadQueueAction::SetSchedule { queue_id, schedule } => {
+                return self
+                    .set_queue_schedule_correlated(&queue_id, schedule, correlation_id)
+                    .map(|queue| DownloadCommandOutcome::QueueChanged { queue });
+            }
         };
         Ok(DownloadCommandOutcome::QueueChanged { queue })
     }
@@ -555,6 +621,249 @@ impl DownloadEngine {
             .into_iter()
             .find(|queue| queue.id == queue_id)
             .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.to_owned()).into())
+    }
+
+    pub fn set_queue_schedule(
+        &self,
+        queue_id: &str,
+        schedule: Option<DownloadSchedule>,
+    ) -> Result<DownloadQueue, DownloadEngineError> {
+        self.set_queue_schedule_correlated(queue_id, schedule, uuid::Uuid::new_v4())
+    }
+
+    fn set_queue_schedule_correlated(
+        &self,
+        queue_id: &str,
+        schedule: Option<DownloadSchedule>,
+        correlation_id: uuid::Uuid,
+    ) -> Result<DownloadQueue, DownloadEngineError> {
+        let started_at = Instant::now();
+        if let Some(daily) = schedule.as_ref().map(|schedule| &schedule.daily) {
+            daily.validate().map_err(DownloadEngineError::Schedule)?;
+        }
+        let queue = self
+            .inner
+            .store
+            .set_queue_schedule(queue_id, schedule.as_ref())?;
+        info!(
+            event = "download.schedule.daily_changed",
+            %correlation_id,
+            queue_id,
+            enabled = queue.schedule.is_some(),
+            "daily queue schedule changed"
+        );
+        if let Err(error) = self.process_daily_schedules_at_correlated(
+            DownloadScheduleMoment::now_local(),
+            correlation_id,
+        ) {
+            warn!(
+                event = "download.schedule.daily_change_failed",
+                %correlation_id,
+                queue_id,
+                committed = true,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                error = %error,
+                "daily queue schedule was persisted but runtime reconciliation failed"
+            );
+            return Err(error);
+        }
+        let queue = match self.queue(queue_id) {
+            Ok(queue) => queue,
+            Err(error) => {
+                warn!(
+                    event = "download.schedule.daily_change_failed",
+                    %correlation_id,
+                    queue_id,
+                    stage = "reload_queue",
+                    committed = true,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    error = %error,
+                    "daily queue schedule was persisted but its resulting snapshot could not be loaded"
+                );
+                return Err(error);
+            }
+        };
+        info!(
+            event = "download.schedule.daily_change_completed",
+            %correlation_id,
+            queue_id,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "daily queue schedule change completed"
+        );
+        Ok(queue)
+    }
+
+    /// Reconciles all persisted daily queue schedules at a supplied local wall-clock moment.
+    /// The public seam makes cross-midnight behavior deterministic in contract tests.
+    pub fn process_daily_schedules_at(
+        &self,
+        moment: DownloadScheduleMoment,
+    ) -> Result<usize, DownloadEngineError> {
+        self.process_daily_schedules_at_correlated(moment, uuid::Uuid::new_v4())
+    }
+
+    fn process_daily_schedules_at_correlated(
+        &self,
+        moment: DownloadScheduleMoment,
+        correlation_id: uuid::Uuid,
+    ) -> Result<usize, DownloadEngineError> {
+        let started_at = Instant::now();
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let mut changed_count = 0_usize;
+        for queue in self.inner.store.load_queues()? {
+            let Some(daily) = queue.schedule.as_ref() else {
+                continue;
+            };
+            let daily = &daily.daily;
+            daily.validate().map_err(DownloadEngineError::Schedule)?;
+            let desired_running = daily_schedule_desired_running(daily, moment);
+            let Some(desired_running) = desired_running else {
+                continue;
+            };
+            if desired_running == queue.is_running {
+                if desired_running {
+                    self.start_daily_queue_locked(&queue.id, correlation_id)?;
+                }
+                continue;
+            }
+            self.inner
+                .store
+                .set_queue_running(&queue.id, desired_running)?;
+            if desired_running {
+                self.start_daily_queue_locked(&queue.id, correlation_id)?;
+            } else {
+                self.pause_daily_queue_locked(&queue.id)?;
+            }
+            changed_count = changed_count.saturating_add(1);
+            info!(
+                event = "download.schedule.daily_queue_transition",
+                %correlation_id,
+                queue_id = queue.id,
+                running = desired_running,
+                minute_of_day = moment.minute_of_day,
+                weekday = ?moment.weekday,
+                "daily queue scheduling state changed"
+            );
+        }
+        drop(_scheduler);
+        self.refresh_daily_schedule_wake()?;
+        info!(
+            event = "download.schedule.daily_reconcile_completed",
+            %correlation_id,
+            changed_count,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "daily queue schedule reconciliation completed"
+        );
+        Ok(changed_count)
+    }
+
+    fn activate_daily_queue_locked(&self, queue_id: &str) -> Result<(), DownloadEngineError> {
+        let queue_task_ids = self.inner.store.load_queue_order(queue_id)?;
+        let tasks = self.inner.lock_tasks()?;
+        for task_id in queue_task_ids {
+            let Some(state) = tasks.get(&task_id) else {
+                continue;
+            };
+            if !matches!(
+                state.task.status(),
+                DownloadStatus::Created | DownloadStatus::Paused
+            ) || self.inner.store.is_queue_task_user_paused(task_id)?
+            {
+                continue;
+            }
+            self.inner.store.set_queue_task_eligible(task_id, true)?;
+        }
+        Ok(())
+    }
+
+    fn start_daily_queue_locked(
+        &self,
+        queue_id: &str,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        self.activate_daily_queue_locked(queue_id)?;
+        if let Err(error) = self.schedule_queue_locked(queue_id, correlation_id) {
+            warn!(
+                event = "download.schedule.daily_start_admission_deferred",
+                %correlation_id,
+                queue_id,
+                error = %error,
+                "open daily queue retains eligible work for a later refill"
+            );
+        }
+        Ok(())
+    }
+
+    fn pause_daily_queue_locked(&self, queue_id: &str) -> Result<(), DownloadEngineError> {
+        let queue_task_ids = self.inner.store.load_queue_order(queue_id)?;
+        let tasks = self.inner.lock_tasks()?;
+        for task_id in queue_task_ids {
+            let Some(state) = tasks.get(&task_id) else {
+                continue;
+            };
+            if !is_active_download_status(state.task.status()) {
+                continue;
+            }
+            self.inner.store.set_queue_task_eligible(task_id, false)?;
+            state
+                .control
+                .as_ref()
+                .ok_or(DownloadEngineError::MissingTransferControl(task_id))?
+                .pause();
+        }
+        Ok(())
+    }
+
+    fn refresh_daily_schedule_wake(&self) -> Result<(), DownloadEngineError> {
+        let queues = self.inner.store.load_queues()?;
+        let generation = self
+            .inner
+            .daily_schedule_wake_generation
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        let now = Local::now();
+        let Some(next_trigger) = next_daily_schedule_trigger(&queues, now) else {
+            return Ok(());
+        };
+        let wait_ms = next_trigger
+            .timestamp_millis()
+            .saturating_sub(now.timestamp_millis())
+            .max(1);
+        let engine = self.clone();
+        download_runtime()?.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(
+                u64::try_from(wait_ms).unwrap_or(60_000),
+            ))
+            .await;
+            if engine
+                .inner
+                .daily_schedule_wake_generation
+                .load(Ordering::SeqCst)
+                != generation
+            {
+                return;
+            }
+            let correlation_id = uuid::Uuid::new_v4();
+            let [scheduled_moment, current_moment] =
+                daily_schedule_wake_moments(next_trigger, Local::now());
+            let scheduled_result =
+                engine.process_daily_schedules_at_correlated(scheduled_moment, correlation_id);
+            let current_result =
+                engine.process_daily_schedules_at_correlated(current_moment, correlation_id);
+            if let Err(error) = scheduled_result.and(current_result) {
+                warn!(
+                    event = "download.schedule.daily_wake_failed",
+                    %correlation_id,
+                    error = %error,
+                    "daily queue schedule wake failed"
+                );
+            }
+        });
+        Ok(())
     }
 
     fn schedule_queue(
@@ -576,6 +885,9 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
         let queue = self.queue(queue_id)?;
+        if !queue.is_running {
+            return Ok(());
+        }
         let limit = usize::from(queue.max_concurrent_tasks.unwrap_or(3).max(1));
         let queue_task_ids = self
             .inner
@@ -758,6 +1070,10 @@ impl DownloadEngine {
     ) -> Result<DownloadTaskId, DownloadEngineError> {
         request.validate()?;
         let now = now_unix_ms();
+        let delayed_until_due = request
+            .scheduled_at_unix_ms
+            .is_some_and(|scheduled_at| scheduled_at > now);
+        let scheduled_at_unix_ms = request.scheduled_at_unix_ms;
         let task = DownloadTask::new(request, origin, now);
         let task_id = task.id();
         let transfer = StoredTransferState::default();
@@ -771,7 +1087,7 @@ impl DownloadEngine {
             &task,
             &transfer,
             "default",
-            mode == DownloadSubmitMode::StartNow,
+            mode == DownloadSubmitMode::StartNow && !delayed_until_due,
         )?;
         self.inner.lock_tasks()?.insert(
             task_id,
@@ -785,7 +1101,16 @@ impl DownloadEngine {
         );
         self.inner.emit_task(task_id);
 
-        if mode == DownloadSubmitMode::StartNow
+        if delayed_until_due {
+            info!(
+                event = "download.schedule.delayed_accepted",
+                %correlation_id,
+                ?task_id,
+                due_at_unix_ms = scheduled_at_unix_ms.unwrap_or_default(),
+                "delayed download accepted and held outside the queue"
+            );
+            self.refresh_delayed_schedule_wake()?;
+        } else if mode == DownloadSubmitMode::StartNow
             && let Err(error) = self.schedule_queue_locked("default", correlation_id)
         {
             warn!(
@@ -797,6 +1122,122 @@ impl DownloadEngine {
             );
         }
         Ok(task_id)
+    }
+
+    /// Releases delayed submissions whose absolute schedule has elapsed.
+    ///
+    /// This is a public engine boundary so the scheduler can be tested deterministically; the
+    /// normal runtime wake-up invokes the same method without polling from the UI.
+    pub fn process_due_schedules_at(&self, now_unix_ms: i64) -> Result<usize, DownloadEngineError> {
+        self.process_due_schedules_at_correlated(now_unix_ms, uuid::Uuid::new_v4())
+    }
+
+    fn process_due_schedules_at_correlated(
+        &self,
+        now_unix_ms: i64,
+        correlation_id: uuid::Uuid,
+    ) -> Result<usize, DownloadEngineError> {
+        let started_at = Instant::now();
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let mut released_task_ids = Vec::new();
+        {
+            let mut tasks = self.inner.lock_tasks()?;
+            for (task_id, state) in tasks.iter_mut() {
+                let Some(scheduled_at) = state.task.request().scheduled_at_unix_ms else {
+                    continue;
+                };
+                if scheduled_at > now_unix_ms || state.task.status() != DownloadStatus::Created {
+                    continue;
+                }
+                if self.inner.store.is_queue_task_eligible(*task_id)? {
+                    continue;
+                }
+                let mut committed = state.clone();
+                committed.task.clear_scheduled_start(now_unix_ms);
+                self.inner.store.save_task_with_transfer_and_eligibility(
+                    &committed.task,
+                    &committed.transfer,
+                    true,
+                )?;
+                *state = committed;
+                released_task_ids.push(*task_id);
+            }
+        }
+        for task_id in &released_task_ids {
+            self.inner.emit_task(*task_id);
+            info!(
+                event = "download.schedule.delayed_released",
+                %correlation_id,
+                ?task_id,
+                "delayed download became queue-eligible"
+            );
+        }
+        if !released_task_ids.is_empty()
+            && let Err(error) = self.schedule_queue_locked("default", correlation_id)
+        {
+            warn!(
+                event = "download.schedule.delayed_admission_deferred",
+                %correlation_id,
+                released_count = released_task_ids.len(),
+                error = %error,
+                "due delayed downloads remain eligible for a later queue refill"
+            );
+        }
+        drop(_scheduler);
+        self.refresh_delayed_schedule_wake()?;
+        info!(
+            event = "download.schedule.delayed_reconcile_completed",
+            %correlation_id,
+            released_count = released_task_ids.len(),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "delayed download reconciliation completed"
+        );
+        Ok(released_task_ids.len())
+    }
+
+    fn refresh_delayed_schedule_wake(&self) -> Result<(), DownloadEngineError> {
+        let now = now_unix_ms();
+        let next_due = self
+            .inner
+            .lock_tasks()?
+            .values()
+            .filter_map(|state| state.task.request().scheduled_at_unix_ms)
+            .filter(|scheduled_at| *scheduled_at > now)
+            .min();
+        let generation = self
+            .inner
+            .schedule_wake_generation
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        let Some(next_due) = next_due else {
+            return Ok(());
+        };
+        let wait_ms = u64::try_from(next_due.saturating_sub(now))
+            .unwrap_or_default()
+            .max(1);
+        let engine = self.clone();
+        download_runtime()?.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            if engine.inner.schedule_wake_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            let correlation_id = uuid::Uuid::new_v4();
+            if let Err(error) =
+                engine.process_due_schedules_at_correlated(now_unix_ms(), correlation_id)
+            {
+                warn!(
+                    event = "download.schedule.delayed_wake_failed",
+                    %correlation_id,
+                    error = %error,
+                    "delayed schedule wake failed"
+                );
+            }
+        });
+        Ok(())
     }
 
     pub fn pause(&self, task_id: DownloadTaskId) -> Result<(), DownloadEngineError> {
@@ -812,7 +1253,8 @@ impl DownloadEngine {
         if matches!(
             state.task.status(),
             DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
-        ) && self.inner.store.is_queue_task_eligible(task_id)?
+        ) && (self.inner.store.is_queue_task_eligible(task_id)?
+            || state.task.request().scheduled_at_unix_ms.is_some())
         {
             let mut committed = state.clone();
             if committed.task.status() == DownloadStatus::Created {
@@ -820,15 +1262,20 @@ impl DownloadEngine {
                     .task
                     .transition_to(DownloadStatus::Paused, now_unix_ms())?;
             }
-            self.inner.store.save_task_with_transfer_and_eligibility(
+            committed.task.clear_scheduled_start(now_unix_ms());
+            self.inner.store.save_task_with_transfer_and_admission(
                 &committed.task,
                 &committed.transfer,
                 false,
+                true,
             )?;
             *state = committed;
             self.inner.emit(DownloadEvent::TaskChanged {
                 task: state.task.clone(),
             });
+            drop(tasks);
+            drop(_scheduler);
+            self.refresh_delayed_schedule_wake()?;
             return Ok(());
         }
         if !matches!(
@@ -846,7 +1293,9 @@ impl DownloadEngine {
             .as_ref()
             .ok_or(DownloadEngineError::MissingTransferControl(task_id))?
             .pause();
-        self.inner.store.set_queue_task_eligible(task_id, false)?;
+        self.inner
+            .store
+            .set_queue_task_admission(task_id, false, true)?;
         Ok(())
     }
 
@@ -860,9 +1309,9 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
         {
-            let tasks = self.inner.lock_tasks()?;
+            let mut tasks = self.inner.lock_tasks()?;
             let state = tasks
-                .get(&task_id)
+                .get_mut(&task_id)
                 .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
             if !matches!(
                 state.task.status(),
@@ -874,8 +1323,23 @@ impl DownloadEngine {
                     status: state.task.status(),
                 });
             }
+            if state.task.request().scheduled_at_unix_ms.is_some() {
+                let mut committed = state.clone();
+                committed.task.clear_scheduled_start(now_unix_ms());
+                self.inner.store.save_task_with_transfer_and_admission(
+                    &committed.task,
+                    &committed.transfer,
+                    true,
+                    false,
+                )?;
+                *state = committed;
+            } else {
+                self.inner
+                    .store
+                    .set_queue_task_admission(task_id, true, false)?;
+            }
         }
-        self.inner.store.set_queue_task_eligible(task_id, true)?;
+        self.refresh_delayed_schedule_wake()?;
         if let Err(error) = self.schedule_queue("default", correlation_id) {
             warn!(
                 event = "download.queue.resume_deferred",
@@ -2241,6 +2705,101 @@ fn move_queue_items(
     }
 }
 
+fn daily_schedule_desired_running(
+    schedule: &DownloadDailySchedule,
+    moment: DownloadScheduleMoment,
+) -> Option<bool> {
+    if schedule.enabled_start && schedule.enabled_stop {
+        return Some(daily_schedule_window_contains(schedule, moment));
+    }
+    if !schedule.days.contains(&moment.weekday) {
+        return None;
+    }
+    if schedule.enabled_start && moment.minute_of_day == schedule.start_minute {
+        return Some(true);
+    }
+    if schedule.enabled_stop && moment.minute_of_day == schedule.stop_minute {
+        return Some(false);
+    }
+    None
+}
+
+fn next_daily_schedule_trigger(
+    queues: &[DownloadQueue],
+    now: DateTime<Local>,
+) -> Option<DateTime<Local>> {
+    queues
+        .iter()
+        .filter_map(|queue| queue.schedule.as_ref())
+        .flat_map(|schedule| {
+            let daily = &schedule.daily;
+            [
+                daily.enabled_start.then_some((daily.start_minute, false)),
+                daily.enabled_stop.then_some((daily.stop_minute, true)),
+            ]
+            .into_iter()
+            .flatten()
+            .flat_map(move |(minute, is_stop)| {
+                (0_u64..=7).filter_map(move |days_ahead| {
+                    let date = now.date_naive().checked_add_days(Days::new(days_ahead))?;
+                    let weekday = weekday_from_chrono(date.weekday());
+                    let schedule_day =
+                        if is_stop && daily.enabled_start && daily.start_minute > daily.stop_minute
+                        {
+                            previous_weekday(weekday)
+                        } else {
+                            weekday
+                        };
+                    if !daily.days.contains(&schedule_day) {
+                        return None;
+                    }
+                    let time =
+                        NaiveTime::from_hms_opt(u32::from(minute / 60), u32::from(minute % 60), 0)?;
+                    let local = Local
+                        .from_local_datetime(&NaiveDateTime::new(date, time))
+                        .earliest()?;
+                    (local > now).then_some(local)
+                })
+            })
+        })
+        .min()
+}
+
+fn daily_schedule_wake_moments(
+    scheduled: DateTime<Local>,
+    current: DateTime<Local>,
+) -> [DownloadScheduleMoment; 2] {
+    [scheduled, current].map(|moment| DownloadScheduleMoment {
+        weekday: weekday_from_chrono(moment.weekday()),
+        minute_of_day: u16::try_from(moment.hour() * 60 + moment.minute())
+            .expect("local clock minute is within a day"),
+    })
+}
+
+fn weekday_from_chrono(weekday: chrono::Weekday) -> DownloadWeekday {
+    match weekday {
+        chrono::Weekday::Mon => DownloadWeekday::Monday,
+        chrono::Weekday::Tue => DownloadWeekday::Tuesday,
+        chrono::Weekday::Wed => DownloadWeekday::Wednesday,
+        chrono::Weekday::Thu => DownloadWeekday::Thursday,
+        chrono::Weekday::Fri => DownloadWeekday::Friday,
+        chrono::Weekday::Sat => DownloadWeekday::Saturday,
+        chrono::Weekday::Sun => DownloadWeekday::Sunday,
+    }
+}
+
+fn previous_weekday(weekday: DownloadWeekday) -> DownloadWeekday {
+    match weekday {
+        DownloadWeekday::Monday => DownloadWeekday::Sunday,
+        DownloadWeekday::Tuesday => DownloadWeekday::Monday,
+        DownloadWeekday::Wednesday => DownloadWeekday::Tuesday,
+        DownloadWeekday::Thursday => DownloadWeekday::Wednesday,
+        DownloadWeekday::Friday => DownloadWeekday::Thursday,
+        DownloadWeekday::Saturday => DownloadWeekday::Friday,
+        DownloadWeekday::Sunday => DownloadWeekday::Saturday,
+    }
+}
+
 fn download_runtime() -> Result<&'static tokio::runtime::Runtime, DownloadEngineError> {
     DOWNLOAD_RUNTIME
         .get_or_init(|| {
@@ -2281,6 +2840,8 @@ pub enum DownloadEngineError {
     RateLimit(#[from] DownloadRateLimitError),
     #[error(transparent)]
     StorageCapacity(#[from] DownloadStorageCapacityError),
+    #[error(transparent)]
+    Schedule(#[from] crate::DownloadScheduleError),
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
     #[error("download task has no active transfer control: {0:?}")]
@@ -2339,6 +2900,7 @@ impl DownloadEngineError {
             | Self::Segment(_)
             | Self::TransferPlan(_)
             | Self::RateLimit(_)
+            | Self::Schedule(_)
             | Self::TaskNotFound(_)
             | Self::MissingTransferControl(_)
             | Self::MissingSegmentedLength(_)
@@ -2399,6 +2961,68 @@ mod tests {
         fn available_space(&self, _path: &Path) -> Option<u64> {
             Some(self.0)
         }
+    }
+
+    #[test]
+    fn daily_scheduler_arms_the_nearest_enabled_trigger_instead_of_polling() {
+        let now = Local
+            .with_ymd_and_hms(2026, 7, 31, 23, 0, 0)
+            .earliest()
+            .expect("valid local fixture time");
+        let queue = DownloadQueue {
+            id: "default".into(),
+            name: "默认队列".into(),
+            position: 0,
+            max_concurrent_tasks: Some(3),
+            connection_limit: None,
+            speed_limit_bytes_per_second: None,
+            default_save_directory: None,
+            schedule: Some(DownloadSchedule {
+                daily: DownloadDailySchedule {
+                    days: vec![DownloadWeekday::Friday],
+                    start_minute: 22 * 60 + 30,
+                    stop_minute: 2 * 60 + 15,
+                    enabled_start: true,
+                    enabled_stop: true,
+                },
+            }),
+            is_running: false,
+        };
+
+        let next = next_daily_schedule_trigger(&[queue], now).expect("next trigger");
+
+        assert_eq!(next.weekday(), chrono::Weekday::Sat);
+        assert_eq!(next.hour(), 2);
+        assert_eq!(next.minute(), 15);
+    }
+
+    #[test]
+    fn late_daily_wake_retains_the_scheduled_moment_for_independent_triggers() {
+        let scheduled = Local
+            .with_ymd_and_hms(2026, 7, 31, 9, 0, 0)
+            .earliest()
+            .expect("valid scheduled local time");
+        let current = Local
+            .with_ymd_and_hms(2026, 7, 31, 9, 12, 0)
+            .earliest()
+            .expect("valid delayed local time");
+        let [scheduled_moment, current_moment] = daily_schedule_wake_moments(scheduled, current);
+        let start_only = DownloadDailySchedule {
+            days: vec![DownloadWeekday::Friday],
+            start_minute: 9 * 60,
+            stop_minute: 0,
+            enabled_start: true,
+            enabled_stop: false,
+        };
+
+        assert_eq!(
+            daily_schedule_desired_running(&start_only, scheduled_moment),
+            Some(true)
+        );
+        assert_eq!(
+            daily_schedule_desired_running(&start_only, current_moment),
+            None
+        );
     }
 
     #[test]

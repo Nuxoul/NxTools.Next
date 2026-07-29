@@ -9,12 +9,12 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSegment,
-    DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
+    DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSchedule,
+    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
     INTERRUPTED_DOWNLOAD_STATUSES, RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 2;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 3;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 
 pub struct SqliteDownloadStore {
@@ -49,6 +49,9 @@ impl SqliteDownloadStore {
         }
         if current < 2 {
             connection.execute_batch(SCHEMA_V2)?;
+        }
+        if current < 3 {
+            connection.execute_batch(SCHEMA_V3)?;
         }
 
         Ok(Self {
@@ -164,13 +167,22 @@ impl SqliteDownloadStore {
             "#,
             params![queue_id, queue_id],
         )?;
-        let eligible = {
+        let admission = {
             let mut statement = transaction.prepare(
-                "SELECT task_id FROM download_queue_items WHERE queue_id = ?1 AND is_eligible = 1",
+                r#"
+                SELECT task_id, is_eligible, is_user_paused
+                FROM download_queue_items
+                WHERE queue_id = ?1
+                "#,
             )?;
             statement
-                .query_map([queue_id], |row| row.get::<_, String>(0))?
-                .collect::<Result<std::collections::HashSet<_>, _>>()?
+                .query_map([queue_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        (row.get::<_, bool>(1)?, row.get::<_, bool>(2)?),
+                    ))
+                })?
+                .collect::<Result<std::collections::HashMap<_, _>, _>>()?
         };
         let existing = {
             let mut statement = transaction.prepare(
@@ -203,14 +215,21 @@ impl SqliteDownloadStore {
         for (position, task_id) in complete_order.iter().enumerate() {
             transaction.execute(
                 r#"
-                INSERT INTO download_queue_items(queue_id, task_id, position, is_eligible)
-                VALUES (?1, ?2, ?3, ?4)
+                INSERT INTO download_queue_items(
+                    queue_id, task_id, position, is_eligible, is_user_paused
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5)
                 "#,
                 params![
                     queue_id,
                     task_id.as_uuid().to_string(),
                     i64::try_from(position).map_err(|_| DownloadStorageError::IntegerOverflow)?,
-                    eligible.contains(&task_id.as_uuid().to_string())
+                    admission
+                        .get(&task_id.as_uuid().to_string())
+                        .is_some_and(|(is_eligible, _)| *is_eligible),
+                    admission
+                        .get(&task_id.as_uuid().to_string())
+                        .is_some_and(|(_, is_user_paused)| *is_user_paused)
                 ],
             )?;
             transaction.execute(
@@ -249,6 +268,42 @@ impl SqliteDownloadStore {
             return Err(DownloadStorageError::TaskNotFound(task_id));
         }
         Ok(())
+    }
+
+    pub fn set_queue_task_admission(
+        &self,
+        task_id: DownloadTaskId,
+        is_eligible: bool,
+        is_user_paused: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            r#"
+            UPDATE download_queue_items
+            SET is_eligible = ?2, is_user_paused = ?3
+            WHERE task_id = ?1
+            "#,
+            params![task_id.as_uuid().to_string(), is_eligible, is_user_paused],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        Ok(())
+    }
+
+    pub fn is_queue_task_user_paused(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<bool, DownloadStorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT is_user_paused FROM download_queue_items WHERE task_id = ?1",
+                [task_id.as_uuid().to_string()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(DownloadStorageError::TaskNotFound(task_id))
     }
 
     pub fn is_queue_task_eligible(
@@ -331,7 +386,7 @@ impl SqliteDownloadStore {
         let mut statement = connection.prepare(
             r#"
             SELECT queue_id, name, position, max_concurrent_tasks, connection_limit,
-                   speed_limit_bytes_per_second, schedule_json
+                   speed_limit_bytes_per_second, schedule_json, is_running
             FROM download_queues
             ORDER BY position ASC
             "#,
@@ -360,6 +415,7 @@ impl SqliteDownloadStore {
                         .map(|value| value as u64),
                     default_save_directory: None,
                     schedule,
+                    is_running: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
@@ -388,6 +444,43 @@ impl SqliteDownloadStore {
             .into_iter()
             .find(|queue| queue.id == queue_id)
             .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.into()))
+    }
+
+    pub fn set_queue_schedule(
+        &self,
+        queue_id: &str,
+        schedule: Option<&DownloadSchedule>,
+    ) -> Result<DownloadQueue, DownloadStorageError> {
+        let schedule_json = schedule.map(serde_json::to_string).transpose()?;
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE download_queues SET schedule_json = ?2 WHERE queue_id = ?1",
+            params![queue_id, schedule_json],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::QueueNotFound(queue_id.into()));
+        }
+        drop(connection);
+        self.load_queues()?
+            .into_iter()
+            .find(|queue| queue.id == queue_id)
+            .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.into()))
+    }
+
+    pub fn set_queue_running(
+        &self,
+        queue_id: &str,
+        is_running: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE download_queues SET is_running = ?2 WHERE queue_id = ?1",
+            params![queue_id, is_running],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::QueueNotFound(queue_id.into()));
+        }
+        Ok(())
     }
 
     pub fn save_transfer_plan(
@@ -554,6 +647,32 @@ impl SqliteDownloadStore {
         let changed = transaction.execute(
             "UPDATE download_queue_items SET is_eligible = ?2 WHERE task_id = ?1",
             params![task.id().as_uuid().to_string(), is_eligible],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task.id()));
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn save_task_with_transfer_and_admission(
+        &self,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        is_eligible: bool,
+        is_user_paused: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        let changed = transaction.execute(
+            r#"
+            UPDATE download_queue_items
+            SET is_eligible = ?2, is_user_paused = ?3
+            WHERE task_id = ?1
+            "#,
+            params![task.id().as_uuid().to_string(), is_eligible, is_user_paused],
         )?;
         if changed == 0 {
             return Err(DownloadStorageError::TaskNotFound(task.id()));
@@ -1198,6 +1317,16 @@ SELECT 'default', task_id, ROW_NUMBER() OVER (
 FROM download_tasks;
 
 PRAGMA user_version = 2;
+COMMIT;
+"#;
+
+const SCHEMA_V3: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE download_queue_items
+    ADD COLUMN is_user_paused INTEGER NOT NULL DEFAULT 0;
+
+PRAGMA user_version = 3;
 COMMIT;
 "#;
 

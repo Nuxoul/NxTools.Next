@@ -40,6 +40,10 @@ connection limit, positive per-task speed limit and schedule. The optional globa
 stored under the typed `global_speed_limit_bytes_per_second` settings key. A JSON `null` means
 unlimited; zero is not a valid persisted limit.
 
+Queue rows persist their daily schedule JSON and running state. Queue-item admission persists both
+eligibility and whether a user explicitly paused the task, so a daily stop can be resumed by the
+next daily start without overriding a manual pause.
+
 On startup:
 
 - `probing`, `downloading`, `finalizing` and `verifying` become `paused`;

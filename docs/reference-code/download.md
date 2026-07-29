@@ -848,6 +848,59 @@ Reverified on 2026-07-29 before implementing the second Stage 3 slice:
 - Queue diagnostics use correlation IDs and record only task IDs, queue IDs, action, position and
   slot counts. URLs, headers, cookies, file names and file contents remain excluded from logs.
 
+### Phase 3 daily scheduling and delayed-admission findings
+
+Reverified on 2026-07-29 before implementing the third Stage 3 slice:
+
+- AB Download Manager keeps daily scheduling as durable queue policy in
+  `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ScheduleTimes.kt` and
+  `DownloadQueue.kt`. The policy has selected weekdays, independent enabled start/stop controls and
+  local wall-clock times. Each trigger computes the nearest eligible local weekday/time, runs once,
+  then arms the next day's trigger; it does not busy-poll from the UI.
+- ABDM's `DownloadQueue.setUpAutoStartJob` / `setUpAutoStopJob` cancel a superseded timer before
+  arming the replacement. Start records the pre-start queue activity and starts the queue; stop
+  stops active queue work. Queue scheduling is therefore an engine-owned lifecycle, not an
+  application-window timer.
+- Old NxTools accepts a one-time absolute `ScheduledStartAt` during task creation in
+  `ViewModels/MainWindowViewModel.cs::TryResolveSchedule`; it creates a scheduled task instead of
+  starting it early. `ReleaseDueScheduledTasks` later enqueues only tasks whose scheduled time is
+  due, and `PauseTasksOutsideSchedulerWindow` pauses active downloads outside the configured daily
+  window.
+- The old daily window accepts both normal and cross-midnight intervals:
+  `start <= stop` means `start <= now <= stop`; `start > stop` means `now >= start || now <= stop`.
+  Invalid time input leaves the window permissive instead of unexpectedly pausing work.
+- NxTools.Next follows ABDM's explicit stop trigger at the configured minute rather than carrying
+  the old inclusive stop minute into the next minute. Its effective recurring window is therefore
+  start-inclusive and stop-exclusive. For a cross-midnight window, the stop trigger belongs to the
+  calendar day after the selected start weekday.
+- NxTools.Next will keep one-time delayed admission as an absolute UTC Unix-millisecond request
+  field (`scheduled_at_unix_ms`) and model recurring queue windows separately. A future delayed
+  request is durable but ineligible; when due, the Rust engine atomically admits it to its queue.
+  Manual resume overrides the delay, while manual pause cancels it. The UI never owns the due timer.
+- Scheduling diagnostics carry the command correlation ID and only log task/queue IDs, action,
+  due/window timestamps and state transitions. URLs, paths, request headers, cookies and file names
+  are excluded.
+- The compact NxTools.Next `NewDownloadView` exposes one optional local-time `稍后下载` field only
+  after a successful probe, alongside destination and file name. It accepts `YYYY-MM-DD HH:MM`,
+  rejects past, invalid and ambiguous local times before submission, preserves the field across a
+  probe refresh, and closes the add window after acceptance. A delayed `StartNow` submission must
+  not open a progress window early; the existing keyed window opens only once the engine admits the
+  task. The field follows the same input focus order, close control and inline validation surface as
+  URL/destination/file name, and it adds no separate popup or focus-stealing window.
+- ABDM `desktop/app/.../pages/queue/QueueInfoComponent.kt` presents daily scheduling as one queue
+  configuration group: active weekdays first, followed by independent auto-start and auto-stop
+  toggles whose time fields are visible only while enabled. Old NxTools
+  `Views/SettingsWindow.axaml` keeps the same policy in a dedicated settings section and describes
+  cross-midnight windows explicitly.
+- NxTools.Next keeps the download task table dense by placing one compact `计划` action beside
+  `新建下载`; it opens one keyed client-decorated settings window instead of expanding controls
+  inside the task list. Repeated clicks activate the existing window. The window owns local draft
+  state, does not mutate the engine until `应用`, keeps independent start/stop toggles, requires at
+  least one weekday when either trigger is enabled, validates `HH:MM`, and reports rejection inline.
+  `取消` and the title-bar close control discard the draft. Successful application refreshes the
+  authoritative queue snapshot, closes the settings window, and never changes task selection or
+  focus in the main download table.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

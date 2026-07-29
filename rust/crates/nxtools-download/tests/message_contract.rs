@@ -189,6 +189,7 @@ fn snapshot_contains_queues_and_uses_the_frozen_metrics_name() {
             speed_limit_bytes_per_second: None,
             default_save_directory: None,
             schedule: None,
+            is_running: true,
         }],
         aggregate_metrics: DownloadAggregateMetrics::default(),
         task_details: Vec::new(),

@@ -2,10 +2,11 @@ use std::path::PathBuf;
 
 use nxtools_download::{
     DownloadArtifact, DownloadArtifactKind, DownloadArtifactState, DownloadAttempt,
-    DownloadAttemptError, DownloadAttemptErrorCategory, DownloadQueue, DownloadRequest,
-    DownloadRequestError, DownloadRequestHeader, DownloadSchedule, DownloadSegment,
-    DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskError, RequestOrigin,
-    ResourceValidator, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadAttemptError, DownloadAttemptErrorCategory, DownloadDailySchedule, DownloadQueue,
+    DownloadRequest, DownloadRequestError, DownloadRequestHeader, DownloadSchedule,
+    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskError,
+    DownloadWeekday, RequestOrigin, ResourceValidator, TransferPlan, TransferPlanError,
+    TransferProtocol,
 };
 
 fn request() -> DownloadRequest {
@@ -186,9 +187,16 @@ fn remaining_phase_zero_domain_types_have_explicit_meaning() {
         speed_limit_bytes_per_second: None,
         default_save_directory: Some(PathBuf::from(r"D:\Downloads")),
         schedule: None,
+        is_running: true,
     };
     let schedule = DownloadSchedule {
-        eligible_at_unix_ms: 5_000,
+        daily: DownloadDailySchedule {
+            days: vec![DownloadWeekday::Monday],
+            start_minute: 9 * 60,
+            stop_minute: 17 * 60,
+            enabled_start: true,
+            enabled_stop: true,
+        },
     };
     let attempt = DownloadAttempt {
         number: 1,
@@ -211,7 +219,7 @@ fn remaining_phase_zero_domain_types_have_explicit_meaning() {
     assert_eq!(plan.total_bytes(), Some(segment.len()));
     assert_eq!(segment.downloaded_bytes(), 4);
     assert_eq!(queue.id, "main");
-    assert_eq!(schedule.eligible_at_unix_ms, 5_000);
+    assert_eq!(schedule.daily.start_minute, 9 * 60);
     assert_eq!(attempt.number, 1);
     assert_eq!(attempt.retry_at_unix_ms, Some(2_000));
     assert_eq!(artifact.state, DownloadArtifactState::Pending);
