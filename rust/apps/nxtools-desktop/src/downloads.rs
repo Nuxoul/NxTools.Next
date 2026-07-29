@@ -405,7 +405,7 @@ impl DownloadApplication {
         }
     }
 
-    fn open_task_artifact(
+    pub(crate) fn open_task_artifact(
         &mut self,
         task_id: DownloadTaskId,
         action: ShellOpenAction,
@@ -426,21 +426,31 @@ impl DownloadApplication {
             });
             return;
         };
-        if let Err(error) =
-            self.platform
-                .send_command(PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
-                    target: path,
-                    action,
-                }))
-        {
-            self.notifications.update(cx, |notifications, cx| {
-                notifications.show_error(
-                    format!("download-artifact-open-{}", task_id.as_uuid()),
-                    "无法执行文件操作",
-                    error.to_string(),
-                    cx,
+        match self
+            .platform
+            .send_command(PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: path,
+                action,
+            })) {
+            Ok(correlation_id) => {
+                info!(
+                    event = "download.artifact.shell_action_accepted",
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    ?action,
+                    "download artifact Shell action accepted"
                 );
-            });
+            }
+            Err(error) => {
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        format!("download-artifact-open-{}", task_id.as_uuid()),
+                        "无法执行文件操作",
+                        error.to_string(),
+                        cx,
+                    );
+                });
+            }
         }
     }
 

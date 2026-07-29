@@ -1,15 +1,18 @@
 use std::collections::HashSet;
+use std::hash::Hash;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Corner, Entity, FocusHandle, IntoElement,
-    KeyDownEvent, MouseButton, Render, ScrollHandle, ScrollWheelEvent, Subscription, Window,
-    WindowControlArea, div, ease_in_out, point, prelude::*, px,
+    KeyDownEvent, MouseButton, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
+    Subscription, UniformListScrollHandle, Window, WindowControlArea, div, ease_in_out, point,
+    prelude::*, px, uniform_list,
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
-use gpui_component::scroll::Scrollbar;
+use gpui_component::scroll::{ScrollableElement, Scrollbar};
 use gpui_component::{Disableable, Icon, PixelsExt, Sizable};
 use nxtools_clipboard::ClipboardHistoryCounts;
 use nxtools_core::{
@@ -19,7 +22,7 @@ use nxtools_core::{
 use nxtools_download::{
     DownloadBatchAction, DownloadEngineTask, DownloadQueuePlacement, DownloadStatus, DownloadTaskId,
 };
-use nxtools_protocol::{IndexPhase, IndexStatus};
+use nxtools_protocol::{IndexPhase, IndexStatus, ShellOpenAction};
 use tracing::info;
 
 use crate::clipboard::ClipboardApplication;
@@ -41,6 +44,7 @@ const DOWNLOAD_PAGE_HEADER_HEIGHT: f32 = 48.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
+const DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY: Duration = Duration::from_millis(250);
 const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = 154.0;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
 
@@ -73,6 +77,7 @@ pub(crate) struct MainWindow {
     quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
     downloads: gpui::WeakEntity<DownloadApplication>,
     notifications: Entity<NotificationCenter>,
+    download_search_input: gpui::Entity<InputState>,
     exclusions_input: gpui::Entity<InputState>,
     custom_command_keyword: gpui::Entity<InputState>,
     custom_command_title: gpui::Entity<InputState>,
@@ -87,6 +92,9 @@ pub(crate) struct MainWindow {
     selected_download_tasks: HashSet<DownloadTaskId>,
     download_selection_anchor: Option<DownloadTaskId>,
     download_filter: DownloadTaskFilter,
+    download_sort: DownloadSortState,
+    download_list_scroll: UniformListScrollHandle,
+    download_search_log_generation: u64,
     custom_command_run_as_admin: bool,
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
@@ -113,9 +121,192 @@ enum DownloadTaskFilter {
 
 struct DownloadRowSelection {
     selected: bool,
-    targets: Vec<DownloadTaskId>,
-    visible_task_ids: Vec<DownloadTaskId>,
-    queue_move_enabled: bool,
+    visible_task_ids: Arc<Vec<DownloadTaskId>>,
+}
+
+#[derive(Debug, Default)]
+struct DownloadContextCapabilities {
+    can_resume: bool,
+    can_pause: bool,
+    can_cancel: bool,
+    can_move_queue: bool,
+    single_artifact: Option<DownloadTaskId>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum DownloadSortKey {
+    #[default]
+    Queue,
+    Name,
+    Size,
+    Progress,
+    Status,
+    Created,
+}
+
+impl DownloadSortKey {
+    const ALL: [Self; 6] = [
+        Self::Queue,
+        Self::Name,
+        Self::Size,
+        Self::Progress,
+        Self::Status,
+        Self::Created,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Queue => "队列顺序",
+            Self::Name => "名称",
+            Self::Size => "大小",
+            Self::Progress => "进度",
+            Self::Status => "状态",
+            Self::Created => "添加时间",
+        }
+    }
+
+    const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Queue => "queue",
+            Self::Name => "name",
+            Self::Size => "size",
+            Self::Progress => "progress",
+            Self::Status => "status",
+            Self::Created => "created",
+        }
+    }
+
+    const fn default_descending(self) -> bool {
+        matches!(self, Self::Size | Self::Progress | Self::Created)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DownloadSortState {
+    key: DownloadSortKey,
+    descending: bool,
+}
+
+fn download_task_name(task: &DownloadEngineTask) -> &str {
+    task.final_path
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .or(task.task.request().file_name.as_deref())
+        .or_else(|| {
+            task.probe
+                .as_ref()
+                .and_then(|probe| probe.file_name.as_deref())
+        })
+        .unwrap_or("正在解析文件名")
+}
+
+fn download_task_matches_search(task: &DownloadEngineTask, query: &str) -> bool {
+    let query = query.trim();
+    if query.is_empty() {
+        return true;
+    }
+    let query = query.to_lowercase();
+    download_task_name(task).to_lowercase().contains(&query)
+        || task
+            .task
+            .request()
+            .source_url
+            .to_lowercase()
+            .contains(&query)
+        || task
+            .final_path
+            .as_ref()
+            .is_some_and(|path| path.to_string_lossy().to_lowercase().contains(&query))
+}
+
+fn download_status_sort_rank(status: DownloadStatus) -> u8 {
+    match status {
+        DownloadStatus::Downloading => 0,
+        DownloadStatus::Probing => 1,
+        DownloadStatus::Finalizing => 2,
+        DownloadStatus::Verifying => 3,
+        DownloadStatus::Waiting => 4,
+        DownloadStatus::Created => 5,
+        DownloadStatus::Paused => 6,
+        DownloadStatus::Failed => 7,
+        DownloadStatus::Completed => 8,
+        DownloadStatus::Cancelled => 9,
+    }
+}
+
+fn download_tasks_for_view(
+    tasks: &[DownloadEngineTask],
+    filter: DownloadTaskFilter,
+    query: &str,
+    sort: DownloadSortState,
+) -> Vec<DownloadEngineTask> {
+    let mut visible = tasks
+        .iter()
+        .filter(|task| filter.matches(task.task.status()))
+        .filter(|task| download_task_matches_search(task, query))
+        .cloned()
+        .collect::<Vec<_>>();
+    if sort.key == DownloadSortKey::Queue {
+        return visible;
+    }
+    visible.sort_by(|left, right| {
+        let ordering = match sort.key {
+            DownloadSortKey::Queue => std::cmp::Ordering::Equal,
+            DownloadSortKey::Name => download_task_name(left)
+                .to_lowercase()
+                .cmp(&download_task_name(right).to_lowercase()),
+            DownloadSortKey::Size => left.total_bytes.cmp(&right.total_bytes),
+            DownloadSortKey::Progress => {
+                let left_progress = left
+                    .total_bytes
+                    .filter(|total| *total > 0)
+                    .map_or(0.0, |total| left.downloaded_bytes as f64 / total as f64);
+                let right_progress = right
+                    .total_bytes
+                    .filter(|total| *total > 0)
+                    .map_or(0.0, |total| right.downloaded_bytes as f64 / total as f64);
+                left_progress.total_cmp(&right_progress)
+            }
+            DownloadSortKey::Status => download_status_sort_rank(left.task.status())
+                .cmp(&download_status_sort_rank(right.task.status())),
+            DownloadSortKey::Created => left
+                .task
+                .created_at_unix_ms()
+                .cmp(&right.task.created_at_unix_ms()),
+        };
+        if sort.descending {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+    visible
+}
+
+fn set_download_sort(state: &mut DownloadSortState, key: DownloadSortKey, toggle: bool) -> bool {
+    let next = if state.key == key && toggle && key != DownloadSortKey::Queue {
+        DownloadSortState {
+            key,
+            descending: !state.descending,
+        }
+    } else {
+        DownloadSortState {
+            key,
+            descending: key.default_descending(),
+        }
+    };
+    if *state == next {
+        return false;
+    }
+    *state = next;
+    info!(
+        event = "download.list.sort_changed",
+        sort_key = key.diagnostic_name(),
+        descending = state.descending,
+        "download task presentation sort changed"
+    );
+    true
 }
 
 impl DownloadTaskFilter {
@@ -240,14 +431,26 @@ fn download_filter_counts(
     counts
 }
 
-fn reconcile_visible_selection<T, Id: Copy + PartialEq>(
-    selected: Option<Id>,
+fn reconcile_download_selection<T, Id: Copy + Eq + Hash>(
+    primary: Option<Id>,
+    selected: &mut HashSet<Id>,
     visible: &[T],
     id: impl Fn(&T) -> Id,
 ) -> Option<Id> {
-    selected
-        .filter(|selected| visible.iter().any(|item| id(item) == *selected))
-        .or_else(|| visible.first().map(id))
+    selected.retain(|selected_id| visible.iter().any(|item| id(item) == *selected_id));
+    let primary = primary
+        .filter(|primary_id| visible.iter().any(|item| id(item) == *primary_id))
+        .or_else(|| {
+            visible
+                .iter()
+                .map(&id)
+                .find(|visible_id| selected.contains(visible_id))
+        })
+        .or_else(|| visible.first().map(id));
+    if let Some(primary_id) = primary {
+        selected.insert(primary_id);
+    }
+    primary
 }
 
 fn select_download_filter(
@@ -298,6 +501,70 @@ fn update_download_selection(
         selected.clear();
         selected.insert(clicked);
         *anchor = Some(clicked);
+    }
+}
+
+fn prepare_download_context_selection(
+    selected: &mut HashSet<DownloadTaskId>,
+    primary: &mut Option<DownloadTaskId>,
+    anchor: &mut Option<DownloadTaskId>,
+    visible: &[DownloadTaskId],
+    clicked: DownloadTaskId,
+) -> Vec<DownloadTaskId> {
+    if !selected.contains(&clicked) {
+        selected.clear();
+        selected.insert(clicked);
+        *primary = Some(clicked);
+        *anchor = Some(clicked);
+    }
+    visible
+        .iter()
+        .filter(|task_id| selected.contains(task_id))
+        .copied()
+        .collect()
+}
+
+fn download_context_capabilities(
+    tasks: &[DownloadEngineTask],
+    selected: &[DownloadTaskId],
+) -> DownloadContextCapabilities {
+    let selected_tasks = selected
+        .iter()
+        .filter_map(|task_id| tasks.iter().find(|task| task.task.id() == *task_id))
+        .collect::<Vec<_>>();
+    DownloadContextCapabilities {
+        can_resume: selected_tasks.iter().any(|task| {
+            matches!(
+                task.task.status(),
+                DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
+            )
+        }),
+        can_pause: selected_tasks.iter().any(|task| {
+            matches!(
+                task.task.status(),
+                DownloadStatus::Created
+                    | DownloadStatus::Probing
+                    | DownloadStatus::Waiting
+                    | DownloadStatus::Downloading
+            )
+        }),
+        can_cancel: selected_tasks.iter().any(|task| {
+            matches!(
+                task.task.status(),
+                DownloadStatus::Created
+                    | DownloadStatus::Probing
+                    | DownloadStatus::Waiting
+                    | DownloadStatus::Downloading
+                    | DownloadStatus::Paused
+                    | DownloadStatus::Failed
+            )
+        }),
+        can_move_queue: !selected_tasks.is_empty()
+            && selected_tasks.iter().all(|task| task.queue_eligible),
+        single_artifact: (selected_tasks.len() == 1)
+            .then(|| selected_tasks[0])
+            .filter(|task| task.task.status() == DownloadStatus::Completed)
+            .and_then(|task| task.final_path.as_ref().map(|_| task.task.id())),
     }
 }
 
@@ -457,6 +724,8 @@ impl MainWindow {
                 .default_value(excluded_processes)
                 .placeholder("KeePass.exe; Bitwarden.exe")
         });
+        let download_search_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("搜索文件名或地址"));
         let initial_custom_command = quick_launch.upgrade().and_then(|application| {
             application
                 .read(cx)
@@ -518,6 +787,49 @@ impl MainWindow {
                 }
             },
         );
+        let download_search_subscription = cx.subscribe_in(
+            &download_search_input,
+            window,
+            |this, input, event: &InputEvent, _window, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+                let query = input.read(cx).value().trim().to_owned();
+                this.download_list_scroll
+                    .scroll_to_item(0, ScrollStrategy::Top);
+                this.download_search_log_generation =
+                    this.download_search_log_generation.wrapping_add(1).max(1);
+                let generation = this.download_search_log_generation;
+                cx.notify();
+                let background = cx.background_executor().clone();
+                cx.spawn(async move |this, cx| {
+                    background.timer(DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if this.download_search_log_generation != generation
+                            || this.download_search_input.read(cx).value().trim() != query
+                        {
+                            return;
+                        }
+                        let result_count = this.downloads.upgrade().map_or(0, |application| {
+                            application
+                                .read(cx)
+                                .tasks()
+                                .iter()
+                                .filter(|task| this.download_filter.matches(task.task.status()))
+                                .filter(|task| download_task_matches_search(task, &query))
+                                .count()
+                        });
+                        info!(
+                            event = "download.list.search_changed",
+                            query_length = query.chars().count(),
+                            result_count,
+                            "download task search changed"
+                        );
+                    });
+                })
+                .detach();
+            },
+        );
         let clipboard_subscription = clipboard
             .upgrade()
             .map(|application| cx.observe(&application, |_, _, cx| cx.notify()));
@@ -552,7 +864,7 @@ impl MainWindow {
                     cx.notify();
                 }
             });
-        let mut subscriptions = vec![exclusions_subscription];
+        let mut subscriptions = vec![exclusions_subscription, download_search_subscription];
         subscriptions.extend(clipboard_subscription);
         subscriptions.extend(quick_launch_subscription);
         subscriptions.extend(downloads_subscription);
@@ -566,6 +878,7 @@ impl MainWindow {
             quick_launch,
             downloads,
             notifications,
+            download_search_input,
             exclusions_input,
             custom_command_keyword,
             custom_command_title,
@@ -580,6 +893,9 @@ impl MainWindow {
             selected_download_tasks: HashSet::new(),
             download_selection_anchor: None,
             download_filter: DownloadTaskFilter::default(),
+            download_sort: DownloadSortState::default(),
+            download_list_scroll: UniformListScrollHandle::new(),
+            download_search_log_generation: 0,
             custom_command_run_as_admin: initial_custom_command
                 .as_ref()
                 .is_some_and(|command| command.run_as_admin),
@@ -1320,6 +1636,12 @@ impl MainWindow {
 
     fn render_downloads(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
+        let search_query = self
+            .download_search_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
         let (total_count, counts, visible_tasks) = self
             .downloads
             .upgrade()
@@ -1328,72 +1650,62 @@ impl MainWindow {
                 (
                     tasks.len(),
                     download_filter_counts(tasks.iter().map(|task| task.task.status())),
-                    tasks
-                        .iter()
-                        .filter(|task| self.download_filter.matches(task.task.status()))
-                        .cloned()
-                        .collect::<Vec<_>>(),
+                    download_tasks_for_view(
+                        tasks,
+                        self.download_filter,
+                        &search_query,
+                        self.download_sort,
+                    ),
                 )
             })
             .unwrap_or_default();
-        let selected_task_id =
-            reconcile_visible_selection(self.selected_download_task, &visible_tasks, |task| {
-                task.task.id()
-            });
+        let selected_task_id = reconcile_download_selection(
+            self.selected_download_task,
+            &mut self.selected_download_tasks,
+            &visible_tasks,
+            |task| task.task.id(),
+        );
         self.selected_download_task = selected_task_id;
         let visible_task_ids = visible_tasks
             .iter()
             .map(|task| task.task.id())
             .collect::<Vec<_>>();
-        self.selected_download_tasks
-            .retain(|task_id| visible_task_ids.contains(task_id));
-        if self.selected_download_tasks.is_empty()
-            && let Some(task_id) = selected_task_id
-        {
-            self.selected_download_tasks.insert(task_id);
-            self.download_selection_anchor = Some(task_id);
-        }
+        self.download_selection_anchor = self
+            .download_selection_anchor
+            .filter(|task_id| self.selected_download_tasks.contains(task_id))
+            .or(selected_task_id);
         let selected_task_detail = selected_task_id
             .and_then(|task_id| visible_tasks.iter().find(|task| task.task.id() == task_id))
             .map(|task| download_task_detail(theme, task).into_any_element());
         let download_application = self.downloads.clone();
         let main_window = cx.entity();
         let visible_count = visible_tasks.len();
-        let selected_targets = self
-            .selected_download_tasks
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
-        let selected_queue_move_enabled = !selected_targets.is_empty()
-            && selected_targets.iter().all(|task_id| {
-                visible_tasks
-                    .iter()
-                    .any(|task| task.task.id() == *task_id && task.queue_eligible)
-            });
-        let task_rows = visible_tasks
-            .into_iter()
-            .map(|task| {
-                download_task_row(
-                    theme,
-                    self.downloads.clone(),
-                    main_window.clone(),
-                    DownloadRowSelection {
-                        selected: self.selected_download_tasks.contains(&task.task.id()),
-                        targets: selected_targets.clone(),
-                        visible_task_ids: visible_task_ids.clone(),
-                        queue_move_enabled: if self
-                            .selected_download_tasks
-                            .contains(&task.task.id())
-                        {
-                            selected_queue_move_enabled
-                        } else {
-                            task.queue_eligible
-                        },
-                    },
-                    task,
-                )
-            })
-            .collect::<Vec<_>>();
+        let virtual_tasks = Arc::new(visible_tasks);
+        let virtual_task_ids = Arc::new(visible_task_ids);
+        let virtual_main_window = main_window.clone();
+        let task_list = uniform_list(
+            "download-task-list",
+            visible_count,
+            cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
+                range
+                    .filter_map(|index| virtual_tasks.get(index).cloned())
+                    .map(|task| {
+                        download_task_row(
+                            theme,
+                            this.downloads.clone(),
+                            virtual_main_window.clone(),
+                            DownloadRowSelection {
+                                selected: this.selected_download_tasks.contains(&task.task.id()),
+                                visible_task_ids: virtual_task_ids.clone(),
+                            },
+                            task,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }),
+        )
+        .size_full()
+        .track_scroll(self.download_list_scroll.clone());
         let mut filter_rows = div().flex().items_center().gap(px(3.0));
         for filter in DownloadTaskFilter::ALL {
             let active = filter == self.download_filter;
@@ -1410,15 +1722,31 @@ impl MainWindow {
                             filter_count,
                             total_count,
                         ) {
+                            this.download_list_scroll
+                                .scroll_to_item(0, ScrollStrategy::Top);
                             cx.notify();
                         }
                     })),
             );
         }
-        let filter_summary = if self.download_filter == DownloadTaskFilter::All {
-            format!("共 {total_count} 项")
+        let filter_summary =
+            if self.download_filter == DownloadTaskFilter::All && search_query.is_empty() {
+                format!("共 {total_count} 项")
+            } else {
+                format!("显示 {visible_count} / {total_count}")
+            };
+        let search_input = self.download_search_input.clone();
+        let clear_search_input = self.download_search_input.clone();
+        let sort_state = self.download_sort;
+        let sort_main_window = main_window.clone();
+        let sort_label = if sort_state.key == DownloadSortKey::Queue {
+            sort_state.key.label().to_owned()
         } else {
-            format!("显示 {visible_count} / {total_count}")
+            format!(
+                "{} {}",
+                sort_state.key.label(),
+                if sort_state.descending { "↓" } else { "↑" }
+            )
         };
         div()
             .size_full()
@@ -1427,6 +1755,8 @@ impl MainWindow {
             .flex_col()
             .child(
                 div()
+                    .id("download-page-header")
+                    .debug_selector(|| "download-page-header".into())
                     .h(px(DOWNLOAD_PAGE_HEADER_HEIGHT))
                     .px(px(14.0))
                     .border_b_1()
@@ -1453,6 +1783,48 @@ impl MainWindow {
                             ),
                     )
                     .child(div().flex_1())
+                    .child(
+                        div()
+                            .id("download-search")
+                            .debug_selector(|| "download-search".into())
+                            .w(px(176.0))
+                            .h(px(26.0))
+                            .mr(px(8.0))
+                            .rounded(px(4.0))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.surface)
+                            .flex()
+                            .items_center()
+                            .child(
+                                Icon::new(MaterialIcon::Search)
+                                    .size(px(13.0))
+                                    .text_color(theme.text_muted),
+                            )
+                            .child(
+                                div().min_w_0().flex_1().child(
+                                    Input::new(&search_input)
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false)
+                                        .xsmall(),
+                                ),
+                            )
+                            .when(!search_query.is_empty(), |search| {
+                                search.child(
+                                    Button::new("download-search-clear")
+                                        .icon(Icon::new(MaterialIcon::Close))
+                                        .xsmall()
+                                        .compact()
+                                        .ghost()
+                                        .on_click(move |_, window, cx| {
+                                            clear_search_input.update(cx, |input, cx| {
+                                                input.set_value("", window, cx);
+                                            });
+                                        }),
+                                )
+                            }),
+                    )
                     .child(
                         Button::new("download-schedule")
                             .icon(Icon::new(MaterialIcon::History))
@@ -1497,7 +1869,51 @@ impl MainWindow {
                     .child(filter_rows)
                     .child(div().flex_1())
                     .child(
+                        Button::new("download-sort")
+                            .label(sort_label)
+                            .xsmall()
+                            .compact()
+                            .ghost()
+                            .h(px(26.0))
+                            .dropdown_menu_with_anchor(
+                                Corner::TopRight,
+                                move |menu, _window, _cx| {
+                                    DownloadSortKey::ALL.into_iter().fold(
+                                        menu.min_w(px(118.0)),
+                                        |menu, key| {
+                                            let sort_main_window = sort_main_window.clone();
+                                            menu.item(
+                                                PopupMenuItem::new(key.label())
+                                                    .checked(key == sort_state.key)
+                                                    .on_click(move |_event, _window, cx| {
+                                                        sort_main_window.update(
+                                                            cx,
+                                                            |window, cx| {
+                                                                if set_download_sort(
+                                                                    &mut window.download_sort,
+                                                                    key,
+                                                                    false,
+                                                                ) {
+                                                                    window
+                                                                        .download_list_scroll
+                                                                        .scroll_to_item(
+                                                                            0,
+                                                                            ScrollStrategy::Top,
+                                                                        );
+                                                                    cx.notify();
+                                                                }
+                                                            },
+                                                        );
+                                                    }),
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                    )
+                    .child(
                         div()
+                            .ml(px(8.0))
                             .text_size(px(9.5))
                             .text_color(theme.text_muted)
                             .child(filter_summary),
@@ -1509,14 +1925,27 @@ impl MainWindow {
                     .min_h_0()
                     .flex()
                     .flex_col()
-                    .child(download_table_header(theme))
-                    .child(if task_rows.is_empty() {
+                    .child(download_table_header(
+                        theme,
+                        self.download_sort,
+                        main_window,
+                    ))
+                    .child(if visible_count == 0 {
                         if total_count == 0 {
                             empty_state(
                                 theme,
                                 MaterialIcon::Download,
                                 "还没有下载任务",
                                 "点击右上角新建下载，提交真实 HTTP 或 HTTPS 地址。",
+                            )
+                            .flex_1()
+                            .into_any_element()
+                        } else if !search_query.is_empty() {
+                            empty_state(
+                                theme,
+                                MaterialIcon::Search,
+                                "没有匹配的下载任务",
+                                "尝试缩短关键词，或切换到其他状态分类。",
                             )
                             .flex_1()
                             .into_any_element()
@@ -1532,14 +1961,13 @@ impl MainWindow {
                         }
                     } else {
                         div()
-                            .id("download-task-list")
+                            .id("download-task-list-scroll")
+                            .relative()
                             .flex_1()
                             .min_h_0()
-                            .overflow_y_scroll()
                             .bg(theme.canvas)
-                            .flex()
-                            .flex_col()
-                            .children(task_rows)
+                            .child(task_list)
+                            .vertical_scrollbar(&self.download_list_scroll)
                             .into_any_element()
                     })
                     .when_some(selected_task_detail, |workspace, detail| {
@@ -3287,26 +3715,12 @@ fn download_task_row(
 ) -> AnyElement {
     let DownloadRowSelection {
         selected,
-        targets: selected_targets,
         visible_task_ids,
-        queue_move_enabled,
     } = selection;
     let task_id = task.task.id();
     let element_id = task_id.as_uuid().as_u64_pair().0;
     let status = task.task.status();
-    let name = task
-        .final_path
-        .as_ref()
-        .and_then(|path| path.file_name())
-        .and_then(|name| name.to_str())
-        .or(task.task.request().file_name.as_deref())
-        .or_else(|| {
-            task.probe
-                .as_ref()
-                .and_then(|probe| probe.file_name.as_deref())
-        })
-        .unwrap_or("正在解析文件名")
-        .to_owned();
+    let name = download_task_name(&task).to_owned();
     let path = task.final_path.as_ref().map_or_else(
         || task.task.request().source_url.clone(),
         |path| path.display().to_string(),
@@ -3331,12 +3745,13 @@ fn download_task_row(
         |error| (error.message.clone(), theme.danger),
     );
     let row_open_application = application.clone();
-    let menu_application = application;
-    let menu_targets = if selected && !selected_targets.is_empty() {
-        selected_targets
-    } else {
-        vec![task_id]
-    };
+    let context_application = application;
+    let click_main_window = main_window.clone();
+    let click_visible_task_ids = visible_task_ids.clone();
+    let right_click_main_window = main_window.clone();
+    let right_click_visible_task_ids = visible_task_ids.clone();
+    let context_main_window = main_window.clone();
+    let context_visible_task_ids = visible_task_ids.clone();
 
     div()
         .id(("download-task-row", element_id))
@@ -3353,13 +3768,13 @@ fn download_task_row(
         .hover(move |style| style.bg(theme.surface_hover))
         .on_click(move |event, _, cx| {
             let modifiers = event.modifiers();
-            let visible_task_ids = visible_task_ids.clone();
-            main_window.update(cx, |window, cx| {
+            let visible_task_ids = click_visible_task_ids.clone();
+            click_main_window.update(cx, |window, cx| {
                 update_download_selection(
                     &mut window.selected_download_tasks,
                     &mut window.selected_download_task,
                     &mut window.download_selection_anchor,
-                    &visible_task_ids,
+                    visible_task_ids.as_ref(),
                     task_id,
                     modifiers.control,
                     modifiers.shift,
@@ -3372,12 +3787,41 @@ fn download_task_row(
                 });
             }
         })
-        .context_menu(move |menu, _window, _cx| {
+        .on_mouse_down(MouseButton::Right, move |_event, _window, cx| {
+            right_click_main_window.update(cx, |window, cx| {
+                let targets = prepare_download_context_selection(
+                    &mut window.selected_download_tasks,
+                    &mut window.selected_download_task,
+                    &mut window.download_selection_anchor,
+                    right_click_visible_task_ids.as_ref(),
+                    task_id,
+                );
+                info!(
+                    event = "download.list.context_menu_requested",
+                    selected_count = targets.len(),
+                    "download task context menu requested"
+                );
+                cx.notify();
+            });
+        })
+        .context_menu(move |menu, _window, cx| {
+            let task_ids = context_main_window.read(cx).selected_download_tasks.clone();
+            let ordered_task_ids = context_visible_task_ids
+                .iter()
+                .filter(|task_id| task_ids.contains(task_id))
+                .copied()
+                .collect::<Vec<_>>();
+            let capabilities = context_application
+                .upgrade()
+                .map(|application| {
+                    download_context_capabilities(application.read(cx).tasks(), &ordered_task_ids)
+                })
+                .unwrap_or_default();
             download_task_context_menu(
                 menu,
-                menu_application.clone(),
-                menu_targets.clone(),
-                queue_move_enabled,
+                context_application.clone(),
+                ordered_task_ids,
+                capabilities,
             )
         })
         .child(
@@ -3498,39 +3942,133 @@ fn download_task_context_menu(
     menu: PopupMenu,
     application: gpui::WeakEntity<DownloadApplication>,
     task_ids: Vec<DownloadTaskId>,
-    queue_move_enabled: bool,
+    capabilities: DownloadContextCapabilities,
 ) -> PopupMenu {
-    let batch_item = |label: &'static str, action: DownloadBatchAction| {
+    let batch_item =
+        |label: &'static str, action: DownloadBatchAction, disabled: bool, icon: MaterialIcon| {
+            let application = application.clone();
+            let task_ids = task_ids.clone();
+            PopupMenuItem::new(label)
+                .icon(Icon::new(icon))
+                .disabled(disabled)
+                .on_click(move |_event, _window, cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.batch_action(task_ids.clone(), action, cx);
+                    });
+                })
+        };
+    let queue_item =
+        |label: &'static str, placement: DownloadQueuePlacement, icon: MaterialIcon| {
+            let application = application.clone();
+            let task_ids = task_ids.clone();
+            PopupMenuItem::new(label)
+                .icon(Icon::new(icon))
+                .disabled(!capabilities.can_move_queue)
+                .on_click(move |_event, _window, cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.move_queue_tasks(task_ids.clone(), placement, cx);
+                    });
+                })
+        };
+    let artifact_item = |label: &'static str, action: ShellOpenAction, icon: MaterialIcon| {
         let application = application.clone();
-        let task_ids = task_ids.clone();
-        PopupMenuItem::new(label).on_click(move |_event, _window, cx| {
-            let _ = application.update(cx, |application, cx| {
-                application.batch_action(task_ids.clone(), action, cx);
-            });
-        })
-    };
-    let queue_item = |label: &'static str, placement: DownloadQueuePlacement| {
-        let application = application.clone();
-        let task_ids = task_ids.clone();
         PopupMenuItem::new(label)
-            .disabled(!queue_move_enabled)
+            .icon(Icon::new(icon))
+            .disabled(capabilities.single_artifact.is_none())
             .on_click(move |_event, _window, cx| {
-                let _ = application.update(cx, |application, cx| {
-                    application.move_queue_tasks(task_ids.clone(), placement, cx);
-                });
+                if let Some(task_id) = capabilities.single_artifact {
+                    let _ = application.update(cx, |application, cx| {
+                        application.open_task_artifact(task_id, action, cx);
+                    });
+                }
             })
     };
+    let progress_application = application.clone();
+    let progress_task = (task_ids.len() == 1).then(|| task_ids[0]);
+    let delete_application = application.clone();
+    let delete_task = capabilities.single_artifact;
     menu.min_w(px(0.0))
-        .item(batch_item("开始 / 继续", DownloadBatchAction::Resume))
-        .item(batch_item("暂停", DownloadBatchAction::Pause))
-        .item(batch_item("取消", DownloadBatchAction::Cancel))
+        .item(artifact_item(
+            "打开文件",
+            ShellOpenAction::Open,
+            MaterialIcon::OpenInNew,
+        ))
+        .item(artifact_item(
+            "打开所在目录",
+            ShellOpenAction::SelectInExplorer,
+            MaterialIcon::Folder,
+        ))
+        .item(
+            PopupMenuItem::new("任务窗口")
+                .icon(Icon::new(MaterialIcon::Info))
+                .disabled(progress_task.is_none())
+                .on_click(move |_event, _window, cx| {
+                    if let Some(task_id) = progress_task {
+                        let _ = progress_application.update(cx, |application, cx| {
+                            application.request_task_window(task_id, cx);
+                        });
+                    }
+                }),
+        )
         .separator()
-        .item(queue_item("优先下载", DownloadQueuePlacement::Top))
-        .item(queue_item("上移", DownloadQueuePlacement::Up))
-        .item(queue_item("下移", DownloadQueuePlacement::Down))
-        .item(queue_item("移到底部", DownloadQueuePlacement::Bottom))
+        .item(batch_item(
+            "开始 / 继续",
+            DownloadBatchAction::Resume,
+            !capabilities.can_resume,
+            MaterialIcon::Download,
+        ))
+        .item(batch_item(
+            "暂停",
+            DownloadBatchAction::Pause,
+            !capabilities.can_pause,
+            MaterialIcon::History,
+        ))
+        .item(batch_item(
+            "取消",
+            DownloadBatchAction::Cancel,
+            !capabilities.can_cancel,
+            MaterialIcon::Cancel,
+        ))
         .separator()
-        .item(batch_item("从列表移除", DownloadBatchAction::Remove))
+        .item(queue_item(
+            "优先下载",
+            DownloadQueuePlacement::Top,
+            MaterialIcon::ArrowUpward,
+        ))
+        .item(queue_item(
+            "上移",
+            DownloadQueuePlacement::Up,
+            MaterialIcon::ArrowUpward,
+        ))
+        .item(queue_item(
+            "下移",
+            DownloadQueuePlacement::Down,
+            MaterialIcon::History,
+        ))
+        .item(queue_item(
+            "移到底部",
+            DownloadQueuePlacement::Bottom,
+            MaterialIcon::History,
+        ))
+        .separator()
+        .item(
+            PopupMenuItem::new("删除文件")
+                .icon(Icon::new(MaterialIcon::Delete))
+                .disabled(delete_task.is_none())
+                .on_click(move |_event, _window, cx| {
+                    if let Some(task_id) = delete_task {
+                        let _ = delete_application.update(cx, |application, cx| {
+                            application.request_delete_confirmation(task_id, cx);
+                        });
+                    }
+                }),
+        )
+        .item(batch_item(
+            "从列表移除",
+            DownloadBatchAction::Remove,
+            task_ids.is_empty(),
+            MaterialIcon::Close,
+        ))
 }
 
 fn download_task_detail(theme: Theme, task: &DownloadEngineTask) -> AnyElement {
@@ -3641,7 +4179,34 @@ fn format_download_bytes(bytes: u64) -> String {
     }
 }
 
-fn download_table_header(theme: Theme) -> AnyElement {
+fn download_table_header(
+    theme: Theme,
+    sort: DownloadSortState,
+    main_window: Entity<MainWindow>,
+) -> AnyElement {
+    let name_header = download_sort_header_cell(
+        theme,
+        "名称",
+        DownloadSortKey::Name,
+        sort,
+        main_window.clone(),
+    )
+    .min_w_0()
+    .flex_1()
+    .pl(px(36.0));
+    let progress_header = download_sort_header_cell(
+        theme,
+        "进度",
+        DownloadSortKey::Progress,
+        sort,
+        main_window.clone(),
+    )
+    .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+    .flex_none();
+    let status_header =
+        download_sort_header_cell(theme, "状态", DownloadSortKey::Status, sort, main_window)
+            .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
+            .flex_none();
     div()
         .id("download-table-header")
         .debug_selector(|| "download-table-header".into())
@@ -3656,20 +4221,49 @@ fn download_table_header(theme: Theme) -> AnyElement {
         .text_size(px(9.5))
         .font_weight(gpui::FontWeight::MEDIUM)
         .text_color(theme.text_muted)
-        .child(div().min_w_0().flex_1().pl(px(36.0)).child("名称"))
-        .child(
-            div()
-                .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
-                .flex_none()
-                .child("进度"),
-        )
-        .child(
-            div()
-                .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
-                .flex_none()
-                .child("状态"),
-        )
+        .child(name_header)
+        .child(progress_header)
+        .child(status_header)
         .into_any_element()
+}
+
+fn download_sort_header_cell(
+    theme: Theme,
+    label: &'static str,
+    key: DownloadSortKey,
+    sort: DownloadSortState,
+    main_window: Entity<MainWindow>,
+) -> gpui::Stateful<gpui::Div> {
+    let active = sort.key == key;
+    let label = if active {
+        format!("{label} {}", if sort.descending { "↓" } else { "↑" })
+    } else {
+        label.to_owned()
+    };
+    div()
+        .id(("download-sort-header", key as usize))
+        .debug_selector(move || format!("download-sort-header-{}", key.diagnostic_name()))
+        .h_full()
+        .cursor_pointer()
+        .flex()
+        .items_center()
+        .text_color(if active {
+            theme.accent_text
+        } else {
+            theme.text_muted
+        })
+        .hover(move |style| style.text_color(theme.text_secondary))
+        .child(label)
+        .on_click(move |_event, _window, cx| {
+            main_window.update(cx, |window, cx| {
+                if set_download_sort(&mut window.download_sort, key, true) {
+                    window
+                        .download_list_scroll
+                        .scroll_to_item(0, ScrollStrategy::Top);
+                    cx.notify();
+                }
+            });
+        })
 }
 
 fn download_filter_chip(
@@ -3835,10 +4429,12 @@ mod tests {
 
     use super::{
         DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT, DOWNLOAD_TABLE_HEADER_HEIGHT,
-        DOWNLOAD_TASK_ROW_HEIGHT, DownloadTaskFilter, MainWindow, download_filter_counts,
+        DOWNLOAD_TASK_ROW_HEIGHT, DownloadSortKey, DownloadSortState, DownloadTaskFilter,
+        MainWindow, download_context_capabilities, download_filter_counts, download_tasks_for_view,
         file_index_summary, format_query_elapsed, hotkey_from_key_down, notification_transition,
-        quick_find_scroll_step, quick_find_scroll_target, reconcile_visible_selection,
-        toggle_indexed_volume_selection, update_download_selection,
+        prepare_download_context_selection, quick_find_scroll_step, quick_find_scroll_target,
+        reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
+        update_download_selection,
     };
 
     #[test]
@@ -3873,9 +4469,9 @@ mod tests {
             .expect("download detail source");
 
         assert!(downloads.contains("download-filter-strip"));
-        assert!(downloads.contains("download_table_header(theme)"));
+        assert!(downloads.contains("download_table_header("));
         assert!(production.contains("download-table-header"));
-        assert!(!downloads.contains(".w(px(176.0))"));
+        assert!(!downloads.contains("download-filter-sidebar"));
         assert!(row.contains(".border_b_1()"));
         assert!(row.contains(".border_l_2()"));
         assert!(!row.contains(".rounded(px(6.0))"));
@@ -3890,6 +4486,146 @@ mod tests {
         assert!(detail.contains(".border_t_1()"));
         assert!(!detail.contains(".rounded(px(6.0))"));
         assert!(!detail.contains("\"无错误\""));
+    }
+
+    #[test]
+    fn download_table_is_virtualized_and_keeps_one_scroll_handle() {
+        let source = include_str!("main_window.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production main-window source");
+        let downloads = source
+            .split("fn render_downloads")
+            .nth(1)
+            .and_then(|source| source.split("fn render_quick_find").next())
+            .expect("download workspace source");
+
+        assert!(production.contains("UniformListScrollHandle"));
+        assert!(downloads.contains("uniform_list("));
+        assert!(downloads.contains("track_scroll(self.download_list_scroll.clone())"));
+        assert!(!downloads.contains(".children(task_rows)"));
+    }
+
+    #[test]
+    fn download_search_sort_and_context_selection_follow_reference_semantics() {
+        let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
+        let first = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.com/releases/Zeta.bin".into(),
+                    save_directory: r"C:\Downloads".into(),
+                    file_name: Some("Zeta.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue first");
+        let second = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://mirror.invalid/alpha.bin".into(),
+                    save_directory: r"C:\Downloads".into(),
+                    file_name: Some("Alpha.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue second");
+        let tasks = engine.tasks().expect("read tasks");
+
+        let queue_order = download_tasks_for_view(
+            &tasks,
+            DownloadTaskFilter::All,
+            "",
+            DownloadSortState::default(),
+        );
+        assert_eq!(
+            queue_order
+                .iter()
+                .map(|task| task.task.id())
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        let search = download_tasks_for_view(
+            &tasks,
+            DownloadTaskFilter::All,
+            "EXAMPLE.COM/RELEASES",
+            DownloadSortState::default(),
+        );
+        assert_eq!(search.len(), 1);
+        assert_eq!(search[0].task.id(), first);
+        let name_order = download_tasks_for_view(
+            &tasks,
+            DownloadTaskFilter::All,
+            "",
+            DownloadSortState {
+                key: DownloadSortKey::Name,
+                descending: false,
+            },
+        );
+        assert_eq!(
+            name_order
+                .iter()
+                .map(|task| task.task.id())
+                .collect::<Vec<_>>(),
+            vec![second, first]
+        );
+        let mut sort = DownloadSortState::default();
+        assert!(set_download_sort(&mut sort, DownloadSortKey::Name, true));
+        assert_eq!(
+            sort,
+            DownloadSortState {
+                key: DownloadSortKey::Name,
+                descending: false,
+            }
+        );
+        assert!(set_download_sort(&mut sort, DownloadSortKey::Name, true));
+        assert!(sort.descending);
+
+        let visible = vec![first, second];
+        let mut selected = HashSet::from([first]);
+        let mut primary = Some(first);
+        let mut anchor = Some(first);
+        assert_eq!(
+            prepare_download_context_selection(
+                &mut selected,
+                &mut primary,
+                &mut anchor,
+                &visible,
+                second,
+            ),
+            vec![second]
+        );
+        selected.insert(first);
+        assert_eq!(
+            prepare_download_context_selection(
+                &mut selected,
+                &mut primary,
+                &mut anchor,
+                &visible,
+                second,
+            ),
+            vec![first, second]
+        );
+
+        let mut unfinished_with_target = tasks[0].clone();
+        unfinished_with_target.final_path = Some(r"C:\Downloads\Zeta.bin".into());
+        let capabilities = download_context_capabilities(&[unfinished_with_target], &[first]);
+        assert_eq!(
+            capabilities.single_artifact, None,
+            "a resolved destination is not yet a committed final artifact"
+        );
     }
 
     #[test]
@@ -3939,18 +4675,25 @@ mod tests {
         assert_eq!(counts.completed, 1);
         assert_eq!(counts.failed, 1);
 
+        let mut selected = HashSet::from([2, 3]);
         assert_eq!(
-            reconcile_visible_selection(Some(3), &[1, 2, 3], |id| *id),
+            reconcile_download_selection(Some(3), &mut selected, &[1, 2, 3], |id| *id),
             Some(3)
         );
+        assert_eq!(selected, HashSet::from([2, 3]));
+
         assert_eq!(
-            reconcile_visible_selection(Some(3), &[1, 2], |id| *id),
-            Some(1)
+            reconcile_download_selection(Some(3), &mut selected, &[1, 2], |id| *id),
+            Some(2),
+            "a still-visible member of the multi-selection becomes primary"
         );
+        assert_eq!(selected, HashSet::from([2]));
+
         assert_eq!(
-            reconcile_visible_selection::<u64, u64>(Some(3), &[], |id| *id),
+            reconcile_download_selection::<u64, u64>(Some(2), &mut selected, &[], |id| *id),
             None
         );
+        assert!(selected.is_empty());
     }
 
     #[test]
@@ -4014,6 +4757,37 @@ mod tests {
         assert_eq!(
             cx.read(|cx| main_window.read(cx).selected_download_task),
             None
+        );
+    }
+
+    #[gpui::test]
+    fn clicking_download_table_headers_changes_only_the_view_sort(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Downloads);
+            main_window
+        });
+        let name_header = window
+            .debug_bounds("download-sort-header-name")
+            .expect("rendered sortable name header");
+
+        window.simulate_click(name_header.center(), Modifiers::default());
+        window.simulate_click(name_header.center(), Modifiers::default());
+        assert_eq!(
+            cx.read(|cx| main_window.read(cx).download_sort),
+            DownloadSortState {
+                key: DownloadSortKey::Name,
+                descending: true,
+            }
         );
     }
 
@@ -4084,6 +4858,15 @@ mod tests {
         });
         window.simulate_resize(size(px(720.0), px(500.0)));
 
+        let page_header = window
+            .debug_bounds("download-page-header")
+            .expect("download page header bounds");
+        let search = window
+            .debug_bounds("download-search")
+            .expect("download search bounds");
+        assert!(page_header.contains(&search.origin));
+        assert!(page_header.contains(&search.bottom_right()));
+
         let selected_before = window
             .read(|cx| main_window.read(cx).selected_download_task)
             .expect("first visible task is selected");
@@ -4104,10 +4887,19 @@ mod tests {
             DOWNLOAD_TASK_ROW_HEIGHT,
             "the main table must keep its compact row density"
         );
-        window.simulate_click(other_row.center(), Modifiers::default());
+        window.simulate_mouse_down(
+            other_row.center(),
+            gpui::MouseButton::Right,
+            Modifiers::default(),
+        );
         assert_eq!(
             window.read(|cx| main_window.read(cx).selected_download_task),
             Some(other_task)
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_tasks.clone()),
+            HashSet::from([other_task]),
+            "secondary click replaces a selection that did not contain the clicked row"
         );
 
         let name = window

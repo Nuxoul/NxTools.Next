@@ -901,6 +901,47 @@ Reverified on 2026-07-29 before implementing the third Stage 3 slice:
   authoritative queue snapshot, closes the settings window, and never changes task selection or
   focus in the main download table.
 
+### Phase 3 virtual task table, search, sorting and context-action findings
+
+Reverified on 2026-07-29 before implementing the fourth Stage 3 slice:
+
+- AB Download Manager renders the task surface through
+  `desktop/app/.../pages/home/sections/DownloadList.kt::DownloadList`, which passes stable task IDs
+  and a `LazyListState` into its reusable `Table`. Only the visible rows are composed; selection is
+  stored by task ID rather than row index, so filtering and sorting cannot redirect an action to a
+  different task.
+- ABDM `DownloadListCells` makes Name, Status, Size, Speed, Time Left and Date Added sortable.
+  `HomeComponent.tableState` defaults to Date Added descending and persists table state. A column
+  click changes presentation order only; queue order and engine admission order remain unchanged.
+- ABDM `BaseHomeComponent.downloadList` combines search, category/status/queue filtering and the
+  active/completed streams before the table. Search is case-insensitive and matches the task name.
+  Duplicate task IDs are removed before they reach the keyed lazy list.
+- ABDM `DownloadList` opens the context menu from the secondary pointer gesture. Before opening,
+  `HomeComponent.onRequestOpenDownloadItemOption` replaces the selection with the clicked task when
+  that task was not already selected; right-clicking an existing multi-selection preserves that
+  selection. Menu enablement is derived from the selected task set and disabled actions remain
+  visible at lower opacity.
+- Old NxTools keeps the compatible product-specific extensions in
+  `ViewModels/MainWindowViewModel.cs::{FilterTasks,SortTasks,SortBy}` and
+  `Views/MainWindow.axaml(.cs)::{TaskRow_ContextRequested,BuildTaskContextMenu}`. It searches file
+  name, URL and source domain; sorts by name, size, status, progress, speed, remaining time or
+  creation time; and exposes open file/folder, queue movement, resume, pause, cancel/delete,
+  redownload, copy, speed limit, checksum and properties according to capability.
+- NxTools.Next will keep the existing dense 46px row and bottom detail strip, replace eager child
+  construction with GPUI `uniform_list` plus one persistent `UniformListScrollHandle`, and preserve
+  the same stable-ID Ctrl/Shift selection model. Search matches resolved file name, URL and final
+  path without sending engine commands. Sorting is a view-only stable order with an explicit
+  queue-order default and never writes `download_queue_items.position`.
+- Search, filter and sort changes reconcile primary/multi-selection against the resulting visible
+  stable IDs. An empty search result is distinct from an empty status filter. Secondary click first
+  selects an unselected row, then builds one context menu from that exact selection. File open,
+  reveal and delete-file actions are enabled only for a single task with a final artifact; batch
+  lifecycle and queue actions continue through typed Rust engine commands.
+- The feature logs only bounded search/sort/context action state transitions: query length and
+  result count, sort key/direction, selected count, action name and correlation IDs already owned by
+  the engine/platform boundary. It never logs the query, URL, path, file name, headers or cookies,
+  and virtual row creation/scroll frames are never logged.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
