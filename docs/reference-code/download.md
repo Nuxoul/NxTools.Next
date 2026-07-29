@@ -811,6 +811,43 @@ Reverified on 2026-07-28 after the combined desktop/CLI acceptance pass:
   controls inside a row consume their pointer/click event so the now-removed row cannot briefly
   become selected during bubbling.
 
+### Phase 3 queue, concurrency and batch-command findings
+
+Reverified on 2026-07-29 before implementing the second Stage 3 slice:
+
+- AB Download Manager models queue order independently from transfer state in
+  `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/DownloadQueue.kt`,
+  `QueueManager.kt` and `ManualDownloadQueue.kt`. `maxConcurrent` admits work from an explicit
+  ordered pending list; a terminal or paused worker releases a slot and the first eligible pending
+  item fills it. Queue order is therefore durable domain state, not an incidental sort by creation
+  time or a visual-only row order.
+- ABDM's multi-selection move logic preserves the selected items' relative order. Moving upward
+  processes source indices from low to high, while moving downward processes them from high to low;
+  top and bottom moves are stable partitions. NxTools.Next adopts the same stable semantics.
+- ABDM can stop active items when concurrency is reduced. NxTools.Next intentionally applies a
+  reduced limit to future admissions and lets already-active transfers finish. This avoids turning
+  an administrative concurrency change into a user-visible pause and still converges to the new
+  limit as slots are released.
+- Old NxTools exposes `MoveQueueToTop`, `MoveQueueToBottom`, `MoveQueueUp` and `MoveQueueDown` in
+  `Services/DownloadManagerService.cs`; `MainWindowViewModel.cs` resolves the current multi-selection
+  before `PauseSelected`, `ResumeSelected`, `PrioritizeSelected`, queue movement, cancellation and
+  deletion. The useful invariant is retained, but all queue ownership and mutation now live in
+  Rust rather than the C# Windows adapter.
+- Priority is a stable move-to-front of eligible pending items. It never preempts an active
+  transfer. Queue-only tasks remain dormant until a resume/start command makes them eligible.
+- Batch commands are best-effort and deterministic: targets are processed once in request order,
+  valid targets are committed even if another target is rejected, and the typed result reports
+  every target outcome. CLI exits non-zero when any target failed while retaining successful
+  per-task results in JSON.
+- The default queue and its maximum concurrency are persisted in SQLite. Task membership and
+  integer queue position are updated transactionally; restoring the engine must reproduce the
+  same pending order before admitting new work.
+- A pending eligible task can be paused before it consumes a transfer slot. Submission atomically
+  commits task state, queue membership and eligibility; startup refills every persisted queue, not
+  only the default queue.
+- Queue diagnostics use correlation IDs and record only task IDs, queue IDs, action, position and
+  slot counts. URLs, headers, cookies, file names and file contents remain excluded from logs.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

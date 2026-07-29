@@ -9,12 +9,12 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    DownloadFault, DownloadProbe, DownloadRequest, DownloadSegment, DownloadSegmentState,
-    DownloadStatus, DownloadTask, DownloadTaskId, INTERRUPTED_DOWNLOAD_STATUSES, RequestOrigin,
-    ResourceValidator, TransferPlan,
+    DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSegment,
+    DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
+    INTERRUPTED_DOWNLOAD_STATUSES, RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 1;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 2;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 
 pub struct SqliteDownloadStore {
@@ -46,6 +46,9 @@ impl SqliteDownloadStore {
 
         if current == 0 {
             connection.execute_batch(SCHEMA_V1)?;
+        }
+        if current < 2 {
+            connection.execute_batch(SCHEMA_V2)?;
         }
 
         Ok(Self {
@@ -144,6 +147,247 @@ impl SqliteDownloadStore {
             .query_map([], decode_task_row)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    pub fn replace_queue_order(
+        &self,
+        queue_id: &str,
+        ordered_task_ids: &[DownloadTaskId],
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            r#"
+            INSERT INTO download_queues(queue_id, name, position, max_concurrent_tasks, is_running)
+            VALUES (?1, ?2, 0, 3, 1)
+            ON CONFLICT(queue_id) DO NOTHING
+            "#,
+            params![queue_id, queue_id],
+        )?;
+        let eligible = {
+            let mut statement = transaction.prepare(
+                "SELECT task_id FROM download_queue_items WHERE queue_id = ?1 AND is_eligible = 1",
+            )?;
+            statement
+                .query_map([queue_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<std::collections::HashSet<_>, _>>()?
+        };
+        let existing = {
+            let mut statement = transaction.prepare(
+                "SELECT task_id FROM download_queue_items WHERE queue_id = ?1 ORDER BY position",
+            )?;
+            statement
+                .query_map([queue_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut complete_order = ordered_task_ids.to_vec();
+        let requested = ordered_task_ids
+            .iter()
+            .map(|task_id| task_id.as_uuid().to_string())
+            .collect::<std::collections::HashSet<_>>();
+        complete_order.extend(
+            existing
+                .into_iter()
+                .filter(|task_id| !requested.contains(task_id))
+                .map(|task_id| {
+                    Uuid::parse_str(&task_id)
+                        .map(DownloadTaskId::from_uuid)
+                        .map_err(|error| DownloadStorageError::InvalidTaskId(error.to_string()))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        transaction.execute(
+            "DELETE FROM download_queue_items WHERE queue_id = ?1",
+            [queue_id],
+        )?;
+        for (position, task_id) in complete_order.iter().enumerate() {
+            transaction.execute(
+                r#"
+                INSERT INTO download_queue_items(queue_id, task_id, position, is_eligible)
+                VALUES (?1, ?2, ?3, ?4)
+                "#,
+                params![
+                    queue_id,
+                    task_id.as_uuid().to_string(),
+                    i64::try_from(position).map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    eligible.contains(&task_id.as_uuid().to_string())
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE download_tasks SET queue_id = ?2 WHERE task_id = ?1",
+                params![task_id.as_uuid().to_string(), queue_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn append_to_queue(
+        &self,
+        queue_id: &str,
+        task_id: DownloadTaskId,
+        is_eligible: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        append_to_queue_row(&transaction, queue_id, task_id, is_eligible)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn set_queue_task_eligible(
+        &self,
+        task_id: DownloadTaskId,
+        is_eligible: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE download_queue_items SET is_eligible = ?2 WHERE task_id = ?1",
+            params![task_id.as_uuid().to_string(), is_eligible],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        Ok(())
+    }
+
+    pub fn is_queue_task_eligible(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<bool, DownloadStorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT is_eligible FROM download_queue_items WHERE task_id = ?1",
+                [task_id.as_uuid().to_string()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(DownloadStorageError::TaskNotFound(task_id))
+    }
+
+    pub fn load_eligible_queue_order(
+        &self,
+        queue_id: &str,
+    ) -> Result<Vec<DownloadTaskId>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            r#"
+            SELECT task_id
+            FROM download_queue_items
+            WHERE queue_id = ?1 AND is_eligible = 1
+            ORDER BY position ASC
+            "#,
+        )?;
+        statement
+            .query_map([queue_id], |row| {
+                let task_id = row.get::<_, String>(0)?;
+                Uuid::parse_str(&task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn load_queue_order(
+        &self,
+        queue_id: &str,
+    ) -> Result<Vec<DownloadTaskId>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            r#"
+            SELECT task_id
+            FROM download_queue_items
+            WHERE queue_id = ?1
+            ORDER BY position ASC
+            "#,
+        )?;
+        statement
+            .query_map([queue_id], |row| {
+                let task_id = row.get::<_, String>(0)?;
+                Uuid::parse_str(&task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn load_queues(&self) -> Result<Vec<DownloadQueue>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            r#"
+            SELECT queue_id, name, position, max_concurrent_tasks, connection_limit,
+                   speed_limit_bytes_per_second, schedule_json
+            FROM download_queues
+            ORDER BY position ASC
+            "#,
+        )?;
+        statement
+            .query_map([], |row| {
+                let schedule_json = row.get::<_, Option<String>>(6)?;
+                let schedule = schedule_json
+                    .map(|value| serde_json::from_str(&value))
+                    .transpose()
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            6,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?;
+                Ok(DownloadQueue {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    position: row.get(2)?,
+                    max_concurrent_tasks: row.get(3)?,
+                    connection_limit: row.get(4)?,
+                    speed_limit_bytes_per_second: row
+                        .get::<_, Option<i64>>(5)?
+                        .map(|value| value as u64),
+                    default_save_directory: None,
+                    schedule,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn set_queue_max_concurrent(
+        &self,
+        queue_id: &str,
+        max_concurrent_tasks: u16,
+    ) -> Result<DownloadQueue, DownloadStorageError> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            r#"
+            UPDATE download_queues
+            SET max_concurrent_tasks = ?2
+            WHERE queue_id = ?1
+            "#,
+            params![queue_id, max_concurrent_tasks],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::QueueNotFound(queue_id.into()));
+        }
+        drop(connection);
+        self.load_queues()?
+            .into_iter()
+            .find(|queue| queue.id == queue_id)
+            .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.into()))
     }
 
     pub fn save_transfer_plan(
@@ -277,6 +521,43 @@ impl SqliteDownloadStore {
         let transaction = connection.transaction()?;
         save_task_row(&transaction, task)?;
         save_transfer_state_row(&transaction, task.id(), state)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn save_task_with_transfer_and_queue(
+        &self,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        is_eligible: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn save_task_with_transfer_and_eligibility(
+        &self,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        is_eligible: bool,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        let changed = transaction.execute(
+            "UPDATE download_queue_items SET is_eligible = ?2 WHERE task_id = ?1",
+            params![task.id().as_uuid().to_string(), is_eligible],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task.id()));
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -491,6 +772,37 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
             task.updated_at_unix_ms,
             task.completed_at_unix_ms,
         ],
+    )?;
+    Ok(())
+}
+
+fn append_to_queue_row(
+    connection: &Connection,
+    queue_id: &str,
+    task_id: DownloadTaskId,
+    is_eligible: bool,
+) -> Result<(), DownloadStorageError> {
+    connection.execute(
+        r#"
+        INSERT INTO download_queues(queue_id, name, position, max_concurrent_tasks, is_running)
+        VALUES (?1, ?2, 0, 3, 1)
+        ON CONFLICT(queue_id) DO NOTHING
+        "#,
+        params![queue_id, queue_id],
+    )?;
+    connection.execute(
+        r#"
+        INSERT INTO download_queue_items(queue_id, task_id, position, is_eligible)
+        SELECT ?1, ?2, COALESCE(MAX(position) + 1, 0), ?3
+        FROM download_queue_items
+        WHERE queue_id = ?1
+        ON CONFLICT(task_id) DO NOTHING
+        "#,
+        params![queue_id, task_id.as_uuid().to_string(), is_eligible],
+    )?;
+    connection.execute(
+        "UPDATE download_tasks SET queue_id = ?2 WHERE task_id = ?1",
+        params![task_id.as_uuid().to_string(), queue_id],
     )?;
     Ok(())
 }
@@ -773,6 +1085,8 @@ pub enum DownloadStorageError {
     IntegerOverflow,
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
+    #[error("download queue does not exist: {0}")]
+    QueueNotFound(String),
     #[error("download segment {segment_index} does not exist for task {task_id:?}")]
     SegmentNotFound {
         task_id: DownloadTaskId,
@@ -780,6 +1094,8 @@ pub enum DownloadStorageError {
     },
     #[error("stored download transfer plan is invalid: {0}")]
     InvalidTransferPlan(crate::TransferPlanError),
+    #[error("stored download task id is invalid: {0}")]
+    InvalidTaskId(String),
 }
 
 const SCHEMA_V1: &str = r#"
@@ -857,10 +1173,115 @@ PRAGMA user_version = 1;
 COMMIT;
 "#;
 
+const SCHEMA_V2: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE IF NOT EXISTS download_queue_items (
+    queue_id TEXT NOT NULL REFERENCES download_queues(queue_id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL UNIQUE REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK(position >= 0),
+    is_eligible INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(queue_id, task_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS download_queue_items_position_idx
+    ON download_queue_items(queue_id, position);
+
+INSERT INTO download_queues(queue_id, name, position, max_concurrent_tasks, is_running)
+VALUES ('default', '默认队列', 0, 3, 1)
+ON CONFLICT(queue_id) DO NOTHING;
+
+INSERT OR IGNORE INTO download_queue_items(queue_id, task_id, position, is_eligible)
+SELECT 'default', task_id, ROW_NUMBER() OVER (
+    ORDER BY created_at_unix_ms ASC, task_id ASC
+) - 1, 0
+FROM download_tasks;
+
+PRAGMA user_version = 2;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{DownloadFault, DownloadProbe, DownloadRequest, DownloadStatus};
+
+    #[test]
+    fn queue_membership_and_order_survive_store_reopen() {
+        let directory = tempfile::tempdir().expect("create database directory");
+        let database = directory.path().join("downloads.db");
+        let first = sample_task("first.bin");
+        let second = sample_task("second.bin");
+
+        {
+            let store = SqliteDownloadStore::open(&database).expect("open store");
+            store.save_task(&first).expect("save first task");
+            store.save_task(&second).expect("save second task");
+            store
+                .replace_queue_order("default", &[second.id(), first.id()])
+                .expect("save queue order");
+        }
+
+        let reopened = SqliteDownloadStore::open(&database).expect("reopen store");
+        assert_eq!(
+            reopened
+                .load_queue_order("default")
+                .expect("load queue order"),
+            vec![second.id(), first.id()]
+        );
+    }
+
+    #[test]
+    fn queue_membership_failure_rolls_back_the_new_task_acceptance() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        store
+            .lock()
+            .expect("lock store")
+            .execute_batch(
+                r#"
+                CREATE TRIGGER reject_queue_membership
+                BEFORE INSERT ON download_queue_items
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected queue failure');
+                END;
+                "#,
+            )
+            .expect("install failure trigger");
+        let task = sample_task("atomic.bin");
+        let transfer = StoredTransferState::default();
+
+        assert!(
+            store
+                .save_task_with_transfer_and_queue(&task, &transfer, "default", true)
+                .is_err()
+        );
+        assert!(
+            store
+                .load_task(task.id())
+                .expect("load rolled back task")
+                .is_none(),
+            "a rejected submission must not leave a durable orphan task"
+        );
+    }
+
+    fn sample_task(file_name: &str) -> DownloadTask {
+        let directory = std::env::temp_dir();
+        DownloadTask::new(
+            DownloadRequest {
+                source_url: format!("https://example.test/{file_name}"),
+                save_directory: directory,
+                file_name: Some(file_name.into()),
+                headers: Vec::new(),
+                cookie: None,
+                referrer: None,
+                connection_limit: Some(1),
+                speed_limit_bytes_per_second: None,
+                scheduled_at_unix_ms: None,
+            },
+            RequestOrigin::Cli,
+            now_unix_ms(),
+        )
+    }
 
     #[test]
     fn task_completion_and_artifact_commit_roll_back_as_one_transaction() {

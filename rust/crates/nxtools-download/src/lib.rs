@@ -23,10 +23,11 @@ pub use http::{
     HttpDownloadError,
 };
 pub use message::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadCommandResult, DownloadEvent,
-    DownloadEventEnvelope, DownloadEventSequenceError, DownloadEventSequencer, DownloadFault,
-    DownloadFaultCode, DownloadProbe, DownloadProgress, DownloadQuery, DownloadSnapshot,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
+    DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
+    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
+    DownloadQuery, DownloadQueueAction, DownloadQueuePlacement, DownloadSnapshot,
     DownloadSubmitMode, DownloadTaskAction,
 };
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
@@ -618,7 +619,7 @@ impl DownloadStatus {
 
     fn can_transition_to(self, next: Self) -> bool {
         match self {
-            Self::Created => matches!(next, Self::Probing | Self::Cancelled),
+            Self::Created => matches!(next, Self::Probing | Self::Paused | Self::Cancelled),
             Self::Probing => {
                 matches!(
                     next,

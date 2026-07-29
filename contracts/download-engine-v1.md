@@ -2,7 +2,7 @@
 
 Status: frozen for download phase 0
 
-Last updated: 2026-07-27
+Last updated: 2026-07-29
 
 ## Ownership
 
@@ -31,6 +31,8 @@ Supported command families:
 - `probe { request }`
 - `submit { request, mode: start_now | queue_only }`
 - `task { task_id, action }`
+- `batch { task_ids, action }`
+- `queue { action }`
 - `set_global_speed_limit { bytes_per_second? }`
 - `snapshot { query }`
 - `subscribe { after_sequence? }`
@@ -39,19 +41,30 @@ Task actions in v1 are `pause`, `resume`, `cancel`, `set_speed_limit { bytes_per
 `remove { delete_artifact }`. Protocol clients, segment writers and database details must never be
 added to this interface.
 
+Batch actions are `pause`, `resume`, `cancel`, `remove` and `remove_with_artifact`. Duplicate task
+IDs are processed once and the typed result contains one success or fault for every distinct target
+in request order. Valid targets are not rolled back because another target was rejected.
+
+Queue actions move a stable multi-selection to `top`, `up`, `down` or `bottom`, or change the
+positive maximum task concurrency. Moving selected tasks preserves their relative order. Priority
+does not preempt active transfers; lowering concurrency applies to later admission instead of
+forcibly pausing an active task.
+
 For both speed-limit commands, a positive byte-per-second value enables the limit and `null`
 restores unlimited transfer. Zero is rejected rather than being given two meanings. The request ID
 is retained as the correlation ID for persistence, live limiter update and diagnostics.
 
-Each result repeats the request ID and is either accepted, a probe result, a snapshot, or a
-machine-readable rejection. Transport delivery is not proof that a command was accepted.
+Each result repeats the request ID and is either accepted, a per-target batch result, a changed
+queue, a probe result, a snapshot, or a machine-readable rejection. Transport delivery is not proof
+that a command was accepted.
 
 A probe result returns final URL, suggested file name, optional size, range support, content type
 and resource validators. Probing does not create a task ID.
 
-`start_now` persists the task in `Probing` and starts its transfer worker. `queue_only` persists the
-task in `Created` without network work; a later `resume` moves it to `Probing`. Missing `mode` on an
-older v1 payload defaults to `start_now`.
+`start_now` persists an eligible task and starts its transfer worker when its queue has a free slot.
+While waiting for admission it remains `Created`. `queue_only` persists an ineligible task in
+`Created` without network work; a later `resume` makes it eligible. Missing `mode` on an older v1
+payload defaults to `start_now`.
 
 A snapshot contains `generation`, last `sequence`, tasks, queues and `aggregate_metrics`.
 
@@ -84,8 +97,9 @@ execution state -> Failed / Cancelled
 Normative rules are enforced by `DownloadTask::transition_to`:
 
 - completed and cancelled tasks are terminal;
-- created tasks enter through probing; failed and paused tasks re-enter through waiting, not
-  directly through a network connection;
+- created tasks enter transfer through probing; an eligible created task may become paused before
+  admission, while failed and paused tasks re-enter through waiting rather than directly through a
+  network connection;
 - queue and schedule are admission facts, not transfer states;
 - finalizing may go directly to completed when no verification is requested;
 - probing, downloading, finalizing and verifying recover as paused after interruption;
@@ -102,8 +116,9 @@ rejection are not droppable progress samples.
 
 The in-process Phase 1A host has one owning event subscriber. `DownloadSnapshot.tasks` remains the
 stable persisted task list; `task_details` is an additive runtime projection containing progress,
-fault and owned-artifact paths for first-party renderers. Callers must obtain both through the
-versioned `Snapshot` command rather than reading engine storage directly.
+fault, owned-artifact paths and `queue_eligible` for first-party renderers. Callers must obtain both
+through the versioned `Snapshot` command rather than inferring admission from transfer status or
+reading engine storage directly.
 
 Restored transfer plans pass through the same constructor as newly probed plans. Segment indices
 must be unique, inclusive byte ranges must not overlap, and a known resource length is an exclusive

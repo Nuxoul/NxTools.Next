@@ -35,6 +35,13 @@ pub enum DownloadCommand {
         task_id: DownloadTaskId,
         action: DownloadTaskAction,
     },
+    Batch {
+        task_ids: Vec<DownloadTaskId>,
+        action: DownloadBatchAction,
+    },
+    Queue {
+        action: DownloadQueueAction,
+    },
     SetGlobalSpeedLimit {
         bytes_per_second: Option<u64>,
     },
@@ -64,6 +71,39 @@ pub enum DownloadTaskAction {
     Remove { delete_artifact: bool },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadBatchAction {
+    Pause,
+    Resume,
+    Cancel,
+    Remove,
+    RemoveWithArtifact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", content = "data", rename_all = "snake_case")]
+pub enum DownloadQueueAction {
+    Move {
+        queue_id: String,
+        task_ids: Vec<DownloadTaskId>,
+        placement: DownloadQueuePlacement,
+    },
+    SetMaxConcurrent {
+        queue_id: String,
+        max_concurrent_tasks: u16,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadQueuePlacement {
+    Top,
+    Up,
+    Down,
+    Bottom,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DownloadQuery {
     #[serde(default)]
@@ -82,10 +122,26 @@ pub struct DownloadCommandResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", content = "data", rename_all = "snake_case")]
 pub enum DownloadCommandOutcome {
-    Accepted { task_id: Option<DownloadTaskId> },
+    Accepted {
+        task_id: Option<DownloadTaskId>,
+    },
+    Batch {
+        results: Vec<DownloadBatchItemResult>,
+    },
+    QueueChanged {
+        queue: DownloadQueue,
+    },
     Probe(DownloadProbe),
     Snapshot(DownloadSnapshot),
-    Rejected { fault: DownloadFault },
+    Rejected {
+        fault: DownloadFault,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadBatchItemResult {
+    pub task_id: DownloadTaskId,
+    pub fault: Option<DownloadFault>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -2,7 +2,7 @@
 
 Status: frozen for download phase 0
 
-Last updated: 2026-07-27
+Last updated: 2026-07-29
 
 ## Location and ownership
 
@@ -19,6 +19,11 @@ SQLite `PRAGMA user_version` is the schema version. Version 1 creates:
 - `download_settings`
 
 Foreign keys are enabled. A file-backed database uses WAL and a bounded busy timeout.
+
+Schema version 2 adds `download_queue_items`. It stores one queue membership per task, a unique
+integer position and whether the task is eligible for automatic admission. Migration places
+existing tasks into the default queue in stable creation order but does not auto-start them.
+Reordering replaces all positions in one transaction and preserves eligibility.
 
 ## Migration rules
 

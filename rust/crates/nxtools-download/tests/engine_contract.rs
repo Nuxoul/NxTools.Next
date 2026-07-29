@@ -6,8 +6,9 @@ use std::process::Command;
 use std::time::Duration;
 
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandOutcome, DownloadEngine, DownloadEvent, DownloadRequest, DownloadStatus,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEngine, DownloadEvent,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadStatus,
     DownloadSubmitMode, DownloadTask, DownloadTaskAction, RequestOrigin, SqliteDownloadStore,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes};
@@ -24,6 +25,306 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
     }
+}
+
+#[tokio::test]
+async fn queue_move_and_batch_commands_preserve_order_and_report_each_target() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let changed = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Queue {
+            action: DownloadQueueAction::SetMaxConcurrent {
+                queue_id: "default".into(),
+                max_concurrent_tasks: 1,
+            },
+        },
+    });
+    assert!(matches!(
+        changed.outcome,
+        DownloadCommandOutcome::QueueChanged { .. }
+    ));
+    let mut first_request = request(&server, directory.path().join("first"));
+    first_request.speed_limit_bytes_per_second = Some(1);
+    let first = engine
+        .submit(first_request, RequestOrigin::Ui)
+        .expect("submit first");
+    let second = engine
+        .submit(
+            request(&server, directory.path().join("second")),
+            RequestOrigin::Ui,
+        )
+        .expect("submit second");
+    let third = engine
+        .submit(
+            request(&server, directory.path().join("third")),
+            RequestOrigin::Ui,
+        )
+        .expect("submit third");
+
+    let moved = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Queue {
+            action: DownloadQueueAction::Move {
+                queue_id: "default".into(),
+                task_ids: vec![third, second],
+                placement: DownloadQueuePlacement::Top,
+            },
+        },
+    });
+    assert!(matches!(
+        moved.outcome,
+        DownloadCommandOutcome::QueueChanged { .. }
+    ));
+    assert_eq!(
+        engine.queue_order("default").expect("read queue order"),
+        vec![second, third, first],
+        "selected tasks keep their existing relative order"
+    );
+
+    let missing = nxtools_download::DownloadTaskId::new();
+    let batch = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Batch {
+            task_ids: vec![first, missing, second],
+            action: DownloadBatchAction::Cancel,
+        },
+    });
+    let DownloadCommandOutcome::Batch { results } = batch.outcome else {
+        panic!("batch outcome expected");
+    };
+    assert_eq!(results.len(), 3);
+    assert!(results[0].fault.is_none());
+    assert!(results[1].fault.is_some());
+    assert!(results[2].fault.is_none());
+    engine.cancel(third).expect("cancel third");
+    engine
+        .wait_for_terminal(first, Duration::from_secs(2))
+        .await
+        .expect("wait for first cancellation");
+    engine
+        .wait_for_terminal(third, Duration::from_secs(2))
+        .await
+        .expect("wait for third cancellation");
+}
+
+#[tokio::test]
+async fn queue_concurrency_admits_only_one_task_and_refills_released_slot() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let changed = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Queue {
+            action: DownloadQueueAction::SetMaxConcurrent {
+                queue_id: "default".into(),
+                max_concurrent_tasks: 1,
+            },
+        },
+    });
+    assert!(matches!(
+        changed.outcome,
+        DownloadCommandOutcome::QueueChanged { .. }
+    ));
+
+    let mut first_request = request(&server, directory.path().join("first"));
+    first_request.speed_limit_bytes_per_second = Some(1);
+    let mut second_request = request(&server, directory.path().join("second"));
+    second_request.speed_limit_bytes_per_second = Some(1);
+    let first = engine
+        .submit(first_request, RequestOrigin::Ui)
+        .expect("submit first");
+    let second = engine
+        .submit(second_request, RequestOrigin::Ui)
+        .expect("submit second");
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_ne!(
+        engine
+            .task(first)
+            .expect("read first")
+            .expect("first exists")
+            .task
+            .status(),
+        DownloadStatus::Created
+    );
+    assert_eq!(
+        engine
+            .task(second)
+            .expect("read second")
+            .expect("second exists")
+            .task
+            .status(),
+        DownloadStatus::Created
+    );
+    engine.pause(second).expect("pause pending task");
+    assert_eq!(
+        engine
+            .task(second)
+            .expect("read paused pending task")
+            .expect("second exists")
+            .task
+            .status(),
+        DownloadStatus::Paused
+    );
+    assert!(
+        !engine
+            .task(second)
+            .expect("read paused pending task eligibility")
+            .expect("second exists")
+            .queue_eligible
+    );
+    engine
+        .resume(second)
+        .expect("mark pending task eligible again");
+    assert!(
+        engine
+            .task(second)
+            .expect("read resumed pending task eligibility")
+            .expect("second exists")
+            .queue_eligible
+    );
+    engine
+        .pause(second)
+        .expect("pause resumed task before it receives a slot");
+    engine.cancel(first).expect("cancel first");
+    engine
+        .wait_for_terminal(first, Duration::from_secs(2))
+        .await
+        .expect("wait for first cancellation");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert_eq!(
+        engine
+            .task(second)
+            .expect("read paused task after slot release")
+            .expect("second exists")
+            .task
+            .status(),
+        DownloadStatus::Paused,
+        "a pending pause must remove the task from automatic admission"
+    );
+    engine.resume(second).expect("resume pending task");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let status = engine
+            .task(second)
+            .expect("read second")
+            .expect("second exists")
+            .task
+            .status();
+        if status != DownloadStatus::Paused {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "second task was not admitted after the first released its slot"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        !engine
+            .task(second)
+            .expect("read admitted task eligibility")
+            .expect("second exists")
+            .queue_eligible
+    );
+    engine.cancel(second).expect("cancel second");
+    engine
+        .wait_for_terminal(second, Duration::from_secs(2))
+        .await
+        .expect("wait for second cancellation");
+}
+
+#[tokio::test]
+async fn reopening_engine_admits_a_durable_eligible_pending_task() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let queued = DownloadTask::new(
+        request(&server, directory.path().join("artifacts")),
+        RequestOrigin::Ui,
+        1_000,
+    );
+    let task_id = queued.id();
+    {
+        let store = SqliteDownloadStore::open(&database).expect("open store");
+        store.save_task(&queued).expect("save queued task");
+        store
+            .append_to_queue("default", task_id, true)
+            .expect("mark task eligible");
+    }
+
+    let engine = DownloadEngine::open(&database).expect("reopen engine");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for startup admission");
+    assert_eq!(completed.task.status(), DownloadStatus::Completed);
+}
+
+#[tokio::test]
+async fn queue_concurrency_is_scoped_per_queue() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let mut default_request = request(&server, directory.path().join("default"));
+    default_request.speed_limit_bytes_per_second = Some(1);
+    let mut secondary_request = request(&server, directory.path().join("secondary"));
+    secondary_request.speed_limit_bytes_per_second = Some(1);
+    let default_task = DownloadTask::new(default_request, RequestOrigin::Ui, 1_000);
+    let secondary_task = DownloadTask::new(secondary_request, RequestOrigin::Ui, 2_000);
+    {
+        let store = SqliteDownloadStore::open(&database).expect("open store");
+        store.save_task(&default_task).expect("save default task");
+        store
+            .append_to_queue("default", default_task.id(), true)
+            .expect("queue default task");
+        store
+            .save_task(&secondary_task)
+            .expect("save secondary task");
+        store
+            .append_to_queue("secondary", secondary_task.id(), true)
+            .expect("queue secondary task");
+        store
+            .set_queue_max_concurrent("secondary", 1)
+            .expect("set secondary concurrency");
+    }
+
+    let engine = DownloadEngine::open(&database).expect("open engine");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_ne!(
+        engine
+            .task(secondary_task.id())
+            .expect("read secondary")
+            .expect("secondary exists")
+            .task
+            .status(),
+        DownloadStatus::Created,
+        "activity in the default queue must not consume a secondary queue slot"
+    );
+    engine
+        .cancel(default_task.id())
+        .expect("cancel default task");
+    engine
+        .cancel(secondary_task.id())
+        .expect("cancel secondary task");
+    engine
+        .wait_for_terminal(default_task.id(), Duration::from_secs(2))
+        .await
+        .expect("wait for default cancellation");
+    engine
+        .wait_for_terminal(secondary_task.id(), Duration::from_secs(2))
+        .await
+        .expect("wait for secondary cancellation");
 }
 
 #[test]
@@ -959,8 +1260,8 @@ async fn cancelled_task_cleans_temporary_work_and_can_be_removed_from_history() 
     assert!(engine.task(task_id).expect("read task").is_none());
 }
 
-#[test]
-fn opening_the_engine_recovers_an_interrupted_persisted_task_as_paused() {
+#[tokio::test]
+async fn opening_the_engine_recovers_and_resumes_an_orphan_interrupted_task() {
     let server = DeterministicHttpServer::start();
     let directory = tempfile::tempdir().expect("create engine directory");
     let database_path = directory.path().join("downloads.sqlite3");
@@ -988,6 +1289,15 @@ fn opening_the_engine_recovers_an_interrupted_persisted_task_as_paused() {
         .expect("recovered task exists");
 
     assert_eq!(recovered.task.status(), DownloadStatus::Paused);
+    assert!(!recovered.queue_eligible);
+    engine
+        .resume(task.id())
+        .expect("resume reconciled recovered task");
+    let completed = engine
+        .wait_for_terminal(task.id(), Duration::from_secs(2))
+        .await
+        .expect("wait for reconciled task");
+    assert_eq!(completed.task.status(), DownloadStatus::Completed);
 }
 
 #[tokio::test]

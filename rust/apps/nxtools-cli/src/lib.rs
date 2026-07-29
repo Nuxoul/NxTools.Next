@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use nxtools_download::{
-    DownloadCommand, DownloadCommandOutcome, DownloadEngineTask, DownloadEvent, DownloadFault,
-    DownloadFaultCode, DownloadQuery, DownloadRequest, DownloadRequestHeader, DownloadStatus,
-    DownloadSubmitMode, DownloadTaskAction, DownloadTaskId,
+    DownloadBatchAction, DownloadCommand, DownloadCommandOutcome, DownloadEngineTask,
+    DownloadEvent, DownloadFault, DownloadFaultCode, DownloadQuery, DownloadRequest,
+    DownloadRequestHeader, DownloadStatus, DownloadSubmitMode, DownloadTaskId,
 };
 use nxtools_download_ipc::{
     DOWNLOAD_PIPE_NAME, DownloadIpcClient, DownloadIpcProtocolIncompatible, command_envelope,
@@ -597,76 +597,43 @@ fn run_action(
     delete_file: bool,
     json_output: bool,
 ) -> Result<(), CliError> {
-    let mut results = Vec::new();
-    let mut first_error = None;
-    for (index, task_id) in task_ids.iter().copied().enumerate() {
-        let engine_action = match action {
-            CliAction::Pause => DownloadTaskAction::Pause,
-            CliAction::Resume => DownloadTaskAction::Resume,
-            CliAction::Cancel => DownloadTaskAction::Cancel,
-            CliAction::Remove => DownloadTaskAction::Remove {
-                delete_artifact: delete_file,
-            },
-        };
-        let response = match client.command(command_envelope(DownloadCommand::Task {
-            task_id,
+    let engine_action = match action {
+        CliAction::Pause => DownloadBatchAction::Pause,
+        CliAction::Resume => DownloadBatchAction::Resume,
+        CliAction::Cancel => DownloadBatchAction::Cancel,
+        CliAction::Remove if delete_file => DownloadBatchAction::RemoveWithArtifact,
+        CliAction::Remove => DownloadBatchAction::Remove,
+    };
+    let response = client
+        .command(command_envelope(DownloadCommand::Batch {
+            task_ids,
             action: engine_action,
-        })) {
-            Ok(response) => response,
-            Err(error) => {
-                let error = CliError::host(error);
-                results.push(json!({
-                    "task_id": task_id,
-                    "ok": false,
-                    "error": {
-                        "code": cli_error_code(error.exit_code),
-                        "message": error.message
-                    }
-                }));
-                for pending in &task_ids[index + 1..] {
-                    results.push(json!({
-                        "task_id": pending,
-                        "ok": false,
-                        "error": {
-                            "code": "not_attempted",
-                            "message": "download host disconnected before this task was attempted"
-                        }
-                    }));
-                }
-                if !json_output {
-                    eprintln!("{}：{}", task_id.as_uuid(), error.message);
-                }
-                first_error.get_or_insert(error);
-                break;
+        }))
+        .map_err(CliError::host)?;
+    let DownloadCommandOutcome::Batch {
+        results: batch_results,
+    } = response.outcome
+    else {
+        return Err(unexpected_result("action"));
+    };
+    let mut results = Vec::with_capacity(batch_results.len());
+    let mut first_error = None;
+    for result in batch_results {
+        if let Some(fault) = result.fault {
+            let error = error_from_fault(fault.clone(), false);
+            first_error.get_or_insert(error);
+            results.push(json!({
+                "task_id": result.task_id,
+                "ok": false,
+                "error": safe_fault_value(&fault)
+            }));
+            if !json_output {
+                eprintln!("{}：{}", result.task_id.as_uuid(), fault.message);
             }
-        };
-        match response.outcome {
-            DownloadCommandOutcome::Accepted { .. } => {
-                results.push(json!({ "task_id": task_id, "ok": true }));
-                if !json_output {
-                    println!("{}：已接受", task_id.as_uuid());
-                }
-            }
-            DownloadCommandOutcome::Rejected { fault } => {
-                let error = error_from_fault(fault.clone(), false);
-                first_error.get_or_insert(error);
-                results.push(json!({
-                    "task_id": task_id,
-                    "ok": false,
-                    "error": safe_fault_value(&fault)
-                }));
-                if !json_output {
-                    eprintln!("{}：{}", task_id.as_uuid(), fault.message);
-                }
-            }
-            _ => {
-                let error = unexpected_result("action");
-                first_error.get_or_insert(error.clone());
-                results.push(json!({
-                    "task_id": task_id,
-                    "ok": false,
-                    "error": { "code": "unexpected_result", "message": error.message }
-                }));
+        } else {
+            results.push(json!({ "task_id": result.task_id, "ok": true }));
+            if !json_output {
+                println!("{}：已接受", result.task_id.as_uuid());
             }
         }
     }

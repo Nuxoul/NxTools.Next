@@ -12,10 +12,11 @@ use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{Disableable, Icon, PixelsExt, Root, Sizable};
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandOutcome, DownloadEngine, DownloadEngineTask, DownloadEvent,
-    DownloadEventEnvelope, DownloadProbe, DownloadProgress, DownloadQuery, DownloadRequest,
-    DownloadStatus, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, RequestOrigin,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEngine, DownloadEngineTask,
+    DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress, DownloadQuery,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadStatus,
+    DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, RequestOrigin,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -282,6 +283,71 @@ impl DownloadApplication {
             self.refresh(cx);
         }
         Ok(())
+    }
+
+    pub(crate) fn batch_action(
+        &mut self,
+        task_ids: Vec<DownloadTaskId>,
+        action: DownloadBatchAction,
+        cx: &mut Context<Self>,
+    ) {
+        let outcome = self.execute(DownloadCommand::Batch { task_ids, action });
+        match outcome {
+            DownloadCommandOutcome::Batch { results } => {
+                let failures = results
+                    .iter()
+                    .filter_map(|result| result.fault.as_ref())
+                    .collect::<Vec<_>>();
+                if let Some(first) = failures.first() {
+                    self.notifications.update(cx, |notifications, cx| {
+                        notifications.show_error(
+                            "download-batch-action",
+                            format!("有 {} 个任务操作失败", failures.len()),
+                            first.message.clone(),
+                            cx,
+                        );
+                    });
+                }
+                self.refresh(cx);
+            }
+            DownloadCommandOutcome::Rejected { fault } => {
+                let _ = self.action_error("批量操作失败", fault.message, cx);
+            }
+            _ => {
+                let _ = self.action_error(
+                    "批量操作失败",
+                    "下载引擎返回了无效的批量操作结果".into(),
+                    cx,
+                );
+            }
+        }
+    }
+
+    pub(crate) fn move_queue_tasks(
+        &mut self,
+        task_ids: Vec<DownloadTaskId>,
+        placement: DownloadQueuePlacement,
+        cx: &mut Context<Self>,
+    ) {
+        match self.execute(DownloadCommand::Queue {
+            action: DownloadQueueAction::Move {
+                queue_id: "default".into(),
+                task_ids,
+                placement,
+            },
+        }) {
+            DownloadCommandOutcome::QueueChanged { .. } => self.refresh(cx),
+            DownloadCommandOutcome::Rejected { fault } => {
+                let _ = self.action_error("无法调整任务顺序", fault.message, cx);
+            }
+            _ => {
+                let _ = self.action_error(
+                    "无法调整任务顺序",
+                    "下载引擎返回了无效的队列操作结果".into(),
+                    cx,
+                );
+            }
+        }
     }
 
     fn open_task_artifact(

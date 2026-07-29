@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEvent, DownloadEventEnvelope,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadQueue,
-    DownloadRequest, DownloadRequestHeader, DownloadSnapshot, DownloadSubmitMode,
-    DownloadTaskAction, DownloadTaskId, RequestOrigin, ResourceValidator,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEvent,
+    DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
+    DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
+    DownloadRequestHeader, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
+    DownloadTaskId, RequestOrigin, ResourceValidator,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -25,6 +26,33 @@ fn request() -> DownloadRequest {
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
     }
+}
+
+#[test]
+fn queue_and_batch_commands_are_typed_and_preserve_target_order() {
+    let first = DownloadTaskId::new();
+    let second = DownloadTaskId::new();
+    let batch = serde_json::to_value(DownloadCommand::Batch {
+        task_ids: vec![first, second],
+        action: DownloadBatchAction::Pause,
+    })
+    .expect("serialize batch command");
+    let queue = serde_json::to_value(DownloadCommand::Queue {
+        action: DownloadQueueAction::Move {
+            queue_id: "default".into(),
+            task_ids: vec![first, second],
+            placement: DownloadQueuePlacement::Top,
+        },
+    })
+    .expect("serialize queue command");
+
+    assert_eq!(batch["command"], json!("batch"));
+    assert_eq!(batch["data"]["task_ids"][0], json!(first));
+    assert_eq!(batch["data"]["task_ids"][1], json!(second));
+    assert_eq!(batch["data"]["action"], json!("pause"));
+    assert_eq!(queue["command"], json!("queue"));
+    assert_eq!(queue["data"]["action"]["action"], json!("move"));
+    assert_eq!(queue["data"]["action"]["data"]["placement"], json!("top"));
 }
 
 #[test]

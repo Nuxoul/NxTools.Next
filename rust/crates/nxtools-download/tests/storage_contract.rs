@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use nxtools_download::{
     DOWNLOAD_SCHEMA_VERSION, DownloadRequest, DownloadRequestHeader, DownloadSegment,
-    DownloadSegmentState, DownloadStatus, DownloadStorageError, DownloadTask, RequestOrigin,
-    ResourceValidator, SqliteDownloadStore, TransferPlan, TransferProtocol,
+    DownloadSegmentState, DownloadStatus, DownloadStorageError, DownloadTask, DownloadTaskId,
+    RequestOrigin, ResourceValidator, SqliteDownloadStore, TransferPlan, TransferProtocol,
 };
 
 fn task(at: i64) -> DownloadTask {
@@ -28,7 +28,7 @@ fn task(at: i64) -> DownloadTask {
 }
 
 #[test]
-fn schema_v1_round_trips_a_task_through_the_public_store() {
+fn current_schema_round_trips_a_task_through_the_public_store() {
     let store = SqliteDownloadStore::open_in_memory().expect("open in-memory store");
     assert_eq!(
         store.schema_version().expect("read schema version"),
@@ -101,7 +101,7 @@ fn newer_schema_is_rejected_before_journal_mode_can_be_changed() {
     let temporary = tempfile::tempdir().expect("create temporary directory");
     let database_path = temporary.path().join("newer.sqlite3");
     let raw = rusqlite::Connection::open(&database_path).expect("create newer database");
-    raw.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA user_version = 2;")
+    raw.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA user_version = 3;")
         .expect("mark database as newer");
     drop(raw);
 
@@ -112,7 +112,7 @@ fn newer_schema_is_rejected_before_journal_mode_can_be_changed() {
     assert!(matches!(
         error,
         DownloadStorageError::UnsupportedSchema {
-            current: 2,
+            current: 3,
             supported: DOWNLOAD_SCHEMA_VERSION,
         }
     ));
@@ -122,6 +122,59 @@ fn newer_schema_is_rejected_before_journal_mode_can_be_changed() {
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .expect("read journal mode");
     assert_eq!(journal_mode, "delete");
+}
+
+#[test]
+fn schema_v1_migration_backfills_stable_default_queue_without_auto_starting() {
+    let temporary = tempfile::tempdir().expect("create temporary directory");
+    let database_path = temporary.path().join("v1.sqlite3");
+    let first = DownloadTaskId::new();
+    let second = DownloadTaskId::new();
+    let raw = rusqlite::Connection::open(&database_path).expect("create v1 database");
+    raw.execute_batch(
+        r#"
+        CREATE TABLE download_tasks (
+            task_id TEXT PRIMARY KEY NOT NULL,
+            created_at_unix_ms INTEGER NOT NULL
+        );
+        CREATE TABLE download_queues (
+            queue_id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            max_concurrent_tasks INTEGER,
+            connection_limit INTEGER,
+            speed_limit_bytes_per_second INTEGER,
+            schedule_json TEXT,
+            is_running INTEGER NOT NULL DEFAULT 1
+        );
+        PRAGMA user_version = 1;
+        "#,
+    )
+    .expect("create v1 schema boundary");
+    raw.execute(
+        "INSERT INTO download_tasks(task_id, created_at_unix_ms) VALUES (?1, 200)",
+        [second.as_uuid().to_string()],
+    )
+    .expect("insert later task");
+    raw.execute(
+        "INSERT INTO download_tasks(task_id, created_at_unix_ms) VALUES (?1, 100)",
+        [first.as_uuid().to_string()],
+    )
+    .expect("insert earlier task");
+    drop(raw);
+
+    let store = SqliteDownloadStore::open(&database_path).expect("migrate v1 store");
+    assert_eq!(
+        store.load_queue_order("default").expect("load queue order"),
+        vec![first, second]
+    );
+    assert!(
+        store
+            .load_eligible_queue_order("default")
+            .expect("load eligible queue order")
+            .is_empty(),
+        "migration must not unexpectedly start existing tasks"
+    );
 }
 
 #[test]
