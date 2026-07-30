@@ -74,6 +74,14 @@ struct DownloadSettingsDraft {
     taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DownloadSettingsViewInitial {
+    draft: DownloadSettingsDraft,
+    config_path: String,
+    log_directory: String,
+    database_path: String,
+}
+
 pub(crate) struct DownloadRuntimeContext {
     pub fallback_default_directory: PathBuf,
     pub config: AppConfig,
@@ -427,6 +435,15 @@ impl DownloadApplication {
             show_progress_window: self.show_progress_window,
             show_completion_window: self.show_completion_window,
             taskbar_progress_overlay: self.config.download.taskbar_progress_overlay.clone(),
+        }
+    }
+
+    fn settings_view_initial(&self) -> DownloadSettingsViewInitial {
+        DownloadSettingsViewInitial {
+            draft: self.settings_draft(),
+            config_path: self.config_path.display().to_string(),
+            log_directory: self.log_directory.display().to_string(),
+            database_path: self.database_path.display().to_string(),
         }
     }
 
@@ -898,6 +915,7 @@ impl DownloadApplication {
         }
         let application = cx.entity();
         let default_directory = self.default_directory.clone();
+        let default_connection_limit = self.default_connection_limit();
         let window_size = new_download_window_size(false);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -918,8 +936,15 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                let view =
-                    cx.new(|cx| NewDownloadView::new(application, default_directory, window, cx));
+                let view = cx.new(|cx| {
+                    NewDownloadView::new(
+                        application,
+                        default_directory,
+                        default_connection_limit,
+                        window,
+                        cx,
+                    )
+                });
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -952,6 +977,7 @@ impl DownloadApplication {
             self.schedule_window = None;
         }
         let application = cx.entity();
+        let queue = self.default_queue().cloned();
         let window_size = size(px(430.0), px(326.0));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -972,7 +998,7 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                let view = cx.new(|cx| DownloadScheduleView::new(application, window, cx));
+                let view = cx.new(|cx| DownloadScheduleView::new(application, queue, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -1005,6 +1031,7 @@ impl DownloadApplication {
             self.settings_window = None;
         }
         let application = cx.entity();
+        let initial = self.settings_view_initial();
         let window_size = size(px(520.0), px(486.0));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -1025,7 +1052,7 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                let view = cx.new(|cx| DownloadSettingsView::new(application, window, cx));
+                let view = cx.new(|cx| DownloadSettingsView::new(application, initial, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -2168,10 +2195,10 @@ struct DownloadScheduleView {
 impl DownloadScheduleView {
     fn new(
         application: Entity<DownloadApplication>,
+        queue: Option<DownloadQueue>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let queue = application.read(cx).default_queue().cloned();
         let daily = queue
             .as_ref()
             .and_then(|queue| queue.schedule.as_ref())
@@ -2705,13 +2732,16 @@ struct DownloadSettingsView {
 impl DownloadSettingsView {
     fn new(
         application: Entity<DownloadApplication>,
+        initial: DownloadSettingsViewInitial,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let snapshot = application.read(cx).settings_draft();
-        let config_path = application.read(cx).config_path.display().to_string();
-        let log_directory = application.read(cx).log_directory.display().to_string();
-        let database_path = application.read(cx).database_path.display().to_string();
+        let DownloadSettingsViewInitial {
+            draft: snapshot,
+            config_path,
+            log_directory,
+            database_path,
+        } = initial;
         let directory = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.default_directory.to_string_lossy().into_owned())
@@ -3338,10 +3368,10 @@ impl NewDownloadView {
     fn new(
         application: Entity<DownloadApplication>,
         default_directory: PathBuf,
+        default_connection_limit: u16,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let default_connection_limit = application.read(cx).default_connection_limit();
         let url =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/file.zip"));
         let directory = cx.new(|cx| {
@@ -4937,9 +4967,47 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.update(gpui_component::init);
-        let directory = unique_download_settings_test_directory("taskbar-overlay");
-        std::fs::create_dir_all(&directory).expect("create taskbar overlay test directory");
-        let engine = DownloadEngine::open_in_memory().expect("open taskbar overlay test engine");
+        let (application, directory) = download_application_for_window_test(cx, "taskbar-overlay");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_taskbar_overlay(cx);
+            });
+        });
+
+        assert!(cx.read(|cx| {
+            application
+                .read(cx)
+                .taskbar_overlay_window
+                .as_ref()
+                .is_some()
+        }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn new_download_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-window");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_new_download_window(cx);
+            });
+        });
+
+        assert!(cx.read(|cx| { application.read(cx).new_download_window.as_ref().is_some() }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    fn download_application_for_window_test(
+        cx: &mut TestAppContext,
+        label: &str,
+    ) -> (Entity<DownloadApplication>, PathBuf) {
+        let directory = unique_download_settings_test_directory(label);
+        std::fs::create_dir_all(&directory).expect("create download window test directory");
+        let engine = DownloadEngine::open_in_memory().expect("open download window test engine");
         let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let application = cx.update(|cx| {
@@ -4959,20 +5027,39 @@ mod tests {
                 )
             })
         });
+        (application, directory)
+    }
+
+    #[gpui::test]
+    fn schedule_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) = download_application_for_window_test(cx, "schedule-window");
 
         cx.update(|cx| {
             application.update(cx, |application, cx| {
-                application.open_taskbar_overlay(cx);
+                application.open_schedule_window(cx);
             });
         });
 
-        assert!(cx.read(|cx| {
-            application
-                .read(cx)
-                .taskbar_overlay_window
-                .as_ref()
-                .is_some()
-        }));
+        assert!(cx.read(|cx| application.read(cx).schedule_window.is_some()));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn download_settings_window_opens_without_reentering_download_application(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "download-settings-window");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_settings_window(cx);
+            });
+        });
+
+        assert!(cx.read(|cx| application.read(cx).settings_window.is_some()));
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -5009,8 +5096,9 @@ mod tests {
             })
         });
         let application_for_window = application.clone();
+        let settings_initial = cx.read(|cx| application.read(cx).settings_view_initial());
         let (settings, window) = cx.add_window_view(move |window, cx| {
-            DownloadSettingsView::new(application_for_window, window, cx)
+            DownloadSettingsView::new(application_for_window, settings_initial, window, cx)
         });
         window.refresh().expect("render download settings window");
         window.run_until_parked();
@@ -5086,8 +5174,9 @@ mod tests {
         );
 
         let application_for_cancel = application.clone();
+        let cancel_initial = cx.read(|cx| application.read(cx).settings_view_initial());
         let (_cancel_view, cancel_window) = cx.add_window_view(move |window, cx| {
-            DownloadSettingsView::new(application_for_cancel, window, cx)
+            DownloadSettingsView::new(application_for_cancel, cancel_initial, window, cx)
         });
         let progress_toggle = cancel_window
             .debug_bounds("download-settings-progress-window")
