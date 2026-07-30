@@ -173,11 +173,23 @@ struct DownloadRowSelection {
 
 #[derive(Debug, Default)]
 struct DownloadContextCapabilities {
-    can_resume: bool,
-    can_pause: bool,
-    can_cancel: bool,
+    resume_targets: Vec<DownloadTaskId>,
+    pause_targets: Vec<DownloadTaskId>,
+    cancel_targets: Vec<DownloadTaskId>,
     can_move_queue: bool,
+    can_remove: bool,
     single_artifact: Option<DownloadTaskId>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DownloadContextMenuPlan {
+    artifact: bool,
+    task_window: bool,
+    resume: bool,
+    pause: bool,
+    cancel: bool,
+    queue: bool,
+    remove: bool,
 }
 
 struct DownloadDetailView<'a> {
@@ -590,38 +602,86 @@ fn download_context_capabilities(
         .filter_map(|task_id| tasks.iter().find(|task| task.task.id() == *task_id))
         .collect::<Vec<_>>();
     DownloadContextCapabilities {
-        can_resume: selected_tasks.iter().any(|task| {
-            matches!(
-                task.task.status(),
-                DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
-            )
-        }),
-        can_pause: selected_tasks.iter().any(|task| {
-            matches!(
-                task.task.status(),
-                DownloadStatus::Created
-                    | DownloadStatus::Probing
-                    | DownloadStatus::Waiting
-                    | DownloadStatus::Downloading
-            )
-        }),
-        can_cancel: selected_tasks.iter().any(|task| {
-            matches!(
-                task.task.status(),
-                DownloadStatus::Created
-                    | DownloadStatus::Probing
-                    | DownloadStatus::Waiting
-                    | DownloadStatus::Downloading
-                    | DownloadStatus::Paused
-                    | DownloadStatus::Failed
-            )
-        }),
+        resume_targets: selected_tasks
+            .iter()
+            .filter(|task| {
+                matches!(
+                    task.task.status(),
+                    DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
+                )
+            })
+            .map(|task| task.task.id())
+            .collect(),
+        pause_targets: selected_tasks
+            .iter()
+            .filter(|task| {
+                matches!(
+                    task.task.status(),
+                    DownloadStatus::Created
+                        | DownloadStatus::Probing
+                        | DownloadStatus::Waiting
+                        | DownloadStatus::Downloading
+                )
+            })
+            .map(|task| task.task.id())
+            .collect(),
+        cancel_targets: selected_tasks
+            .iter()
+            .filter(|task| {
+                matches!(
+                    task.task.status(),
+                    DownloadStatus::Created
+                        | DownloadStatus::Probing
+                        | DownloadStatus::Waiting
+                        | DownloadStatus::Downloading
+                        | DownloadStatus::Paused
+                )
+            })
+            .map(|task| task.task.id())
+            .collect(),
         can_move_queue: !selected_tasks.is_empty()
-            && selected_tasks.iter().all(|task| task.queue_eligible),
+            && selected_tasks.iter().all(|task| {
+                task.queue_eligible
+                    && matches!(
+                        task.task.status(),
+                        DownloadStatus::Created
+                            | DownloadStatus::Probing
+                            | DownloadStatus::Waiting
+                            | DownloadStatus::Downloading
+                            | DownloadStatus::Paused
+                    )
+            }),
+        can_remove: !selected_tasks.is_empty()
+            && selected_tasks.iter().all(|task| {
+                !matches!(
+                    task.task.status(),
+                    DownloadStatus::Probing
+                        | DownloadStatus::Waiting
+                        | DownloadStatus::Downloading
+                        | DownloadStatus::Finalizing
+                        | DownloadStatus::Verifying
+                )
+            }),
         single_artifact: (selected_tasks.len() == 1)
             .then(|| selected_tasks[0])
             .filter(|task| task.task.status() == DownloadStatus::Completed)
             .and_then(|task| task.final_path.as_ref().map(|_| task.task.id())),
+    }
+}
+
+fn download_context_menu_plan(
+    capabilities: &DownloadContextCapabilities,
+    selected_count: usize,
+) -> DownloadContextMenuPlan {
+    let artifact = capabilities.single_artifact.is_some();
+    DownloadContextMenuPlan {
+        artifact,
+        task_window: selected_count == 1,
+        resume: !capabilities.resume_targets.is_empty(),
+        pause: !capabilities.pause_targets.is_empty(),
+        cancel: !capabilities.cancel_targets.is_empty(),
+        queue: capabilities.can_move_queue,
+        remove: selected_count > 0 && capabilities.can_remove,
     }
 }
 
@@ -4048,140 +4108,206 @@ fn download_task_row(
         .into_any_element()
 }
 
+fn download_popup_item(
+    _selector: &'static str,
+    label: &'static str,
+    icon: MaterialIcon,
+) -> PopupMenuItem {
+    let item = if cfg!(test) {
+        PopupMenuItem::element(move |_window, _cx| {
+            div()
+                .w_full()
+                .debug_selector(move || _selector.into())
+                .child(label)
+        })
+    } else {
+        PopupMenuItem::new(label)
+    };
+    item.icon(Icon::new(icon))
+}
+
 fn download_task_context_menu(
     menu: PopupMenu,
     application: gpui::WeakEntity<DownloadApplication>,
     task_ids: Vec<DownloadTaskId>,
     capabilities: DownloadContextCapabilities,
 ) -> PopupMenu {
-    let batch_item =
-        |label: &'static str, action: DownloadBatchAction, disabled: bool, icon: MaterialIcon| {
-            let application = application.clone();
-            let task_ids = task_ids.clone();
-            PopupMenuItem::new(label)
-                .icon(Icon::new(icon))
-                .disabled(disabled)
-                .on_click(move |_event, _window, cx| {
-                    let _ = application.update(cx, |application, cx| {
-                        application.batch_action(task_ids.clone(), action, cx);
-                    });
-                })
-        };
-    let queue_item =
-        |label: &'static str, placement: DownloadQueuePlacement, icon: MaterialIcon| {
-            let application = application.clone();
-            let task_ids = task_ids.clone();
-            PopupMenuItem::new(label)
-                .icon(Icon::new(icon))
-                .disabled(!capabilities.can_move_queue)
-                .on_click(move |_event, _window, cx| {
-                    let _ = application.update(cx, |application, cx| {
-                        application.move_queue_tasks(task_ids.clone(), placement, cx);
-                    });
-                })
-        };
-    let artifact_item = |label: &'static str, action: ShellOpenAction, icon: MaterialIcon| {
+    let plan = download_context_menu_plan(&capabilities, task_ids.len());
+    let artifact_task = capabilities.single_artifact;
+    let batch_item = |selector: &'static str,
+                      label: &'static str,
+                      action: DownloadBatchAction,
+                      icon: MaterialIcon,
+                      targets: Vec<DownloadTaskId>| {
         let application = application.clone();
-        PopupMenuItem::new(label)
-            .icon(Icon::new(icon))
-            .disabled(capabilities.single_artifact.is_none())
-            .on_click(move |_event, _window, cx| {
-                if let Some(task_id) = capabilities.single_artifact {
-                    let _ = application.update(cx, |application, cx| {
-                        application.open_task_artifact(task_id, action, cx);
-                    });
-                }
-            })
+        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.batch_action(targets.clone(), action, cx);
+            });
+        })
+    };
+    let queue_item = |selector: &'static str,
+                      label: &'static str,
+                      placement: DownloadQueuePlacement,
+                      icon: MaterialIcon| {
+        let application = application.clone();
+        let task_ids = task_ids.clone();
+        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.move_queue_tasks(task_ids.clone(), placement, cx);
+            });
+        })
+    };
+    let artifact_item = |task_id: DownloadTaskId,
+                         selector: &'static str,
+                         label: &'static str,
+                         action: ShellOpenAction,
+                         icon: MaterialIcon| {
+        let application = application.clone();
+        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.open_task_artifact(task_id, action, cx);
+            });
+        })
     };
     let progress_application = application.clone();
     let progress_task = (task_ids.len() == 1).then(|| task_ids[0]);
     let delete_application = application.clone();
-    let delete_task = capabilities.single_artifact;
-    menu.min_w(px(0.0))
-        .item(artifact_item(
-            "打开文件",
-            ShellOpenAction::Open,
-            MaterialIcon::OpenInNew,
-        ))
-        .item(artifact_item(
-            "打开所在目录",
-            ShellOpenAction::SelectInExplorer,
-            MaterialIcon::Folder,
-        ))
-        .item(
-            PopupMenuItem::new("任务窗口")
-                .icon(Icon::new(MaterialIcon::Info))
-                .disabled(progress_task.is_none())
+    let mut menu = menu.min_w(px(0.0));
+    let mut has_visible_items = false;
+
+    if plan.artifact {
+        let task_id = artifact_task.expect("artifact menu plan requires one completed artifact");
+        menu = menu
+            .item(artifact_item(
+                task_id,
+                "download-menu-open-file",
+                "打开文件",
+                ShellOpenAction::Open,
+                MaterialIcon::OpenInNew,
+            ))
+            .item(artifact_item(
+                task_id,
+                "download-menu-reveal-file",
+                "打开所在目录",
+                ShellOpenAction::SelectInExplorer,
+                MaterialIcon::Folder,
+            ));
+        has_visible_items = true;
+    }
+    if plan.task_window {
+        let task_id = progress_task.expect("task-window menu plan requires one selected task");
+        menu = menu.item(
+            download_popup_item("download-menu-task-window", "任务窗口", MaterialIcon::Info)
                 .on_click(move |_event, _window, cx| {
-                    if let Some(task_id) = progress_task {
-                        let application = progress_application.clone();
-                        cx.defer(move |cx| {
-                            let _ = application.update(cx, |application, cx| {
-                                application.request_task_window(task_id, cx);
-                            });
+                    let application = progress_application.clone();
+                    cx.defer(move |cx| {
+                        let _ = application.update(cx, |application, cx| {
+                            application.request_task_window(task_id, cx);
                         });
-                    }
+                    });
                 }),
-        )
-        .separator()
-        .item(batch_item(
-            "开始 / 继续",
-            DownloadBatchAction::Resume,
-            !capabilities.can_resume,
-            MaterialIcon::Download,
-        ))
-        .item(batch_item(
-            "暂停",
-            DownloadBatchAction::Pause,
-            !capabilities.can_pause,
-            MaterialIcon::History,
-        ))
-        .item(batch_item(
-            "取消",
-            DownloadBatchAction::Cancel,
-            !capabilities.can_cancel,
-            MaterialIcon::Cancel,
-        ))
-        .separator()
-        .item(queue_item(
-            "优先下载",
-            DownloadQueuePlacement::Top,
-            MaterialIcon::ArrowUpward,
-        ))
-        .item(queue_item(
-            "上移",
-            DownloadQueuePlacement::Up,
-            MaterialIcon::ArrowUpward,
-        ))
-        .item(queue_item(
-            "下移",
-            DownloadQueuePlacement::Down,
-            MaterialIcon::History,
-        ))
-        .item(queue_item(
-            "移到底部",
-            DownloadQueuePlacement::Bottom,
-            MaterialIcon::History,
-        ))
-        .separator()
-        .item(
-            PopupMenuItem::new("删除文件")
-                .icon(Icon::new(MaterialIcon::Delete))
-                .disabled(delete_task.is_none())
-                .on_click(move |_event, _window, cx| {
-                    if let Some(task_id) = delete_task {
-                        let _ = delete_application.update(cx, |application, cx| {
-                            application.request_delete_confirmation(task_id, cx);
-                        });
-                    }
-                }),
-        )
-        .item(batch_item(
+        );
+        has_visible_items = true;
+    }
+    if plan.resume || plan.pause || plan.cancel {
+        if has_visible_items {
+            menu = menu.separator();
+        }
+        if plan.resume {
+            menu = menu.item(batch_item(
+                "download-menu-resume",
+                "开始 / 继续",
+                DownloadBatchAction::Resume,
+                MaterialIcon::Download,
+                capabilities.resume_targets.clone(),
+            ));
+        }
+        if plan.pause {
+            menu = menu.item(batch_item(
+                "download-menu-pause",
+                "暂停",
+                DownloadBatchAction::Pause,
+                MaterialIcon::History,
+                capabilities.pause_targets.clone(),
+            ));
+        }
+        if plan.cancel {
+            menu = menu.item(batch_item(
+                "download-menu-cancel",
+                "取消",
+                DownloadBatchAction::Cancel,
+                MaterialIcon::Cancel,
+                capabilities.cancel_targets.clone(),
+            ));
+        }
+        has_visible_items = true;
+    }
+    if plan.queue {
+        if has_visible_items {
+            menu = menu.separator();
+        }
+        menu = menu
+            .item(queue_item(
+                "download-menu-prioritize",
+                "优先下载",
+                DownloadQueuePlacement::Top,
+                MaterialIcon::ArrowUpward,
+            ))
+            .item(queue_item(
+                "download-menu-move-up",
+                "上移",
+                DownloadQueuePlacement::Up,
+                MaterialIcon::ArrowUpward,
+            ))
+            .item(queue_item(
+                "download-menu-move-down",
+                "下移",
+                DownloadQueuePlacement::Down,
+                MaterialIcon::History,
+            ))
+            .item(queue_item(
+                "download-menu-move-bottom",
+                "移到底部",
+                DownloadQueuePlacement::Bottom,
+                MaterialIcon::History,
+            ));
+        has_visible_items = true;
+    }
+    if (plan.artifact || plan.remove) && has_visible_items {
+        menu = menu.separator();
+    }
+    if plan.artifact {
+        let task_id = artifact_task.expect("delete-file menu plan requires one completed artifact");
+        menu = menu.item(
+            download_popup_item(
+                "download-menu-delete-file",
+                "删除文件",
+                MaterialIcon::Delete,
+            )
+            .on_click(move |_event, _window, cx| {
+                let _ = delete_application.update(cx, |application, cx| {
+                    application.request_delete_confirmation(task_id, cx);
+                });
+            }),
+        );
+        has_visible_items = true;
+    }
+    if plan.remove {
+        menu = menu.item(batch_item(
+            "download-menu-remove",
             "从列表移除",
             DownloadBatchAction::Remove,
-            task_ids.is_empty(),
             MaterialIcon::Close,
-        ))
+            task_ids,
+        ));
+        has_visible_items = true;
+    }
+    debug_assert!(
+        has_visible_items,
+        "task context menu requires a visible action"
+    );
+    menu
 }
 
 fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElement {
@@ -5242,8 +5368,9 @@ mod tests {
 
     use super::{
         DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT,
-        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadDetailTab, DownloadSortKey,
-        DownloadSortState, DownloadTaskFilter, MainWindow, download_context_capabilities,
+        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
+        DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
+        DownloadTaskFilter, MainWindow, download_context_capabilities, download_context_menu_plan,
         download_filter_counts, download_segment_strip_cells, download_tasks_for_view,
         file_index_summary, format_query_elapsed, hotkey_from_key_down,
         masked_request_header_value, notification_transition, prepare_download_context_selection,
@@ -5526,6 +5653,277 @@ mod tests {
             capabilities.single_artifact, None,
             "a resolved destination is not yet a committed final artifact"
         );
+
+        let mut paused = tasks[0].clone();
+        paused
+            .task
+            .transition_to(DownloadStatus::Paused, 1)
+            .expect("advance fixture to paused");
+        paused.queue_eligible = true;
+        let paused_capabilities = download_context_capabilities(&[paused], &[first]);
+        assert_eq!(paused_capabilities.resume_targets, vec![first]);
+        assert!(paused_capabilities.pause_targets.is_empty());
+        assert_eq!(paused_capabilities.cancel_targets, vec![first]);
+        assert!(paused_capabilities.can_move_queue);
+        assert!(paused_capabilities.can_remove);
+
+        let mut failed = tasks[0].clone();
+        failed
+            .task
+            .transition_to(DownloadStatus::Probing, 1)
+            .expect("advance failed fixture to probing");
+        failed
+            .task
+            .transition_to(DownloadStatus::Failed, 2)
+            .expect("advance fixture to failed");
+        failed.queue_eligible = true;
+        let failed_capabilities =
+            download_context_capabilities(std::slice::from_ref(&failed), &[first]);
+        assert_eq!(failed_capabilities.resume_targets, vec![first]);
+        assert!(failed_capabilities.pause_targets.is_empty());
+        assert!(failed_capabilities.cancel_targets.is_empty());
+        assert!(!failed_capabilities.can_move_queue);
+        assert!(failed_capabilities.can_remove);
+
+        let mut downloading = tasks[1].clone();
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+        ] {
+            downloading
+                .task
+                .transition_to(status, 1)
+                .expect("advance fixture to downloading");
+        }
+        downloading.queue_eligible = true;
+        let downloading_capabilities =
+            download_context_capabilities(std::slice::from_ref(&downloading), &[second]);
+        assert!(downloading_capabilities.resume_targets.is_empty());
+        assert_eq!(downloading_capabilities.pause_targets, vec![second]);
+        assert_eq!(downloading_capabilities.cancel_targets, vec![second]);
+        assert!(downloading_capabilities.can_move_queue);
+        assert!(!downloading_capabilities.can_remove);
+
+        let mixed_capabilities =
+            download_context_capabilities(&[failed, downloading], &[first, second]);
+        assert_eq!(mixed_capabilities.resume_targets, vec![first]);
+        assert_eq!(mixed_capabilities.pause_targets, vec![second]);
+        assert_eq!(mixed_capabilities.cancel_targets, vec![second]);
+        assert!(!mixed_capabilities.can_move_queue);
+        assert!(!mixed_capabilities.can_remove);
+
+        let mut completed = tasks[0].clone();
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+            DownloadStatus::Finalizing,
+            DownloadStatus::Completed,
+        ] {
+            completed
+                .task
+                .transition_to(status, 1)
+                .expect("advance fixture to completed");
+        }
+        completed.final_path = Some(r"C:\Downloads\Zeta.bin".into());
+        completed.queue_eligible = true;
+        let completed_capabilities = download_context_capabilities(&[completed], &[first]);
+        assert_eq!(
+            download_context_menu_plan(&completed_capabilities, 1),
+            DownloadContextMenuPlan {
+                artifact: true,
+                task_window: true,
+                resume: false,
+                pause: false,
+                cancel: false,
+                queue: false,
+                remove: true,
+            },
+            "completed tasks must not retain lifecycle or queue actions in the menu"
+        );
+    }
+
+    #[test]
+    fn download_context_menu_omits_actions_that_cannot_run_for_the_selection() {
+        let active_id = DownloadTaskId::new();
+        let active = DownloadContextCapabilities {
+            pause_targets: vec![active_id],
+            cancel_targets: vec![active_id],
+            can_move_queue: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            download_context_menu_plan(&active, 1),
+            DownloadContextMenuPlan {
+                task_window: true,
+                pause: true,
+                cancel: true,
+                queue: true,
+                ..Default::default()
+            }
+        );
+
+        let failed_id = DownloadTaskId::new();
+        let failed = DownloadContextCapabilities {
+            resume_targets: vec![failed_id],
+            can_remove: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            download_context_menu_plan(&failed, 1),
+            DownloadContextMenuPlan {
+                task_window: true,
+                resume: true,
+                remove: true,
+                ..Default::default()
+            }
+        );
+
+        let paused_id = DownloadTaskId::new();
+        let mixed_selection = DownloadContextCapabilities {
+            resume_targets: vec![failed_id, paused_id],
+            pause_targets: vec![active_id],
+            cancel_targets: vec![active_id, paused_id],
+            ..Default::default()
+        };
+        assert_eq!(
+            download_context_menu_plan(&mixed_selection, 2),
+            DownloadContextMenuPlan {
+                resume: true,
+                pause: true,
+                cancel: true,
+                ..Default::default()
+            },
+            "multi-selection has no single-task or queue-only actions unless every task supports them"
+        );
+
+        let source = include_str!("main_window.rs");
+        let menu = source
+            .split("\nfn download_task_context_menu(")
+            .nth(1)
+            .and_then(|body| body.split("\nfn download_task_detail(").next())
+            .expect("download task context menu");
+        assert!(
+            !menu.contains(".disabled("),
+            "unavailable download actions must be omitted instead of rendered disabled"
+        );
+    }
+
+    #[gpui::test]
+    fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.com/completed.bin".into(),
+                    save_directory: r"C:\Downloads".into(),
+                    file_name: Some("completed.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue completed-menu fixture");
+        let mut completed = engine
+            .tasks()
+            .expect("load completed-menu fixture")
+            .into_iter()
+            .next()
+            .expect("completed-menu task");
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+            DownloadStatus::Finalizing,
+            DownloadStatus::Completed,
+        ] {
+            completed
+                .task
+                .transition_to(status, 1)
+                .expect("advance completed-menu fixture");
+        }
+        completed.final_path = Some(r"C:\Downloads\completed.bin".into());
+        completed.queue_eligible = true;
+
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let downloads = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    std::rc::Rc::new(platform),
+                    notifications.clone(),
+                    r"C:\Downloads".into(),
+                    false,
+                    cx,
+                )
+            })
+        });
+        let downloads_for_window = downloads.downgrade();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                downloads_for_window,
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Downloads);
+            main_window
+        });
+        window.update(|_, cx| {
+            downloads.update(cx, |application, _| {
+                application.replace_tasks_for_test(vec![completed]);
+            });
+        });
+        window.refresh().expect("render completed download fixture");
+        window.run_until_parked();
+        let element_id = task_id.as_uuid().as_u64_pair().0;
+        let row_selector: &'static str =
+            Box::leak(format!("download-task-row-{element_id}").into_boxed_str());
+        let row = window
+            .debug_bounds(row_selector)
+            .expect("completed production task row bounds");
+
+        window.simulate_mouse_down(row.center(), MouseButton::Right, Modifiers::default());
+        window
+            .refresh()
+            .expect("refresh completed task context menu");
+        window.run_until_parked();
+
+        for selector in [
+            "download-menu-open-file",
+            "download-menu-reveal-file",
+            "download-menu-task-window",
+            "download-menu-delete-file",
+            "download-menu-remove",
+        ] {
+            assert!(
+                window.debug_bounds(selector).is_some(),
+                "completed task menu must render {selector}"
+            );
+        }
+        for selector in [
+            "download-menu-resume",
+            "download-menu-pause",
+            "download-menu-cancel",
+            "download-menu-prioritize",
+            "download-menu-move-up",
+            "download-menu-move-down",
+            "download-menu-move-bottom",
+        ] {
+            assert!(
+                window.debug_bounds(selector).is_none(),
+                "completed task menu must omit {selector}"
+            );
+        }
     }
 
     #[test]

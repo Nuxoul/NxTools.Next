@@ -271,6 +271,11 @@ impl DownloadApplication {
         Rc::clone(&self.task_window_activation_commands)
     }
 
+    #[cfg(test)]
+    pub(crate) fn replace_tasks_for_test(&mut self, tasks: Vec<DownloadEngineTask>) {
+        self.tasks = tasks;
+    }
+
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
         &self.tasks
     }

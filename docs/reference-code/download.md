@@ -941,6 +941,14 @@ Reverified on 2026-07-29 before implementing the fourth Stage 3 slice:
   result count, sort key/direction, selected count, action name and correlation IDs already owned by
   the engine/platform boundary. It never logs the query, URL, path, file name, headers or cookies,
   and virtual row creation/scroll frames are never logged.
+- Reverified on 2026-07-30 for the user-requested capability-driven menu change: ABDM and the old
+  NxTools keep a fixed action topology and lower the opacity of unavailable actions. NxTools.Next
+  intentionally diverges for its denser editor-style surface: the task context menu is assembled
+  from the selected tasks' current capabilities, so unavailable lifecycle and queue groups are
+  omitted rather than merely disabled. A completed task with a final artifact shows open, reveal,
+  task-window, delete-file and remove actions only; empty groups never leave leading, trailing or
+  repeated separators. Mixed-state lifecycle actions target only the selected tasks that support
+  that action, avoiding partial batch failures; queue and remove remain all-selection operations.
 
 ### Phase 3 task detail, segment, Header, verification and log findings
 

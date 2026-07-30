@@ -5261,7 +5261,7 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
 
 - Reproducible: environment-dependent
 - Related Files: none
-- Recurrence-Count: 7
+- Recurrence-Count: 9
 - Last-Seen: 2026-07-30
 
 ### Resolution
@@ -5297,6 +5297,12 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
   On 2026-07-30, the first post-review task-window regression rebuild exhausted a 2 MiB compiler
   allocation and then failed to map cached GPUI metadata with OS 1455. No compiler process survived;
   verification resumed with the same low-peak environment after virtual commit recovered.
+  Later on 2026-07-30, the first capability-driven context-menu regression rebuild failed to map
+  cached GPUI metadata with OS 1455. The unchanged low-peak command passed after commit memory
+  recovered; no source or cache deletion was required.
+  The following workspace Clippy/test pass also exhausted commit while mapping Rust's `libtest`
+  metadata and terminated that rustc with `0xc0000409`. Targeted menu builds passed before and
+  after the failure; verification resumed only after the compiler exited and commit recovered.
 
 ---
 ## [ERR-20260728-GITPUBLISH] github_publish_prerequisites_missing
