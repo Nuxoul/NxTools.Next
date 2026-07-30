@@ -53,6 +53,18 @@ internal sealed record SetTaskbarProgressCommand(
     string State,
     ulong Completed,
     ulong Total);
+internal sealed record PlaceTaskbarProgressOverlayCommand(
+    long WindowHandle,
+    bool Enabled,
+    bool Visible,
+    string Anchor,
+    int OffsetX,
+    int OffsetY,
+    int Width,
+    int Height);
+internal sealed record SetTaskbarProgressOverlayVisibilityCommand(
+    long WindowHandle,
+    bool Visible);
 internal sealed record PlaceFileDialogSearchWindowCommand(
     long WindowHandle,
     long OwnerWindowHandle,
@@ -206,6 +218,20 @@ internal static class PlatformCommandParser
             envelope,
             "set_taskbar_progress",
             "Taskbar-progress command payload was empty.");
+
+    public static PlaceTaskbarProgressOverlayCommand ParsePlaceTaskbarProgressOverlay(
+        ProtocolEnvelope envelope) =>
+        Parse<PlaceTaskbarProgressOverlayCommand>(
+            envelope,
+            "place_taskbar_progress_overlay",
+            "Taskbar-overlay placement payload was empty.");
+
+    public static SetTaskbarProgressOverlayVisibilityCommand
+        ParseSetTaskbarProgressOverlayVisibility(ProtocolEnvelope envelope) =>
+        Parse<SetTaskbarProgressOverlayVisibilityCommand>(
+            envelope,
+            "set_taskbar_progress_overlay_visibility",
+            "Taskbar-overlay visibility payload was empty.");
 
     public static PlaceFileDialogSearchWindowCommand ParsePlaceFileDialogSearchWindow(
         ProtocolEnvelope envelope) =>

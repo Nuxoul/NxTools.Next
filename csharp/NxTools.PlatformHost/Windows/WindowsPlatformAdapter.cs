@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 
@@ -228,6 +229,61 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 // Diagnostics must not change taskbar progress behavior.
             }
         }
+        return result;
+    }
+
+    public WindowsCommandResult PlaceTaskbarProgressOverlay(
+        PlaceTaskbarProgressOverlayCommand command,
+        Guid correlationId)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var result = TaskbarOverlayPlacement.Place(command);
+        _window?.TrackTaskbarOverlayPlacement(command, correlationId, result.Data);
+        _log.Write(
+            result.Success ? "info" : "warning",
+            result.Success
+                ? "download.taskbar_overlay.configured"
+                : "download.taskbar_overlay.configure_failed",
+            correlationId,
+            new Dictionary<string, object?>
+            {
+                ["window_handle"] = command.WindowHandle,
+                ["enabled"] = command.Enabled,
+                ["visible"] = command.Visible,
+                ["anchor"] = command.Anchor,
+                ["offset_x"] = command.OffsetX,
+                ["offset_y"] = command.OffsetY,
+                ["width"] = command.Width,
+                ["height"] = command.Height,
+                ["applied_bounds"] = result.Data,
+                ["error"] = result.Error,
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
+        return result;
+    }
+
+    public WindowsCommandResult SetTaskbarProgressOverlayVisibility(
+        SetTaskbarProgressOverlayVisibilityCommand command,
+        Guid correlationId)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var result = TaskbarOverlayPlacement.SetVisibility(
+            new IntPtr(command.WindowHandle),
+            command.Visible);
+        _window?.TrackTaskbarOverlayVisibility(command);
+        _log.Write(
+            result.Success ? "info" : "warning",
+            result.Success
+                ? "download.taskbar_overlay.visibility_changed"
+                : "download.taskbar_overlay.visibility_failed",
+            correlationId,
+            new Dictionary<string, object?>
+            {
+                ["window_handle"] = command.WindowHandle,
+                ["visible"] = command.Visible,
+                ["error"] = result.Error,
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
         return result;
     }
 
@@ -524,6 +580,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private const int WmDirectorySourceResolved = 0x8007;
         private const int WmFileDialogStructureChanged = 0x8008;
         private const int WmFileDialogGeometryChanged = 0x8009;
+        private const int WmTaskbarOverlayChanged = 0x800A;
+        private const int WmSettingChange = 0x001A;
+        private const int WmDisplayChange = 0x007E;
         private const uint EventSystemForeground = 0x0003;
         private const uint EventObjectCreate = 0x8000;
         private const uint EventObjectDestroy = 0x8001;
@@ -606,6 +665,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private long _fileDialogRecognitionWindowHandle;
         private long _fileDialogRecognitionStartedAt;
         private PlaceFileDialogSearchWindowCommand? _fileDialogSearchPlacement;
+        private PlaceTaskbarProgressOverlayCommand? _taskbarOverlayPlacement;
+        private Guid? _taskbarOverlayCorrelationId;
+        private string? _taskbarOverlayAppliedBounds;
         private ClipboardCaptureExclusions _captureExclusions = ClipboardCaptureExclusions.Create(
             ["KeePass.exe", "1Password.exe", "Bitwarden.exe"]);
 
@@ -655,6 +717,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             _fileDialogHideHook = InstallOptionalWindowEventHook(EventObjectHide);
             _fileDialogLocationHook = InstallOptionalWindowEventHook(EventObjectLocationChange);
             _fileDialogNameHook = InstallOptionalWindowEventHook(EventObjectNameChange);
+            SystemEvents.DisplaySettingsChanged += OnSystemDisplaySettingsChanged;
+            SystemEvents.UserPreferenceChanged += OnSystemUserPreferenceChanged;
 
             _hotKeyRegistration = new ClipboardHotKeyRegistration(
                 new NativeClipboardHotKeyRegistrar(() => Handle, ClipboardHotKeyId),
@@ -785,6 +849,28 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             Volatile.Write(ref _fileDialogSearchPlacement, command);
         }
 
+        public void TrackTaskbarOverlayPlacement(
+            PlaceTaskbarProgressOverlayCommand command,
+            Guid correlationId,
+            string? appliedBounds)
+        {
+            Volatile.Write(ref _taskbarOverlayPlacement, command);
+            _taskbarOverlayCorrelationId = correlationId;
+            _taskbarOverlayAppliedBounds = appliedBounds;
+        }
+
+        public void TrackTaskbarOverlayVisibility(
+            SetTaskbarProgressOverlayVisibilityCommand command)
+        {
+            var placement = Volatile.Read(ref _taskbarOverlayPlacement);
+            if (placement?.WindowHandle == command.WindowHandle)
+            {
+                Volatile.Write(
+                    ref _taskbarOverlayPlacement,
+                    placement with { Visible = command.Visible });
+            }
+        }
+
         protected override void WndProc(ref Message message)
         {
             switch (message.Msg)
@@ -830,6 +916,15 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                         FollowFileDialogSearchWindow(geometryRoot);
                     }
                     return;
+                case WmTaskbarOverlayChanged:
+                case WmSettingChange:
+                case WmDisplayChange:
+                    ReapplyTaskbarOverlayPlacement();
+                    if (message.Msg == WmTaskbarOverlayChanged)
+                    {
+                        return;
+                    }
+                    break;
                 case WmExecutePaste:
                     DrainPasteRequests();
                     return;
@@ -1587,6 +1682,15 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             uint eventTime)
         {
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
+            if (TaskbarOverlayPlacement.IsTaskbarWindow(window) ||
+                TaskbarOverlayPlacement.IsTaskbarWindow(new IntPtr(rootWindowHandle)))
+            {
+                _ = NativeMethods.PostMessage(
+                    Handle,
+                    WmTaskbarOverlayChanged,
+                    IntPtr.Zero,
+                    IntPtr.Zero);
+            }
             if ((eventType is EventObjectCreate or EventObjectShow) &&
                 (_fileDialogRecognitionRetry.ShouldRetryForStructureChange(
                      rootWindowHandle) ||
@@ -1651,6 +1755,50 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     PublishFileDialogSearchHost(dialog);
                 }
             }
+        }
+
+        private void ReapplyTaskbarOverlayPlacement()
+        {
+            var placement = Volatile.Read(ref _taskbarOverlayPlacement);
+            if (placement is null)
+            {
+                return;
+            }
+            var result = TaskbarOverlayPlacement.Place(placement);
+            if (result.Success && result.Data == _taskbarOverlayAppliedBounds)
+            {
+                return;
+            }
+            _taskbarOverlayAppliedBounds = result.Data;
+            _log.Write(
+                result.Success ? "info" : "warning",
+                result.Success
+                    ? "download.taskbar_overlay.repositioned"
+                    : "download.taskbar_overlay.reposition_failed",
+                _taskbarOverlayCorrelationId,
+                new Dictionary<string, object?>
+                {
+                    ["window_handle"] = placement.WindowHandle,
+                    ["applied_bounds"] = result.Data,
+                    ["error"] = result.Error
+                });
+        }
+
+        private void OnSystemDisplaySettingsChanged(object? sender, EventArgs eventArgs) =>
+            RequestTaskbarOverlayReposition();
+
+        private void OnSystemUserPreferenceChanged(
+            object? sender,
+            UserPreferenceChangedEventArgs eventArgs) =>
+            RequestTaskbarOverlayReposition();
+
+        private void RequestTaskbarOverlayReposition()
+        {
+            _ = NativeMethods.PostMessage(
+                Handle,
+                WmTaskbarOverlayChanged,
+                IntPtr.Zero,
+                IntPtr.Zero);
         }
 
         private void FollowFileDialogSearchWindow(long rootWindowHandle)
@@ -2230,6 +2378,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         private void Stop()
         {
+            SystemEvents.DisplaySettingsChanged -= OnSystemDisplaySettingsChanged;
+            SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)PointerMonitorTimerId);
             _ = NativeMethods.KillTimer(

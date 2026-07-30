@@ -1,5 +1,6 @@
 mod assets;
 mod clipboard;
+mod download_taskbar_overlay;
 mod download_window_lifecycle;
 mod downloads;
 mod icons;
@@ -155,6 +156,9 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                     },
                     cx,
                 )
+            });
+            downloads.update(cx, |downloads, cx| {
+                downloads.open_taskbar_overlay(cx);
             });
             cx.set_global(ClipboardApplicationGlobal::new(clipboard.clone()));
             let dispatcher = cx.new(|cx| {

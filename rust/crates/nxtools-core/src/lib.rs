@@ -81,6 +81,39 @@ pub struct DownloadSettings {
     pub show_progress_window: bool,
     #[serde(default = "default_true")]
     pub show_completion_window: bool,
+    #[serde(default)]
+    pub taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DownloadTaskbarProgressOverlaySettings {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub anchor: DownloadTaskbarOverlayAnchor,
+    #[serde(default = "default_taskbar_overlay_offset_x")]
+    pub offset_x: i32,
+    #[serde(default)]
+    pub offset_y: i32,
+}
+
+impl Default for DownloadTaskbarProgressOverlaySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            anchor: DownloadTaskbarOverlayAnchor::Right,
+            offset_x: default_taskbar_overlay_offset_x(),
+            offset_y: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadTaskbarOverlayAnchor {
+    Left,
+    #[default]
+    Right,
 }
 
 impl Default for DownloadSettings {
@@ -90,6 +123,7 @@ impl Default for DownloadSettings {
             default_connection_limit: default_download_connection_limit(),
             show_progress_window: true,
             show_completion_window: true,
+            taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
         }
     }
 }
@@ -98,10 +132,18 @@ const fn default_download_connection_limit() -> u16 {
     8
 }
 
+const fn default_taskbar_overlay_offset_x() -> i32 {
+    12
+}
+
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
         self.default_connection_limit = self.default_connection_limit.clamp(1, 64);
+        self.taskbar_progress_overlay.offset_x =
+            self.taskbar_progress_overlay.offset_x.clamp(-4096, 4096);
+        self.taskbar_progress_overlay.offset_y =
+            self.taskbar_progress_overlay.offset_y.clamp(-4096, 4096);
     }
 }
 
@@ -732,6 +774,13 @@ mod tests {
         assert_eq!(settings.default_connection_limit, 8);
         assert!(settings.show_progress_window);
         assert!(settings.show_completion_window);
+        assert!(settings.taskbar_progress_overlay.enabled);
+        assert_eq!(
+            settings.taskbar_progress_overlay.anchor,
+            DownloadTaskbarOverlayAnchor::Right
+        );
+        assert_eq!(settings.taskbar_progress_overlay.offset_x, 12);
+        assert_eq!(settings.taskbar_progress_overlay.offset_y, 0);
     }
 
     #[test]
@@ -770,6 +819,7 @@ mod tests {
                 default_connection_limit: 12,
                 show_progress_window: false,
                 show_completion_window: false,
+                taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
             },
         )
         .expect("update only download settings");

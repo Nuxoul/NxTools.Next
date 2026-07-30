@@ -1059,6 +1059,30 @@ Reverified on 2026-07-30 before implementing the remaining user-selected Phase 3
   last position omits `下移` and `移到底部`. Empty action groups never leave leading, trailing or
   repeated separators.
 
+### Phase 3 taskbar-internal aggregate progress findings
+
+Reverified on 2026-07-30 before implementing the user-selected taskbar overlay slice:
+
+- ABDM
+  `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt::UpdateTaskBar`
+  maps one task window's current percent and lifecycle state to Java `Taskbar`; it does not inject
+  into Explorer and does not render a persistent aggregate strip inside the taskbar.
+- Old NxTools has no taskbar-internal aggregate progress surface. Its download progress and
+  completion windows remain ordinary top-level windows, and `ShowInTaskbar` controls only whether
+  those windows receive taskbar buttons. There is therefore no legacy placement or focus behavior
+  to preserve for this new surface.
+- NxTools.Next already has the typed `SetTaskbarProgress` seam for per-task window buttons and a
+  low-noise C# `ITaskbarList4` adapter. The new aggregate overlay is a separate interface: Rust
+  produces one presentation model, C# anchors one external GPUI HWND to the taskbar, and GPUI
+  renders it. It must not alter or replace existing per-task taskbar-button progress.
+- The visual result is an overlay inside the taskbar's upper edge, but implementation remains
+  out-of-process from Explorer. The HWND is no-activate, tool-window, topmost and click-through;
+  left/right anchor and X/Y offsets are logical pixels converted with the taskbar DPI and clamped
+  to its physical rectangle.
+- Placement is event-driven. Display/settings changes and taskbar create/show/location events
+  reapply the last configuration; ordinary byte ticks update only the GPUI presentation and never
+  trigger native positioning or diagnostic writes.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

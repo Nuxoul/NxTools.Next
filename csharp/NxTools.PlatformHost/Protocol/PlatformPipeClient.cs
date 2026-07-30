@@ -202,6 +202,14 @@ internal sealed class PlatformPipeClient(
                         "set_taskbar_progress" => platformAdapter.SetTaskbarProgress(
                             PlatformCommandParser.ParseSetTaskbarProgress(envelope),
                             envelope.Id),
+                        "place_taskbar_progress_overlay" =>
+                            platformAdapter.PlaceTaskbarProgressOverlay(
+                                PlatformCommandParser.ParsePlaceTaskbarProgressOverlay(envelope),
+                                envelope.Id),
+                        "set_taskbar_progress_overlay_visibility" =>
+                            platformAdapter.SetTaskbarProgressOverlayVisibility(
+                                PlatformCommandParser.ParseSetTaskbarProgressOverlayVisibility(envelope),
+                                envelope.Id),
                         "place_file_dialog_search_window" =>
                             platformAdapter.PlaceFileDialogSearchWindow(
                                 PlatformCommandParser.ParsePlaceFileDialogSearchWindow(envelope)),

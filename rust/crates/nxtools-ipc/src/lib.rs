@@ -104,7 +104,7 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 25] = [
+            const SUPPORTED_CAPABILITIES: [&str; 27] = [
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
@@ -122,6 +122,8 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
                 "window_topmost",
                 "window_no_activate",
                 "window_bounds",
+                "taskbar_progress",
+                "taskbar_progress_overlay",
                 "window_visibility",
                 "window_position",
                 "shell_icon_extraction",

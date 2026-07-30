@@ -64,6 +64,10 @@ internal static class Program
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
+            ("taskbar overlay placement preserves anchor and logical offsets", TaskbarOverlayPlacementPreservesPayload),
+            ("taskbar overlay visibility preserves its native target", TaskbarOverlayVisibilityPreservesPayload),
+            ("taskbar overlay bounds scale and clamp inside the taskbar", TaskbarOverlayBoundsScaleAndClamp),
+            ("taskbar overlay applies passive styles and a real hide-show lifecycle", TaskbarOverlayUsesPassiveNativeLifecycle),
             ("taskbar progress activates a supported shell interface on STA", TaskbarProgressUsesSupportedShellInterface),
             ("taskbar progress diagnostics log state and milestones without flooding", TaskbarProgressDiagnosticsAreBounded),
             ("high-frequency taskbar updates skip generic command lifecycle logs", TaskbarProgressSkipsGenericCommandLogs),
@@ -174,6 +178,130 @@ internal static class Program
         Assert(command.State == "normal");
         Assert(command.Completed == 42UL);
         Assert(command.Total == 100UL);
+        return Task.CompletedTask;
+    }
+
+    private static Task TaskbarOverlayPlacementPreservesPayload()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "place_taskbar_progress_overlay",
+            Data = new
+            {
+                WindowHandle = 782L,
+                Enabled = true,
+                Visible = false,
+                Anchor = "right",
+                OffsetX = 12,
+                OffsetY = 0,
+                Width = 280,
+                Height = 3
+            }
+        });
+        var command = PlatformCommandParser.ParsePlaceTaskbarProgressOverlay(envelope);
+        Assert(command.WindowHandle == 782L);
+        Assert(command.Enabled);
+        Assert(!command.Visible);
+        Assert(command.Anchor == "right");
+        Assert(command.OffsetX == 12);
+        Assert(command.OffsetY == 0);
+        Assert(command.Width == 280);
+        Assert(command.Height == 3);
+        return Task.CompletedTask;
+    }
+
+    private static Task TaskbarOverlayBoundsScaleAndClamp()
+    {
+        var taskbar = new TaskbarOverlayBounds(0, 1040, 1920, 1080);
+        var right = TaskbarOverlayPlacement.CalculateBounds(
+            taskbar,
+            dpi: 144,
+            anchor: "right",
+            offsetX: 12,
+            offsetY: 0,
+            width: 280,
+            height: 3);
+        Assert(right == new TaskbarOverlayBounds(1482, 1040, 1902, 1045));
+
+        var clamped = TaskbarOverlayPlacement.CalculateBounds(
+            taskbar,
+            dpi: 96,
+            anchor: "left",
+            offsetX: -200,
+            offsetY: 100,
+            width: 280,
+            height: 3);
+        Assert(clamped == new TaskbarOverlayBounds(0, 1077, 280, 1080));
+        return Task.CompletedTask;
+    }
+
+    private static Task TaskbarOverlayVisibilityPreservesPayload()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "set_taskbar_progress_overlay_visibility",
+            Data = new
+            {
+                WindowHandle = 782L,
+                Visible = true
+            }
+        });
+        var command = PlatformCommandParser.ParseSetTaskbarProgressOverlayVisibility(envelope);
+        Assert(command.WindowHandle == 782L);
+        Assert(command.Visible);
+        return Task.CompletedTask;
+    }
+
+    private static Task TaskbarOverlayUsesPassiveNativeLifecycle()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var overlay = new Form
+                {
+                    ShowInTaskbar = false,
+                    FormBorderStyle = FormBorderStyle.None
+                };
+                _ = overlay.Handle;
+                var placed = TaskbarOverlayPlacement.Place(
+                    new PlaceTaskbarProgressOverlayCommand(
+                        overlay.Handle.ToInt64(),
+                        Enabled: true,
+                        Visible: false,
+                        Anchor: "right",
+                        OffsetX: 12,
+                        OffsetY: 0,
+                        Width: 280,
+                        Height: 3));
+                Assert(placed.Success);
+                Assert(TaskbarOverlayPlacement.HasPassiveOverlayStyles(overlay.Handle));
+
+                using var visibility = new Form
+                {
+                    ShowInTaskbar = false,
+                    FormBorderStyle = FormBorderStyle.None,
+                    StartPosition = FormStartPosition.Manual,
+                    Bounds = new System.Drawing.Rectangle(-32_000, -32_000, 1, 1)
+                };
+                _ = visibility.Handle;
+                Assert(TaskbarOverlayPlacement.SetVisibility(visibility.Handle, true).Success);
+                Assert(TaskbarOverlayPlacement.SetVisibility(visibility.Handle, false).Success);
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "NxTools.TaskbarOverlayContract"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert(thread.Join(TimeSpan.FromSeconds(3)));
+        Assert(failure is null);
         return Task.CompletedTask;
     }
 
@@ -3470,6 +3598,7 @@ internal static class Program
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.ShellContextActions));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.DirectoryNavigation));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.FileDialogSearch));
+        Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.TaskbarProgressOverlay));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.ClipboardNativeFormats));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.WindowTopmost));
         Assert(PlatformCapabilities.Create(false).Contains(PlatformCapabilities.WindowNoActivate));

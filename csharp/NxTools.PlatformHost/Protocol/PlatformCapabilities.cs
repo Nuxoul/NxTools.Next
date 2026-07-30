@@ -20,6 +20,7 @@ internal static class PlatformCapabilities
     public const string WindowNoActivate = "window_no_activate";
     public const string WindowBounds = "window_bounds";
     public const string TaskbarProgress = "taskbar_progress";
+    public const string TaskbarProgressOverlay = "taskbar_progress_overlay";
     public const string NativeFileDrag = "native_file_drag";
     public const string WindowVisibility = "window_visibility";
     public const string WindowPosition = "window_position";
@@ -50,6 +51,7 @@ internal static class PlatformCapabilities
             WindowNoActivate,
             WindowBounds,
             TaskbarProgress,
+            TaskbarProgressOverlay,
             NativeFileDrag,
             WindowVisibility,
             WindowPosition,

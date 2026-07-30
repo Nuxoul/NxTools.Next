@@ -351,6 +351,8 @@ pub enum PlatformCommand {
     SetWindowNoActivate(SetWindowNoActivateCommand),
     SetWindowBounds(SetWindowBoundsCommand),
     SetTaskbarProgress(SetTaskbarProgressCommand),
+    PlaceTaskbarProgressOverlay(PlaceTaskbarProgressOverlayCommand),
+    SetTaskbarProgressOverlayVisibility(SetTaskbarProgressOverlayVisibilityCommand),
     PlaceFileDialogSearchWindow(PlaceFileDialogSearchWindowCommand),
     SetWindowOwner(SetWindowOwnerCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
@@ -496,6 +498,31 @@ pub struct SetTaskbarProgressCommand {
     pub state: TaskbarProgressState,
     pub completed: u64,
     pub total: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaceTaskbarProgressOverlayCommand {
+    pub window_handle: i64,
+    pub enabled: bool,
+    pub visible: bool,
+    pub anchor: TaskbarOverlayAnchor,
+    pub offset_x: i32,
+    pub offset_y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetTaskbarProgressOverlayVisibilityCommand {
+    pub window_handle: i64,
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskbarOverlayAnchor {
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -967,6 +994,42 @@ mod tests {
 
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("taskbar progress command must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn taskbar_overlay_placement_round_trips_as_a_windows_only_command() {
+        let envelope = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::PlaceTaskbarProgressOverlay(PlaceTaskbarProgressOverlayCommand {
+                window_handle: 782,
+                enabled: true,
+                visible: false,
+                anchor: TaskbarOverlayAnchor::Right,
+                offset_x: 12,
+                offset_y: 0,
+                width: 280,
+                height: 3,
+            }),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("taskbar overlay placement command must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn taskbar_overlay_visibility_round_trips_as_a_state_transition() {
+        let envelope = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::SetTaskbarProgressOverlayVisibility(
+                SetTaskbarProgressOverlayVisibilityCommand {
+                    window_handle: 782,
+                    visible: true,
+                },
+            ),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("taskbar overlay visibility command must decode");
         assert_eq!(decoded, envelope);
     }
 
