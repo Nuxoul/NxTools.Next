@@ -11,10 +11,11 @@ use uuid::Uuid;
 use crate::{
     DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSchedule,
     DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
-    INTERRUPTED_DOWNLOAD_STATUSES, RequestOrigin, ResourceValidator, TransferPlan,
+    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, INTERRUPTED_DOWNLOAD_STATUSES,
+    RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 3;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 4;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 
 pub struct SqliteDownloadStore {
@@ -52,6 +53,9 @@ impl SqliteDownloadStore {
         }
         if current < 3 {
             connection.execute_batch(SCHEMA_V3)?;
+        }
+        if current < 4 {
+            connection.execute_batch(SCHEMA_V4)?;
         }
 
         Ok(Self {
@@ -506,8 +510,93 @@ impl SqliteDownloadStore {
         for segment in plan.segments() {
             save_segment_row(&transaction, task_id, segment)?;
         }
+        transaction.execute(
+            r#"
+            INSERT INTO download_task_timeline(
+                task_id, occurred_at_unix_ms, event_kind, status, segment_count
+            )
+            VALUES (?1, ?2, 'transfer_plan', NULL, ?3)
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                now_unix_ms(),
+                i64::try_from(plan.segments().len())
+                    .map_err(|_| DownloadStorageError::IntegerOverflow)?
+            ],
+        )?;
         transaction.commit()?;
         Ok(())
+    }
+
+    pub fn load_task_timeline(
+        &self,
+        task_id: DownloadTaskId,
+        limit: u32,
+    ) -> Result<Vec<DownloadTaskTimelineEntry>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            r#"
+            SELECT sequence, occurred_at_unix_ms, event_kind, status, segment_count
+            FROM download_task_timeline
+            WHERE task_id = ?1
+            ORDER BY sequence DESC
+            LIMIT ?2
+            "#,
+        )?;
+        statement
+            .query_map(
+                params![task_id.as_uuid().to_string(), i64::from(limit)],
+                |row| {
+                    let sequence = nonnegative_u64(row.get(0)?, 0)?;
+                    let occurred_at_unix_ms = row.get(1)?;
+                    let event_kind: String = row.get(2)?;
+                    let status: Option<String> = row.get(3)?;
+                    let segment_count: Option<i64> = row.get(4)?;
+                    let event = match event_kind.as_str() {
+                        "created" => DownloadTaskTimelineEvent::TaskCreated,
+                        "status" => DownloadTaskTimelineEvent::StatusChanged {
+                            status: enum_from_name(
+                                status.as_deref().ok_or_else(|| {
+                                    rusqlite::Error::InvalidColumnType(
+                                        3,
+                                        "status".into(),
+                                        rusqlite::types::Type::Null,
+                                    )
+                                })?,
+                                3,
+                            )?,
+                        },
+                        "transfer_plan" => {
+                            let segment_count = segment_count
+                                .ok_or_else(|| {
+                                    rusqlite::Error::InvalidColumnType(
+                                        4,
+                                        "segment_count".into(),
+                                        rusqlite::types::Type::Null,
+                                    )
+                                })
+                                .and_then(|count| {
+                                    u32::try_from(count).map_err(|error| {
+                                        rusqlite::Error::FromSqlConversionFailure(
+                                            4,
+                                            rusqlite::types::Type::Integer,
+                                            Box::new(error),
+                                        )
+                                    })
+                                })?;
+                            DownloadTaskTimelineEvent::TransferPlanChanged { segment_count }
+                        }
+                        _ => return Err(rusqlite::Error::InvalidQuery),
+                    };
+                    Ok(DownloadTaskTimelineEntry {
+                        sequence,
+                        occurred_at_unix_ms,
+                        event,
+                    })
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
 
     pub fn load_transfer_plan(
@@ -1330,6 +1419,69 @@ PRAGMA user_version = 3;
 COMMIT;
 "#;
 
+const SCHEMA_V4: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_task_timeline (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    occurred_at_unix_ms INTEGER NOT NULL,
+    event_kind TEXT NOT NULL,
+    status TEXT,
+    segment_count INTEGER,
+    CHECK (
+        (event_kind = 'created' AND status IS NULL AND segment_count IS NULL)
+        OR (event_kind = 'status' AND status IS NOT NULL AND segment_count IS NULL)
+        OR (event_kind = 'transfer_plan' AND status IS NULL AND segment_count >= 0)
+    )
+);
+
+CREATE INDEX download_task_timeline_task_sequence_idx
+    ON download_task_timeline(task_id, sequence DESC);
+
+INSERT INTO download_task_timeline(
+    task_id, occurred_at_unix_ms, event_kind, status, segment_count
+)
+SELECT task_id, created_at_unix_ms, 'created', NULL, NULL
+FROM download_tasks;
+
+CREATE TRIGGER download_task_timeline_created
+AFTER INSERT ON download_tasks
+BEGIN
+    INSERT INTO download_task_timeline(
+        task_id, occurred_at_unix_ms, event_kind, status, segment_count
+    )
+    VALUES (NEW.task_id, NEW.created_at_unix_ms, 'created', NULL, NULL);
+END;
+
+CREATE TRIGGER download_task_timeline_status_changed
+AFTER UPDATE OF status ON download_tasks
+WHEN OLD.status <> NEW.status
+BEGIN
+    INSERT INTO download_task_timeline(
+        task_id, occurred_at_unix_ms, event_kind, status, segment_count
+    )
+    VALUES (NEW.task_id, NEW.updated_at_unix_ms, 'status', NEW.status, NULL);
+END;
+
+CREATE TRIGGER download_task_timeline_bounded
+AFTER INSERT ON download_task_timeline
+BEGIN
+    DELETE FROM download_task_timeline
+    WHERE task_id = NEW.task_id
+      AND sequence NOT IN (
+          SELECT sequence
+          FROM download_task_timeline
+          WHERE task_id = NEW.task_id
+          ORDER BY sequence DESC
+          LIMIT 300
+      );
+END;
+
+PRAGMA user_version = 4;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1358,6 +1510,80 @@ mod tests {
                 .expect("load queue order"),
             vec![second.id(), first.id()]
         );
+    }
+
+    #[test]
+    fn task_timeline_is_durable_newest_first_and_bounded_to_three_hundred_entries() {
+        let directory = tempfile::tempdir().expect("create database directory");
+        let database = directory.path().join("downloads.db");
+        let task = sample_task("timeline.bin");
+        {
+            let store = SqliteDownloadStore::open(&database).expect("open store");
+            assert_eq!(store.schema_version().expect("schema version"), 4);
+            store.save_task(&task).expect("save task");
+            let connection = store.lock().expect("lock store");
+            for segment_count in 0..305_i64 {
+                connection
+                    .execute(
+                        r#"
+                        INSERT INTO download_task_timeline(
+                            task_id, occurred_at_unix_ms, event_kind, status, segment_count
+                        )
+                        VALUES (?1, ?2, 'transfer_plan', NULL, ?3)
+                        "#,
+                        params![
+                            task.id().as_uuid().to_string(),
+                            10_000 + segment_count,
+                            segment_count
+                        ],
+                    )
+                    .expect("append timeline entry");
+            }
+        }
+
+        let reopened = SqliteDownloadStore::open(&database).expect("reopen store");
+        let timeline = reopened
+            .load_task_timeline(task.id(), 400)
+            .expect("load timeline");
+        assert_eq!(timeline.len(), 300);
+        assert!(matches!(
+            timeline.first().map(|entry| &entry.event),
+            Some(DownloadTaskTimelineEvent::TransferPlanChanged { segment_count: 304 })
+        ));
+        assert!(matches!(
+            timeline.last().map(|entry| &entry.event),
+            Some(DownloadTaskTimelineEvent::TransferPlanChanged { segment_count: 5 })
+        ));
+    }
+
+    #[test]
+    fn schema_three_upgrade_seeds_a_safe_created_entry_for_existing_tasks() {
+        let connection = Connection::open_in_memory().expect("open legacy database");
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .expect("enable foreign keys");
+        connection
+            .execute_batch(SCHEMA_V1)
+            .expect("create schema one");
+        connection
+            .execute_batch(SCHEMA_V2)
+            .expect("create schema two");
+        connection
+            .execute_batch(SCHEMA_V3)
+            .expect("create schema three");
+        let task = sample_task("existing.bin");
+        save_task_row(&connection, &task).expect("save existing task");
+
+        let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
+        assert_eq!(store.schema_version().expect("schema version"), 4);
+        let timeline = store
+            .load_task_timeline(task.id(), 10)
+            .expect("load seeded timeline");
+        assert_eq!(timeline.len(), 1);
+        assert!(matches!(
+            timeline[0].event,
+            DownloadTaskTimelineEvent::TaskCreated
+        ));
     }
 
     #[test]

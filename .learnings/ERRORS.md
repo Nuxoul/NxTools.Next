@@ -4,6 +4,205 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260730-RANGEFIXTURE] transient_range_fixture_probe_race
+
+**Logged**: 2026-07-30T10:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The combined engine suite let the probe consume the transient 503 intended for a range-transfer
+retry.
+
+### Error
+
+```text
+transient transfer failed after 0 attempts: HTTP probe returned status 503
+```
+
+### Context
+
+- All 21 unit tests and the other 37 engine contracts passed.
+- The exact range-retry contract passed immediately when rerun alone.
+- The failure occurred in fixture request ordering, before the behavior asserted by the test.
+
+### Suggested Fix
+
+Make the fixture distinguish probe requests from transfer-range requests before injecting the 503.
+
+### Metadata
+
+- Reproducible: no
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+- See Also: `ERR-20260728-HTTPFIXTURE`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T10:41:00+08:00
+- **Notes**: Immediate exact rerun passed; no production change was made.
+
+---
+
+## [ERR-20260730-IPCSOCKET] ipc_http_fixture_nonblocking_read_race
+
+**Logged**: 2026-07-30T10:25:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The IPC integration fixture treated a transient nonblocking `WouldBlock` read as a terminal server
+failure during the combined package run.
+
+### Error
+
+```text
+read HTTP request: OS 10035 (WouldBlock)
+HTTP task failed: Network
+```
+
+### Context
+
+- Two preceding IPC tests passed.
+- The exact HTTP transport test passed immediately when rerun alone.
+- The failure occurred in the local test server before exercising task-detail behavior.
+
+### Suggested Fix
+
+Make the fixture retry nonblocking reads until its bounded deadline; do not change production
+transport behavior based on a single fixture race.
+
+### Metadata
+
+- Reproducible: no
+- Related Files: `rust/crates/nxtools-download-ipc/src/lib.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T10:26:00+08:00
+- **Notes**: Immediate exact rerun passed; no production change was made.
+
+---
+
+## [ERR-20260730-V1TIMELINE] timeline_migration_assumed_full_v1_task_columns
+
+**Logged**: 2026-07-30T10:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+The schema-v4 timeline seed assumed every v1 boundary contained status and update-time columns.
+
+### Error
+
+```text
+no such column: updated_at_unix_ms
+```
+
+### Context
+
+- The complete download package suite exercised the supported minimal schema-v1 migration boundary.
+- Queue migration had intentionally supported a table containing only task ID and creation time.
+- The new timeline migration queried newer columns and blocked upgrade before the application opened.
+
+### Suggested Fix
+
+Seed one safe `created` entry from the creation timestamp shared by every supported schema boundary.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/storage.rs`,
+  `rust/crates/nxtools-download/tests/storage_contract.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T10:03:00+08:00
+- **Notes**: The v4 seed now uses only stable v1 columns; schema-three and minimal-v1 upgrade
+  regressions cover both paths.
+
+---
+
+## [ERR-20260729-DETAILRESULT] inferred_detail_result_error_type
+
+**Logged**: 2026-07-29T14:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+The detail-query closure's error type became ambiguous after adding a terminal failure branch.
+
+### Error
+
+```text
+E0282: type annotations needed for Result<DownloadTaskDetail, _>
+```
+
+### Context
+
+- The closure combines several `?` conversions before its error is inspected with `fault()`.
+
+### Suggested Fix
+
+Annotate the local result as `Result<DownloadTaskDetail, DownloadEngineError>`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/engine.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-29T14:03:30+08:00
+- **Notes**: Added the explicit result type.
+
+---
+
+## [ERR-20260729-CARGOFILTER] cargo_test_multiple_positional_filters
+
+**Logged**: 2026-07-29T14:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+`cargo test` accepts one positional test-name filter, not two separate filters.
+
+### Error
+
+```text
+error: unexpected argument 'download_detail_masks_credential_headers_but_keeps_ordinary_values' found
+```
+
+### Context
+
+- Attempted to run two named desktop unit tests in one Cargo invocation.
+- The failure happened during command parsing; no test or product code ran.
+
+### Suggested Fix
+
+Run each exact filter separately, or run the complete package test suite.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/main_window.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-29T14:01:00+08:00
+- **Notes**: Switched verification to one filter per invocation followed by the full package suite.
+
+---
+
 ## [ERR-20260728-FILTERTESTTRAIT] gpui_test_missing_interactive_trait
 
 **Logged**: 2026-07-28T16:27:00+08:00
@@ -163,11 +362,15 @@ repeated. Do not change production transfer logic without a repeatable red signa
 
 - Reproducible: no
 - Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+- Recurrence-Count: 2
+- Last-Seen: 2026-07-30
 
 ### Resolution
 
 - **Resolved**: 2026-07-28T14:56:00+08:00
 - **Notes**: Exact test passed 5/5 and complete engine suite passed 2/2; no product change made.
+  The same combined-suite-only failure recurred on 2026-07-30 after every preceding download test
+  group passed; its immediate exact rerun passed, so production transfer logic remained unchanged.
 
 ---
 
@@ -5012,8 +5215,8 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
 
 - Reproducible: environment-dependent
 - Related Files: none
-- Recurrence-Count: 5
-- Last-Seen: 2026-07-28
+- Recurrence-Count: 6
+- Last-Seen: 2026-07-29
 
 ### Resolution
 
@@ -5042,6 +5245,9 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
   rustc child survived, so verification was deferred until commit pressure fell. The subsequent
   production-row GPUI regression rebuild hit OS 1455 while mapping cached GPUI metadata; the
   packaged NxTools and indexer processes were stopped before retrying with the low-peak settings.
+  On 2026-07-29, the first selected-task-detail GPUI test rebuild hit OS 1455 while mapping cached
+  GPUI and download rlibs despite the low-peak settings; no user application was terminated and
+  verification was retried after the failed compiler process released its commit charge.
 
 ---
 ## [ERR-20260728-GITPUBLISH] github_publish_prerequisites_missing

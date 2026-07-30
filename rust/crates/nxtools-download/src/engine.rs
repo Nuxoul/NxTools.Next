@@ -20,13 +20,13 @@ use crate::{
     DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
     DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
     DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
-    DownloadSchedule, DownloadSegment, DownloadSegmentError, DownloadSegmentState,
-    DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
-    DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskError, DownloadTaskId,
-    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, HttpDownloadClient,
-    HttpDownloadError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
-    TransferPlanError, TransferProtocol,
+    DownloadSchedule, DownloadSegment, DownloadSegmentError, DownloadSegmentProgress,
+    DownloadSegmentState, DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
+    DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError, DownloadStorageError,
+    DownloadStorageRequirement, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
+    DownloadTaskDetail, DownloadTaskError, DownloadTaskId, DownloadTransferContext,
+    DownloadTransferControl, DownloadWeekday, HttpDownloadClient, HttpDownloadError, RequestOrigin,
+    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -432,6 +432,10 @@ impl DownloadEngine {
             DownloadCommand::Snapshot { query } => self
                 .command_snapshot(query)
                 .map(DownloadCommandOutcome::Snapshot),
+            DownloadCommand::TaskDetail { task_id } => self
+                .command_task_detail(task_id, request_id)
+                .map(Box::new)
+                .map(DownloadCommandOutcome::TaskDetail),
             DownloadCommand::Subscribe { after_sequence } => {
                 if let Some(after_sequence) = after_sequence {
                     let observed_sequence = self.inner.event_sequencer.current();
@@ -1025,6 +1029,64 @@ impl DownloadEngine {
         })
     }
 
+    fn command_task_detail(
+        &self,
+        task_id: DownloadTaskId,
+        correlation_id: uuid::Uuid,
+    ) -> Result<DownloadTaskDetail, DownloadEngineError> {
+        let started_at = Instant::now();
+        info!(
+            event = "download.detail.requested",
+            %correlation_id,
+            task_id = %task_id.as_uuid(),
+            "download task detail requested"
+        );
+        let result: Result<DownloadTaskDetail, DownloadEngineError> = (|| {
+            let task = self
+                .task(task_id)?
+                .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+            let segments = self
+                .inner
+                .store
+                .load_transfer_plan(task_id)?
+                .map(|plan| plan.segments().to_vec())
+                .unwrap_or_default();
+            let timeline = self.inner.store.load_task_timeline(task_id, 300)?;
+            Ok(DownloadTaskDetail {
+                task,
+                segments,
+                timeline,
+            })
+        })();
+        match result {
+            Ok(detail) => {
+                info!(
+                    event = "download.detail.loaded",
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    segment_count = detail.segments.len(),
+                    timeline_count = detail.timeline.len(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download task detail loaded"
+                );
+                Ok(detail)
+            }
+            Err(error) => {
+                let fault = error.fault();
+                warn!(
+                    event = "download.detail.failed",
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    fault_code = ?fault.code,
+                    retryable = fault.retryable,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download task detail failed"
+                );
+                Err(error)
+            }
+        }
+    }
+
     fn rejected(&self, request_id: uuid::Uuid, fault: DownloadFault) -> DownloadCommandResult {
         self.inner.emit(DownloadEvent::CommandRejected {
             request_id,
@@ -1567,6 +1629,16 @@ impl DownloadEngineInner {
             self.emit(DownloadEvent::TaskChanged { task });
         }
     }
+
+    fn persist_transfer_plan_change(
+        &self,
+        task_id: DownloadTaskId,
+        plan: &TransferPlan,
+    ) -> Result<(), DownloadEngineError> {
+        self.store.save_transfer_plan(task_id, plan)?;
+        self.emit_task(task_id);
+        Ok(())
+    }
 }
 
 fn is_active_download_status(status: DownloadStatus) -> bool {
@@ -1806,6 +1878,7 @@ async fn run_single_stream_task(
                 progress.downloaded_bytes,
                 progress.total_bytes,
                 1,
+                None,
             );
         })
         .await?;
@@ -1927,6 +2000,7 @@ fn spawn_segment_transfer(
                             aggregate,
                             Some(total_bytes),
                             attempt_active_connections.load(Ordering::Acquire),
+                            Some(&attempt_progress_by_segment),
                         );
                     },
                 )
@@ -1948,6 +2022,7 @@ fn spawn_segment_transfer(
                         aggregate,
                         Some(total_bytes),
                         active_connections.load(Ordering::Acquire),
+                        Some(progress_by_segment.as_ref()),
                     );
                     let delay = segment_retry_delay(attempt);
                     warn!(
@@ -2220,7 +2295,7 @@ async fn run_segmented_task(
                                 .find(|candidate| candidate.index() == new_segment_index)
                                 .cloned()
                                 .ok_or(DownloadEngineError::IncompleteSegmentLayout(task_id))?;
-                            inner.store.save_transfer_plan(task_id, &plan)?;
+                            inner.persist_transfer_plan_change(task_id, &plan)?;
                             info!(
                                 event = "download.segment_split.persisted",
                                 %correlation_id,
@@ -2538,11 +2613,12 @@ fn publish_transfer_progress(
     downloaded_bytes: u64,
     total_bytes: Option<u64>,
     active_connections: u16,
+    progress_by_segment: Option<&Mutex<HashMap<u32, u64>>>,
 ) {
     if let Ok(mut tasks) = inner.tasks.lock()
         && let Some(state) = tasks.get_mut(&task_id)
     {
-        state.transfer.downloaded_bytes = downloaded_bytes;
+        state.transfer.downloaded_bytes = state.transfer.downloaded_bytes.max(downloaded_bytes);
         let now = Instant::now();
         let should_publish = state
             .last_progress_event
@@ -2550,21 +2626,49 @@ fn publish_transfer_progress(
             || total_bytes == Some(downloaded_bytes);
         if should_publish {
             state.last_progress_event = Some(now);
+            let segments = progress_by_segment
+                .and_then(|values| values.lock().ok())
+                .map(|values| download_segment_progress_snapshot(&values))
+                .unwrap_or_default();
+            let published_downloaded_bytes = if progress_by_segment.is_some() {
+                segments
+                    .iter()
+                    .map(|segment| segment.downloaded_bytes)
+                    .sum()
+            } else {
+                downloaded_bytes
+            };
+            state.transfer.downloaded_bytes = published_downloaded_bytes;
             let bytes_per_second = state
                 .transfer_rate
-                .get_or_insert_with(|| TransferRateSampler::new(downloaded_bytes, now))
-                .sample(downloaded_bytes, now);
+                .get_or_insert_with(|| TransferRateSampler::new(published_downloaded_bytes, now))
+                .sample(published_downloaded_bytes, now);
             inner.emit(DownloadEvent::TaskProgress {
                 progress: DownloadProgress {
                     task_id,
-                    downloaded_bytes,
+                    downloaded_bytes: published_downloaded_bytes,
                     total_bytes,
                     bytes_per_second,
                     active_connections,
+                    segments,
                 },
             });
         }
     }
+}
+
+fn download_segment_progress_snapshot(values: &HashMap<u32, u64>) -> Vec<DownloadSegmentProgress> {
+    let mut segments = values
+        .iter()
+        .map(
+            |(segment_index, downloaded_bytes)| DownloadSegmentProgress {
+                segment_index: *segment_index,
+                downloaded_bytes: *downloaded_bytes,
+            },
+        )
+        .collect::<Vec<_>>();
+    segments.sort_by_key(|segment| segment.segment_index);
+    segments
 }
 
 fn commit_completed_state(
@@ -2950,8 +3054,8 @@ impl DownloadEngineError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SegmentedArtifactError;
     use crate::http::InjectedArtifactFault;
+    use crate::{ResourceValidator, SegmentedArtifactError};
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
@@ -2961,6 +3065,168 @@ mod tests {
         fn available_space(&self, _path: &Path) -> Option<u64> {
             Some(self.0)
         }
+    }
+
+    #[test]
+    fn task_detail_command_returns_only_the_selected_tasks_segments_and_bounded_timeline() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/detail.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("detail.bin".into()),
+                    headers: vec![crate::DownloadRequestHeader {
+                        name: "Authorization".into(),
+                        value: "secret-value-must-not-enter-the-timeline".into(),
+                    }],
+                    cookie: Some("private-cookie".into()),
+                    referrer: None,
+                    connection_limit: Some(2),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        let plan = TransferPlan::new(
+            TransferProtocol::Http,
+            "https://cdn.example.test/detail.bin".into(),
+            Some(16),
+            true,
+            ResourceValidator {
+                etag: Some("\"fixture\"".into()),
+                last_modified: None,
+            },
+            vec![
+                DownloadSegment::new(0, 0, 7, 4, DownloadSegmentState::Active)
+                    .expect("first segment"),
+                DownloadSegment::new(1, 8, 15, 8, DownloadSegmentState::Completed)
+                    .expect("second segment"),
+            ],
+        )
+        .expect("transfer plan");
+        engine
+            .inner
+            .store
+            .save_transfer_plan(task_id, &plan)
+            .expect("save transfer plan");
+
+        let result = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Ui,
+            command: DownloadCommand::TaskDetail { task_id },
+        });
+        let DownloadCommandOutcome::TaskDetail(detail) = result.outcome else {
+            panic!("task detail command must return a typed detail snapshot");
+        };
+
+        assert_eq!(detail.task.task.id(), task_id);
+        assert_eq!(detail.segments, plan.segments());
+        assert!(detail.timeline.iter().any(|entry| matches!(
+            entry.event,
+            crate::DownloadTaskTimelineEvent::TransferPlanChanged { segment_count: 2 }
+        )));
+        let timeline_json = serde_json::to_string(&detail.timeline).expect("serialize timeline");
+        assert!(!timeline_json.contains("secret-value"));
+        assert!(!timeline_json.contains("private-cookie"));
+        assert!(detail.timeline.len() <= 300);
+    }
+
+    #[test]
+    fn persisted_transfer_plan_change_emits_a_coarse_task_refresh_event() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let events = engine.take_event_receiver().expect("take event receiver");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/rebalanced.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("rebalanced.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(2),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        while events.try_recv().is_ok() {}
+        let plan = TransferPlan::new(
+            TransferProtocol::Http,
+            "https://example.test/rebalanced.bin".into(),
+            Some(32),
+            true,
+            ResourceValidator::default(),
+            vec![
+                DownloadSegment::new(0, 0, 23, 8, DownloadSegmentState::Active)
+                    .expect("first segment"),
+                DownloadSegment::new(1, 24, 31, 0, DownloadSegmentState::Waiting)
+                    .expect("new segment"),
+            ],
+        )
+        .expect("transfer plan");
+
+        engine
+            .inner
+            .persist_transfer_plan_change(task_id, &plan)
+            .expect("persist plan change");
+
+        let event = events.recv_blocking().expect("task refresh event");
+        assert!(matches!(
+            event.event,
+            DownloadEvent::TaskChanged { task } if task.id() == task_id
+        ));
+    }
+
+    #[test]
+    fn segmented_progress_total_and_segment_snapshot_are_published_atomically() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let events = engine.take_event_receiver().expect("take event receiver");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/progress.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("progress.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(2),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        while events.try_recv().is_ok() {}
+        let segment_progress = Mutex::new(HashMap::from([(0, 5), (1, 7)]));
+
+        publish_transfer_progress(
+            &engine.inner,
+            task_id,
+            5,
+            Some(20),
+            2,
+            Some(&segment_progress),
+        );
+
+        let event = events.recv_blocking().expect("progress event");
+        let DownloadEvent::TaskProgress { progress } = event.event else {
+            panic!("expected a task progress event");
+        };
+        assert_eq!(progress.downloaded_bytes, 12);
+        assert_eq!(
+            progress
+                .segments
+                .iter()
+                .map(|segment| segment.downloaded_bytes)
+                .sum::<u64>(),
+            progress.downloaded_bytes
+        );
     }
 
     #[test]
@@ -3246,6 +3512,7 @@ mod tests {
                     total_bytes: Some(400),
                     bytes_per_second: 0,
                     active_connections: 1,
+                    segments: Vec::new(),
                 },
             });
         }

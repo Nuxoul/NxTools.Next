@@ -942,6 +942,55 @@ Reverified on 2026-07-29 before implementing the fourth Stage 3 slice:
   the engine/platform boundary. It never logs the query, URL, path, file name, headers or cookies,
   and virtual row creation/scroll frames are never logged.
 
+### Phase 3 task detail, segment, Header, verification and log findings
+
+Reverified on 2026-07-29 before implementing the fifth Stage 3 slice:
+
+- ABDM `desktop/app/.../singleDownloadPage/ProgressDownloadPage.kt::{ProgressDownloadPage,
+  RenderInfo,RenderPartInfo,RenderParts}` keeps one compact tab strip above the progress surface.
+  Information rows use a fixed label/value hierarchy. Part details are optional, preserve their
+  expanded state, use stable part IDs, render one proportional aggregate strip and a table with
+  number, state, downloaded bytes and total bytes. Opening details never changes transfer state.
+- ABDM `shared/app/.../singledownloadpage/BaseSingleDownloadComponent.kt::
+  extraDownloadProgressInfo` derives name, state, total, downloaded, speed, remaining time and
+  resume support from the monitor snapshot. Error presentation is separate from part state, and
+  the UI does not read downloader internals directly.
+- Old NxTools `Views/MainWindow.axaml` download-detail surface adds the product-specific URL/final
+  path, request/response Header, resource validator/checksum, segment and task-log sections.
+  `ViewModels/DownloadTaskViewModel.cs::{HeaderSummaryText,RequestHeaderSummaryText,
+  CookieSummaryText,SegmentSummaryText,AddLog}` bounds each task timeline to 300 newest entries;
+  `Models/AppState.cs::DownloadTaskState` persists those entries and segments.
+- NxTools.Next will keep the existing bottom-docked inspector instead of restoring the old wide
+  right sidebar. It uses compact `概览 / 分段 / Header / 校验 / 日志` tabs, one persistent detail
+  scroll handle and no decorative empty cards. Selecting a task may query its detail snapshot but
+  must never send a lifecycle command, alter queue order or synchronously re-enter the leased GPUI
+  entity.
+- The normal task-list snapshot stays lightweight. A typed Rust `TaskDetail` query loads only the
+  selected task's persisted transfer plan, ordered segments and bounded timeline. GPUI renders that
+  immutable snapshot; C# has no role. Detail refresh follows already-coalesced task events and does
+  not poll or load every task's segments on each frame. Live byte events update the selected
+  in-memory segment snapshot only after the engine's 80 ms publication gate; the engine constructs
+  and sorts the segment payload only for an event that will actually be published. The published
+  aggregate byte count is recomputed from that same immutable segment payload so parallel callbacks
+  cannot produce an internally inconsistent event. A dynamic split persists the new plan and emits
+  one coarse task refresh so a newly introduced stable segment ID cannot remain absent from the
+  inspector cache.
+- Request Header and Cookie values may contain credentials. The inspector shows non-sensitive
+  request values, but masks Authorization, Proxy-Authorization, Cookie, Set-Cookie and API-key
+  values; diagnostics never record any Header name/value, Cookie, URL, path or file name. Response
+  details are limited to already persisted probe metadata: content type/length, final URL, range
+  support, ETag and Last-Modified.
+- This slice reports current resource identity and transfer-integrity verification only. User
+  supplied expected hashes and SHA-256 computation remain the explicit Stage 6 item and must not be
+  pulled forward or represented as already implemented.
+- The per-task timeline is durable, newest-first and bounded to 300 entries. It records coarse
+  lifecycle states and transfer-plan changes only; byte ticks, connection frames and raw fault
+  payloads are excluded. The `TaskDetail` diagnostic records correlation ID, task ID, counts,
+  elapsed time and terminal success/failure without copying timeline or request payload content.
+  Credential masking normalizes separator variants such as `X-API-Key`, `X-ApiKey` and
+  `X_API_KEY`; the proportional aggregate strip represents both each segment's byte share and its
+  downloaded fraction rather than assigning every segment the same width.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

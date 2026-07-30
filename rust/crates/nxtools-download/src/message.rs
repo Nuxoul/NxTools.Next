@@ -48,6 +48,9 @@ pub enum DownloadCommand {
     Snapshot {
         query: DownloadQuery,
     },
+    TaskDetail {
+        task_id: DownloadTaskId,
+    },
     Subscribe {
         after_sequence: Option<u64>,
     },
@@ -137,6 +140,7 @@ pub enum DownloadCommandOutcome {
     },
     Probe(DownloadProbe),
     Snapshot(DownloadSnapshot),
+    TaskDetail(Box<DownloadTaskDetail>),
     Rejected {
         fault: DownloadFault,
     },
@@ -167,6 +171,28 @@ pub struct DownloadSnapshot {
     pub aggregate_metrics: DownloadAggregateMetrics,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub task_details: Vec<crate::DownloadEngineTask>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTaskDetail {
+    pub task: crate::DownloadEngineTask,
+    pub segments: Vec<crate::DownloadSegment>,
+    pub timeline: Vec<DownloadTaskTimelineEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTaskTimelineEntry {
+    pub sequence: u64,
+    pub occurred_at_unix_ms: i64,
+    pub event: DownloadTaskTimelineEvent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
+pub enum DownloadTaskTimelineEvent {
+    TaskCreated,
+    StatusChanged { status: DownloadStatus },
+    TransferPlanChanged { segment_count: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -255,6 +281,14 @@ pub struct DownloadProgress {
     pub total_bytes: Option<u64>,
     pub bytes_per_second: u64,
     pub active_connections: u16,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<DownloadSegmentProgress>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSegmentProgress {
+    pub segment_index: u32,
+    pub downloaded_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

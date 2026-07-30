@@ -30,8 +30,9 @@ pub use message::{
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
     DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueueAction, DownloadQueuePlacement, DownloadSnapshot,
-    DownloadSubmitMode, DownloadTaskAction,
+    DownloadQuery, DownloadQueueAction, DownloadQueuePlacement, DownloadSegmentProgress,
+    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail,
+    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
 };
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};

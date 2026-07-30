@@ -17,8 +17,9 @@ use nxtools_download::{
     DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
     DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
     DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadSchedule, DownloadSnapshot, DownloadStatus, DownloadSubmitMode, DownloadTaskAction,
-    DownloadTaskId, DownloadWeekday, RequestOrigin,
+    DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
+    DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
+    RequestOrigin,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -107,6 +108,8 @@ pub(crate) struct DownloadApplication {
     notifications: Entity<NotificationCenter>,
     default_directory: PathBuf,
     tasks: Vec<DownloadEngineTask>,
+    task_detail: Option<DownloadTaskDetail>,
+    task_detail_error: Option<(DownloadTaskId, String)>,
     queues: Vec<DownloadQueue>,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
@@ -195,6 +198,8 @@ impl DownloadApplication {
             notifications,
             default_directory,
             tasks,
+            task_detail: None,
+            task_detail_error: None,
             queues,
             latest_progress: HashMap::new(),
             awaiting_delayed_progress,
@@ -215,6 +220,40 @@ impl DownloadApplication {
         &self.tasks
     }
 
+    pub(crate) fn task_detail(&self, task_id: DownloadTaskId) -> Option<&DownloadTaskDetail> {
+        self.task_detail
+            .as_ref()
+            .filter(|detail| detail.task.task.id() == task_id)
+    }
+
+    pub(crate) fn task_detail_error(&self, task_id: DownloadTaskId) -> Option<&str> {
+        self.task_detail_error
+            .as_ref()
+            .filter(|(failed_task_id, _)| *failed_task_id == task_id)
+            .map(|(_, error)| error.as_str())
+    }
+
+    pub(crate) fn request_task_detail(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if self.task_detail(task_id).is_some() {
+            return;
+        }
+        match load_download_task_detail(&self.engine, task_id) {
+            Ok(detail) => {
+                self.task_detail = Some(detail);
+                self.task_detail_error = None;
+            }
+            Err(error) => {
+                warn!(
+                    task_id = %task_id.as_uuid(),
+                    "could not load selected download task detail"
+                );
+                self.task_detail = None;
+                self.task_detail_error = Some((task_id, error));
+            }
+        }
+        cx.notify();
+    }
+
     fn default_queue(&self) -> Option<&DownloadQueue> {
         self.queues.iter().find(|queue| queue.id == "default")
     }
@@ -225,7 +264,7 @@ impl DownloadApplication {
             .find(|candidate| candidate.task.id() == task_id)
     }
 
-    fn progress(&self, task_id: DownloadTaskId) -> Option<&DownloadProgress> {
+    pub(crate) fn progress(&self, task_id: DownloadTaskId) -> Option<&DownloadProgress> {
         self.latest_progress.get(&task_id)
     }
 
@@ -988,6 +1027,10 @@ impl DownloadApplication {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.refresh_snapshot(true, cx);
+    }
+
+    fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
         let Ok(snapshot) = load_download_snapshot(&self.engine) else {
             return;
         };
@@ -995,6 +1038,31 @@ impl DownloadApplication {
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
         self.queues = snapshot.queues;
+        if refresh_task_detail
+            && let Some(task_id) = self
+                .task_detail
+                .as_ref()
+                .map(|detail| detail.task.task.id())
+        {
+            if self.tasks.iter().any(|task| task.task.id() == task_id) {
+                match load_download_task_detail(&self.engine, task_id) {
+                    Ok(detail) => {
+                        self.task_detail = Some(detail);
+                        self.task_detail_error = None;
+                    }
+                    Err(error) => {
+                        warn!(
+                            task_id = %task_id.as_uuid(),
+                            "could not refresh selected download task detail"
+                        );
+                        self.task_detail_error = Some((task_id, error));
+                    }
+                }
+            } else {
+                self.task_detail = None;
+                self.task_detail_error = None;
+            }
+        }
         let task_states = self
             .tasks
             .iter()
@@ -1042,8 +1110,14 @@ impl DownloadApplication {
             }
             _ => None,
         };
+        let is_progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
         match envelope.event {
             DownloadEvent::TaskProgress { progress } => {
+                if let Some(detail) = self.task_detail.as_mut()
+                    && detail.task.task.id() == progress.task_id
+                {
+                    apply_progress_to_task_detail(detail, &progress);
+                }
                 self.latest_progress.insert(progress.task_id, progress);
             }
             DownloadEvent::TaskRemoved { task_id } => {
@@ -1062,7 +1136,7 @@ impl DownloadApplication {
             }
             DownloadEvent::CommandRejected { .. } | DownloadEvent::SnapshotRequired { .. } => {}
         }
-        self.refresh(cx);
+        self.refresh_snapshot(!is_progress_event, cx);
         if let Some(task_id) = admitted_progress_task {
             let still_active = self.task(task_id).is_some_and(|task| {
                 matches!(
@@ -1145,6 +1219,55 @@ fn load_download_snapshot(engine: &DownloadEngine) -> Result<DownloadSnapshot, S
         DownloadCommandOutcome::Snapshot(snapshot) => Ok(snapshot),
         DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
         _ => Err("下载引擎返回了无效的快照结果".into()),
+    }
+}
+
+fn load_download_task_detail(
+    engine: &DownloadEngine,
+    task_id: DownloadTaskId,
+) -> Result<DownloadTaskDetail, String> {
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::TaskDetail { task_id },
+    });
+    match result.outcome {
+        DownloadCommandOutcome::TaskDetail(detail) => Ok(*detail),
+        DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
+        _ => Err("下载引擎返回了无效的任务详情结果".into()),
+    }
+}
+
+fn apply_progress_to_task_detail(detail: &mut DownloadTaskDetail, progress: &DownloadProgress) {
+    detail.task.downloaded_bytes = progress.downloaded_bytes;
+    detail.task.total_bytes = progress.total_bytes;
+    for segment_progress in &progress.segments {
+        let Some(position) = detail
+            .segments
+            .iter()
+            .position(|segment| segment.index() == segment_progress.segment_index)
+        else {
+            continue;
+        };
+        let segment = &detail.segments[position];
+        let downloaded_bytes = segment_progress.downloaded_bytes.min(segment.len());
+        let state = if downloaded_bytes == segment.len() {
+            DownloadSegmentState::Completed
+        } else if downloaded_bytes > segment.downloaded_bytes() {
+            DownloadSegmentState::Active
+        } else {
+            segment.state
+        };
+        if let Ok(updated) = DownloadSegment::new(
+            segment.index(),
+            segment.start_byte(),
+            segment.end_byte(),
+            downloaded_bytes,
+            state,
+        ) {
+            detail.segments[position] = updated;
+        }
     }
 }
 
@@ -3029,6 +3152,55 @@ fn download_input_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/live.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("live.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(2),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        let task = engine
+            .task(task_id)
+            .expect("read task")
+            .expect("task exists");
+        let mut detail = DownloadTaskDetail {
+            task,
+            segments: vec![
+                DownloadSegment::new(0, 0, 9, 0, DownloadSegmentState::Waiting).expect("segment"),
+            ],
+            timeline: Vec::new(),
+        };
+        let progress = DownloadProgress {
+            task_id,
+            downloaded_bytes: 6,
+            total_bytes: Some(10),
+            bytes_per_second: 1_024,
+            active_connections: 1,
+            segments: vec![nxtools_download::DownloadSegmentProgress {
+                segment_index: 0,
+                downloaded_bytes: 6,
+            }],
+        };
+
+        apply_progress_to_task_detail(&mut detail, &progress);
+
+        assert_eq!(detail.task.downloaded_bytes, 6);
+        assert_eq!(detail.segments[0].downloaded_bytes(), 6);
+        assert_eq!(detail.segments[0].state, DownloadSegmentState::Active);
+    }
 
     #[test]
     fn start_now_closes_the_add_window_before_scheduling_the_progress_window() {

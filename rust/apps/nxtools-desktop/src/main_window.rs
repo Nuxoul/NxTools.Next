@@ -3,6 +3,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Local};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Corner, Entity, FocusHandle, IntoElement,
     KeyDownEvent, MouseButton, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
@@ -20,7 +21,9 @@ use nxtools_core::{
     ClipboardSettings, CustomCommandSettings,
 };
 use nxtools_download::{
-    DownloadBatchAction, DownloadEngineTask, DownloadQueuePlacement, DownloadStatus, DownloadTaskId,
+    DownloadBatchAction, DownloadEngineTask, DownloadProgress, DownloadQueuePlacement,
+    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskDetail, DownloadTaskId,
+    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, RequestOrigin,
 };
 use nxtools_protocol::{IndexPhase, IndexStatus, ShellOpenAction};
 use tracing::info;
@@ -44,6 +47,7 @@ const DOWNLOAD_PAGE_HEADER_HEIGHT: f32 = 48.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
+const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
 const DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY: Duration = Duration::from_millis(250);
 const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = 154.0;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
@@ -95,6 +99,9 @@ pub(crate) struct MainWindow {
     download_sort: DownloadSortState,
     download_list_scroll: UniformListScrollHandle,
     download_search_log_generation: u64,
+    download_detail_tab: DownloadDetailTab,
+    download_detail_scroll: ScrollHandle,
+    requested_download_detail: Option<DownloadTaskId>,
     custom_command_run_as_admin: bool,
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
@@ -119,6 +126,46 @@ enum DownloadTaskFilter {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum DownloadDetailTab {
+    #[default]
+    Overview,
+    Segments,
+    Headers,
+    Verification,
+    Timeline,
+}
+
+impl DownloadDetailTab {
+    const ALL: [Self; 5] = [
+        Self::Overview,
+        Self::Segments,
+        Self::Headers,
+        Self::Verification,
+        Self::Timeline,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "概览",
+            Self::Segments => "分段",
+            Self::Headers => "Header",
+            Self::Verification => "校验",
+            Self::Timeline => "日志",
+        }
+    }
+
+    const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Segments => "segments",
+            Self::Headers => "headers",
+            Self::Verification => "verification",
+            Self::Timeline => "timeline",
+        }
+    }
+}
+
 struct DownloadRowSelection {
     selected: bool,
     visible_task_ids: Arc<Vec<DownloadTaskId>>,
@@ -131,6 +178,16 @@ struct DownloadContextCapabilities {
     can_cancel: bool,
     can_move_queue: bool,
     single_artifact: Option<DownloadTaskId>,
+}
+
+struct DownloadDetailView<'a> {
+    task: &'a DownloadEngineTask,
+    detail: Option<&'a DownloadTaskDetail>,
+    detail_error: Option<&'a str>,
+    progress: Option<&'a DownloadProgress>,
+    active_tab: DownloadDetailTab,
+    scroll: ScrollHandle,
+    main_window: Entity<MainWindow>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -896,6 +953,9 @@ impl MainWindow {
             download_sort: DownloadSortState::default(),
             download_list_scroll: UniformListScrollHandle::new(),
             download_search_log_generation: 0,
+            download_detail_tab: DownloadDetailTab::default(),
+            download_detail_scroll: ScrollHandle::new(),
+            requested_download_detail: None,
             custom_command_run_as_admin: initial_custom_command
                 .as_ref()
                 .is_some_and(|command| command.run_as_admin),
@@ -1674,11 +1734,58 @@ impl MainWindow {
             .download_selection_anchor
             .filter(|task_id| self.selected_download_tasks.contains(task_id))
             .or(selected_task_id);
-        let selected_task_detail = selected_task_id
+        let selected_task = selected_task_id
             .and_then(|task_id| visible_tasks.iter().find(|task| task.task.id() == task_id))
-            .map(|task| download_task_detail(theme, task).into_any_element());
+            .cloned();
+        let (detail_snapshot, detail_error, selected_progress) = selected_task_id
+            .and_then(|task_id| {
+                self.downloads.upgrade().map(|application| {
+                    let application = application.read(cx);
+                    (
+                        application.task_detail(task_id).cloned(),
+                        application.task_detail_error(task_id).map(str::to_owned),
+                        application.progress(task_id).cloned(),
+                    )
+                })
+            })
+            .unwrap_or_default();
+        if let Some(task_id) = selected_task_id {
+            if detail_snapshot.is_some() {
+                self.requested_download_detail = Some(task_id);
+            } else if self.requested_download_detail != Some(task_id) {
+                self.requested_download_detail = Some(task_id);
+                self.download_detail_scroll
+                    .set_offset(point(px(0.0), px(0.0)));
+                let application = self.downloads.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.request_task_detail(task_id, cx);
+                    });
+                });
+            }
+        } else {
+            self.requested_download_detail = None;
+        }
+        let detail_tab = self.download_detail_tab;
+        let detail_scroll = self.download_detail_scroll.clone();
         let download_application = self.downloads.clone();
         let main_window = cx.entity();
+        let detail_main_window = main_window.clone();
+        let selected_task_detail = selected_task.map(|task| {
+            download_task_detail(
+                theme,
+                DownloadDetailView {
+                    task: &task,
+                    detail: detail_snapshot.as_ref(),
+                    detail_error: detail_error.as_deref(),
+                    progress: selected_progress.as_ref(),
+                    active_tab: detail_tab,
+                    scroll: detail_scroll,
+                    main_window: detail_main_window,
+                },
+            )
+            .into_any_element()
+        });
         let visible_count = visible_tasks.len();
         let virtual_tasks = Arc::new(visible_tasks);
         let virtual_task_ids = Arc::new(visible_task_ids);
@@ -4071,49 +4178,600 @@ fn download_task_context_menu(
         ))
 }
 
-fn download_task_detail(theme: Theme, task: &DownloadEngineTask) -> AnyElement {
-    let source_url = task.task.request().source_url.clone();
-    let final_path = task.final_path.as_ref().map_or_else(
-        || "尚未解析最终文件路径".into(),
-        |path| path.display().to_string(),
-    );
-    let error = task.error.as_ref().map(|fault| fault.message.clone());
+fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElement {
+    let DownloadDetailView {
+        task,
+        detail,
+        detail_error,
+        progress,
+        active_tab,
+        scroll,
+        main_window,
+    } = view;
+    let task_id = task.task.id();
+    let mut tabs = div()
+        .h(px(30.0))
+        .px(px(10.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .items_end()
+        .gap(px(2.0));
+    for tab in DownloadDetailTab::ALL {
+        let active = tab == active_tab;
+        let tab_main_window = main_window.clone();
+        let tab_scroll = scroll.clone();
+        tabs = tabs.child(
+            div()
+                .id(("download-detail-tab", tab as usize))
+                .debug_selector(move || format!("download-detail-tab-{}", tab.diagnostic_name()))
+                .h(px(29.0))
+                .px(px(10.0))
+                .border_b_2()
+                .border_color(if active {
+                    theme.accent
+                } else {
+                    gpui::rgba(0x00000000)
+                })
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .text_size(px(10.0))
+                .font_weight(if active {
+                    gpui::FontWeight::SEMIBOLD
+                } else {
+                    gpui::FontWeight::NORMAL
+                })
+                .text_color(if active { theme.text } else { theme.text_muted })
+                .hover(move |style| style.bg(theme.surface_hover))
+                .child(tab.label())
+                .on_click(move |_, _, cx| {
+                    tab_main_window.update(cx, |window, cx| {
+                        if window.download_detail_tab != tab {
+                            window.download_detail_tab = tab;
+                            tab_scroll.set_offset(point(px(0.0), px(0.0)));
+                            info!(
+                                event = "download.detail.tab_changed",
+                                task_id = %task_id.as_uuid(),
+                                tab = tab.diagnostic_name(),
+                                "download detail tab changed"
+                            );
+                            cx.notify();
+                        }
+                    });
+                }),
+        );
+    }
+    let content = match active_tab {
+        DownloadDetailTab::Overview => download_overview_detail(theme, task, progress),
+        DownloadDetailTab::Segments => download_segment_detail(theme, detail, detail_error),
+        DownloadDetailTab::Headers => download_header_detail(theme, task),
+        DownloadDetailTab::Verification => {
+            download_verification_detail(theme, task, detail, detail_error)
+        }
+        DownloadDetailTab::Timeline => download_timeline_detail(theme, detail, detail_error),
+    };
 
     div()
         .debug_selector(|| "download-task-detail".into())
-        .px(px(12.0))
-        .py(px(8.0))
+        .h(px(DOWNLOAD_DETAIL_HEIGHT))
+        .flex_none()
         .border_t_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface)
         .flex()
         .flex_col()
-        .gap(px(4.0))
+        .child(tabs)
         .child(
             div()
-                .h(px(18.0))
-                .flex()
-                .items_center()
-                .text_size(px(10.0))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .child("任务信息"),
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .child(
+                    div()
+                        .id("download-detail-scroll")
+                        .size_full()
+                        .track_scroll(&scroll)
+                        .overflow_y_scroll()
+                        .px(px(12.0))
+                        .py(px(8.0))
+                        .child(content),
+                )
+                .child(Scrollbar::vertical(&scroll).id("download-detail-scrollbar")),
         )
-        .child(download_detail_line(theme, "来源", source_url))
+        .into_any_element()
+}
+
+fn download_overview_detail(
+    theme: Theme,
+    task: &DownloadEngineTask,
+    progress: Option<&DownloadProgress>,
+) -> AnyElement {
+    let request = task.task.request();
+    let total = task.total_bytes;
+    let downloaded = progress.map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes);
+    let bytes_per_second = progress.map_or(0, |progress| progress.bytes_per_second);
+    let active_connections = progress.map_or(0, |progress| progress.active_connections);
+    let remaining = total
+        .filter(|total| bytes_per_second > 0 && *total > downloaded)
+        .map(|total| format_duration((total - downloaded) / bytes_per_second))
+        .unwrap_or_else(|| "—".into());
+    let final_path = task
+        .final_path
+        .as_ref()
+        .map_or_else(|| "尚未解析".into(), |path| path.display().to_string());
+    let (status_label, status_color) = download_status_presentation(theme, task.task.status());
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(6.0))
+        .child(
+            div()
+                .flex()
+                .gap(px(14.0))
+                .child(download_detail_metric(
+                    theme,
+                    "状态",
+                    status_label.into(),
+                    status_color,
+                ))
+                .child(download_detail_metric(
+                    theme,
+                    "大小",
+                    total.map_or_else(|| "未知".into(), format_download_bytes),
+                    theme.text,
+                ))
+                .child(download_detail_metric(
+                    theme,
+                    "已下载",
+                    format_download_bytes(downloaded),
+                    theme.text,
+                ))
+                .child(download_detail_metric(
+                    theme,
+                    "速度",
+                    if bytes_per_second == 0 {
+                        "—".into()
+                    } else {
+                        format!("{}/s", format_download_bytes(bytes_per_second))
+                    },
+                    theme.text,
+                ))
+                .child(download_detail_metric(theme, "剩余", remaining, theme.text))
+                .child(download_detail_metric(
+                    theme,
+                    "连接",
+                    active_connections.to_string(),
+                    theme.text,
+                )),
+        )
+        .child(
+            div()
+                .flex()
+                .gap(px(14.0))
+                .child(download_detail_metric(
+                    theme,
+                    "断点",
+                    task.probe.as_ref().map_or_else(
+                        || "未知".into(),
+                        |probe| {
+                            if probe.supports_ranges {
+                                "支持".into()
+                            } else {
+                                "不支持".into()
+                            }
+                        },
+                    ),
+                    theme.text_secondary,
+                ))
+                .child(download_detail_metric(
+                    theme,
+                    "来源",
+                    download_origin_label(task.task.origin()).into(),
+                    theme.text_secondary,
+                ))
+                .child(download_detail_metric(
+                    theme,
+                    "计划",
+                    request
+                        .scheduled_at_unix_ms
+                        .map_or_else(|| "立即".into(), format_download_timestamp),
+                    theme.text_secondary,
+                ))
+                .child(div().flex_1())
+                .child(div().flex_1())
+                .child(div().flex_1()),
+        )
+        .child(download_detail_line(
+            theme,
+            "URL",
+            request.source_url.clone(),
+        ))
         .child(download_detail_line(theme, "文件", final_path))
-        .when_some(error, |detail, error| {
-            detail.child(download_detail_line_with_color(
+        .when_some(task.error.as_ref(), |content, error| {
+            content.child(download_detail_line_with_color(
                 theme,
                 "错误",
-                error,
+                error.message.clone(),
                 theme.danger,
             ))
         })
         .into_any_element()
 }
 
+fn download_segment_detail(
+    theme: Theme,
+    detail: Option<&DownloadTaskDetail>,
+    detail_error: Option<&str>,
+) -> AnyElement {
+    let Some(detail) = detail else {
+        return detail_error.map_or_else(
+            || download_detail_empty(theme, "正在加载分段详情"),
+            |error| download_detail_error(theme, error),
+        );
+    };
+    if detail.segments.is_empty() {
+        return download_detail_empty(theme, "尚未生成分段计划");
+    }
+    let total_bytes = detail
+        .segments
+        .iter()
+        .map(DownloadSegment::len)
+        .sum::<u64>();
+    let downloaded_bytes = detail
+        .segments
+        .iter()
+        .map(DownloadSegment::downloaded_bytes)
+        .sum::<u64>();
+    let mut aggregate = div()
+        .h(px(5.0))
+        .w_full()
+        .rounded(px(3.0))
+        .overflow_hidden()
+        .bg(theme.surface_raised)
+        .flex();
+    for cell in download_segment_strip_cells(&detail.segments, 96) {
+        aggregate = aggregate.child(div().flex_1().h_full().bg(if cell.downloaded {
+            download_segment_color(theme, cell.state)
+        } else {
+            theme.surface_hover
+        }));
+    }
+    let mut rows = div().flex().flex_col();
+    for segment in &detail.segments {
+        let percent = segment.downloaded_bytes().saturating_mul(100) / segment.len();
+        rows = rows.child(
+            div()
+                .h(px(24.0))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .flex()
+                .items_center()
+                .text_size(px(9.5))
+                .child(
+                    div()
+                        .w(px(38.0))
+                        .text_color(theme.text_muted)
+                        .child(format!("#{}", segment.index() + 1)),
+                )
+                .child(
+                    div()
+                        .w(px(172.0))
+                        .text_color(theme.text_secondary)
+                        .child(format!(
+                            "{}–{}",
+                            format_download_bytes(segment.start_byte()),
+                            format_download_bytes(segment.end_byte().saturating_add(1))
+                        )),
+                )
+                .child(div().w(px(180.0)).text_color(theme.text).child(format!(
+                    "{} / {}",
+                    format_download_bytes(segment.downloaded_bytes()),
+                    format_download_bytes(segment.len())
+                )))
+                .child(
+                    div()
+                        .w(px(72.0))
+                        .text_color(download_segment_color(theme, segment.state))
+                        .child(download_segment_state_label(segment.state)),
+                )
+                .child(
+                    div()
+                        .text_color(theme.text_muted)
+                        .child(format!("{percent}%")),
+                ),
+        );
+    }
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(7.0))
+        .child(
+            div()
+                .text_size(px(9.5))
+                .text_color(theme.text_muted)
+                .child(format!(
+                    "{} 个分段 · {} / {}",
+                    detail.segments.len(),
+                    format_download_bytes(downloaded_bytes),
+                    format_download_bytes(total_bytes)
+                )),
+        )
+        .child(aggregate)
+        .child(rows)
+        .into_any_element()
+}
+
+fn download_header_detail(theme: Theme, task: &DownloadEngineTask) -> AnyElement {
+    let request = task.task.request();
+    let mut request_rows = Vec::new();
+    for header in &request.headers {
+        request_rows.push((
+            header.name.clone(),
+            masked_request_header_value(&header.name, &header.value),
+        ));
+    }
+    if request.cookie.is_some() {
+        request_rows.push(("Cookie".into(), "已设置（内容已隐藏）".into()));
+    }
+    if let Some(referrer) = &request.referrer {
+        request_rows.push(("Referer".into(), referrer.clone()));
+    }
+    if request_rows.is_empty() {
+        request_rows.push(("请求 Header".into(), "未设置自定义 Header".into()));
+    }
+    let mut response_rows = Vec::new();
+    if let Some(probe) = &task.probe {
+        response_rows.push(("Final URL".into(), probe.final_url.clone()));
+        response_rows.push((
+            "Content-Type".into(),
+            probe.content_type.clone().unwrap_or_else(|| "未知".into()),
+        ));
+        response_rows.push((
+            "Content-Length".into(),
+            probe
+                .total_bytes
+                .map_or_else(|| "未知".into(), format_download_bytes),
+        ));
+        response_rows.push((
+            "Accept-Ranges".into(),
+            if probe.supports_ranges {
+                "bytes"
+            } else {
+                "否"
+            }
+            .into(),
+        ));
+        if let Some(etag) = &probe.validator.etag {
+            response_rows.push(("ETag".into(), etag.clone()));
+        }
+        if let Some(last_modified) = &probe.validator.last_modified {
+            response_rows.push(("Last-Modified".into(), last_modified.clone()));
+        }
+    } else {
+        response_rows.push(("响应 Header".into(), "尚未探测".into()));
+    }
+    div()
+        .flex()
+        .gap(px(24.0))
+        .child(download_detail_section(theme, "请求", request_rows))
+        .child(download_detail_section(theme, "响应", response_rows))
+        .into_any_element()
+}
+
+fn download_verification_detail(
+    theme: Theme,
+    task: &DownloadEngineTask,
+    detail: Option<&DownloadTaskDetail>,
+    detail_error: Option<&str>,
+) -> AnyElement {
+    let validator = task.probe.as_ref().map(|probe| &probe.validator);
+    let identity = validator.map_or_else(
+        || "尚未探测资源身份".into(),
+        |validator| match (&validator.etag, &validator.last_modified) {
+            (Some(_), Some(_)) => "ETag + Last-Modified".into(),
+            (Some(_), None) => "ETag".into(),
+            (None, Some(_)) => "Last-Modified".into(),
+            (None, None) => "服务器未提供资源身份标识".into(),
+        },
+    );
+    let segment_state = detail.map_or_else(
+        || detail_error.unwrap_or("正在加载").to_owned(),
+        |detail| {
+            if detail.segments.is_empty() {
+                "单连接或尚未生成计划".into()
+            } else if detail
+                .segments
+                .iter()
+                .all(|segment| segment.downloaded_bytes() == segment.len())
+            {
+                "所有分段长度一致".into()
+            } else {
+                "分段边界已锁定，传输尚未完成".into()
+            }
+        },
+    );
+    let (integrity, color) = match task.task.status() {
+        DownloadStatus::Completed => ("传输完整性已通过", theme.success),
+        DownloadStatus::Verifying => ("正在校验落盘结果", theme.accent),
+        DownloadStatus::Failed => ("任务失败，请查看错误与日志", theme.danger),
+        _ => ("等待传输完成", theme.text_secondary),
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(5.0))
+        .child(download_detail_line_with_color(
+            theme,
+            "状态",
+            integrity.into(),
+            color,
+        ))
+        .child(download_detail_line(theme, "资源", identity))
+        .child(download_detail_line(theme, "分段", segment_state))
+        .child(download_detail_line(
+            theme,
+            "范围",
+            task.probe.as_ref().map_or_else(
+                || "未知".into(),
+                |probe| {
+                    if probe.supports_ranges {
+                        "Content-Range 严格校验".into()
+                    } else {
+                        "单连接长度校验".into()
+                    }
+                },
+            ),
+        ))
+        .into_any_element()
+}
+
+fn download_timeline_detail(
+    theme: Theme,
+    detail: Option<&DownloadTaskDetail>,
+    detail_error: Option<&str>,
+) -> AnyElement {
+    let Some(detail) = detail else {
+        return detail_error.map_or_else(
+            || download_detail_empty(theme, "正在加载任务日志"),
+            |error| download_detail_error(theme, error),
+        );
+    };
+    if detail.timeline.is_empty() {
+        return download_detail_empty(theme, "暂无任务日志");
+    }
+    let mut rows = div().flex().flex_col();
+    for entry in &detail.timeline {
+        rows = rows.child(
+            div()
+                .min_h(px(24.0))
+                .py(px(4.0))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .flex()
+                .items_start()
+                .gap(px(10.0))
+                .text_size(px(9.5))
+                .child(
+                    div()
+                        .w(px(64.0))
+                        .flex_none()
+                        .text_color(theme.text_muted)
+                        .child(format_download_log_time(entry.occurred_at_unix_ms)),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .text_color(theme.text_secondary)
+                        .child(download_timeline_label(entry)),
+                ),
+        );
+    }
+    rows.into_any_element()
+}
+
+fn download_detail_section(
+    theme: Theme,
+    title: &'static str,
+    rows: Vec<(String, String)>,
+) -> AnyElement {
+    let mut section = div()
+        .min_w_0()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .gap(px(3.0))
+        .child(
+            div()
+                .pb(px(3.0))
+                .text_size(px(10.0))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(title),
+        );
+    for (label, value) in rows {
+        section = section.child(download_detail_line_owned(theme, label, value));
+    }
+    section.into_any_element()
+}
+
+fn download_detail_empty(theme: Theme, message: &'static str) -> AnyElement {
+    div()
+        .h(px(88.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(10.0))
+        .text_color(theme.text_muted)
+        .child(message)
+        .into_any_element()
+}
+
+fn download_detail_error(theme: Theme, message: &str) -> AnyElement {
+    div()
+        .h(px(88.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(10.0))
+        .text_color(theme.danger)
+        .child(format!("详情加载失败：{message}"))
+        .into_any_element()
+}
+
+fn download_detail_metric(
+    theme: Theme,
+    label: &'static str,
+    value: String,
+    value_color: gpui::Rgba,
+) -> AnyElement {
+    div()
+        .min_w_0()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .gap(px(1.0))
+        .child(
+            div()
+                .text_size(px(8.5))
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(
+            div()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_size(px(9.5))
+                .text_color(value_color)
+                .child(value),
+        )
+        .into_any_element()
+}
+
 fn download_detail_line(theme: Theme, label: &'static str, value: String) -> AnyElement {
     download_detail_line_with_color(theme, label, value, theme.text)
+}
+
+fn download_detail_line_owned(theme: Theme, label: String, value: String) -> AnyElement {
+    div()
+        .min_h(px(19.0))
+        .flex()
+        .items_start()
+        .gap(px(8.0))
+        .text_size(px(9.5))
+        .child(
+            div()
+                .w(px(92.0))
+                .flex_none()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(div().min_w_0().flex_1().text_color(theme.text).child(value))
+        .into_any_element()
 }
 
 fn download_detail_line_with_color(
@@ -4123,13 +4781,14 @@ fn download_detail_line_with_color(
     value_color: gpui::Rgba,
 ) -> AnyElement {
     div()
+        .min_h(px(19.0))
         .flex()
-        .items_center()
+        .items_start()
         .gap(px(8.0))
         .text_size(px(9.5))
         .child(
             div()
-                .w(px(32.0))
+                .w(px(44.0))
                 .flex_none()
                 .text_color(theme.text_muted)
                 .child(label),
@@ -4138,11 +4797,155 @@ fn download_detail_line_with_color(
             div()
                 .min_w_0()
                 .flex_1()
-                .truncate()
                 .text_color(value_color)
                 .child(value),
         )
         .into_any_element()
+}
+
+fn masked_request_header_value(name: &str, value: &str) -> String {
+    let name = name.trim().to_ascii_lowercase();
+    let normalized = name
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>();
+    if matches!(
+        name.as_str(),
+        "authorization" | "proxy-authorization" | "cookie" | "set-cookie" | "x-api-key" | "api-key"
+    ) || name.contains("auth")
+        || name.contains("token")
+        || name.contains("secret")
+        || name.ends_with("-key")
+        || normalized.contains("apikey")
+    {
+        "已设置（内容已隐藏）".into()
+    } else {
+        value.to_owned()
+    }
+}
+
+fn download_origin_label(origin: RequestOrigin) -> &'static str {
+    match origin {
+        RequestOrigin::Ui => "界面",
+        RequestOrigin::Cli => "CLI",
+        RequestOrigin::Browser => "浏览器",
+        RequestOrigin::Internal => "内部",
+    }
+}
+
+fn download_segment_state_label(state: DownloadSegmentState) -> &'static str {
+    match state {
+        DownloadSegmentState::Waiting => "等待",
+        DownloadSegmentState::Active => "下载中",
+        DownloadSegmentState::Completed => "完成",
+    }
+}
+
+fn download_segment_color(theme: Theme, state: DownloadSegmentState) -> gpui::Rgba {
+    match state {
+        DownloadSegmentState::Waiting => theme.text_muted,
+        DownloadSegmentState::Active => theme.accent,
+        DownloadSegmentState::Completed => theme.success,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DownloadSegmentStripCell {
+    segment_index: u32,
+    state: DownloadSegmentState,
+    downloaded: bool,
+}
+
+fn download_segment_strip_cells(
+    segments: &[DownloadSegment],
+    cell_count: usize,
+) -> Vec<DownloadSegmentStripCell> {
+    let total_bytes = segments.iter().map(DownloadSegment::len).sum::<u64>();
+    if total_bytes == 0 || cell_count == 0 {
+        return Vec::new();
+    }
+    let mut cells = Vec::with_capacity(cell_count);
+    for cell_index in 0..cell_count {
+        let midpoint = (u128::from(total_bytes)
+            * u128::try_from(cell_index.saturating_mul(2).saturating_add(1)).unwrap_or(u128::MAX)
+            / u128::try_from(cell_count.saturating_mul(2)).unwrap_or(1))
+        .min(u128::from(total_bytes.saturating_sub(1))) as u64;
+        let mut preceding_bytes = 0_u64;
+        if let Some(segment) = segments.iter().find(|segment| {
+            preceding_bytes = preceding_bytes.saturating_add(segment.len());
+            midpoint < preceding_bytes
+        }) {
+            let segment_start = preceding_bytes.saturating_sub(segment.len());
+            cells.push(DownloadSegmentStripCell {
+                segment_index: segment.index(),
+                state: segment.state,
+                downloaded: midpoint.saturating_sub(segment_start) < segment.downloaded_bytes(),
+            });
+        }
+    }
+    cells
+}
+
+fn download_timeline_label(entry: &DownloadTaskTimelineEntry) -> String {
+    match entry.event {
+        DownloadTaskTimelineEvent::TaskCreated => "任务已创建".into(),
+        DownloadTaskTimelineEvent::StatusChanged { status } => {
+            format!("状态变更为 {}", download_status_log_label(status))
+        }
+        DownloadTaskTimelineEvent::TransferPlanChanged { segment_count } => {
+            format!("传输计划更新 · {segment_count} 个分段")
+        }
+    }
+}
+
+fn download_status_log_label(status: DownloadStatus) -> &'static str {
+    match status {
+        DownloadStatus::Created => "已创建",
+        DownloadStatus::Probing => "探测中",
+        DownloadStatus::Waiting => "等待",
+        DownloadStatus::Downloading => "下载中",
+        DownloadStatus::Paused => "已暂停",
+        DownloadStatus::Finalizing => "正在落盘",
+        DownloadStatus::Verifying => "正在校验",
+        DownloadStatus::Completed => "已完成",
+        DownloadStatus::Failed => "失败",
+        DownloadStatus::Cancelled => "已取消",
+    }
+}
+
+fn format_download_timestamp(timestamp: i64) -> String {
+    DateTime::from_timestamp_millis(timestamp).map_or_else(
+        || "无效时间".into(),
+        |timestamp| {
+            timestamp
+                .with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        },
+    )
+}
+
+fn format_download_log_time(timestamp: i64) -> String {
+    DateTime::from_timestamp_millis(timestamp).map_or_else(
+        || "--:--:--".into(),
+        |timestamp| {
+            timestamp
+                .with_timezone(&Local)
+                .format("%H:%M:%S")
+                .to_string()
+        },
+    )
+}
+
+fn format_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
 }
 
 fn download_status_presentation(
@@ -4375,7 +5178,8 @@ mod tests {
     use gpui_component::PixelsExt;
     use nxtools_core::ClipboardHotKeyModifier;
     use nxtools_download::{
-        DownloadEngine, DownloadRequest, DownloadStatus, DownloadTaskId, RequestOrigin,
+        DownloadEngine, DownloadRequest, DownloadSegment, DownloadSegmentState, DownloadStatus,
+        DownloadTaskId, RequestOrigin,
     };
 
     use nxtools_protocol::{IndexPhase, IndexStatus};
@@ -4428,13 +5232,14 @@ mod tests {
     }
 
     use super::{
-        DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT, DOWNLOAD_TABLE_HEADER_HEIGHT,
-        DOWNLOAD_TASK_ROW_HEIGHT, DownloadSortKey, DownloadSortState, DownloadTaskFilter,
-        MainWindow, download_context_capabilities, download_filter_counts, download_tasks_for_view,
-        file_index_summary, format_query_elapsed, hotkey_from_key_down, notification_transition,
-        prepare_download_context_selection, quick_find_scroll_step, quick_find_scroll_target,
-        reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
-        update_download_selection,
+        DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT,
+        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadDetailTab, DownloadSortKey,
+        DownloadSortState, DownloadTaskFilter, MainWindow, download_context_capabilities,
+        download_filter_counts, download_segment_strip_cells, download_tasks_for_view,
+        file_index_summary, format_query_elapsed, hotkey_from_key_down,
+        masked_request_header_value, notification_transition, prepare_download_context_selection,
+        quick_find_scroll_step, quick_find_scroll_target, reconcile_download_selection,
+        set_download_sort, toggle_indexed_volume_selection, update_download_selection,
     };
 
     #[test]
@@ -4443,6 +5248,92 @@ mod tests {
         assert_eq!(DOWNLOAD_FILTER_STRIP_HEIGHT, 38.0);
         assert_eq!(DOWNLOAD_TABLE_HEADER_HEIGHT, 28.0);
         assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 46.0);
+        assert_eq!(DOWNLOAD_DETAIL_HEIGHT, 176.0);
+    }
+
+    #[test]
+    fn download_detail_masks_credential_headers_but_keeps_ordinary_values() {
+        assert_eq!(
+            masked_request_header_value("Authorization", "Bearer private"),
+            "已设置（内容已隐藏）"
+        );
+        assert_eq!(
+            masked_request_header_value("X-API-Key", "private"),
+            "已设置（内容已隐藏）"
+        );
+        assert_eq!(
+            masked_request_header_value("X-Auth-Token", "private"),
+            "已设置（内容已隐藏）"
+        );
+        assert_eq!(
+            masked_request_header_value("X-ApiKey", "private"),
+            "已设置（内容已隐藏）"
+        );
+        assert_eq!(
+            masked_request_header_value("X_API_KEY", "private"),
+            "已设置（内容已隐藏）"
+        );
+        assert_eq!(
+            masked_request_header_value("User-Agent", "NxTools-Test"),
+            "NxTools-Test"
+        );
+    }
+
+    #[test]
+    fn download_segment_strip_is_proportional_and_shows_partial_progress() {
+        let segments = vec![
+            DownloadSegment::new(0, 0, 74, 38, DownloadSegmentState::Active)
+                .expect("first segment"),
+            DownloadSegment::new(1, 75, 99, 25, DownloadSegmentState::Completed)
+                .expect("second segment"),
+        ];
+
+        let cells = download_segment_strip_cells(&segments, 40);
+
+        assert_eq!(cells.len(), 40);
+        assert_eq!(
+            cells.iter().filter(|cell| cell.segment_index == 0).count(),
+            30
+        );
+        assert_eq!(
+            cells.iter().filter(|cell| cell.segment_index == 1).count(),
+            10
+        );
+        assert_eq!(
+            cells
+                .iter()
+                .filter(|cell| cell.segment_index == 0 && cell.downloaded)
+                .count(),
+            15
+        );
+        assert!(
+            cells
+                .iter()
+                .filter(|cell| cell.segment_index == 1)
+                .all(|cell| cell.downloaded && cell.state == DownloadSegmentState::Completed)
+        );
+    }
+
+    #[test]
+    fn selected_download_detail_query_is_deferred_across_the_gpui_entity_boundary() {
+        let source = include_str!("main_window.rs");
+        let downloads = source
+            .split("fn render_downloads")
+            .nth(1)
+            .and_then(|source| source.split("fn render_quick_find").next())
+            .expect("download render source");
+        let defer = downloads
+            .find("cx.defer(move |cx|")
+            .expect("deferred detail query");
+        let request = downloads
+            .find("application.request_task_detail(task_id, cx)")
+            .expect("typed detail request");
+
+        assert!(defer < request);
+        assert!(
+            !downloads[..defer].contains("application.request_task_detail(task_id, cx)"),
+            "render must not synchronously re-enter DownloadApplication"
+        );
     }
 
     #[test]
@@ -4864,8 +5755,16 @@ mod tests {
         let search = window
             .debug_bounds("download-search")
             .expect("download search bounds");
+        let segment_tab = window
+            .debug_bounds("download-detail-tab-segments")
+            .expect("download segment detail tab bounds");
         assert!(page_header.contains(&search.origin));
         assert!(page_header.contains(&search.bottom_right()));
+        window.simulate_click(segment_tab.center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_detail_tab),
+            DownloadDetailTab::Segments
+        );
 
         let selected_before = window
             .read(|cx| main_window.read(cx).selected_download_task)
@@ -4929,6 +5828,7 @@ mod tests {
         assert!(name.right() <= progress.left());
         assert!(progress.right() <= status.left());
         assert!(detail.size.width.as_f32() > 0.0);
+        assert_eq!(detail.size.height.as_f32(), DOWNLOAD_DETAIL_HEIGHT);
     }
 
     #[test]
