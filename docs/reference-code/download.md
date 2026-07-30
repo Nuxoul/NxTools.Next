@@ -882,12 +882,13 @@ Reverified on 2026-07-29 before implementing the third Stage 3 slice:
   are excluded.
 - The compact NxTools.Next `NewDownloadView` exposes optional local date/time scheduling only after
   a successful probe. The fixed footer owns one compact calendar-icon trigger; clicking it opens an
-  anchored date-time surface with a calendar plus non-editable hour and minute selectors. The
-  surface does not participate in window height or push the footer below the viewport. `确定`
-  commits the draft, `清除` returns to immediate download, and clicking outside discards only the
-  open surface. It rejects past, invalid and ambiguous local times before submission and preserves
-  the committed selection across a probe refresh. A delayed `StartNow` submission must not open a
-  progress window early; the existing keyed window opens only once the engine admits the task.
+  anchored date-time surface with a compact Chinese calendar (`2026年7月`, Sunday-first grid) plus
+  non-editable hour and minute selectors. The surface does not participate in window height or push
+  the footer below the viewport. `确定` commits the draft, `清除` returns to immediate download, and
+  clicking outside discards only the open surface. It rejects past, invalid and ambiguous local
+  times before submission and preserves the committed selection across a probe refresh. A delayed
+  `StartNow` submission must not open a progress window early; the existing keyed window opens only
+  once the engine admits the task.
 - ABDM `desktop/app/.../pages/queue/QueueInfoComponent.kt` presents daily scheduling as one queue
   configuration group: active weekdays first, followed by independent auto-start and auto-stop
   toggles whose time fields are visible only while enabled. Old NxTools
@@ -1083,7 +1084,9 @@ Reverified on 2026-07-30 before implementing the user-selected taskbar overlay s
   to its physical rectangle.
 - Placement is event-driven. Display/settings changes and taskbar create/show/location events
   reapply the last configuration; ordinary byte ticks update only the GPUI presentation and never
-  trigger native positioning or diagnostic writes.
+  trigger native positioning or diagnostic writes. The Windows adapter publishes the newly
+  requested placement before calling `SetWindowPos`, because that native call can synchronously
+  produce a taskbar-location event; the reapply path must never race in with the previous offsets.
 
 ## Resolved phase-0 decisions
 

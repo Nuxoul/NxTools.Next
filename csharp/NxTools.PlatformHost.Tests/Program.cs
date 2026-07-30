@@ -194,8 +194,8 @@ internal static class Program
                 Anchor = "right",
                 OffsetX = 12,
                 OffsetY = 0,
-                Width = 280,
-                Height = 3
+                Width = 132,
+                Height = 8
             }
         });
         var command = PlatformCommandParser.ParsePlaceTaskbarProgressOverlay(envelope);
@@ -205,8 +205,8 @@ internal static class Program
         Assert(command.Anchor == "right");
         Assert(command.OffsetX == 12);
         Assert(command.OffsetY == 0);
-        Assert(command.Width == 280);
-        Assert(command.Height == 3);
+        Assert(command.Width == 132);
+        Assert(command.Height == 8);
         return Task.CompletedTask;
     }
 
@@ -219,9 +219,19 @@ internal static class Program
             anchor: "right",
             offsetX: 12,
             offsetY: 0,
-            width: 280,
-            height: 3);
-        Assert(right == new TaskbarOverlayBounds(1482, 1040, 1902, 1045));
+            width: 132,
+            height: 8);
+        Assert(right == new TaskbarOverlayBounds(1704, 1040, 1902, 1052));
+
+        var exactLogicalOffset = TaskbarOverlayPlacement.CalculateBounds(
+            taskbar,
+            dpi: 96,
+            anchor: "left",
+            offsetX: 10,
+            offsetY: 10,
+            width: 132,
+            height: 8);
+        Assert(exactLogicalOffset == new TaskbarOverlayBounds(10, 1050, 142, 1058));
 
         var clamped = TaskbarOverlayPlacement.CalculateBounds(
             taskbar,
@@ -229,9 +239,9 @@ internal static class Program
             anchor: "left",
             offsetX: -200,
             offsetY: 100,
-            width: 280,
-            height: 3);
-        Assert(clamped == new TaskbarOverlayBounds(0, 1077, 280, 1080));
+            width: 132,
+            height: 8);
+        Assert(clamped == new TaskbarOverlayBounds(0, 1072, 132, 1080));
         return Task.CompletedTask;
     }
 
@@ -273,8 +283,8 @@ internal static class Program
                         Anchor: "right",
                         OffsetX: 12,
                         OffsetY: 0,
-                        Width: 280,
-                        Height: 3));
+                        Width: 132,
+                        Height: 8));
                 Assert(placed.Success);
                 Assert(TaskbarOverlayPlacement.HasPassiveOverlayStyles(overlay.Handle));
 

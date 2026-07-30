@@ -237,6 +237,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         Guid correlationId)
     {
         var started = Stopwatch.GetTimestamp();
+        // SetWindowPos can synchronously produce taskbar location notifications. Publish the
+        // requested placement first so an event-driven reapply cannot race in with stale offsets.
+        _window?.TrackTaskbarOverlayPlacement(command, correlationId, appliedBounds: null);
         var result = TaskbarOverlayPlacement.Place(command);
         _window?.TrackTaskbarOverlayPlacement(command, correlationId, result.Data);
         _log.Write(

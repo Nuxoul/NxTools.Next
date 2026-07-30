@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use chrono::{Duration as ChronoDuration, Local, NaiveDate, NaiveTime, TimeZone, Timelike};
+use chrono::{
+    Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, TimeZone, Timelike,
+};
 use gpui::{
     AnyElement, AnyWindowHandle, App, Context, Corner, Entity, EventEmitter, FontWeight,
     IntoElement, MouseButton, Render, ScrollHandle, Subscription, Task, Window,
@@ -12,7 +14,6 @@ use gpui::{
     WindowOptions, div, prelude::*, px, size,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
-use gpui_component::calendar::{Calendar, CalendarState, Matcher};
 use gpui_component::input::{Input, InputState};
 use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
@@ -2655,16 +2656,11 @@ fn resolve_scheduled_start(
 }
 
 fn read_delayed_start_draft(
-    calendar: &Entity<CalendarState>,
+    date: NaiveDate,
     hour: &Entity<SelectState<Vec<String>>>,
     minute: &Entity<SelectState<Vec<String>>>,
     cx: &App,
 ) -> Result<DelayedStartSelection, String> {
-    let date = calendar
-        .read(cx)
-        .date()
-        .start()
-        .ok_or("请选择计划下载日期")?;
     let hour = hour
         .read(cx)
         .selected_value()
@@ -2676,6 +2672,29 @@ fn read_delayed_start_draft(
         .and_then(|value| value.parse().ok())
         .ok_or("请选择计划下载分钟")?;
     Ok(DelayedStartSelection { date, hour, minute })
+}
+
+fn calendar_month_start(date: NaiveDate) -> NaiveDate {
+    NaiveDate::from_ymd_opt(date.year(), date.month(), 1)
+        .expect("a chrono date always has a valid first day")
+}
+
+fn shift_calendar_month(month: NaiveDate, delta: i32) -> NaiveDate {
+    let total_months = month.year() * 12 + month.month0() as i32 + delta;
+    let year = total_months.div_euclid(12);
+    let month = total_months.rem_euclid(12) as u32 + 1;
+    NaiveDate::from_ymd_opt(year, month, 1).expect("normalized year and month are valid")
+}
+
+fn delayed_start_calendar_days(month: NaiveDate) -> Vec<NaiveDate> {
+    let grid_start = month - ChronoDuration::days(month.weekday().num_days_from_sunday() as i64);
+    (0..42)
+        .map(|offset| grid_start + ChronoDuration::days(offset))
+        .collect()
+}
+
+fn delayed_start_calendar_title(month: NaiveDate) -> String {
+    format!("{}年{}月", month.year(), month.month())
 }
 
 struct DownloadSettingsInput<'a> {
@@ -3412,7 +3431,8 @@ struct NewDownloadView {
     url: Entity<InputState>,
     directory: Entity<InputState>,
     file_name: Entity<InputState>,
-    scheduled_calendar: Entity<CalendarState>,
+    scheduled_date: NaiveDate,
+    scheduled_month: NaiveDate,
     scheduled_hour: Entity<SelectState<Vec<String>>>,
     scheduled_minute: Entity<SelectState<Vec<String>>>,
     schedule_popover_open: bool,
@@ -3445,13 +3465,8 @@ impl NewDownloadView {
         let file_name =
             cx.new(|cx| InputState::new(window, cx).placeholder("可选；留空时使用服务器文件名"));
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
-        let scheduled_calendar = cx.new(|cx| {
-            CalendarState::new(window, cx)
-                .disabled_matcher(Matcher::interval(Some(Local::now().date_naive()), None))
-        });
-        scheduled_calendar.update(cx, |calendar, cx| {
-            calendar.set_date(default_scheduled_at.date_naive(), window, cx);
-        });
+        let scheduled_date = default_scheduled_at.date_naive();
+        let scheduled_month = calendar_month_start(scheduled_date);
         let scheduled_hour = cx.new(|cx| {
             SelectState::new(
                 (0..24).map(|hour| format!("{hour:02}")).collect(),
@@ -3489,7 +3504,8 @@ impl NewDownloadView {
             url,
             directory,
             file_name,
-            scheduled_calendar,
+            scheduled_date,
+            scheduled_month,
             scheduled_hour,
             scheduled_minute,
             schedule_popover_open: false,
@@ -3536,9 +3552,8 @@ impl NewDownloadView {
             hour: default.hour(),
             minute: default.minute(),
         });
-        self.scheduled_calendar.update(cx, |calendar, cx| {
-            calendar.set_date(selection.date, window, cx);
-        });
+        self.scheduled_date = selection.date;
+        self.scheduled_month = calendar_month_start(selection.date);
         self.scheduled_hour.update(cx, |hour, cx| {
             hour.set_selected_index(
                 Some(IndexPath::default().row(selection.hour as usize)),
@@ -3756,13 +3771,14 @@ impl Render for NewDownloadView {
             "稍后下载".into()
         };
         let schedule_view = cx.entity().downgrade();
-        let schedule_calendar = self.scheduled_calendar.clone();
+        let schedule_date = self.scheduled_date;
+        let schedule_month = self.scheduled_month;
+        let schedule_today = Local::now().date_naive();
         let schedule_hour = self.scheduled_hour.clone();
         let schedule_minute = self.scheduled_minute.clone();
-        let schedule_content_calendar = schedule_calendar.clone();
+        let schedule_calendar_view = schedule_view.clone();
         let schedule_clear_view = schedule_view.clone();
         let schedule_confirm_view = schedule_view.clone();
-        let schedule_confirm_calendar = schedule_calendar.clone();
         let schedule_confirm_hour = schedule_hour.clone();
         let schedule_confirm_minute = schedule_minute.clone();
         let schedule_primary_variant = download_primary_button_variant(theme, cx);
@@ -3794,7 +3810,7 @@ impl Render for NewDownloadView {
                     .content(move |_, _, _| {
                         let schedule_clear_view = schedule_clear_view.clone();
                         let schedule_confirm_view = schedule_confirm_view.clone();
-                        let schedule_confirm_calendar = schedule_confirm_calendar.clone();
+                        let schedule_calendar_view = schedule_calendar_view.clone();
                         let schedule_confirm_hour = schedule_confirm_hour.clone();
                         let schedule_confirm_minute = schedule_confirm_minute.clone();
                         div()
@@ -3804,14 +3820,16 @@ impl Render for NewDownloadView {
                             .flex()
                             .flex_col()
                             .gap(px(8.0))
-                            .child(
-                                Calendar::new(&schedule_content_calendar)
-                                    .number_of_months(1)
-                                    .small(),
-                            )
+                            .child(delayed_start_calendar(
+                                theme,
+                                schedule_month,
+                                schedule_date,
+                                schedule_today,
+                                schedule_calendar_view,
+                            ))
                             .child(
                                 div()
-                                    .pt(px(8.0))
+                                    .pt(px(6.0))
                                     .border_t_1()
                                     .border_color(theme.border_subtle)
                                     .flex()
@@ -3865,7 +3883,7 @@ impl Render for NewDownloadView {
                                                     .custom(schedule_primary_variant)
                                                     .on_click(move |_, _, cx| {
                                                         let selection = read_delayed_start_draft(
-                                                            &schedule_confirm_calendar,
+                                                            schedule_date,
                                                             &schedule_confirm_hour,
                                                             &schedule_confirm_minute,
                                                             cx,
@@ -4186,6 +4204,134 @@ impl Render for NewDownloadView {
                     ),
             )
     }
+}
+
+fn delayed_start_calendar(
+    theme: Theme,
+    month: NaiveDate,
+    selected_date: NaiveDate,
+    today: NaiveDate,
+    view: gpui::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let previous_view = view.clone();
+    let next_view = view.clone();
+    let weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    let days = delayed_start_calendar_days(month);
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .child(
+            div()
+                .h(px(22.0))
+                .flex()
+                .items_center()
+                .child(
+                    Button::new("download-new-schedule-previous-month")
+                        .icon(Icon::new(IconName::ChevronLeft))
+                        .xsmall()
+                        .ghost()
+                        .on_click(move |_, _, cx| {
+                            let _ = previous_view.update(cx, |view, cx| {
+                                view.scheduled_month =
+                                    shift_calendar_month(view.scheduled_month, -1);
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-schedule-month-title".into())
+                        .flex_1()
+                        .text_center()
+                        .text_size(px(11.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text)
+                        .child(delayed_start_calendar_title(month)),
+                )
+                .child(
+                    Button::new("download-new-schedule-next-month")
+                        .icon(Icon::new(IconName::ChevronRight))
+                        .xsmall()
+                        .ghost()
+                        .on_click(move |_, _, cx| {
+                            let _ = next_view.update(cx, |view, cx| {
+                                view.scheduled_month =
+                                    shift_calendar_month(view.scheduled_month, 1);
+                                cx.notify();
+                            });
+                        }),
+                ),
+        )
+        .child(
+            div()
+                .h(px(16.0))
+                .flex()
+                .children(weekdays.into_iter().map(|weekday| {
+                    div()
+                        .w(px(40.0))
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(8.5))
+                        .text_color(theme.text_muted)
+                        .child(weekday)
+                })),
+        )
+        .children((0..6).map(|row| {
+            div()
+                .h(px(22.0))
+                .flex()
+                .children(days[row * 7..row * 7 + 7].iter().copied().map(|date| {
+                    let disabled = date < today;
+                    let selected = date == selected_date;
+                    let current_month = date.month() == month.month();
+                    let is_today = date == today;
+                    let day_view = view.clone();
+                    div()
+                        .id(("download-new-schedule-day", date.num_days_from_ce() as u64))
+                        .w(px(40.0))
+                        .h(px(22.0))
+                        .rounded(px(5.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(9.0))
+                        .text_color(if selected {
+                            theme.accent_text
+                        } else if current_month {
+                            theme.text_secondary
+                        } else {
+                            theme.text_muted
+                        })
+                        .when(disabled, |cell| cell.opacity(0.32))
+                        .when(is_today && !selected, |cell| {
+                            cell.border_1().border_color(theme.border_active)
+                        })
+                        .when(selected, |cell| cell.bg(theme.accent))
+                        .when(!disabled, |cell| {
+                            cell.cursor_pointer()
+                                .hover(|cell| {
+                                    if selected {
+                                        cell.bg(theme.accent)
+                                    } else {
+                                        cell.bg(theme.surface_hover)
+                                    }
+                                })
+                                .on_click(move |_, _, cx| {
+                                    let _ = day_view.update(cx, |view, cx| {
+                                        view.scheduled_date = date;
+                                        view.scheduled_month = calendar_month_start(date);
+                                        cx.notify();
+                                    });
+                                })
+                        })
+                        .child(date.day().to_string())
+                }))
+        }))
+        .into_any_element()
 }
 
 fn download_inline_error(theme: Theme, error: String) -> impl IntoElement {
@@ -5396,10 +5542,10 @@ mod tests {
         window.simulate_click(schedule.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("reopen schedule popover");
-        let calendar = window.read(|cx| view.read(cx).scheduled_calendar.clone());
-        window.update(|window, cx| {
-            calendar.update(cx, |calendar, cx| {
-                calendar.set_date(committed.date + ChronoDuration::days(1), window, cx);
+        window.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.scheduled_date = committed.date + ChronoDuration::days(1);
+                cx.notify();
             });
         });
         window.refresh().expect("render modified schedule draft");
@@ -5789,6 +5935,25 @@ mod tests {
                 now.timestamp_millis(),
             ),
             Err("计划时间必须晚于当前时间".into())
+        );
+    }
+
+    #[test]
+    fn delayed_start_calendar_uses_chinese_year_month_and_a_stable_sunday_grid() {
+        let july = NaiveDate::from_ymd_opt(2026, 7, 1).expect("valid month");
+        let days = delayed_start_calendar_days(july);
+
+        assert_eq!(delayed_start_calendar_title(july), "2026年7月");
+        assert_eq!(days.len(), 42);
+        assert_eq!(days.first().copied(), NaiveDate::from_ymd_opt(2026, 6, 28));
+        assert_eq!(days.last().copied(), NaiveDate::from_ymd_opt(2026, 8, 8));
+        assert_eq!(
+            shift_calendar_month(july, -7),
+            NaiveDate::from_ymd_opt(2025, 12, 1).expect("valid previous month")
+        );
+        assert_eq!(
+            shift_calendar_month(july, 6),
+            NaiveDate::from_ymd_opt(2027, 1, 1).expect("valid next month")
         );
     }
 
