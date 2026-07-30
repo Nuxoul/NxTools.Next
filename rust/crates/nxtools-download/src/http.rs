@@ -187,6 +187,7 @@ impl HttpDownloadClient {
             segment,
             artifact,
             control,
+            use_if_range,
         } = transfer;
         let started = Instant::now();
         info!(
@@ -195,6 +196,7 @@ impl HttpDownloadClient {
             task_id = ?context.task_id,
             segment_index = segment.index(),
             resumed_bytes = segment.downloaded_bytes(),
+            conditional_resume = use_if_range,
             "segment transfer started"
         );
         let result = async {
@@ -238,6 +240,7 @@ impl HttpDownloadClient {
                 requested_start,
                 segment.end_byte(),
                 &probe.validator,
+                use_if_range,
             );
             tokio::pin!(response_request);
             let mut response = tokio::select! {
@@ -626,6 +629,7 @@ impl HttpDownloadClient {
         start_byte: u64,
         end_byte: u64,
         validator: &ResourceValidator,
+        use_if_range: bool,
     ) -> Result<Response, HttpDownloadError> {
         let mut builder = self.client.get(final_url);
         for header in &request.headers {
@@ -644,8 +648,9 @@ impl HttpDownloadClient {
         builder = builder
             .header(ACCEPT_ENCODING, "identity")
             .header(RANGE, format!("bytes={start_byte}-{end_byte}"));
-        if let Some(if_range) =
-            strong_etag(validator.etag.as_deref()).or(validator.last_modified.as_deref())
+        if use_if_range
+            && let Some(if_range) =
+                strong_etag(validator.etag.as_deref()).or(validator.last_modified.as_deref())
         {
             builder = builder.header(IF_RANGE, if_range);
         }
@@ -882,6 +887,7 @@ pub struct DownloadSegmentTransferRequest<'a> {
     pub segment: &'a DownloadSegment,
     pub artifact: &'a SegmentedArtifact,
     pub control: &'a DownloadSegmentTransferControl,
+    use_if_range: bool,
 }
 
 impl<'a> DownloadSegmentTransferRequest<'a> {
@@ -900,7 +906,14 @@ impl<'a> DownloadSegmentTransferRequest<'a> {
             segment,
             artifact,
             control,
+            use_if_range: false,
         }
+    }
+
+    #[must_use]
+    pub const fn with_resume_validator(mut self) -> Self {
+        self.use_if_range = true;
+        self
     }
 }
 

@@ -111,6 +111,49 @@ async fn a_valid_partial_response_is_written_only_inside_its_segment_range() {
 }
 
 #[tokio::test]
+async fn a_fresh_segment_does_not_send_if_range_to_an_incompatible_range_server() {
+    let _contract = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create destination");
+    let request = request(&server, "/range-if-range-incompatible");
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+    let probe = client.probe(&request).await.expect("probe fixture");
+    let artifact = SegmentedArtifact::create(directory.path().join(".fixture.part"), 16)
+        .await
+        .expect("create segmented artifact");
+    let segment =
+        DownloadSegment::new(1, 4, 7, 0, DownloadSegmentState::Active).expect("valid segment");
+
+    let outcome = client
+        .download_segment(
+            DownloadSegmentTransferRequest::new(
+                DownloadTransferContext::new(DownloadTaskId::new(), uuid::Uuid::new_v4()),
+                &request,
+                &probe,
+                &segment,
+                &artifact,
+                &DownloadSegmentTransferControl::new(DownloadTransferControl::new()),
+            ),
+            |_| {},
+        )
+        .await
+        .expect("fresh range must not be converted into an incompatible conditional request");
+
+    assert_eq!(
+        outcome,
+        DownloadSegmentTransferOutcome::Completed {
+            downloaded_bytes: 4
+        }
+    );
+    assert_eq!(
+        tokio::fs::read(artifact.path())
+            .await
+            .expect("read segmented artifact"),
+        [&[0, 0, 0, 0][..], b"4567", &[0, 0, 0, 0, 0, 0, 0, 0][..]].concat()
+    );
+}
+
+#[tokio::test]
 async fn rebalancing_a_segment_stops_after_a_durable_prefix_without_publishing_completion() {
     let _contract = HTTP_CONTRACT_GATE.lock().await;
     let server = DeterministicHttpServer::start();

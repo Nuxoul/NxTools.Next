@@ -1079,6 +1079,44 @@ async fn connection_limit_runs_multiple_ranges_concurrently_into_one_verified_fi
 }
 
 #[tokio::test]
+async fn fresh_multi_connection_download_avoids_if_range_incompatible_cdn_fallback() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!(
+        "http://{}/range-concurrent-if-range-incompatible",
+        server.address()
+    );
+    request.connection_limit = Some(4);
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit conditional-incompatible task");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(4))
+        .await
+        .expect("wait for conditional-incompatible task");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "fresh multi-connection transfer failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin"))
+            .expect("read conditional-incompatible artifact"),
+        concurrent_fixture_bytes()
+    );
+    assert!(
+        server.max_concurrent_range_transfers() >= 2,
+        "fresh transfer must keep overlapping ranges instead of falling back to one stream"
+    );
+}
+
+#[tokio::test]
 async fn one_task_speed_limit_is_shared_by_all_of_its_range_workers() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");

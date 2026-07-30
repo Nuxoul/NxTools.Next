@@ -1956,6 +1956,7 @@ fn spawn_segment_transfer(
     progress_by_segment: &Arc<Mutex<HashMap<u32, u64>>>,
     active_connections: &Arc<AtomicU16>,
     total_bytes: u64,
+    use_if_range: bool,
     segment: DownloadSegment,
 ) -> DownloadSegmentTransferControl {
     let http = inner.http.clone();
@@ -1976,34 +1977,35 @@ fn spawn_segment_transfer(
             let attempt_progress_inner = Arc::clone(&progress_inner);
             let attempt_progress_by_segment = Arc::clone(&progress_by_segment);
             let attempt_active_connections = Arc::clone(&active_connections);
+            let mut transfer = crate::DownloadSegmentTransferRequest::new(
+                DownloadTransferContext::new(task_id, correlation_id),
+                &request,
+                &probe,
+                &segment,
+                &artifact,
+                &segment_control,
+            );
+            if use_if_range {
+                transfer = transfer.with_resume_validator();
+            }
             let outcome = http
-                .download_segment(
-                    crate::DownloadSegmentTransferRequest::new(
-                        DownloadTransferContext::new(task_id, correlation_id),
-                        &request,
-                        &probe,
-                        &segment,
-                        &artifact,
-                        &segment_control,
-                    ),
-                    move |progress| {
-                        let aggregate = attempt_progress_by_segment
-                            .lock()
-                            .map(|mut values| {
-                                values.insert(segment_index, progress.downloaded_bytes);
-                                values.values().copied().sum()
-                            })
-                            .unwrap_or_default();
-                        publish_transfer_progress(
-                            &attempt_progress_inner,
-                            task_id,
-                            aggregate,
-                            Some(total_bytes),
-                            attempt_active_connections.load(Ordering::Acquire),
-                            Some(&attempt_progress_by_segment),
-                        );
-                    },
-                )
+                .download_segment(transfer, move |progress| {
+                    let aggregate = attempt_progress_by_segment
+                        .lock()
+                        .map(|mut values| {
+                            values.insert(segment_index, progress.downloaded_bytes);
+                            values.values().copied().sum()
+                        })
+                        .unwrap_or_default();
+                    publish_transfer_progress(
+                        &attempt_progress_inner,
+                        task_id,
+                        aggregate,
+                        Some(total_bytes),
+                        attempt_active_connections.load(Ordering::Acquire),
+                        Some(&attempt_progress_by_segment),
+                    );
+                })
                 .await;
             match outcome {
                 Err(error)
@@ -2096,12 +2098,16 @@ async fn run_segmented_task(
         return Err(HttpDownloadError::DestinationExists(final_path).into());
     }
 
-    let (segments, artifact) = match inner.store.load_transfer_plan(task_id)? {
+    let (segments, artifact, use_if_range) = match inner.store.load_transfer_plan(task_id)? {
         Some(plan) => {
             validate_resumed_plan(task_id, &plan, probe)?;
             if plan.segments().is_empty() {
                 return Err(DownloadEngineError::EmptySegmentLayout(task_id));
             }
+            let use_if_range = plan
+                .segments()
+                .iter()
+                .any(|segment| segment.downloaded_bytes() > 0);
             let mut restored = Vec::with_capacity(plan.segments().len());
             for segment in plan.segments() {
                 let state = if segment.state == DownloadSegmentState::Completed {
@@ -2134,7 +2140,7 @@ async fn run_segmented_task(
             let artifact = SegmentedArtifact::open_existing(&temporary_path, total_bytes)
                 .await
                 .map_err(HttpDownloadError::from)?;
-            (restored, artifact)
+            (restored, artifact, use_if_range)
         }
         None => {
             let segments = create_initial_segments(total_bytes, request.connection_limit)?;
@@ -2175,7 +2181,7 @@ async fn run_segmented_task(
                 total_bytes,
                 "segmented transfer plan persisted"
             );
-            (segments, artifact)
+            (segments, artifact, false)
         }
     };
 
@@ -2208,6 +2214,7 @@ async fn run_segmented_task(
             &progress_by_segment,
             &active_connections,
             total_bytes,
+            use_if_range,
             segment,
         );
         worker_controls.insert(segment_index, worker_control);
@@ -2334,6 +2341,7 @@ async fn run_segmented_task(
                                     &progress_by_segment,
                                     &active_connections,
                                     total_bytes,
+                                    use_if_range,
                                     active,
                                 );
                                 worker_controls.insert(active_index, worker_control);
@@ -2361,6 +2369,7 @@ async fn run_segmented_task(
                                 &progress_by_segment,
                                 &active_connections,
                                 total_bytes,
+                                use_if_range,
                                 active,
                             );
                             worker_controls.insert(active_index, worker_control);

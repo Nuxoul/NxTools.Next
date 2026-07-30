@@ -447,6 +447,9 @@ Verified entries and invariants:
   part's current byte offset. It flushes the shared file before part checkpoints are persisted.
 - A persisted part is a domain `Segment`; an HTTP request is a transient `Connection`. Restart
   recreates connections from persisted segment progress instead of persisting sockets or workers.
+- `OkHttpHttpDownloaderClient.newCall` adds the inclusive `Range` header for a part but does not
+  attach `If-Range`. `HttpPartDownloader.connectAndVerify` validates the returned range and length
+  before the destination writer is used.
 
 ### Old NxTools compatibility chain
 
@@ -459,6 +462,9 @@ DownloadManagerService.DownloadSegmentWithRetryAsync
   -> CopyToTargetAtOffsetAsync
   -> sparse progress checkpoint
 ```
+
+`DownloadManagerService.CreateProbeRequest` and `DownloadSegmentAsync` likewise send `Range`
+without `If-Range`; the segment path requires `206` and validates `Content-Range` before writing.
 
 The old implementation also falls back to one segment when Range cannot be trusted. NxTools.Next
 keeps that product behavior but tightens the validation boundary: a segmented response must match
@@ -479,6 +485,13 @@ been explicitly discarded.
 - Range validation happens before opening the destination for a response. A `200`, missing or
   mismatched `Content-Range`, inconsistent `Content-Length`, changed known total or changed
   validator cannot alter the artifact.
+- A fresh transfer plan sends ordinary `Range` requests. It does not send `If-Range`, because some
+  otherwise range-capable CDNs select a different representation when that conditional header is
+  present. Every fresh partial response still has to match the probed validator before any bytes
+  are written.
+- A persisted plan with durable bytes uses `If-Range` when recreating its connections. If the
+  server returns the full representation or changes validators, those old bytes are not combined
+  with the response.
 - Checkpoints describe bytes already written and durably flushed. Diagnostic events are emitted for
   state transitions and bounded milestones, never for every received chunk.
 

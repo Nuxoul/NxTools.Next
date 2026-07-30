@@ -264,10 +264,17 @@ fn serve_connection(
         .collect();
     match path {
         "/range" => serve_range(&mut stream, method, headers.get("range")),
+        "/range-if-range-incompatible" => serve_if_range_incompatible(
+            &mut stream,
+            method,
+            headers.get("range"),
+            headers.get("if-range"),
+        ),
         "/range-resume-required" => serve_resume_required(
             &mut stream,
             method,
             headers.get("range"),
+            headers.get("if-range"),
             resume_transfer_started,
         ),
         "/range-probe-only" => serve_probe_only_range(&mut stream, method, headers.get("range")),
@@ -281,6 +288,30 @@ fn serve_connection(
             active_range_transfers,
             max_active_range_transfers,
         ),
+        "/range-concurrent-if-range-incompatible" => {
+            if headers.contains_key("if-range") {
+                let body = concurrent_fixture_bytes();
+                write_response(
+                    &mut stream,
+                    200,
+                    "OK",
+                    &[
+                        ("Accept-Ranges", "bytes"),
+                        ("ETag", "\"conditional-representation\""),
+                    ],
+                    if method == "HEAD" { b"" } else { &body },
+                    Some(body.len()),
+                );
+            } else {
+                serve_concurrent_range(
+                    &mut stream,
+                    method,
+                    headers.get("range"),
+                    active_range_transfers,
+                    max_active_range_transfers,
+                );
+            }
+        }
         "/range-disconnect" => {
             serve_disconnectable_range(&mut stream, method, headers.get("range"), network_available)
         }
@@ -482,10 +513,34 @@ fn serve_range(stream: &mut TcpStream, method: &str, range: Option<&String>) {
     serve_range_with_validator(stream, method, range, "\"fixture-static\"");
 }
 
+fn serve_if_range_incompatible(
+    stream: &mut TcpStream,
+    method: &str,
+    range: Option<&String>,
+    if_range: Option<&String>,
+) {
+    if if_range.is_some() {
+        write_response(
+            stream,
+            200,
+            "OK",
+            &[
+                ("Accept-Ranges", "bytes"),
+                ("ETag", "\"conditional-representation\""),
+            ],
+            if method == "HEAD" { b"" } else { BODY },
+            Some(BODY.len()),
+        );
+        return;
+    }
+    serve_range_with_validator(stream, method, range, "\"fixture-static\"");
+}
+
 fn serve_resume_required(
     stream: &mut TcpStream,
     method: &str,
     range: Option<&String>,
+    if_range: Option<&String>,
     transfer_started: &AtomicBool,
 ) {
     let common = [
@@ -517,6 +572,20 @@ fn serve_resume_required(
         && start <= end
         && end < BODY.len()
     {
+        if start > 0
+            && transfer_started.load(Ordering::Acquire)
+            && if_range.map(String::as_str) != Some("\"resume-static\"")
+        {
+            write_response(
+                stream,
+                428,
+                "Precondition Required",
+                &common,
+                b"resume validator required",
+                None,
+            );
+            return;
+        }
         if start == 0 && transfer_started.swap(true, Ordering::AcqRel) {
             write_response(stream, 409, "Conflict", &common, b"restart rejected", None);
             return;

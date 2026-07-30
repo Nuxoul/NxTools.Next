@@ -3,6 +3,47 @@
 Command failures and integration errors.
 
 ---
+## [ERR-20260730-PSRANGES] powershell_nested_range_array_type_mismatch
+
+**Logged**: 2026-07-30T16:48:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A PowerShell source-inspection helper passed nested arrays with an unstable runtime type to
+`[Math]::Min`, so the display command reported `Argument types do not match`.
+
+### Error
+
+```text
+Argument types do not match
+```
+
+### Context
+
+- The command attempted to print several line ranges from multiple Rust files.
+- It was read-only and did not modify product code.
+
+### Suggested Fix
+
+Read each source range independently or cast both range endpoints and line counts to integers
+before calling `[Math]::Min`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/http.rs`,
+  `rust/crates/nxtools-download/src/engine.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T16:48:00+08:00
+- **Notes**: Switched subsequent inspection commands to explicit source ranges.
+
+---
+
 ## [ERR-20260730-CARGOFILTERS] cargo_test_accepts_only_one_name_filter
 
 **Logged**: 2026-07-30T16:31:00+08:00
