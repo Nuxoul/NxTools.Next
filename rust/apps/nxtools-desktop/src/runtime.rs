@@ -92,6 +92,7 @@ pub struct DesktopRuntime {
     pub finder_catalog: Option<FinderCatalog>,
     pub download_engine: Option<DownloadEngine>,
     pub download_default_directory: PathBuf,
+    pub download_database_path: PathBuf,
     _instance: SingleInstanceGuard,
     _log_guard: LogGuard,
     _platform_host: Option<PlatformHostSupervisor>,
@@ -123,7 +124,8 @@ impl DesktopRuntime {
             &default_application_roots(),
         )
         .context("failed to initialize the application launcher catalog")?;
-        let download_engine = DownloadEngine::open(paths.data_dir.join("downloads.sqlite3"))
+        let download_database_path = paths.data_dir.join("downloads.sqlite3");
+        let download_engine = DownloadEngine::open(download_database_path.clone())
             .context("failed to initialize the download engine")?;
         start_download_host(download_engine.clone())?;
         let download_default_directory = std::env::var_os("USERPROFILE")
@@ -148,6 +150,7 @@ impl DesktopRuntime {
             finder_catalog: Some(finder_catalog),
             download_engine: Some(download_engine),
             download_default_directory,
+            download_database_path,
             _instance: instance,
             _log_guard: log_guard,
             _platform_host: platform_host,

@@ -177,6 +177,10 @@ struct DownloadContextCapabilities {
     pause_targets: Vec<DownloadTaskId>,
     cancel_targets: Vec<DownloadTaskId>,
     can_move_queue: bool,
+    queue_top: bool,
+    queue_up: bool,
+    queue_down: bool,
+    queue_bottom: bool,
     can_remove: bool,
     single_artifact: Option<DownloadTaskId>,
 }
@@ -188,7 +192,10 @@ struct DownloadContextMenuPlan {
     resume: bool,
     pause: bool,
     cancel: bool,
-    queue: bool,
+    queue_top: bool,
+    queue_up: bool,
+    queue_down: bool,
+    queue_bottom: bool,
     remove: bool,
 }
 
@@ -651,6 +658,10 @@ fn download_context_capabilities(
                             | DownloadStatus::Paused
                     )
             }),
+        queue_top: false,
+        queue_up: false,
+        queue_down: false,
+        queue_bottom: false,
         can_remove: !selected_tasks.is_empty()
             && selected_tasks.iter().all(|task| {
                 !matches!(
@@ -669,6 +680,29 @@ fn download_context_capabilities(
     }
 }
 
+fn download_queue_placement_capabilities(
+    queue_order: &[DownloadTaskId],
+    selected: &[DownloadTaskId],
+) -> (bool, bool, bool, bool) {
+    if queue_order.is_empty() || selected.is_empty() {
+        return (false, false, false, false);
+    }
+    let selected = selected.iter().copied().collect::<HashSet<_>>();
+    let indices = queue_order
+        .iter()
+        .enumerate()
+        .filter_map(|(index, task_id)| selected.contains(task_id).then_some(index))
+        .collect::<Vec<_>>();
+    if indices.len() != selected.len() {
+        return (false, false, false, false);
+    }
+    let first = indices.iter().copied().min().unwrap_or_default();
+    let last = indices.iter().copied().max().unwrap_or_default();
+    let can_move_up = first > 0;
+    let can_move_down = last + 1 < queue_order.len();
+    (can_move_up, can_move_up, can_move_down, can_move_down)
+}
+
 fn download_context_menu_plan(
     capabilities: &DownloadContextCapabilities,
     selected_count: usize,
@@ -680,7 +714,10 @@ fn download_context_menu_plan(
         resume: !capabilities.resume_targets.is_empty(),
         pause: !capabilities.pause_targets.is_empty(),
         cancel: !capabilities.cancel_targets.is_empty(),
-        queue: capabilities.can_move_queue,
+        queue_top: capabilities.can_move_queue && capabilities.queue_top,
+        queue_up: capabilities.can_move_queue && capabilities.queue_up,
+        queue_down: capabilities.can_move_queue && capabilities.queue_down,
+        queue_bottom: capabilities.can_move_queue && capabilities.queue_bottom,
         remove: selected_count > 0 && capabilities.can_remove,
     }
 }
@@ -1990,6 +2027,26 @@ impl MainWindow {
                                             });
                                         }),
                                 )
+                            }),
+                    )
+                    .child(
+                        Button::new("download-settings")
+                            .icon(Icon::new(MaterialIcon::Settings))
+                            .label("设置")
+                            .small()
+                            .compact()
+                            .ghost()
+                            .on_click({
+                                let download_application = self.downloads.clone();
+                                move |_, _, cx| {
+                                    let download_application = download_application.clone();
+                                    cx.defer(move |cx| {
+                                        let _ =
+                                            download_application.update(cx, |application, cx| {
+                                                application.open_settings_window(cx);
+                                            });
+                                    });
+                                }
                             }),
                     )
                     .child(
@@ -3984,7 +4041,20 @@ fn download_task_row(
             let capabilities = context_application
                 .upgrade()
                 .map(|application| {
-                    download_context_capabilities(application.read(cx).tasks(), &ordered_task_ids)
+                    let application = application.read(cx);
+                    let mut capabilities =
+                        download_context_capabilities(application.tasks(), &ordered_task_ids);
+                    if capabilities.can_move_queue {
+                        let (top, up, down, bottom) = download_queue_placement_capabilities(
+                            &application.default_queue_order(),
+                            &ordered_task_ids,
+                        );
+                        capabilities.queue_top = top;
+                        capabilities.queue_up = up;
+                        capabilities.queue_down = down;
+                        capabilities.queue_bottom = bottom;
+                    }
+                    capabilities
                 })
                 .unwrap_or_default();
             download_task_context_menu(
@@ -4243,35 +4313,42 @@ fn download_task_context_menu(
         }
         has_visible_items = true;
     }
-    if plan.queue {
+    if plan.queue_top || plan.queue_up || plan.queue_down || plan.queue_bottom {
         if has_visible_items {
             menu = menu.separator();
         }
-        menu = menu
-            .item(queue_item(
+        if plan.queue_top {
+            menu = menu.item(queue_item(
                 "download-menu-prioritize",
                 "优先下载",
                 DownloadQueuePlacement::Top,
                 MaterialIcon::ArrowUpward,
-            ))
-            .item(queue_item(
+            ));
+        }
+        if plan.queue_up {
+            menu = menu.item(queue_item(
                 "download-menu-move-up",
                 "上移",
                 DownloadQueuePlacement::Up,
                 MaterialIcon::ArrowUpward,
-            ))
-            .item(queue_item(
+            ));
+        }
+        if plan.queue_down {
+            menu = menu.item(queue_item(
                 "download-menu-move-down",
                 "下移",
                 DownloadQueuePlacement::Down,
                 MaterialIcon::History,
-            ))
-            .item(queue_item(
+            ));
+        }
+        if plan.queue_bottom {
+            menu = menu.item(queue_item(
                 "download-menu-move-bottom",
                 "移到底部",
                 DownloadQueuePlacement::Bottom,
                 MaterialIcon::History,
             ));
+        }
         has_visible_items = true;
     }
     if (plan.artifact || plan.remove) && has_visible_items {
@@ -5311,7 +5388,7 @@ mod tests {
         TestAppContext, px, size,
     };
     use gpui_component::PixelsExt;
-    use nxtools_core::ClipboardHotKeyModifier;
+    use nxtools_core::{AppConfig, ClipboardHotKeyModifier};
     use nxtools_download::{
         DownloadEngine, DownloadRequest, DownloadSegment, DownloadSegmentState, DownloadStatus,
         DownloadTaskId, RequestOrigin,
@@ -5320,7 +5397,7 @@ mod tests {
     use nxtools_protocol::{ActivateWindowCommand, IndexPhase, IndexStatus, PlatformCommand};
 
     use crate::clipboard::ClipboardApplication;
-    use crate::downloads::DownloadApplication;
+    use crate::downloads::{DownloadApplication, DownloadRuntimeContext};
     use crate::notifications::NotificationCenter;
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
@@ -5371,11 +5448,12 @@ mod tests {
         DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
         DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
         DownloadTaskFilter, MainWindow, download_context_capabilities, download_context_menu_plan,
-        download_filter_counts, download_segment_strip_cells, download_tasks_for_view,
-        file_index_summary, format_query_elapsed, hotkey_from_key_down,
-        masked_request_header_value, notification_transition, prepare_download_context_selection,
-        quick_find_scroll_step, quick_find_scroll_target, reconcile_download_selection,
-        set_download_sort, toggle_indexed_volume_selection, update_download_selection,
+        download_filter_counts, download_queue_placement_capabilities,
+        download_segment_strip_cells, download_tasks_for_view, file_index_summary,
+        format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
+        notification_transition, prepare_download_context_selection, quick_find_scroll_step,
+        quick_find_scroll_target, reconcile_download_selection, set_download_sort,
+        toggle_indexed_volume_selection, update_download_selection,
     };
 
     #[test]
@@ -5737,8 +5815,8 @@ mod tests {
                 resume: false,
                 pause: false,
                 cancel: false,
-                queue: false,
                 remove: true,
+                ..Default::default()
             },
             "completed tasks must not retain lifecycle or queue actions in the menu"
         );
@@ -5751,6 +5829,10 @@ mod tests {
             pause_targets: vec![active_id],
             cancel_targets: vec![active_id],
             can_move_queue: true,
+            queue_top: true,
+            queue_up: true,
+            queue_down: true,
+            queue_bottom: true,
             ..Default::default()
         };
         assert_eq!(
@@ -5759,7 +5841,10 @@ mod tests {
                 task_window: true,
                 pause: true,
                 cancel: true,
-                queue: true,
+                queue_top: true,
+                queue_up: true,
+                queue_down: true,
+                queue_bottom: true,
                 ..Default::default()
             }
         );
@@ -5807,6 +5892,31 @@ mod tests {
         assert!(
             !menu.contains(".disabled("),
             "unavailable download actions must be omitted instead of rendered disabled"
+        );
+    }
+
+    #[test]
+    fn queue_position_actions_are_omitted_at_the_real_edges() {
+        let first = DownloadTaskId::new();
+        let middle = DownloadTaskId::new();
+        let last = DownloadTaskId::new();
+        let order = [first, middle, last];
+
+        assert_eq!(
+            download_queue_placement_capabilities(&order, &[first]),
+            (false, false, true, true)
+        );
+        assert_eq!(
+            download_queue_placement_capabilities(&order, &[middle]),
+            (true, true, true, true)
+        );
+        assert_eq!(
+            download_queue_placement_capabilities(&order, &[last]),
+            (true, true, false, false)
+        );
+        assert_eq!(
+            download_queue_placement_capabilities(&order, &[first, last]),
+            (false, false, false, false)
         );
     }
 
@@ -5859,8 +5969,13 @@ mod tests {
                     engine,
                     std::rc::Rc::new(platform),
                     notifications.clone(),
-                    r"C:\Downloads".into(),
-                    false,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: r"C:\Downloads".into(),
+                        config: AppConfig::default(),
+                        config_path: std::env::temp_dir().join("nxtools-test-config.json"),
+                        log_directory: std::env::temp_dir(),
+                        database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                    },
                     cx,
                 )
             })
@@ -6135,8 +6250,13 @@ mod tests {
                     engine,
                     std::rc::Rc::new(platform),
                     notifications.clone(),
-                    r"C:\Downloads".into(),
-                    false,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: r"C:\Downloads".into(),
+                        config: AppConfig::default(),
+                        config_path: std::env::temp_dir().join("nxtools-test-config.json"),
+                        log_directory: std::env::temp_dir(),
+                        database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                    },
                     cx,
                 )
             })
@@ -6266,8 +6386,13 @@ mod tests {
                     engine,
                     std::rc::Rc::new(platform),
                     notifications.clone(),
-                    r"C:\Downloads".into(),
-                    false,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: r"C:\Downloads".into(),
+                        config: AppConfig::default(),
+                        config_path: std::env::temp_dir().join("nxtools-test-config.json"),
+                        log_directory: std::env::temp_dir(),
+                        database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                    },
                     cx,
                 )
             })

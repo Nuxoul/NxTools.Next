@@ -16,7 +16,7 @@ mod ui;
 use anyhow::{Context as _, Result};
 use assets::NxToolsAssets;
 use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
-use downloads::DownloadApplication;
+use downloads::{DownloadApplication, DownloadRuntimeContext};
 use gpui::{
     App, AppContext, Application, TitlebarOptions, WindowBackgroundAppearance, WindowBounds,
     WindowDecorations, WindowKind, WindowOptions, px, size, transparent_black,
@@ -65,6 +65,7 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
         .take()
         .context("desktop runtime did not provide a download engine")?;
     let download_default_directory = runtime.download_default_directory.clone();
+    let download_database_path = runtime.download_database_path.clone();
     let app_config = runtime.config.clone();
     let config_path = runtime.config_path.clone();
     let log_dir = runtime.log_dir.clone();
@@ -145,8 +146,13 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                     download_engine,
                     Rc::clone(&platform_bridge),
                     notifications.clone(),
-                    download_default_directory,
-                    app_config.download.show_completion_window,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: download_default_directory,
+                        config: app_config.clone(),
+                        config_path: config_path.clone(),
+                        log_directory: log_dir.clone(),
+                        database_path: download_database_path,
+                    },
                     cx,
                 )
             });

@@ -73,6 +73,12 @@ impl Default for AppConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DownloadSettings {
+    #[serde(default)]
+    pub default_directory: String,
+    #[serde(default = "default_download_connection_limit")]
+    pub default_connection_limit: u16,
+    #[serde(default = "default_true")]
+    pub show_progress_window: bool,
     #[serde(default = "default_true")]
     pub show_completion_window: bool,
 }
@@ -80,8 +86,22 @@ pub struct DownloadSettings {
 impl Default for DownloadSettings {
     fn default() -> Self {
         Self {
+            default_directory: String::new(),
+            default_connection_limit: default_download_connection_limit(),
+            show_progress_window: true,
             show_completion_window: true,
         }
+    }
+}
+
+const fn default_download_connection_limit() -> u16 {
+    8
+}
+
+impl DownloadSettings {
+    pub fn normalize(&mut self) {
+        self.default_directory = self.default_directory.trim().to_owned();
+        self.default_connection_limit = self.default_connection_limit.clamp(1, 64);
     }
 }
 
@@ -462,33 +482,46 @@ impl ClipboardPanelSize {
 }
 
 impl AppConfig {
+    pub fn load_from(path: &Path) -> Result<Self> {
+        let json = fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let mut config: Self = serde_json::from_str(&json)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        config.normalize();
+        Ok(config)
+    }
+
     pub fn load_or_create(paths: &AppPaths) -> Result<Self> {
         let path = paths.config_file();
-        match fs::read_to_string(&path) {
-            Ok(json) => {
-                let mut config: Self = serde_json::from_str(&json)
-                    .with_context(|| format!("failed to parse {}", path.display()))?;
-                config.clipboard_panel = ClipboardPanelSize::clamped(
-                    config.clipboard_panel.width,
-                    config.clipboard_panel.height,
-                );
-                config.clipboard.normalize();
-                config.quick_launch.normalize();
-                Ok(config)
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let config = Self::default();
-                fs::write(&path, serde_json::to_string_pretty(&config)?)
-                    .with_context(|| format!("failed to write {}", path.display()))?;
-                Ok(config)
-            }
-            Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
+        if path.exists() {
+            Self::load_from(&path)
+        } else {
+            let config = Self::default();
+            fs::write(&path, serde_json::to_string_pretty(&config)?)
+                .with_context(|| format!("failed to write {}", path.display()))?;
+            Ok(config)
         }
+    }
+
+    fn normalize(&mut self) {
+        self.clipboard_panel =
+            ClipboardPanelSize::clamped(self.clipboard_panel.width, self.clipboard_panel.height);
+        self.clipboard.normalize();
+        self.quick_launch.normalize();
+        self.download.normalize();
     }
 
     pub fn save_to(&self, path: &Path) -> Result<()> {
         fs::write(path, serde_json::to_string_pretty(self)?)
             .with_context(|| format!("failed to write {}", path.display()))
+    }
+
+    pub fn update_download_settings(path: &Path, mut settings: DownloadSettings) -> Result<Self> {
+        settings.normalize();
+        let mut config = Self::load_from(path)?;
+        config.download = settings;
+        config.save_to(path)?;
+        Ok(config)
     }
 }
 
@@ -689,6 +722,62 @@ mod tests {
         assert!(config.quick_launch.file_dialog_search);
         assert_eq!(config.quick_launch.hotkey.display, "双击 Ctrl");
         assert!(config.quick_launch.hotkey.modifiers.is_empty());
+    }
+
+    #[test]
+    fn download_settings_have_reference_aligned_safe_defaults() {
+        let settings = DownloadSettings::default();
+
+        assert!(settings.default_directory.is_empty());
+        assert_eq!(settings.default_connection_limit, 8);
+        assert!(settings.show_progress_window);
+        assert!(settings.show_completion_window);
+    }
+
+    #[test]
+    fn legacy_download_settings_receive_new_defaults() {
+        let config: AppConfig = serde_json::from_str(
+            r#"{"theme":"dark","platform_pipe_name":"legacy-pipe","download":{"show_completion_window":false}}"#,
+        )
+        .expect("legacy download settings must remain readable");
+
+        assert_eq!(config.download.default_connection_limit, 8);
+        assert!(config.download.show_progress_window);
+        assert!(!config.download.show_completion_window);
+    }
+
+    #[test]
+    fn updating_download_settings_preserves_other_module_configuration() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-download-settings-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("create settings directory");
+        let path = directory.join("config.json");
+        let mut original = AppConfig::default();
+        original.quick_launch.enabled = false;
+        original.clipboard.retention_days = 91;
+        original.save_to(&path).expect("save original config");
+
+        let updated = AppConfig::update_download_settings(
+            &path,
+            DownloadSettings {
+                default_directory: r"D:\Downloads".into(),
+                default_connection_limit: 12,
+                show_progress_window: false,
+                show_completion_window: false,
+            },
+        )
+        .expect("update only download settings");
+
+        assert!(!updated.quick_launch.enabled);
+        assert_eq!(updated.clipboard.retention_days, 91);
+        assert_eq!(updated.download.default_connection_limit, 12);
+        fs::remove_dir_all(directory).expect("remove settings directory");
     }
 
     #[test]

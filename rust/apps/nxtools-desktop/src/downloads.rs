@@ -7,12 +7,15 @@ use std::time::{Duration, Instant};
 use chrono::{Local, NaiveDateTime, TimeZone};
 use gpui::{
     AnyElement, AnyWindowHandle, App, Context, Entity, EventEmitter, FontWeight, IntoElement,
-    MouseButton, Render, Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowControlArea, WindowDecorations, WindowKind, WindowOptions, div, prelude::*, px, size,
+    MouseButton, Render, ScrollHandle, Subscription, Task, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowControlArea, WindowDecorations, WindowKind, WindowOptions, div, prelude::*,
+    px, size,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::input::{Input, InputState};
+use gpui_component::scroll::ScrollableElement;
 use gpui_component::{Disableable, Icon, PixelsExt, Root, Sizable};
+use nxtools_core::{AppConfig, DownloadSettings};
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
     DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
@@ -40,7 +43,34 @@ use crate::ui::native_window_handle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
-    DirectoryPicked(PathBuf),
+    DirectoryPicked {
+        target: DownloadDirectoryTarget,
+        path: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DownloadDirectoryTarget {
+    NewTask,
+    Settings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DownloadSettingsDraft {
+    default_directory: PathBuf,
+    default_connection_limit: u16,
+    max_concurrent_tasks: u16,
+    global_speed_limit_bytes_per_second: Option<u64>,
+    show_progress_window: bool,
+    show_completion_window: bool,
+}
+
+pub(crate) struct DownloadRuntimeContext {
+    pub fallback_default_directory: PathBuf,
+    pub config: AppConfig,
+    pub config_path: PathBuf,
+    pub log_directory: PathBuf,
+    pub database_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,10 +83,14 @@ fn submit_presentation_plan(
     mode: DownloadSubmitMode,
     task_id: DownloadTaskId,
     delayed: bool,
+    show_progress_window: bool,
 ) -> DownloadSubmitPresentationPlan {
     DownloadSubmitPresentationPlan {
         close_source_window: true,
-        deferred_task_window: (mode == DownloadSubmitMode::StartNow && !delayed).then_some(task_id),
+        deferred_task_window: (show_progress_window
+            && mode == DownloadSubmitMode::StartNow
+            && !delayed)
+            .then_some(task_id),
     }
 }
 
@@ -161,8 +195,14 @@ pub(crate) struct DownloadApplication {
     delete_confirmation_windows: HashMap<DownloadTaskId, AnyWindowHandle>,
     new_download_window: Option<AnyWindowHandle>,
     schedule_window: Option<AnyWindowHandle>,
+    settings_window: Option<AnyWindowHandle>,
+    config: AppConfig,
+    config_path: PathBuf,
+    log_directory: PathBuf,
+    database_path: PathBuf,
+    show_progress_window: bool,
     show_completion_window: bool,
-    pending_directory_picker: Option<uuid::Uuid>,
+    pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
     last_event_sequence: u64,
     _event_task: Task<()>,
@@ -175,10 +215,24 @@ impl DownloadApplication {
         engine: DownloadEngine,
         platform: Rc<PlatformBridge>,
         notifications: Entity<NotificationCenter>,
-        default_directory: PathBuf,
-        show_completion_window: bool,
+        runtime: DownloadRuntimeContext,
         cx: &mut Context<Self>,
     ) -> Self {
+        let DownloadRuntimeContext {
+            fallback_default_directory,
+            mut config,
+            config_path,
+            log_directory,
+            database_path,
+        } = runtime;
+        config.download.normalize();
+        let default_directory = if config.download.default_directory.is_empty() {
+            fallback_default_directory
+        } else {
+            PathBuf::from(&config.download.default_directory)
+        };
+        let show_progress_window = config.download.show_progress_window;
+        let show_completion_window = config.download.show_completion_window;
         let (tasks, queues) = match load_download_snapshot(&engine) {
             Ok(snapshot) => (snapshot.task_details, snapshot.queues),
             Err(error) => {
@@ -253,6 +307,12 @@ impl DownloadApplication {
             delete_confirmation_windows: HashMap::new(),
             new_download_window: None,
             schedule_window: None,
+            settings_window: None,
+            config,
+            config_path,
+            log_directory,
+            database_path,
+            show_progress_window,
             show_completion_window,
             pending_directory_picker: None,
             notified_terminal_states,
@@ -278,6 +338,13 @@ impl DownloadApplication {
 
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
         &self.tasks
+    }
+
+    pub(crate) fn default_queue_order(&self) -> Vec<DownloadTaskId> {
+        self.engine.queue_order("default").unwrap_or_else(|error| {
+            warn!(%error, "could not load the default download queue order");
+            Vec::new()
+        })
     }
 
     pub(crate) fn task_detail(&self, task_id: DownloadTaskId) -> Option<&DownloadTaskDetail> {
@@ -316,6 +383,24 @@ impl DownloadApplication {
 
     fn default_queue(&self) -> Option<&DownloadQueue> {
         self.queues.iter().find(|queue| queue.id == "default")
+    }
+
+    fn settings_draft(&self) -> DownloadSettingsDraft {
+        DownloadSettingsDraft {
+            default_directory: self.default_directory.clone(),
+            default_connection_limit: self.config.download.default_connection_limit,
+            max_concurrent_tasks: self
+                .default_queue()
+                .and_then(|queue| queue.max_concurrent_tasks)
+                .unwrap_or(3),
+            global_speed_limit_bytes_per_second: self.engine.global_speed_limit(),
+            show_progress_window: self.show_progress_window,
+            show_completion_window: self.show_completion_window,
+        }
+    }
+
+    fn default_connection_limit(&self) -> u16 {
+        self.config.download.default_connection_limit
     }
 
     fn task(&self, task_id: DownloadTaskId) -> Option<&DownloadEngineTask> {
@@ -687,10 +772,18 @@ impl DownloadApplication {
     }
 
     fn execute(&self, command: DownloadCommand) -> DownloadCommandOutcome {
+        self.execute_correlated(command, uuid::Uuid::new_v4())
+    }
+
+    fn execute_correlated(
+        &self,
+        command: DownloadCommand,
+        correlation_id: uuid::Uuid,
+    ) -> DownloadCommandOutcome {
         self.engine
             .handle_command(DownloadCommandEnvelope {
                 protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
-                request_id: uuid::Uuid::new_v4(),
+                request_id: correlation_id,
                 origin: RequestOrigin::Ui,
                 command,
             })
@@ -709,7 +802,12 @@ impl DownloadApplication {
         }
     }
 
-    pub(crate) fn request_directory(&mut self, current_directory: String, cx: &mut Context<Self>) {
+    fn request_directory(
+        &mut self,
+        current_directory: String,
+        target: DownloadDirectoryTarget,
+        cx: &mut Context<Self>,
+    ) {
         if self.pending_directory_picker.is_some() {
             return;
         }
@@ -719,7 +817,15 @@ impl DownloadApplication {
                 current_directory,
                 title: "选择下载保存目录".into(),
             })) {
-            Ok(command_id) => self.pending_directory_picker = Some(command_id),
+            Ok(command_id) => {
+                self.pending_directory_picker = Some((command_id, target));
+                info!(
+                    event = "download.directory_picker.accepted",
+                    %command_id,
+                    ?target,
+                    "download directory picker accepted"
+                );
+            }
             Err(error) => {
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
@@ -732,6 +838,18 @@ impl DownloadApplication {
             }
         }
         cx.notify();
+    }
+
+    pub(crate) fn request_new_download_directory(
+        &mut self,
+        current_directory: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.request_directory(current_directory, DownloadDirectoryTarget::NewTask, cx);
+    }
+
+    fn request_settings_directory(&mut self, current_directory: String, cx: &mut Context<Self>) {
+        self.request_directory(current_directory, DownloadDirectoryTarget::Settings, cx);
     }
 
     pub(crate) fn open_new_download_window(&mut self, cx: &mut Context<Self>) {
@@ -839,6 +957,205 @@ impl DownloadApplication {
                     );
                 });
             }
+        }
+    }
+
+    pub(crate) fn open_settings_window(&mut self, cx: &mut Context<Self>) {
+        if let Some(window) = self.settings_window {
+            if window
+                .update(cx, |_, window, _| {
+                    window.activate_window();
+                    window.refresh();
+                })
+                .is_ok()
+            {
+                return;
+            }
+            self.settings_window = None;
+        }
+        let application = cx.entity();
+        let window_size = size(px(520.0), px(486.0));
+        let window_bounds = WindowBounds::centered(window_size, cx);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(window_bounds),
+                titlebar: None,
+                focus: true,
+                show: true,
+                kind: WindowKind::Normal,
+                is_movable: true,
+                is_resizable: false,
+                is_minimizable: false,
+                display_id: None,
+                window_background: WindowBackgroundAppearance::Opaque,
+                app_id: Some("NxTools.DownloadSettings".into()),
+                window_min_size: Some(window_size),
+                window_decorations: Some(WindowDecorations::Client),
+                tabbing_identifier: None,
+            },
+            move |window, cx| {
+                let view = cx.new(|cx| DownloadSettingsView::new(application, window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            },
+        );
+        match opened {
+            Ok(window) => self.settings_window = Some(window.into()),
+            Err(error) => {
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "download-settings-window",
+                        "无法打开下载设置",
+                        error.to_string(),
+                        cx,
+                    );
+                });
+            }
+        }
+    }
+
+    fn apply_settings(
+        &mut self,
+        draft: DownloadSettingsDraft,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let started_at = Instant::now();
+        info!(
+            event = "download.settings.apply_started",
+            %correlation_id,
+            "download settings apply started"
+        );
+        let failed = |message: String| {
+            warn!(
+                event = "download.settings.apply_failed",
+                %correlation_id,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "download settings apply failed"
+            );
+            Err(message)
+        };
+        if draft.default_directory.exists() && !draft.default_directory.is_dir() {
+            return failed("默认保存位置不是文件夹".into());
+        }
+        if let Err(error) = std::fs::create_dir_all(&draft.default_directory) {
+            return failed(format!("无法创建默认保存目录：{error}"));
+        }
+        let write_probe = draft
+            .default_directory
+            .join(format!(".nxtools-write-probe-{correlation_id}"));
+        if let Err(error) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&write_probe)
+        {
+            return failed(format!("默认保存目录不可写：{error}"));
+        }
+        let _ = std::fs::remove_file(&write_probe);
+
+        let previous_concurrency = self
+            .default_queue()
+            .and_then(|queue| queue.max_concurrent_tasks)
+            .unwrap_or(3);
+        let previous_speed_limit = self.engine.global_speed_limit();
+        let next_download_settings = DownloadSettings {
+            default_directory: draft.default_directory.to_string_lossy().into_owned(),
+            default_connection_limit: draft.default_connection_limit,
+            show_progress_window: draft.show_progress_window,
+            show_completion_window: draft.show_completion_window,
+        };
+        if let Err(error) =
+            self.set_default_queue_concurrency(draft.max_concurrent_tasks, correlation_id)
+        {
+            return failed(error);
+        }
+        if let Err(error) =
+            self.set_global_speed_limit(draft.global_speed_limit_bytes_per_second, correlation_id)
+        {
+            return match self.set_default_queue_concurrency(previous_concurrency, correlation_id) {
+                Ok(()) => failed(error),
+                Err(rollback_error) => {
+                    failed(format!("{error}；同时无法回滚队列并发：{rollback_error}"))
+                }
+            };
+        }
+
+        let next_config =
+            match AppConfig::update_download_settings(&self.config_path, next_download_settings) {
+                Ok(config) => config,
+                Err(error) => {
+                    let mut rollback_errors = Vec::new();
+                    if let Err(rollback_error) =
+                        self.set_default_queue_concurrency(previous_concurrency, correlation_id)
+                    {
+                        rollback_errors.push(format!("队列并发：{rollback_error}"));
+                    }
+                    if let Err(rollback_error) =
+                        self.set_global_speed_limit(previous_speed_limit, correlation_id)
+                    {
+                        rollback_errors.push(format!("全局限速：{rollback_error}"));
+                    }
+                    let rollback = if rollback_errors.is_empty() {
+                        String::new()
+                    } else {
+                        format!("；同时无法完整回滚 {}", rollback_errors.join("、"))
+                    };
+                    return failed(format!("无法保存下载设置：{error}{rollback}"));
+                }
+            };
+        self.config = next_config;
+        self.default_directory = draft.default_directory;
+        self.show_progress_window = draft.show_progress_window;
+        self.show_completion_window = draft.show_completion_window;
+        self.refresh(cx);
+        self.notifications.update(cx, |notifications, cx| {
+            notifications.show_success(
+                "download-settings-saved",
+                "下载设置已保存",
+                "新任务将使用更新后的下载策略。",
+                cx,
+            );
+        });
+        info!(
+            event = "download.settings.apply_succeeded",
+            %correlation_id,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "download settings applied"
+        );
+        Ok(())
+    }
+
+    fn set_default_queue_concurrency(
+        &self,
+        max_concurrent_tasks: u16,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), String> {
+        match self.execute_correlated(
+            DownloadCommand::Queue {
+                action: DownloadQueueAction::SetMaxConcurrent {
+                    queue_id: "default".into(),
+                    max_concurrent_tasks,
+                },
+            },
+            correlation_id,
+        ) {
+            DownloadCommandOutcome::QueueChanged { .. } => Ok(()),
+            DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
+            _ => Err("下载引擎返回了无效的队列设置结果".into()),
+        }
+    }
+
+    fn set_global_speed_limit(
+        &self,
+        bytes_per_second: Option<u64>,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), String> {
+        match self.execute_correlated(
+            DownloadCommand::SetGlobalSpeedLimit { bytes_per_second },
+            correlation_id,
+        ) {
+            DownloadCommandOutcome::Accepted { task_id: None } => Ok(()),
+            DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
+            _ => Err("下载引擎返回了无效的全局限速设置结果".into()),
         }
     }
 
@@ -1351,21 +1668,45 @@ impl DownloadApplication {
             }
             return;
         }
-        if self.pending_directory_picker != Some(correlation_id) {
+        let Some((pending_id, target)) = self.pending_directory_picker else {
+            return;
+        };
+        if pending_id != correlation_id {
             return;
         }
         self.pending_directory_picker = None;
-        self.handle_directory_result(result, cx);
+        self.handle_directory_result(correlation_id, target, result, cx);
     }
 
-    fn handle_directory_result(&mut self, result: PlatformCommandResult, cx: &mut Context<Self>) {
+    fn handle_directory_result(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        target: DownloadDirectoryTarget,
+        result: PlatformCommandResult,
+        cx: &mut Context<Self>,
+    ) {
         if result.success {
             if let Some(path) = result.data.filter(|path| !path.trim().is_empty()) {
-                cx.emit(DownloadApplicationEvent::DirectoryPicked(PathBuf::from(
-                    path,
-                )));
+                info!(
+                    event = "download.directory_picker.succeeded",
+                    %correlation_id,
+                    ?target,
+                    "download directory picker completed"
+                );
+                cx.emit(DownloadApplicationEvent::DirectoryPicked {
+                    target,
+                    path: PathBuf::from(path),
+                });
+            } else {
+                info!(
+                    event = "download.directory_picker.cancelled",
+                    %correlation_id,
+                    ?target,
+                    "download directory picker completed without a selection"
+                );
             }
         } else {
+            let native_error_present = result.error.is_some();
             let reason = result
                 .error
                 .unwrap_or_else(|| "Windows 未返回错误详情".into());
@@ -1377,6 +1718,13 @@ impl DownloadApplication {
                     cx,
                 );
             });
+            warn!(
+                event = "download.directory_picker.failed",
+                %correlation_id,
+                ?target,
+                native_error_present,
+                "download directory picker failed"
+            );
         }
         cx.notify();
     }
@@ -1455,12 +1803,13 @@ impl DownloadApplication {
                     .tasks
                     .iter()
                     .any(|candidate| candidate.task.id() == task.id());
-                should_open_admitted_progress_window(
-                    known_to_desktop,
-                    self.awaiting_delayed_progress.contains(&task.id()),
-                    task.origin(),
-                    task.status(),
-                )
+                (self.show_progress_window
+                    && should_open_admitted_progress_window(
+                        known_to_desktop,
+                        self.awaiting_delayed_progress.contains(&task.id()),
+                        task.origin(),
+                        task.status(),
+                    ))
                 .then_some(task.id())
             }
             _ => None,
@@ -2095,6 +2444,548 @@ fn format_clock_minute(value: u16) -> String {
     format!("{:02}:{:02}", value / 60, value % 60)
 }
 
+fn parse_download_settings_draft(
+    default_directory: &str,
+    connection_limit: &str,
+    max_concurrent_tasks: &str,
+    speed_limit_kib: &str,
+    show_progress_window: bool,
+    show_completion_window: bool,
+) -> Result<DownloadSettingsDraft, String> {
+    let default_directory = default_directory.trim();
+    if default_directory.is_empty() {
+        return Err("请选择默认保存目录".into());
+    }
+    let default_connection_limit = connection_limit
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "连接上限必须是 1 到 64 的整数")?;
+    if !(1..=64).contains(&default_connection_limit) {
+        return Err("连接上限必须在 1 到 64 之间".into());
+    }
+    let max_concurrent_tasks = max_concurrent_tasks
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "同时下载数必须是 1 到 64 的整数")?;
+    if !(1..=64).contains(&max_concurrent_tasks) {
+        return Err("同时下载数必须在 1 到 64 之间".into());
+    }
+    let speed_limit_kib = speed_limit_kib
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "全局限速必须是非负整数")?;
+    let global_speed_limit_bytes_per_second = if speed_limit_kib == 0 {
+        None
+    } else {
+        Some(
+            speed_limit_kib
+                .checked_mul(1024)
+                .ok_or("全局限速数值过大")?,
+        )
+    };
+    Ok(DownloadSettingsDraft {
+        default_directory: PathBuf::from(default_directory),
+        default_connection_limit,
+        max_concurrent_tasks,
+        global_speed_limit_bytes_per_second,
+        show_progress_window,
+        show_completion_window,
+    })
+}
+
+struct DownloadSettingsView {
+    theme: Theme,
+    application: Entity<DownloadApplication>,
+    directory: Entity<InputState>,
+    connection_limit: Entity<InputState>,
+    concurrent_tasks: Entity<InputState>,
+    speed_limit_kib: Entity<InputState>,
+    scroll: ScrollHandle,
+    show_progress_window: bool,
+    show_completion_window: bool,
+    config_path: String,
+    log_directory: String,
+    database_path: String,
+    saving: bool,
+    error: Option<String>,
+    _subscription: Subscription,
+}
+
+impl DownloadSettingsView {
+    fn new(
+        application: Entity<DownloadApplication>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let snapshot = application.read(cx).settings_draft();
+        let config_path = application.read(cx).config_path.display().to_string();
+        let log_directory = application.read(cx).log_directory.display().to_string();
+        let database_path = application.read(cx).database_path.display().to_string();
+        let directory = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.default_directory.to_string_lossy().into_owned())
+                .placeholder("选择默认保存目录")
+        });
+        let connection_limit = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.default_connection_limit.to_string())
+                .placeholder("1-64")
+        });
+        let concurrent_tasks = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.max_concurrent_tasks.to_string())
+                .placeholder("1-64")
+        });
+        let speed_limit_kib = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(
+                    snapshot
+                        .global_speed_limit_bytes_per_second
+                        .map_or(0, |value| value / 1024)
+                        .to_string(),
+                )
+                .placeholder("0")
+        });
+        let subscription = cx.subscribe_in(
+            &application,
+            window,
+            |this, _application, event: &DownloadApplicationEvent, window, cx| {
+                let DownloadApplicationEvent::DirectoryPicked { target, path } = event;
+                if *target != DownloadDirectoryTarget::Settings {
+                    return;
+                }
+                this.directory.update(cx, |input, cx| {
+                    input.set_value(path.to_string_lossy().into_owned(), window, cx);
+                });
+                this.error = None;
+                cx.notify();
+            },
+        );
+        Self {
+            theme: Theme::zed_dark(),
+            application,
+            directory,
+            connection_limit,
+            concurrent_tasks,
+            speed_limit_kib,
+            scroll: ScrollHandle::new(),
+            show_progress_window: snapshot.show_progress_window,
+            show_completion_window: snapshot.show_completion_window,
+            config_path,
+            log_directory,
+            database_path,
+            saving: false,
+            error: None,
+            _subscription: subscription,
+        }
+    }
+
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let correlation_id = uuid::Uuid::new_v4();
+        let draft = match parse_download_settings_draft(
+            &self.directory.read(cx).value(),
+            &self.connection_limit.read(cx).value(),
+            &self.concurrent_tasks.read(cx).value(),
+            &self.speed_limit_kib.read(cx).value(),
+            self.show_progress_window,
+            self.show_completion_window,
+        ) {
+            Ok(draft) => draft,
+            Err(error) => {
+                warn!(
+                    event = "download.settings.validation_failed",
+                    %correlation_id,
+                    "download settings validation failed"
+                );
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        self.saving = true;
+        self.error = None;
+        let application = self.application.clone();
+        let source_window = window.window_handle();
+        let view = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let result = application.update(cx, |application, cx| {
+                application.apply_settings(draft, correlation_id, cx)
+            });
+            match result {
+                Ok(()) => {
+                    let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                }
+                Err(error) => {
+                    let _ = view.update(cx, |view, cx| {
+                        view.saving = false;
+                        view.error = Some(error);
+                        cx.notify();
+                    });
+                }
+            }
+        });
+        cx.notify();
+    }
+}
+
+impl Render for DownloadSettingsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let scroll = self.scroll.clone();
+        let current_directory = self.directory.read(cx).value().to_string();
+        let application = self.application.clone();
+        let directory_control = div()
+            .w(px(274.0))
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(download_settings_input(theme, &self.directory, px(236.0)))
+            .child(
+                Button::new("download-settings-pick-directory")
+                    .icon(Icon::new(MaterialIcon::Folder))
+                    .xsmall()
+                    .compact()
+                    .ghost()
+                    .on_click(move |_, _, cx| {
+                        let application = application.clone();
+                        let current_directory = current_directory.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.request_settings_directory(current_directory, cx);
+                            });
+                        });
+                    }),
+            )
+            .into_any_element();
+        let connection_control =
+            download_settings_input(theme, &self.connection_limit, px(88.0)).into_any_element();
+        let concurrent_control =
+            download_settings_input(theme, &self.concurrent_tasks, px(88.0)).into_any_element();
+        let speed_control =
+            download_settings_input(theme, &self.speed_limit_kib, px(88.0)).into_any_element();
+        let progress_toggle = download_settings_toggle(
+            theme,
+            "download-settings-progress-window",
+            self.show_progress_window,
+            cx.listener(|this, _, _, cx| {
+                this.show_progress_window = !this.show_progress_window;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        let completion_toggle = download_settings_toggle(
+            theme,
+            "download-settings-completion-window",
+            self.show_completion_window,
+            cx.listener(|this, _, _, cx| {
+                this.show_completion_window = !this.show_completion_window;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        div()
+            .size_full()
+            .bg(theme.canvas)
+            .text_color(theme.text)
+            .flex()
+            .flex_col()
+            .child(download_window_titlebar(theme, "下载设置"))
+            .child(
+                div()
+                    .id("download-settings-viewport")
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(
+                        div()
+                            .id("download-settings-scroll")
+                            .debug_selector(|| "download-settings-scroll".into())
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&scroll)
+                            .px(px(14.0))
+                            .py(px(10.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(9.0))
+                            .child(download_settings_section(
+                                theme,
+                                "保存",
+                                vec![download_settings_row(
+                                    theme,
+                                    "默认保存目录",
+                                    "新建任务自动使用，可在单个任务中覆盖",
+                                    directory_control,
+                                )],
+                            ))
+                            .child(download_settings_section(
+                                theme,
+                                "传输",
+                                vec![
+                                    download_settings_row(
+                                        theme,
+                                        "连接上限",
+                                        "新任务默认分段连接数，范围 1–64",
+                                        connection_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "同时下载",
+                                        "默认队列允许同时运行的任务数，范围 1–64",
+                                        concurrent_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "全局限速",
+                                        "单位 KiB/s；填 0 表示不限速",
+                                        speed_control,
+                                    ),
+                                ],
+                            ))
+                            .child(download_settings_section(
+                                theme,
+                                "窗口",
+                                vec![
+                                    download_settings_row(
+                                        theme,
+                                        "自动显示进度",
+                                        "任务开始后显示独立进度窗口",
+                                        progress_toggle,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "显示完成窗口",
+                                        "进度窗已关闭时被动显示完成窗口",
+                                        completion_toggle,
+                                    ),
+                                ],
+                            ))
+                            .child(download_settings_section(
+                                theme,
+                                "诊断",
+                                vec![
+                                    download_settings_path_row(
+                                        theme,
+                                        "配置",
+                                        self.config_path.clone(),
+                                    ),
+                                    download_settings_path_row(
+                                        theme,
+                                        "日志",
+                                        self.log_directory.clone(),
+                                    ),
+                                    download_settings_path_row(
+                                        theme,
+                                        "数据",
+                                        self.database_path.clone(),
+                                    ),
+                                ],
+                            ))
+                            .when_some(self.error.clone(), |body, error| {
+                                body.child(download_inline_error(theme, error))
+                            }),
+                    )
+                    .vertical_scrollbar(&self.scroll),
+            )
+            .child(
+                div()
+                    .h(px(44.0))
+                    .px(px(14.0))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .debug_selector(|| "download-settings-cancel".into())
+                            .child(
+                                Button::new("download-settings-cancel-button")
+                                    .label("取消")
+                                    .small()
+                                    .ghost()
+                                    .disabled(self.saving)
+                                    .on_click(|_, window, _| window.remove_window()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .debug_selector(|| "download-settings-apply".into())
+                            .child(
+                                Button::new("download-settings-apply-button")
+                                    .icon(Icon::new(MaterialIcon::Check))
+                                    .label(if self.saving {
+                                        "正在保存…"
+                                    } else {
+                                        "应用"
+                                    })
+                                    .small()
+                                    .custom(download_primary_button_variant(theme, cx))
+                                    .disabled(self.saving)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.save(window, cx);
+                                    })),
+                            ),
+                    ),
+            )
+    }
+}
+
+fn download_settings_input(
+    theme: Theme,
+    input: &Entity<InputState>,
+    width: gpui::Pixels,
+) -> impl IntoElement {
+    div()
+        .w(width)
+        .h(px(28.0))
+        .rounded(px(4.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.canvas)
+        .px(px(6.0))
+        .flex()
+        .items_center()
+        .child(
+            Input::new(input)
+                .appearance(false)
+                .bordered(false)
+                .focus_bordered(false),
+        )
+}
+
+fn download_settings_toggle(
+    theme: Theme,
+    id: &'static str,
+    enabled: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    div()
+        .id(id)
+        .debug_selector(move || id.into())
+        .w(px(46.0))
+        .h(px(22.0))
+        .p(px(2.0))
+        .rounded(px(11.0))
+        .border_1()
+        .border_color(if enabled {
+            theme.border_active
+        } else {
+            theme.border_subtle
+        })
+        .bg(if enabled {
+            theme.accent_soft
+        } else {
+            theme.canvas
+        })
+        .cursor_pointer()
+        .flex()
+        .when(enabled, |toggle| toggle.justify_end())
+        .on_click(on_toggle)
+        .child(div().size(px(16.0)).rounded(px(8.0)).bg(if enabled {
+            theme.accent
+        } else {
+            theme.text_muted
+        }))
+        .into_any_element()
+}
+
+fn download_settings_section(
+    theme: Theme,
+    title: &'static str,
+    rows: Vec<AnyElement>,
+) -> AnyElement {
+    div()
+        .w_full()
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .h(px(26.0))
+                .px(px(9.0))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .flex()
+                .items_center()
+                .text_size(px(9.5))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(title),
+        )
+        .children(rows)
+        .into_any_element()
+}
+
+fn download_settings_row(
+    theme: Theme,
+    title: &'static str,
+    description: &'static str,
+    control: AnyElement,
+) -> AnyElement {
+    div()
+        .min_h(px(42.0))
+        .px(px(9.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .child(div().text_size(px(10.5)).child(title))
+                .child(
+                    div()
+                        .text_size(px(8.8))
+                        .text_color(theme.text_muted)
+                        .child(description),
+                ),
+        )
+        .child(control)
+        .into_any_element()
+}
+
+fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -> AnyElement {
+    div()
+        .h(px(30.0))
+        .px(px(9.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .child(
+            div()
+                .w(px(36.0))
+                .text_size(px(9.0))
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .truncate()
+                .text_size(px(9.0))
+                .text_color(theme.text_secondary)
+                .child(path),
+        )
+        .into_any_element()
+}
+
 struct NewDownloadView {
     theme: Theme,
     application: Entity<DownloadApplication>,
@@ -2102,6 +2993,7 @@ struct NewDownloadView {
     directory: Entity<InputState>,
     file_name: Entity<InputState>,
     scheduled_at: Entity<InputState>,
+    default_connection_limit: u16,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     probing: bool,
@@ -2118,6 +3010,7 @@ impl NewDownloadView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let default_connection_limit = application.read(cx).default_connection_limit();
         let url =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/file.zip"));
         let directory = cx.new(|cx| {
@@ -2134,7 +3027,10 @@ impl NewDownloadView {
             &application,
             window,
             |this, _application, event: &DownloadApplicationEvent, window, cx| {
-                let DownloadApplicationEvent::DirectoryPicked(path) = event;
+                let DownloadApplicationEvent::DirectoryPicked { target, path } = event;
+                if *target != DownloadDirectoryTarget::NewTask {
+                    return;
+                }
                 this.directory.update(cx, |input, cx| {
                     input.set_value(path.to_string_lossy().into_owned(), window, cx);
                 });
@@ -2149,6 +3045,7 @@ impl NewDownloadView {
             directory,
             file_name,
             scheduled_at,
+            default_connection_limit,
             confirmed_request: None,
             probe: None,
             probing: false,
@@ -2189,7 +3086,7 @@ impl NewDownloadView {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
-            connection_limit: Some(1),
+            connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms,
         };
@@ -2346,7 +3243,9 @@ impl NewDownloadView {
                 application.update(cx, |application, cx| application.submit(request, mode, cx));
             match result {
                 Ok(task_id) => {
-                    let plan = submit_presentation_plan(mode, task_id, delayed);
+                    let show_progress_window = application.read(cx).show_progress_window;
+                    let plan =
+                        submit_presentation_plan(mode, task_id, delayed, show_progress_window);
                     if plan.close_source_window {
                         let _ = source_window.update(cx, |_, window, _| window.remove_window());
                     }
@@ -2496,10 +3395,11 @@ impl Render for NewDownloadView {
                                                         application.update(
                                                             cx,
                                                             |application, cx| {
-                                                                application.request_directory(
-                                                                    current_directory,
-                                                                    cx,
-                                                                );
+                                                                application
+                                                                    .request_new_download_directory(
+                                                                        current_directory,
+                                                                        cx,
+                                                                    );
                                                             },
                                                         );
                                                     });
@@ -3537,6 +4437,7 @@ fn download_input_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::{AppContext, Modifiers, TestAppContext};
 
     #[test]
     fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite() {
@@ -3592,7 +4493,7 @@ mod tests {
         let task_id = DownloadTaskId::new();
 
         assert_eq!(
-            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, false),
+            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, false, true),
             DownloadSubmitPresentationPlan {
                 close_source_window: true,
                 deferred_task_window: Some(task_id),
@@ -3601,11 +4502,232 @@ mod tests {
     }
 
     #[test]
+    fn disabled_automatic_progress_window_still_closes_the_add_window() {
+        let task_id = DownloadTaskId::new();
+
+        assert_eq!(
+            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, false, false),
+            DownloadSubmitPresentationPlan {
+                close_source_window: true,
+                deferred_task_window: None,
+            }
+        );
+    }
+
+    #[test]
+    fn download_settings_validation_uses_real_engine_ranges() {
+        let draft = parse_download_settings_draft(r"C:\Downloads", "8", "3", "2048", true, false)
+            .expect("valid download settings");
+
+        assert_eq!(draft.default_connection_limit, 8);
+        assert_eq!(draft.max_concurrent_tasks, 3);
+        assert_eq!(
+            draft.global_speed_limit_bytes_per_second,
+            Some(2 * 1024 * 1024)
+        );
+        assert!(draft.show_progress_window);
+        assert!(!draft.show_completion_window);
+        assert!(
+            parse_download_settings_draft(r"C:\Downloads", "65", "3", "0", true, true).is_err()
+        );
+        assert!(parse_download_settings_draft(r"C:\Downloads", "8", "0", "0", true, true).is_err());
+    }
+
+    fn unique_download_settings_test_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "nxtools-download-settings-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ))
+    }
+
+    #[gpui::test]
+    fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = unique_download_settings_test_directory("window");
+        let selected_directory = directory.join("selected");
+        std::fs::create_dir_all(&selected_directory).expect("create selected directory");
+        let config_path = directory.join("config.json");
+        let mut config = AppConfig::default();
+        config.quick_launch.enabled = false;
+        config.save_to(&config_path).expect("save settings fixture");
+        let engine = DownloadEngine::open_in_memory().expect("open settings engine");
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let application = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: directory.clone(),
+                        config,
+                        config_path: config_path.clone(),
+                        log_directory: directory.clone(),
+                        database_path: directory.join("downloads.sqlite3"),
+                    },
+                    cx,
+                )
+            })
+        });
+        let application_for_window = application.clone();
+        let (settings, window) = cx.add_window_view(move |window, cx| {
+            DownloadSettingsView::new(application_for_window, window, cx)
+        });
+        window.refresh().expect("render download settings window");
+        window.run_until_parked();
+        assert!(window.debug_bounds("download-settings-scroll").is_some());
+        let original_directory =
+            window.read(|cx| settings.read(cx).directory.read(cx).value().to_string());
+        window.update(|_, cx| {
+            application.update(cx, |_, cx| {
+                cx.emit(DownloadApplicationEvent::DirectoryPicked {
+                    target: DownloadDirectoryTarget::NewTask,
+                    path: directory.join("wrong-target"),
+                });
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
+            original_directory,
+            "a new-task picker result must not mutate the settings draft"
+        );
+        window.update(|_, cx| {
+            application.update(cx, |_, cx| {
+                cx.emit(DownloadApplicationEvent::DirectoryPicked {
+                    target: DownloadDirectoryTarget::Settings,
+                    path: selected_directory.clone(),
+                });
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
+            selected_directory.display().to_string()
+        );
+        let completion_toggle = window
+            .debug_bounds("download-settings-completion-window")
+            .expect("completion setting toggle");
+        window.simulate_click(completion_toggle.center(), Modifiers::default());
+        let apply = window
+            .debug_bounds("download-settings-apply")
+            .expect("settings apply button");
+        window.simulate_click(apply.center(), Modifiers::default());
+        window.run_until_parked();
+
+        let persisted = AppConfig::load_from(&config_path).expect("reload applied settings");
+        assert_eq!(
+            persisted.download.default_directory,
+            selected_directory.display().to_string()
+        );
+        assert!(!persisted.download.show_completion_window);
+        assert!(
+            !persisted.quick_launch.enabled,
+            "applying download settings must preserve current quick-launch settings"
+        );
+
+        let application_for_cancel = application.clone();
+        let (_cancel_view, cancel_window) = cx.add_window_view(move |window, cx| {
+            DownloadSettingsView::new(application_for_cancel, window, cx)
+        });
+        let progress_toggle = cancel_window
+            .debug_bounds("download-settings-progress-window")
+            .expect("progress setting toggle");
+        cancel_window.simulate_click(progress_toggle.center(), Modifiers::default());
+        let cancel = cancel_window
+            .debug_bounds("download-settings-cancel")
+            .expect("settings cancel button");
+        cancel_window.simulate_click(cancel.center(), Modifiers::default());
+        cancel_window.run_until_parked();
+        assert!(
+            AppConfig::load_from(&config_path)
+                .expect("reload cancelled settings")
+                .download
+                .show_progress_window,
+            "cancel must discard the local settings draft"
+        );
+        std::fs::remove_dir_all(directory).expect("remove settings fixture");
+    }
+
+    #[gpui::test]
+    fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext) {
+        let directory = unique_download_settings_test_directory("rollback");
+        std::fs::create_dir_all(&directory).expect("create rollback directory");
+        let missing_config = directory.join("missing").join("config.json");
+        let engine = DownloadEngine::open_in_memory().expect("open rollback engine");
+        let engine_for_assertion = engine.clone();
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let application = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: directory.clone(),
+                        config: AppConfig::default(),
+                        config_path: missing_config,
+                        log_directory: directory.clone(),
+                        database_path: directory.join("downloads.sqlite3"),
+                    },
+                    cx,
+                )
+            })
+        });
+        let result = cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.apply_settings(
+                    DownloadSettingsDraft {
+                        default_directory: directory.clone(),
+                        default_connection_limit: 12,
+                        max_concurrent_tasks: 7,
+                        global_speed_limit_bytes_per_second: Some(1024 * 1024),
+                        show_progress_window: false,
+                        show_completion_window: false,
+                    },
+                    uuid::Uuid::new_v4(),
+                    cx,
+                )
+            })
+        });
+        assert!(result.is_err());
+        assert_eq!(engine_for_assertion.global_speed_limit(), None);
+        let snapshot = engine_for_assertion.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Internal,
+            command: DownloadCommand::Snapshot {
+                query: DownloadQuery::default(),
+            },
+        });
+        let DownloadCommandOutcome::Snapshot(snapshot) = snapshot.outcome else {
+            panic!("expected rollback snapshot");
+        };
+        assert_eq!(
+            snapshot
+                .queues
+                .iter()
+                .find(|queue| queue.id == "default")
+                .and_then(|queue| queue.max_concurrent_tasks),
+            Some(3)
+        );
+        std::fs::remove_dir_all(directory).expect("remove rollback fixture");
+    }
+
+    #[test]
     fn queue_only_closes_the_add_window_without_opening_a_progress_window() {
         let task_id = DownloadTaskId::new();
 
         assert_eq!(
-            submit_presentation_plan(DownloadSubmitMode::QueueOnly, task_id, false),
+            submit_presentation_plan(DownloadSubmitMode::QueueOnly, task_id, false, true),
             DownloadSubmitPresentationPlan {
                 close_source_window: true,
                 deferred_task_window: None,
@@ -3618,7 +4740,7 @@ mod tests {
         let task_id = DownloadTaskId::new();
 
         assert_eq!(
-            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, true),
+            submit_presentation_plan(DownloadSubmitMode::StartNow, task_id, true, true),
             DownloadSubmitPresentationPlan {
                 close_source_window: true,
                 deferred_task_window: None,

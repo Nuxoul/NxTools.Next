@@ -1028,6 +1028,37 @@ Reverified on 2026-07-30 before implementing the sixth Stage 3 slice:
   record URL, path, file name, Header, Cookie or other task payloads. Repeated refresh/progress
   frames do not emit activation diagnostics.
 
+### Phase 3 download-settings and interaction-finish findings
+
+Reverified on 2026-07-30 before implementing the remaining user-selected Phase 3 work:
+
+- ABDM `desktop/app/.../pages/settings/DesktopSettingsComponent.kt` groups download-folder behavior
+  separately from engine controls. Its engine group exposes the default folder, speed limit,
+  connection/part count, concurrent downloads and retry policy; its appearance group owns automatic
+  progress and completion-window preferences.
+- ABDM `shared/app/.../settings/CommonSettings.kt` validates every numeric setting against an
+  explicit range and treats zero speed as unlimited. Folder selection uses a native picker and
+  validates write access instead of requiring a manually typed path.
+- Old NxTools `Views/SettingsWindow.axaml` presents download behavior in a dedicated settings
+  surface. `Models/AppState.cs` and `Services/AppStateStore.cs` persist user policy separately from
+  transient task progress.
+- NxTools.Next exposes only controls already backed by a real runtime boundary in Phase 3:
+  default save directory, default connection limit, default-queue concurrency, global speed limit,
+  automatic progress-window behavior and completion-window behavior. Retry-count, proxy, browser
+  integration and media settings remain absent until their engine phases provide real mutable
+  contracts.
+- The settings surface is one keyed, client-decorated GPUI window. It edits a local draft; close or
+  cancel discards it. Apply validates every field first, updates the download engine through typed
+  commands, persists desktop policy, refreshes the authoritative snapshot and emits low-frequency
+  correlated accepted/succeeded/failed diagnostics.
+- The native directory picker result is routed to the requesting surface. A directory selected for
+  settings must not overwrite an open new-download form, and a new-download selection must not
+  mutate the settings draft.
+- The task context menu derives queue placement from the authoritative default-queue order. A
+  selection already touching the first queue position omits `优先下载` and `上移`; one touching the
+  last position omits `下移` and `移到底部`. Empty action groups never leave leading, trailing or
+  repeated separators.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
