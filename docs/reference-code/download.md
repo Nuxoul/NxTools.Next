@@ -991,6 +991,35 @@ Reverified on 2026-07-29 before implementing the fifth Stage 3 slice:
   `X_API_KEY`; the proportional aggregate strip represents both each segment's byte share and its
   downloaded fraction rather than assigning every segment the same width.
 
+### Phase 3 keyed task-window reopen and foreground findings
+
+Reverified on 2026-07-30 before implementing the sixth Stage 3 slice:
+
+- ABDM `desktop/app/.../AppComponent.kt::openDownloadDialog` first searches
+  `openedDownloadDialogs` by download ID. A hit calls
+  `DesktopSingleDownloadPageComponent::bringToFront`; only a miss navigates a new keyed component
+  into the dialog collection. `ShowDownloadDialogs.kt::CommonContent` handles that effect by
+  clearing `WindowState.isMinimized` and calling the native window's `toFront()`. Reopening never
+  creates a second component or changes the job lifecycle.
+- Old NxTools `Views/MainWindow.axaml.cs::{ShowDownloadProgressWindow,
+  BringSecondaryWindowToFront}` uses one task-ID dictionary. A live hit restores visibility,
+  pulses topmost and asks `WindowActivationService` to bring that exact window forward; a closed
+  entry is removed before a later request creates a replacement. The requested task's current
+  status chooses progress or compact completion presentation.
+- NxTools.Next already owns one `DownloadTaskWindow` per task ID and routes main-list double-click
+  and the single-selection context-menu action through `request_task_window`. GPUI activation alone
+  is not the complete Windows boundary: reuse must also send the existing typed
+  `ActivateWindow { window_handle }` command so C# can restore an iconic HWND, attach the relevant
+  input threads and call `BringWindowToTop`/`SetForegroundWindow`.
+- An explicit reopen is activating, including completed and failed tasks. Automatic terminal
+  fallback remains passive and must not be changed by this slice. If the cached GPUI/native handle
+  is stale, the registry is cleared and exactly one replacement is opened in the phase derived
+  from the current Rust task status; it must not fall back unconditionally to the progress phase.
+- Diagnostics record one bounded reopen request and the activation command's accepted/terminal
+  result using task ID, window handle, correlation ID, elapsed time and success only. They do not
+  record URL, path, file name, Header, Cookie or other task payloads. Repeated refresh/progress
+  frames do not emit activation diagnostics.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

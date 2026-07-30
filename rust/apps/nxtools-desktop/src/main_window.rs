@@ -3889,8 +3889,11 @@ fn download_task_row(
                 cx.notify();
             });
             if event.click_count() >= 2 {
-                let _ = row_open_application.update(cx, |application, cx| {
-                    application.request_task_window(task_id, cx);
+                let application = row_open_application.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.request_task_window(task_id, cx);
+                    });
                 });
             }
         })
@@ -4111,8 +4114,11 @@ fn download_task_context_menu(
                 .disabled(progress_task.is_none())
                 .on_click(move |_event, _window, cx| {
                     if let Some(task_id) = progress_task {
-                        let _ = progress_application.update(cx, |application, cx| {
-                            application.request_task_window(task_id, cx);
+                        let application = progress_application.clone();
+                        cx.defer(move |cx| {
+                            let _ = application.update(cx, |application, cx| {
+                                application.request_task_window(task_id, cx);
+                            });
                         });
                     }
                 }),
@@ -5174,7 +5180,10 @@ fn empty_state(
 mod tests {
     use std::collections::HashSet;
 
-    use gpui::{AppContext, KeyDownEvent, Keystroke, Modifiers, TestAppContext, px, size};
+    use gpui::{
+        AppContext, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
+        TestAppContext, px, size,
+    };
     use gpui_component::PixelsExt;
     use nxtools_core::ClipboardHotKeyModifier;
     use nxtools_download::{
@@ -5182,7 +5191,7 @@ mod tests {
         DownloadTaskId, RequestOrigin,
     };
 
-    use nxtools_protocol::{IndexPhase, IndexStatus};
+    use nxtools_protocol::{ActivateWindowCommand, IndexPhase, IndexStatus, PlatformCommand};
 
     use crate::clipboard::ClipboardApplication;
     use crate::downloads::DownloadApplication;
@@ -5829,6 +5838,135 @@ mod tests {
         assert!(progress.right() <= status.left());
         assert!(detail.size.width.as_f32() > 0.0);
         assert_eq!(detail.size.height.as_f32(), DOWNLOAD_DETAIL_HEIGHT);
+    }
+
+    #[gpui::test]
+    fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.com/reopen.bin".into(),
+                    save_directory: r"C:\Downloads".into(),
+                    file_name: Some("reopen.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let downloads = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    std::rc::Rc::new(platform),
+                    notifications.clone(),
+                    r"C:\Downloads".into(),
+                    false,
+                    cx,
+                )
+            })
+        });
+        let activation_commands = cx.update(|cx| {
+            downloads.update(cx, |application, _| {
+                application.configure_task_window_activation_test(42)
+            })
+        });
+        let downloads_for_window = downloads.downgrade();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                downloads_for_window,
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Downloads);
+            main_window
+        });
+        let element_id = task_id.as_uuid().as_u64_pair().0;
+        let row_selector: &'static str =
+            Box::leak(format!("download-task-row-{element_id}").into_boxed_str());
+        let row = window
+            .debug_bounds(row_selector)
+            .expect("production task row bounds");
+        let double_click = |window: &mut gpui::VisualTestContext| {
+            window.simulate_event(MouseDownEvent {
+                button: MouseButton::Left,
+                position: row.center(),
+                modifiers: Modifiers::default(),
+                click_count: 2,
+                first_mouse: false,
+            });
+            window.simulate_event(MouseUpEvent {
+                button: MouseButton::Left,
+                position: row.center(),
+                modifiers: Modifiers::default(),
+                click_count: 2,
+            });
+            window.run_until_parked();
+        };
+
+        let initial_windows = window.windows();
+        assert_eq!(initial_windows.len(), 1);
+        double_click(window);
+        let first_reopen_windows = window.windows();
+        assert_eq!(first_reopen_windows.len(), 2);
+        let task_window = *first_reopen_windows
+            .iter()
+            .find(|candidate| !initial_windows.contains(candidate))
+            .expect("new keyed task window");
+        double_click(window);
+        let second_reopen_windows = window.windows();
+        assert_eq!(
+            second_reopen_windows.len(),
+            2,
+            "the second reopen must focus the keyed window instead of creating a duplicate"
+        );
+        assert!(
+            second_reopen_windows.contains(&task_window),
+            "the second reopen must retain the same keyed GPUI window"
+        );
+        assert_eq!(
+            activation_commands.borrow().as_slice(),
+            &[PlatformCommand::ActivateWindow(ActivateWindowCommand {
+                window_handle: 42,
+            })],
+            "one in-flight native activation is reused instead of queueing duplicates"
+        );
+    }
+
+    #[test]
+    fn download_task_window_entrypoints_defer_cross_entity_work() {
+        let source = include_str!("main_window.rs");
+        let row = source
+            .split("\nfn download_task_row(")
+            .nth(1)
+            .and_then(|body| body.split("\nfn download_task_context_menu(").next())
+            .expect("download row renderer");
+        let menu = source
+            .split("\nfn download_task_context_menu(")
+            .nth(1)
+            .and_then(|body| body.split("\nfn download_task_detail(").next())
+            .expect("download task context menu");
+
+        for (name, body) in [("double click", row), ("context menu", menu)] {
+            let request = body
+                .find("application.request_task_window(task_id, cx)")
+                .unwrap_or_else(|| panic!("{name} task-window request"));
+            let deferred = body[..request]
+                .rfind("cx.defer(move |cx|")
+                .unwrap_or_else(|| panic!("{name} must defer its cross-entity update"));
+            assert!(deferred < request);
+        }
     }
 
     #[test]

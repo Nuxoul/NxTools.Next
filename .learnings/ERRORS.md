@@ -4,6 +4,45 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260730-PLATFORMPATH] assumed_desktop_platform_module_path
+
+**Logged**: 2026-07-30T11:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+Reference inspection assumed a nonexistent desktop-local `platform.rs` instead of locating the
+shared IPC bridge by symbol.
+
+### Error
+
+```text
+Cannot find path rust/apps/nxtools-desktop/src/platform.rs
+```
+
+### Context
+
+- The bridge is defined in `rust/crates/nxtools-ipc/src/lib.rs`.
+- The failed read did not modify files or interrupt implementation.
+
+### Suggested Fix
+
+Use `rg "struct PlatformBridge" rust` before opening an assumed module path.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-ipc/src/lib.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T11:21:00+08:00
+- **Notes**: Located and reviewed the shared bridge by symbol.
+
+---
+
 ## [ERR-20260730-RANGEFIXTURE] transient_range_fixture_probe_race
 
 **Logged**: 2026-07-30T10:40:00+08:00
@@ -362,7 +401,7 @@ repeated. Do not change production transfer logic without a repeatable red signa
 
 - Reproducible: no
 - Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
-- Recurrence-Count: 2
+- Recurrence-Count: 4
 - Last-Seen: 2026-07-30
 
 ### Resolution
@@ -371,6 +410,13 @@ repeated. Do not change production transfer logic without a repeatable red signa
 - **Notes**: Exact test passed 5/5 and complete engine suite passed 2/2; no product change made.
   The same combined-suite-only failure recurred on 2026-07-30 after every preceding download test
   group passed; its immediate exact rerun passed, so production transfer logic remained unchanged.
+  A later July 30 full-workspace run hit two independent local-fixture races: one crash-recovery
+  range request received fixture HTTP 409 and one dynamic split had not started before the bounded
+  pause checkpoint. Both exact contracts are rerun before treating either as a product regression.
+  Both exact contracts passed immediately. A following combined run still intermittently missed the
+  dynamic-split checkpoint and the single-stream speed-limit contract failed only in the suite;
+  even a single-thread suite retained the speed-limit flake, while three immediate exact reruns all
+  passed. No download-engine production code was changed by the task-window slice.
 
 ---
 
@@ -5215,8 +5261,8 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
 
 - Reproducible: environment-dependent
 - Related Files: none
-- Recurrence-Count: 6
-- Last-Seen: 2026-07-29
+- Recurrence-Count: 7
+- Last-Seen: 2026-07-30
 
 ### Resolution
 
@@ -5248,6 +5294,9 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
   On 2026-07-29, the first selected-task-detail GPUI test rebuild hit OS 1455 while mapping cached
   GPUI and download rlibs despite the low-peak settings; no user application was terminated and
   verification was retried after the failed compiler process released its commit charge.
+  On 2026-07-30, the first post-review task-window regression rebuild exhausted a 2 MiB compiler
+  allocation and then failed to map cached GPUI metadata with OS 1455. No compiler process survived;
+  verification resumed with the same low-peak environment after virtual commit recovered.
 
 ---
 ## [ERR-20260728-GITPUBLISH] github_publish_prerequisites_missing

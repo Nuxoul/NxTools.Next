@@ -14,7 +14,8 @@ pub(crate) enum DownloadWindowPhase {
 pub(crate) enum DownloadWindowDirective {
     None,
     Open(DownloadWindowPhase),
-    FocusExisting,
+    OpenAndFocus(DownloadWindowPhase),
+    FocusExisting(DownloadWindowPhase),
     RefreshExisting,
     TransformExisting(DownloadWindowPhase),
     CloseExisting,
@@ -43,10 +44,10 @@ impl DownloadWindowLifecycle {
         phase: DownloadWindowPhase,
     ) -> DownloadWindowDirective {
         match self.open.entry(task_id) {
-            Entry::Occupied(_) => DownloadWindowDirective::FocusExisting,
+            Entry::Occupied(_) => DownloadWindowDirective::FocusExisting(phase),
             Entry::Vacant(entry) => {
                 entry.insert(phase);
-                DownloadWindowDirective::Open(phase)
+                DownloadWindowDirective::OpenAndFocus(phase)
             }
         }
     }
@@ -61,7 +62,7 @@ impl DownloadWindowLifecycle {
         phase: DownloadWindowPhase,
     ) -> DownloadWindowDirective {
         match self.open.entry(task_id) {
-            Entry::Occupied(_) => DownloadWindowDirective::FocusExisting,
+            Entry::Occupied(_) => DownloadWindowDirective::RefreshExisting,
             Entry::Vacant(entry) => {
                 entry.insert(phase);
                 DownloadWindowDirective::Open(phase)
@@ -131,11 +132,11 @@ mod tests {
 
         assert_eq!(
             lifecycle.request_progress(task_id),
-            DownloadWindowDirective::Open(DownloadWindowPhase::Progress)
+            DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Progress)
         );
         assert_eq!(
             lifecycle.request_progress(task_id),
-            DownloadWindowDirective::FocusExisting
+            DownloadWindowDirective::FocusExisting(DownloadWindowPhase::Progress)
         );
     }
 
@@ -177,7 +178,7 @@ mod tests {
         );
         assert_eq!(
             lifecycle.request_progress(task_id),
-            DownloadWindowDirective::FocusExisting
+            DownloadWindowDirective::FocusExisting(DownloadWindowPhase::Progress)
         );
     }
 
@@ -218,7 +219,27 @@ mod tests {
         );
         assert_eq!(
             lifecycle.reopen_terminal_fallback(task_id, DownloadWindowPhase::Completed),
-            DownloadWindowDirective::FocusExisting
+            DownloadWindowDirective::RefreshExisting
+        );
+    }
+
+    #[test]
+    fn a_stale_completed_window_reopen_keeps_the_requested_terminal_phase() {
+        let task_id = DownloadTaskId::new();
+        let mut lifecycle = DownloadWindowLifecycle::default();
+
+        assert_eq!(
+            lifecycle.request_window(task_id, DownloadWindowPhase::Completed),
+            DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Completed)
+        );
+        assert_eq!(
+            lifecycle.request_window(task_id, DownloadWindowPhase::Completed),
+            DownloadWindowDirective::FocusExisting(DownloadWindowPhase::Completed)
+        );
+        lifecycle.window_closed(task_id);
+        assert_eq!(
+            lifecycle.request_window(task_id, DownloadWindowPhase::Completed),
+            DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Completed)
         );
     }
 

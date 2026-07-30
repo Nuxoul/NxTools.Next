@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use chrono::{Local, NaiveDateTime, TimeZone};
 use gpui::{
@@ -23,8 +24,8 @@ use nxtools_download::{
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
-    BeginFileDragCommand, OpenShellTargetCommand, PickDirectoryCommand, PlatformCommand,
-    PlatformCommandResult, SetTaskbarProgressCommand, SetWindowBoundsCommand,
+    ActivateWindowCommand, BeginFileDragCommand, OpenShellTargetCommand, PickDirectoryCommand,
+    PlatformCommand, PlatformCommandResult, SetTaskbarProgressCommand, SetWindowBoundsCommand,
     SetWindowTopmostCommand, ShellOpenAction, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
@@ -100,6 +101,38 @@ struct DownloadTaskWindow {
     window: AnyWindowHandle,
     view: Entity<DownloadTaskWindowView>,
     native_window_handle: i64,
+    generation: uuid::Uuid,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TaskWindowIdentity {
+    native_window_handle: i64,
+    generation: uuid::Uuid,
+}
+
+#[derive(Clone, Copy)]
+enum TaskWindowActivation {
+    Fresh(DownloadWindowPhase),
+    Reused(DownloadWindowPhase),
+}
+
+impl TaskWindowActivation {
+    fn phase(self) -> DownloadWindowPhase {
+        match self {
+            Self::Fresh(phase) | Self::Reused(phase) => phase,
+        }
+    }
+
+    fn replace_on_failure(self) -> bool {
+        matches!(self, Self::Reused(_))
+    }
+}
+
+struct PendingTaskWindowActivation {
+    task_id: DownloadTaskId,
+    window: TaskWindowIdentity,
+    activation: TaskWindowActivation,
+    started_at: Instant,
 }
 
 pub(crate) struct DownloadApplication {
@@ -115,6 +148,12 @@ pub(crate) struct DownloadApplication {
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
+    pending_task_window_activations: HashMap<uuid::Uuid, PendingTaskWindowActivation>,
+    pending_task_window_replacements: HashMap<DownloadTaskId, TaskWindowIdentity>,
+    #[cfg(test)]
+    task_window_native_handle_override: Option<i64>,
+    #[cfg(test)]
+    task_window_activation_commands: Rc<RefCell<Vec<PlatformCommand>>>,
     #[allow(
         dead_code,
         reason = "retained for the Phase 3 task context-menu delete action"
@@ -205,6 +244,12 @@ impl DownloadApplication {
             awaiting_delayed_progress,
             task_window_lifecycle,
             task_windows: HashMap::new(),
+            pending_task_window_activations: HashMap::new(),
+            pending_task_window_replacements: HashMap::new(),
+            #[cfg(test)]
+            task_window_native_handle_override: None,
+            #[cfg(test)]
+            task_window_activation_commands: Rc::new(RefCell::new(Vec::new())),
             delete_confirmation_windows: HashMap::new(),
             new_download_window: None,
             schedule_window: None,
@@ -214,6 +259,16 @@ impl DownloadApplication {
             last_event_sequence: 0,
             _event_task: event_task,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn configure_task_window_activation_test(
+        &mut self,
+        native_window_handle: i64,
+    ) -> Rc<RefCell<Vec<PlatformCommand>>> {
+        self.task_window_native_handle_override = Some(native_window_handle);
+        self.task_window_activation_commands.borrow_mut().clear();
+        Rc::clone(&self.task_window_activation_commands)
     }
 
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
@@ -786,12 +841,15 @@ impl DownloadApplication {
         let phase = self
             .task(task_id)
             .map_or(DownloadWindowPhase::Progress, |task| {
-                match task.task.status() {
-                    DownloadStatus::Completed => DownloadWindowPhase::Completed,
-                    DownloadStatus::Failed => DownloadWindowPhase::Failed,
-                    _ => DownloadWindowPhase::Progress,
-                }
+                download_window_phase(task.task.status())
             });
+        info!(
+            event = "download.task_window.reopen_requested",
+            task_id = %task_id.as_uuid(),
+            ?phase,
+            reused = self.task_windows.contains_key(&task_id),
+            "download task window requested"
+        );
         let directive = if phase == DownloadWindowPhase::Progress {
             self.task_window_lifecycle.request_progress(task_id)
         } else {
@@ -809,25 +867,33 @@ impl DownloadApplication {
         match directive {
             DownloadWindowDirective::None => {}
             DownloadWindowDirective::Open(phase) => {
-                self.open_task_window(task_id, phase, cx);
+                self.open_task_window(task_id, phase, None, cx);
             }
-            DownloadWindowDirective::FocusExisting => {
-                if !self.update_task_window(task_id, true, None, cx) {
-                    self.task_window_lifecycle.window_closed(task_id);
-                    let retry = self.task_window_lifecycle.request_progress(task_id);
+            DownloadWindowDirective::OpenAndFocus(phase) => {
+                self.open_task_window(task_id, phase, Some(TaskWindowActivation::Fresh(phase)), cx);
+            }
+            DownloadWindowDirective::FocusExisting(expected_phase) => {
+                if !self.update_task_window(
+                    task_id,
+                    Some(TaskWindowActivation::Reused(expected_phase)),
+                    None,
+                    cx,
+                ) {
+                    self.clear_task_window_registration(task_id);
+                    let retry = self
+                        .task_window_lifecycle
+                        .request_window(task_id, expected_phase);
                     self.apply_task_window_directive(task_id, retry, cx);
                 }
             }
             DownloadWindowDirective::RefreshExisting => {
-                if !self.update_task_window(task_id, false, None, cx) {
-                    self.task_windows.remove(&task_id);
-                    self.task_window_lifecycle.window_closed(task_id);
+                if !self.update_task_window(task_id, None, None, cx) {
+                    self.clear_task_window_registration(task_id);
                 }
             }
             DownloadWindowDirective::TransformExisting(phase) => {
-                if !self.update_task_window(task_id, false, Some(phase), cx) {
-                    self.task_windows.remove(&task_id);
-                    self.task_window_lifecycle.window_closed(task_id);
+                if !self.update_task_window(task_id, None, Some(phase), cx) {
+                    self.clear_task_window_registration(task_id);
                     let retry = self
                         .task_window_lifecycle
                         .reopen_terminal_fallback(task_id, phase);
@@ -835,7 +901,7 @@ impl DownloadApplication {
                 }
             }
             DownloadWindowDirective::CloseExisting => {
-                if let Some(entry) = self.task_windows.remove(&task_id) {
+                if let Some(entry) = self.clear_task_window_registration(task_id) {
                     let _ = entry
                         .window
                         .update(cx, |_, window, _| window.remove_window());
@@ -844,27 +910,43 @@ impl DownloadApplication {
         }
     }
 
+    fn clear_task_window_registration(
+        &mut self,
+        task_id: DownloadTaskId,
+    ) -> Option<DownloadTaskWindow> {
+        clear_pending_task_window_work(
+            task_id,
+            &mut self.pending_task_window_activations,
+            &mut self.pending_task_window_replacements,
+        );
+        self.task_window_lifecycle.window_closed(task_id);
+        self.task_windows.remove(&task_id)
+    }
+
     fn open_task_window(
         &mut self,
         task_id: DownloadTaskId,
         phase: DownloadWindowPhase,
+        activation: Option<TaskWindowActivation>,
         cx: &mut Context<Self>,
     ) {
         let application = cx.entity();
         let snapshot = self.task(task_id).cloned();
         let progress = self.progress(task_id).cloned();
-        let focus = phase == DownloadWindowPhase::Progress;
         let window_size = download_task_window_size(phase);
         let window_bounds = WindowBounds::centered(window_size, cx);
+        let window_generation = uuid::Uuid::new_v4();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
         let view_slot = Rc::new(RefCell::new(None));
         let opened_view_slot = Rc::clone(&view_slot);
+        #[cfg(test)]
+        let native_window_handle_override = self.task_window_native_handle_override;
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus,
+                focus: activation.is_some(),
                 show: true,
                 kind: WindowKind::Normal,
                 is_movable: true,
@@ -878,7 +960,12 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
+                #[cfg(test)]
+                let resolved_native_handle = native_window_handle_override
+                    .unwrap_or_else(|| native_window_handle(window).unwrap_or_default());
+                #[cfg(not(test))]
+                let resolved_native_handle = native_window_handle(window).unwrap_or_default();
+                *opened_native_slot.borrow_mut() = resolved_native_handle;
                 let view = cx
                     .new(|_| DownloadTaskWindowView::new(application, task_id, snapshot, progress));
                 *opened_view_slot.borrow_mut() = Some(view.clone());
@@ -897,15 +984,18 @@ impl DownloadApplication {
                         window: window.into(),
                         view,
                         native_window_handle: *native_slot.borrow(),
+                        generation: window_generation,
                     },
                 );
-                if matches!(
-                    phase,
-                    DownloadWindowPhase::Completed | DownloadWindowPhase::Failed
-                ) {
+                if activation.is_none()
+                    && matches!(
+                        phase,
+                        DownloadWindowPhase::Completed | DownloadWindowPhase::Failed
+                    )
+                {
                     raise_terminal_window_without_activation(&self.platform, *native_slot.borrow());
                 }
-                let _ = self.update_task_window(task_id, false, None, cx);
+                let _ = self.update_task_window(task_id, activation, None, cx);
             }
             Err(error) => {
                 self.task_window_lifecycle.window_closed(task_id);
@@ -924,7 +1014,7 @@ impl DownloadApplication {
     fn update_task_window(
         &mut self,
         task_id: DownloadTaskId,
-        activate: bool,
+        activation: Option<TaskWindowActivation>,
         resize_for: Option<DownloadWindowPhase>,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -934,6 +1024,10 @@ impl DownloadApplication {
         let snapshot = self.task(task_id).cloned();
         let progress = self.progress(task_id).cloned();
         let native_window_handle = entry.native_window_handle;
+        let window_identity = TaskWindowIdentity {
+            native_window_handle,
+            generation: entry.generation,
+        };
         let window_handle = entry.window;
         let view = entry.view.clone();
         let platform = Rc::clone(&self.platform);
@@ -943,7 +1037,7 @@ impl DownloadApplication {
         view.update(cx, |view, cx| {
             view.replace_snapshot(snapshot, progress, cx);
         });
-        window_handle
+        let updated = window_handle
             .update(cx, move |_, window, _| {
                 if let Some(phase) = resize_for {
                     let new_size = download_task_window_size(phase);
@@ -976,12 +1070,233 @@ impl DownloadApplication {
                 ) {
                     raise_terminal_window_without_activation(&platform, native_window_handle);
                 }
-                if activate {
+                if activation.is_some() {
                     window.activate_window();
                 }
                 window.refresh();
             })
-            .is_ok()
+            .is_ok();
+        if updated && let Some(activation) = activation {
+            self.queue_task_window_activation(task_id, window_identity, activation, cx);
+        }
+        updated
+    }
+
+    fn queue_task_window_activation(
+        &mut self,
+        task_id: DownloadTaskId,
+        window: TaskWindowIdentity,
+        activation: TaskWindowActivation,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(command) = task_window_activation_command(window.native_window_handle) else {
+            warn!(
+                event = "download.task_window.activation_rejected",
+                success = false,
+                task_id = %task_id.as_uuid(),
+                window_generation = %window.generation,
+                reason = "native_window_unavailable",
+                "download task window native activation was unavailable"
+            );
+            if activation.replace_on_failure() {
+                self.schedule_task_window_replacement(
+                    task_id,
+                    window,
+                    activation.phase(),
+                    "native_window_unavailable",
+                    cx,
+                );
+            }
+            return;
+        };
+        if self
+            .pending_task_window_activations
+            .values()
+            .any(|pending| pending.task_id == task_id && pending.window == window)
+        {
+            return;
+        }
+        let started_at = Instant::now();
+        #[cfg(test)]
+        let send_result = if self.task_window_native_handle_override.is_some() {
+            self.task_window_activation_commands
+                .borrow_mut()
+                .push(command);
+            Ok(uuid::Uuid::new_v4())
+        } else {
+            self.platform.send_command(command)
+        };
+        #[cfg(not(test))]
+        let send_result = self.platform.send_command(command);
+        match send_result {
+            Ok(correlation_id) => {
+                self.pending_task_window_activations.insert(
+                    correlation_id,
+                    PendingTaskWindowActivation {
+                        task_id,
+                        window,
+                        activation,
+                        started_at,
+                    },
+                );
+                info!(
+                    event = "download.task_window.activation_accepted",
+                    accepted = true,
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    window_handle = window.native_window_handle,
+                    window_generation = %window.generation,
+                    "download task window activation accepted"
+                );
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(Duration::from_secs(5)).await;
+                    let _ = this.update(cx, |application, cx| {
+                        application.task_window_activation_timed_out(correlation_id, cx);
+                    });
+                })
+                .detach();
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.task_window.activation_rejected",
+                    success = false,
+                    task_id = %task_id.as_uuid(),
+                    window_handle = window.native_window_handle,
+                    window_generation = %window.generation,
+                    %error,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download task window activation was rejected"
+                );
+                if activation.replace_on_failure() {
+                    self.schedule_task_window_replacement(
+                        task_id,
+                        window,
+                        activation.phase(),
+                        "platform_command_rejected",
+                        cx,
+                    );
+                }
+            }
+        }
+    }
+
+    fn task_window_activation_timed_out(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_task_window_activations.remove(&correlation_id) else {
+            return;
+        };
+        warn!(
+            event = "download.task_window.activation_timed_out",
+            success = false,
+            %correlation_id,
+            task_id = %pending.task_id.as_uuid(),
+            window_handle = pending.window.native_window_handle,
+            window_generation = %pending.window.generation,
+            elapsed_ms = pending.started_at.elapsed().as_millis(),
+            "download task window activation timed out"
+        );
+        if pending.activation.replace_on_failure() {
+            self.schedule_task_window_replacement(
+                pending.task_id,
+                pending.window,
+                pending.activation.phase(),
+                "platform_command_timeout",
+                cx,
+            );
+        }
+    }
+
+    fn schedule_task_window_replacement(
+        &mut self,
+        task_id: DownloadTaskId,
+        window: TaskWindowIdentity,
+        expected_phase: DownloadWindowPhase,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_task_window_replacements.contains_key(&task_id) {
+            return;
+        }
+        self.pending_task_window_replacements
+            .insert(task_id, window);
+        info!(
+            event = "download.task_window.replacement_scheduled",
+            task_id = %task_id.as_uuid(),
+            window_handle = window.native_window_handle,
+            window_generation = %window.generation,
+            ?expected_phase,
+            reason,
+            "download task window replacement scheduled"
+        );
+        let application = cx.entity();
+        cx.defer(move |cx| {
+            application.update(cx, |application, cx| {
+                application.replace_task_window(task_id, expected_phase, reason, cx);
+            });
+        });
+    }
+
+    fn replace_task_window(
+        &mut self,
+        task_id: DownloadTaskId,
+        expected_phase: DownloadWindowPhase,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(stale_window) = self.pending_task_window_replacements.remove(&task_id) else {
+            return;
+        };
+        let current_window = self
+            .task_windows
+            .get(&task_id)
+            .map(|entry| TaskWindowIdentity {
+                native_window_handle: entry.native_window_handle,
+                generation: entry.generation,
+            });
+        if !replacement_targets_current_window(current_window, stale_window) {
+            info!(
+                event = "download.task_window.replacement_aborted",
+                task_id = %task_id.as_uuid(),
+                stale_window_handle = stale_window.native_window_handle,
+                stale_window_generation = %stale_window.generation,
+                ?current_window,
+                ?expected_phase,
+                reason = "window_generation_changed",
+                "download task window replacement no longer targets the current window"
+            );
+            return;
+        }
+        self.pending_task_window_activations
+            .retain(|_, pending| pending.task_id != task_id);
+        if let Some(entry) = self.task_windows.remove(&task_id) {
+            let _ = entry
+                .window
+                .update(cx, |_, window, _| window.remove_window());
+        }
+        self.task_window_lifecycle.window_closed(task_id);
+        let Some(task) = self.task(task_id) else {
+            warn!(
+                event = "download.task_window.replacement_aborted",
+                task_id = %task_id.as_uuid(),
+                ?expected_phase,
+                reason = "task_missing",
+                "download task window replacement was aborted"
+            );
+            return;
+        };
+        let phase = download_window_phase(task.task.status());
+        info!(
+            event = "download.task_window.replacement_started",
+            task_id = %task_id.as_uuid(),
+            ?phase,
+            reason,
+            "download task window replacement started"
+        );
+        let directive = self.task_window_lifecycle.request_window(task_id, phase);
+        self.apply_task_window_directive(task_id, directive, cx);
     }
 
     pub(crate) fn handle_platform_notification(
@@ -996,6 +1311,41 @@ impl DownloadApplication {
         else {
             return;
         };
+        if let Some(pending) = self.pending_task_window_activations.remove(&correlation_id) {
+            if result.success {
+                info!(
+                    event = "download.task_window.activation_completed",
+                    success = true,
+                    %correlation_id,
+                    task_id = %pending.task_id.as_uuid(),
+                    window_handle = pending.window.native_window_handle,
+                    window_generation = %pending.window.generation,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download task window activation completed"
+                );
+            } else {
+                warn!(
+                    event = "download.task_window.activation_failed",
+                    success = false,
+                    %correlation_id,
+                    task_id = %pending.task_id.as_uuid(),
+                    window_handle = pending.window.native_window_handle,
+                    window_generation = %pending.window.generation,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download task window activation failed"
+                );
+                if pending.activation.replace_on_failure() {
+                    self.schedule_task_window_replacement(
+                        pending.task_id,
+                        pending.window,
+                        pending.activation.phase(),
+                        "platform_activation_failed",
+                        cx,
+                    );
+                }
+            }
+            return;
+        }
         if self.pending_directory_picker != Some(correlation_id) {
             return;
         }
@@ -1193,6 +1543,36 @@ impl DownloadApplication {
                 _ => {}
             }
         }
+    }
+}
+
+fn task_window_activation_command(window_handle: i64) -> Option<PlatformCommand> {
+    (window_handle != 0).then_some(PlatformCommand::ActivateWindow(ActivateWindowCommand {
+        window_handle,
+    }))
+}
+
+fn replacement_targets_current_window(
+    current: Option<TaskWindowIdentity>,
+    stale: TaskWindowIdentity,
+) -> bool {
+    current == Some(stale)
+}
+
+fn clear_pending_task_window_work(
+    task_id: DownloadTaskId,
+    activations: &mut HashMap<uuid::Uuid, PendingTaskWindowActivation>,
+    replacements: &mut HashMap<DownloadTaskId, TaskWindowIdentity>,
+) {
+    activations.retain(|_, pending| pending.task_id != task_id);
+    replacements.remove(&task_id);
+}
+
+fn download_window_phase(status: DownloadStatus) -> DownloadWindowPhase {
+    match status {
+        DownloadStatus::Completed => DownloadWindowPhase::Completed,
+        DownloadStatus::Failed => DownloadWindowPhase::Failed,
+        _ => DownloadWindowPhase::Progress,
     }
 }
 
@@ -3389,6 +3769,119 @@ mod tests {
         assert_eq!(
             (completed.width.as_f32(), completed.height.as_f32()),
             (440.0, 180.0)
+        );
+    }
+
+    #[test]
+    fn reopening_a_task_window_uses_the_native_restore_and_foreground_boundary() {
+        let source = include_str!("downloads.rs");
+        let update_task_window = source
+            .split("    fn update_task_window(")
+            .nth(1)
+            .and_then(|body| {
+                body.split("    pub(crate) fn handle_platform_notification")
+                    .next()
+            })
+            .expect("DownloadApplication::update_task_window body");
+
+        assert!(
+            update_task_window.contains("queue_task_window_activation"),
+            "native activation must be tracked for bounded terminal diagnostics"
+        );
+        assert_eq!(task_window_activation_command(0), None);
+        assert!(matches!(
+            task_window_activation_command(42),
+            Some(PlatformCommand::ActivateWindow(ActivateWindowCommand {
+                window_handle: 42
+            }))
+        ));
+    }
+
+    #[test]
+    fn a_late_activation_result_cannot_replace_a_new_window_generation() {
+        let stale = TaskWindowIdentity {
+            native_window_handle: 42,
+            generation: uuid::Uuid::new_v4(),
+        };
+        let replacement = TaskWindowIdentity {
+            native_window_handle: 42,
+            generation: uuid::Uuid::new_v4(),
+        };
+
+        assert!(replacement_targets_current_window(Some(stale), stale));
+        assert!(
+            !replacement_targets_current_window(Some(replacement), stale),
+            "even a recycled HWND must not let an old activation result remove the new window"
+        );
+        assert!(!replacement_targets_current_window(None, stale));
+    }
+
+    #[test]
+    fn stale_window_cleanup_discards_only_that_tasks_inflight_activation() {
+        let stale_task = DownloadTaskId::new();
+        let other_task = DownloadTaskId::new();
+        let stale_window = TaskWindowIdentity {
+            native_window_handle: 42,
+            generation: uuid::Uuid::new_v4(),
+        };
+        let other_window = TaskWindowIdentity {
+            native_window_handle: 84,
+            generation: uuid::Uuid::new_v4(),
+        };
+        let stale_activation = uuid::Uuid::new_v4();
+        let other_activation = uuid::Uuid::new_v4();
+        let mut activations = HashMap::from([
+            (
+                stale_activation,
+                PendingTaskWindowActivation {
+                    task_id: stale_task,
+                    window: stale_window,
+                    activation: TaskWindowActivation::Reused(DownloadWindowPhase::Progress),
+                    started_at: Instant::now(),
+                },
+            ),
+            (
+                other_activation,
+                PendingTaskWindowActivation {
+                    task_id: other_task,
+                    window: other_window,
+                    activation: TaskWindowActivation::Reused(DownloadWindowPhase::Progress),
+                    started_at: Instant::now(),
+                },
+            ),
+        ]);
+        let mut replacements =
+            HashMap::from([(stale_task, stale_window), (other_task, other_window)]);
+
+        clear_pending_task_window_work(stale_task, &mut activations, &mut replacements);
+
+        assert!(!activations.contains_key(&stale_activation));
+        assert!(!replacements.contains_key(&stale_task));
+        assert!(activations.contains_key(&other_activation));
+        assert_eq!(replacements.get(&other_task), Some(&other_window));
+    }
+
+    #[test]
+    fn explicit_terminal_reopen_is_activating_while_automatic_fallback_is_passive() {
+        let task_id = DownloadTaskId::new();
+        let mut lifecycle = DownloadWindowLifecycle::default();
+
+        assert_eq!(
+            lifecycle.request_window(task_id, DownloadWindowPhase::Completed),
+            DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Completed)
+        );
+        lifecycle.window_closed(task_id);
+        assert_eq!(
+            lifecycle.reopen_terminal_fallback(task_id, DownloadWindowPhase::Completed),
+            DownloadWindowDirective::Open(DownloadWindowPhase::Completed)
+        );
+        assert!(
+            !TaskWindowActivation::Fresh(DownloadWindowPhase::Completed).replace_on_failure(),
+            "a fresh window must not loop through replacements when native activation is rejected"
+        );
+        assert!(
+            TaskWindowActivation::Reused(DownloadWindowPhase::Completed).replace_on_failure(),
+            "a rejected reused-window activation must fall back to one guarded replacement"
         );
     }
 
