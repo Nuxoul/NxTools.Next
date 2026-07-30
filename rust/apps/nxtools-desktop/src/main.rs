@@ -76,6 +76,7 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
         .with_assets(NxToolsAssets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
+            gpui_component::set_locale("zh-CN");
             Theme::change(ThemeMode::Dark, None, cx);
             let clear = transparent_black();
             let visual_theme = crate::theme::Theme::zed_dark();

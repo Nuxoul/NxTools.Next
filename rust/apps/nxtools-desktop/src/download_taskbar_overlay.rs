@@ -11,8 +11,14 @@ use tracing::{info, warn};
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
 
-pub(crate) const TASKBAR_OVERLAY_WIDTH: i32 = 280;
-pub(crate) const TASKBAR_OVERLAY_HEIGHT: i32 = 3;
+pub(crate) const TASKBAR_OVERLAY_WIDTH: i32 = 132;
+pub(crate) const TASKBAR_OVERLAY_HEIGHT: i32 = 8;
+const TASKBAR_OVERLAY_MAX_LANES: usize = 3;
+const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
+const _: () = {
+    assert!(TASKBAR_OVERLAY_WIDTH <= 160);
+    assert!(TASKBAR_OVERLAY_HEIGHT <= 8);
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTaskbarOverlaySample {
@@ -22,49 +28,83 @@ pub(crate) struct DownloadTaskbarOverlaySample {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DownloadTaskbarOverlayModel {
-    Hidden,
+pub(crate) enum DownloadTaskbarOverlayLane {
     Indeterminate,
     Determinate { completed: u64, total: u64 },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum DownloadTaskbarOverlayModel {
+    Hidden,
+    Visible {
+        lanes: Vec<DownloadTaskbarOverlayLane>,
+    },
+}
+
 impl DownloadTaskbarOverlayModel {
-    pub(crate) fn is_visible(self) -> bool {
+    pub(crate) fn is_visible(&self) -> bool {
         !matches!(self, Self::Hidden)
+    }
+
+    #[cfg(test)]
+    fn visible_lane_count(&self) -> usize {
+        match self {
+            Self::Hidden => 0,
+            Self::Visible { lanes } => lanes.len(),
+        }
+    }
+}
+
+fn taskbar_progress_lane(
+    samples: impl IntoIterator<Item = DownloadTaskbarOverlaySample>,
+) -> DownloadTaskbarOverlayLane {
+    let mut completed = 0_u64;
+    let mut total = 0_u64;
+    for sample in samples {
+        let Some(sample_total) = sample.total_bytes.filter(|total| *total > 0) else {
+            return DownloadTaskbarOverlayLane::Indeterminate;
+        };
+        completed = completed.saturating_add(sample.downloaded_bytes.min(sample_total));
+        total = total.saturating_add(sample_total);
+    }
+    if total == 0 {
+        DownloadTaskbarOverlayLane::Indeterminate
+    } else {
+        DownloadTaskbarOverlayLane::Determinate { completed, total }
     }
 }
 
 pub(crate) fn aggregate_taskbar_progress(
     samples: impl IntoIterator<Item = DownloadTaskbarOverlaySample>,
 ) -> DownloadTaskbarOverlayModel {
-    let mut active_count = 0_u64;
-    let mut completed = 0_u64;
-    let mut total = 0_u64;
-    for sample in samples {
-        if !matches!(
-            sample.status,
-            DownloadStatus::Probing
-                | DownloadStatus::Waiting
-                | DownloadStatus::Downloading
-                | DownloadStatus::Finalizing
-                | DownloadStatus::Verifying
-        ) {
-            continue;
-        }
-        active_count = active_count.saturating_add(1);
-        let Some(sample_total) = sample.total_bytes.filter(|total| *total > 0) else {
-            return DownloadTaskbarOverlayModel::Indeterminate;
-        };
-        completed = completed.saturating_add(sample.downloaded_bytes.min(sample_total));
-        total = total.saturating_add(sample_total);
+    let active = samples
+        .into_iter()
+        .filter(|sample| {
+            matches!(
+                sample.status,
+                DownloadStatus::Probing
+                    | DownloadStatus::Waiting
+                    | DownloadStatus::Downloading
+                    | DownloadStatus::Finalizing
+                    | DownloadStatus::Verifying
+            )
+        })
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        return DownloadTaskbarOverlayModel::Hidden;
     }
-    if active_count == 0 {
-        DownloadTaskbarOverlayModel::Hidden
-    } else if total == 0 {
-        DownloadTaskbarOverlayModel::Indeterminate
-    } else {
-        DownloadTaskbarOverlayModel::Determinate { completed, total }
+    let split_at = active
+        .len()
+        .min(TASKBAR_OVERLAY_MAX_LANES.saturating_sub(1));
+    let mut lanes = active[..split_at]
+        .iter()
+        .copied()
+        .map(|sample| taskbar_progress_lane([sample]))
+        .collect::<Vec<_>>();
+    if split_at < active.len() {
+        lanes.push(taskbar_progress_lane(active[split_at..].iter().copied()));
     }
+    DownloadTaskbarOverlayModel::Visible { lanes }
 }
 
 pub(crate) struct DownloadTaskbarOverlayView {
@@ -87,6 +127,7 @@ impl DownloadTaskbarOverlayView {
             let next = application.read(cx).taskbar_overlay_model();
             if this.model != next {
                 let visibility_changed = this.model.is_visible() != next.is_visible();
+                let next_visible = next.is_visible();
                 this.model = next;
                 cx.notify();
                 if visibility_changed && this.native_window_handle != 0 {
@@ -94,20 +135,20 @@ impl DownloadTaskbarOverlayView {
                         PlatformCommand::SetTaskbarProgressOverlayVisibility(
                             SetTaskbarProgressOverlayVisibilityCommand {
                                 window_handle: this.native_window_handle,
-                                visible: next.is_visible(),
+                                visible: next_visible,
                             },
                         ),
                     ) {
                         Ok(correlation_id) => info!(
                             event = "download.taskbar_overlay.visibility_accepted",
                             %correlation_id,
-                            visible = next.is_visible(),
+                            visible = next_visible,
                             "taskbar overlay visibility change accepted"
                         ),
                         Err(error) => warn!(
                             event = "download.taskbar_overlay.visibility_accept_failed",
                             %error,
-                            visible = next.is_visible(),
+                            visible = next_visible,
                             "taskbar overlay visibility change could not be queued"
                         ),
                     }
@@ -130,10 +171,38 @@ impl Render for DownloadTaskbarOverlayView {
             .size_full()
             .relative()
             .bg(transparent_black())
-            .overflow_hidden();
-        match self.model {
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .justify_center()
+            .gap(px(1.0));
+        match &self.model {
             DownloadTaskbarOverlayModel::Hidden => root,
-            DownloadTaskbarOverlayModel::Indeterminate => root.bg(theme.border_subtle).child(
+            DownloadTaskbarOverlayModel::Visible { lanes } => root.children(
+                lanes
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(index, lane)| taskbar_progress_lane_element(theme, index, lane)),
+            ),
+        }
+    }
+}
+
+fn taskbar_progress_lane_element(
+    theme: Theme,
+    index: usize,
+    lane: DownloadTaskbarOverlayLane,
+) -> gpui::AnyElement {
+    let track = div()
+        .relative()
+        .w_full()
+        .h(px(TASKBAR_OVERLAY_LANE_HEIGHT))
+        .overflow_hidden()
+        .bg(theme.border_subtle);
+    match lane {
+        DownloadTaskbarOverlayLane::Indeterminate => track
+            .child(
                 div()
                     .absolute()
                     .top_0()
@@ -143,27 +212,29 @@ impl Render for DownloadTaskbarOverlayView {
                     .bg(theme.accent)
                     .opacity(0.78)
                     .with_animation(
-                        "download-taskbar-indeterminate",
+                        ("download-taskbar-indeterminate", index),
                         Animation::new(Duration::from_millis(1_400)).repeat(),
                         |segment, delta| {
                             segment.left(px(TASKBAR_OVERLAY_WIDTH as f32 * 0.65 * delta))
                         },
                     ),
-            ),
-            DownloadTaskbarOverlayModel::Determinate { completed, total } => {
-                let ratio = if total == 0 {
-                    0.0
-                } else {
-                    completed as f32 / total as f32
-                }
-                .clamp(0.0, 1.0);
-                root.bg(theme.border_subtle).child(
+            )
+            .into_any_element(),
+        DownloadTaskbarOverlayLane::Determinate { completed, total } => {
+            let ratio = if total == 0 {
+                0.0
+            } else {
+                completed as f32 / total as f32
+            }
+            .clamp(0.0, 1.0);
+            track
+                .child(
                     div()
                         .h_full()
                         .w(px(TASKBAR_OVERLAY_WIDTH as f32 * ratio))
                         .bg(theme.accent),
                 )
-            }
+                .into_any_element()
         }
     }
 }
@@ -173,7 +244,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn aggregate_progress_is_weighted_by_total_bytes() {
+    fn active_downloads_preserve_their_individual_progress() {
         let model = aggregate_taskbar_progress([
             DownloadTaskbarOverlaySample {
                 status: DownloadStatus::Downloading,
@@ -189,9 +260,17 @@ mod tests {
 
         assert_eq!(
             model,
-            DownloadTaskbarOverlayModel::Determinate {
-                completed: 70,
-                total: 200
+            DownloadTaskbarOverlayModel::Visible {
+                lanes: vec![
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 20,
+                        total: 100,
+                    },
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 50,
+                        total: 100,
+                    },
+                ]
             }
         );
     }
@@ -229,6 +308,81 @@ mod tests {
             },
         ]);
 
-        assert_eq!(model, DownloadTaskbarOverlayModel::Indeterminate);
+        assert_eq!(
+            model,
+            DownloadTaskbarOverlayModel::Visible {
+                lanes: vec![
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 20,
+                        total: 100,
+                    },
+                    DownloadTaskbarOverlayLane::Indeterminate,
+                ]
+            }
+        );
+    }
+
+    #[test]
+    fn separate_active_downloads_keep_separate_taskbar_progress_lanes() {
+        let model = aggregate_taskbar_progress([
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 25,
+                total_bytes: Some(100),
+            },
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Waiting,
+                downloaded_bytes: 150,
+                total_bytes: Some(300),
+            },
+        ]);
+
+        assert_eq!(model.visible_lane_count(), 2);
+    }
+
+    #[test]
+    fn overflow_downloads_share_the_last_weighted_lane() {
+        let model = aggregate_taskbar_progress([
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 10,
+                total_bytes: Some(100),
+            },
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 20,
+                total_bytes: Some(100),
+            },
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 30,
+                total_bytes: Some(100),
+            },
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Waiting,
+                downloaded_bytes: 150,
+                total_bytes: Some(300),
+            },
+        ]);
+
+        assert_eq!(
+            model,
+            DownloadTaskbarOverlayModel::Visible {
+                lanes: vec![
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 10,
+                        total: 100,
+                    },
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 20,
+                        total: 100,
+                    },
+                    DownloadTaskbarOverlayLane::Determinate {
+                        completed: 180,
+                        total: 400,
+                    },
+                ]
+            }
+        );
     }
 }

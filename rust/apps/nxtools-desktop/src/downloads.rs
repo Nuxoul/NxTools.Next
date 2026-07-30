@@ -4,17 +4,20 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use chrono::{Local, NaiveDateTime, TimeZone};
+use chrono::{Duration as ChronoDuration, Local, NaiveDate, NaiveTime, TimeZone, Timelike};
 use gpui::{
-    AnyElement, AnyWindowHandle, App, Context, Entity, EventEmitter, FontWeight, IntoElement,
-    MouseButton, Render, ScrollHandle, Subscription, Task, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowControlArea, WindowDecorations, WindowKind, WindowOptions, div, prelude::*,
-    px, size,
+    AnyElement, AnyWindowHandle, App, Context, Corner, Entity, EventEmitter, FontWeight,
+    IntoElement, MouseButton, Render, ScrollHandle, Subscription, Task, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations, WindowKind,
+    WindowOptions, div, prelude::*, px, size,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
+use gpui_component::calendar::{Calendar, CalendarState, Matcher};
 use gpui_component::input::{Input, InputState};
+use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Disableable, Icon, PixelsExt, Root, Sizable};
+use gpui_component::select::{Select, SelectState};
+use gpui_component::{Disableable, Icon, IconName, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
     AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor,
     DownloadTaskbarProgressOverlaySettings,
@@ -2619,6 +2622,62 @@ fn format_clock_minute(value: u16) -> String {
     format!("{:02}:{:02}", value / 60, value % 60)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DelayedStartSelection {
+    date: NaiveDate,
+    hour: u32,
+    minute: u32,
+}
+
+impl DelayedStartSelection {
+    fn resolve_unix_ms(self, now_unix_ms: i64) -> Result<i64, String> {
+        let time = NaiveTime::from_hms_opt(self.hour, self.minute, 0)
+            .ok_or("计划时间必须是 00:00 到 23:59")?;
+        let resolved = Local
+            .from_local_datetime(&self.date.and_time(time))
+            .single()
+            .ok_or("计划时间在当前本地时区无效或存在歧义，请换一个时间")?;
+        let unix_ms = resolved.timestamp_millis();
+        if unix_ms <= now_unix_ms {
+            return Err("计划时间必须晚于当前时间".into());
+        }
+        Ok(unix_ms)
+    }
+}
+
+fn resolve_scheduled_start(
+    selection: Option<DelayedStartSelection>,
+    now_unix_ms: i64,
+) -> Result<Option<i64>, String> {
+    selection
+        .map(|selection| selection.resolve_unix_ms(now_unix_ms))
+        .transpose()
+}
+
+fn read_delayed_start_draft(
+    calendar: &Entity<CalendarState>,
+    hour: &Entity<SelectState<Vec<String>>>,
+    minute: &Entity<SelectState<Vec<String>>>,
+    cx: &App,
+) -> Result<DelayedStartSelection, String> {
+    let date = calendar
+        .read(cx)
+        .date()
+        .start()
+        .ok_or("请选择计划下载日期")?;
+    let hour = hour
+        .read(cx)
+        .selected_value()
+        .and_then(|value| value.parse().ok())
+        .ok_or("请选择计划下载小时")?;
+    let minute = minute
+        .read(cx)
+        .selected_value()
+        .and_then(|value| value.parse().ok())
+        .ok_or("请选择计划下载分钟")?;
+    Ok(DelayedStartSelection { date, hour, minute })
+}
+
 struct DownloadSettingsInput<'a> {
     default_directory: &'a str,
     connection_limit: &'a str,
@@ -3353,7 +3412,11 @@ struct NewDownloadView {
     url: Entity<InputState>,
     directory: Entity<InputState>,
     file_name: Entity<InputState>,
-    scheduled_at: Entity<InputState>,
+    scheduled_calendar: Entity<CalendarState>,
+    scheduled_hour: Entity<SelectState<Vec<String>>>,
+    scheduled_minute: Entity<SelectState<Vec<String>>>,
+    schedule_popover_open: bool,
+    committed_schedule: Option<DelayedStartSelection>,
     default_connection_limit: u16,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
@@ -3381,8 +3444,29 @@ impl NewDownloadView {
         });
         let file_name =
             cx.new(|cx| InputState::new(window, cx).placeholder("可选；留空时使用服务器文件名"));
-        let scheduled_at = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("可选；例如 2026-07-30 09:30（本地时间）")
+        let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
+        let scheduled_calendar = cx.new(|cx| {
+            CalendarState::new(window, cx)
+                .disabled_matcher(Matcher::interval(Some(Local::now().date_naive()), None))
+        });
+        scheduled_calendar.update(cx, |calendar, cx| {
+            calendar.set_date(default_scheduled_at.date_naive(), window, cx);
+        });
+        let scheduled_hour = cx.new(|cx| {
+            SelectState::new(
+                (0..24).map(|hour| format!("{hour:02}")).collect(),
+                Some(IndexPath::default().row(default_scheduled_at.hour() as usize)),
+                window,
+                cx,
+            )
+        });
+        let scheduled_minute = cx.new(|cx| {
+            SelectState::new(
+                (0..60).map(|minute| format!("{minute:02}")).collect(),
+                Some(IndexPath::default().row(default_scheduled_at.minute() as usize)),
+                window,
+                cx,
+            )
         });
         let subscription = cx.subscribe_in(
             &application,
@@ -3405,7 +3489,11 @@ impl NewDownloadView {
             url,
             directory,
             file_name,
-            scheduled_at,
+            scheduled_calendar,
+            scheduled_hour,
+            scheduled_minute,
+            schedule_popover_open: false,
+            committed_schedule: None,
             default_connection_limit,
             confirmed_request: None,
             probe: None,
@@ -3417,29 +3505,15 @@ impl NewDownloadView {
         }
     }
 
-    fn request(&self, cx: &Context<Self>) -> Result<DownloadRequest, String> {
+    fn request(&self, cx: &App) -> Result<DownloadRequest, String> {
         let url = self.url.read(cx).value().trim().to_owned();
         let directory = self.directory.read(cx).value().trim().to_owned();
         let file_name = self.file_name.read(cx).value().trim().to_owned();
-        let scheduled_at = self.scheduled_at.read(cx).value().trim().to_owned();
         if url.is_empty() || directory.is_empty() {
             return Err("下载地址和保存目录不能为空".into());
         }
-        let scheduled_at_unix_ms = if scheduled_at.is_empty() {
-            None
-        } else {
-            let local = NaiveDateTime::parse_from_str(&scheduled_at, "%Y-%m-%d %H:%M")
-                .map_err(|_| "计划时间格式应为 YYYY-MM-DD HH:MM，例如 2026-07-30 09:30")?;
-            let resolved = Local
-                .from_local_datetime(&local)
-                .single()
-                .ok_or("计划时间在当前本地时区无效或存在歧义，请换一个时间")?;
-            let unix_ms = resolved.timestamp_millis();
-            if unix_ms <= Local::now().timestamp_millis() {
-                return Err("计划时间必须晚于当前时间".into());
-            }
-            Some(unix_ms)
-        };
+        let scheduled_at_unix_ms =
+            resolve_scheduled_start(self.committed_schedule, Local::now().timestamp_millis())?;
         let request = DownloadRequest {
             source_url: url,
             save_directory: PathBuf::from(directory),
@@ -3453,6 +3527,32 @@ impl NewDownloadView {
         };
         request.validate().map_err(|error| error.to_string())?;
         Ok(request)
+    }
+
+    fn reset_schedule_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let default = Local::now() + ChronoDuration::minutes(10);
+        let selection = self.committed_schedule.unwrap_or(DelayedStartSelection {
+            date: default.date_naive(),
+            hour: default.hour(),
+            minute: default.minute(),
+        });
+        self.scheduled_calendar.update(cx, |calendar, cx| {
+            calendar.set_date(selection.date, window, cx);
+        });
+        self.scheduled_hour.update(cx, |hour, cx| {
+            hour.set_selected_index(
+                Some(IndexPath::default().row(selection.hour as usize)),
+                window,
+                cx,
+            );
+        });
+        self.scheduled_minute.update(cx, |minute, cx| {
+            minute.set_selected_index(
+                Some(IndexPath::default().row(selection.minute as usize)),
+                window,
+                cx,
+            );
+        });
     }
 
     fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -3645,6 +3745,158 @@ impl Render for NewDownloadView {
         let probing = self.probing;
         let submitting = self.submitting;
         let confirmed = probe.is_some();
+        let schedule_label = if let Some(selection) = self.committed_schedule {
+            format!(
+                "{} {:02}:{:02}",
+                selection.date.format("%m-%d"),
+                selection.hour,
+                selection.minute
+            )
+        } else {
+            "稍后下载".into()
+        };
+        let schedule_view = cx.entity().downgrade();
+        let schedule_calendar = self.scheduled_calendar.clone();
+        let schedule_hour = self.scheduled_hour.clone();
+        let schedule_minute = self.scheduled_minute.clone();
+        let schedule_content_calendar = schedule_calendar.clone();
+        let schedule_clear_view = schedule_view.clone();
+        let schedule_confirm_view = schedule_view.clone();
+        let schedule_confirm_calendar = schedule_calendar.clone();
+        let schedule_confirm_hour = schedule_hour.clone();
+        let schedule_confirm_minute = schedule_minute.clone();
+        let schedule_primary_variant = download_primary_button_variant(theme, cx);
+        let schedule_control = div()
+            .id("download-new-schedule-control")
+            .debug_selector(|| "download-new-schedule-control".into())
+            .flex()
+            .items_center()
+            .child(
+                Popover::new("download-new-schedule-popover")
+                    .anchor(Corner::BottomLeft)
+                    .open(self.schedule_popover_open)
+                    .on_open_change(move |open, window, cx| {
+                        let _ = schedule_view.update(cx, |view, cx| {
+                            view.schedule_popover_open = *open;
+                            if *open {
+                                view.reset_schedule_draft(window, cx);
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .trigger(
+                        Button::new("download-new-schedule-trigger")
+                            .icon(Icon::new(IconName::Calendar))
+                            .label(schedule_label)
+                            .small()
+                            .outline(),
+                    )
+                    .content(move |_, _, _| {
+                        let schedule_clear_view = schedule_clear_view.clone();
+                        let schedule_confirm_view = schedule_confirm_view.clone();
+                        let schedule_confirm_calendar = schedule_confirm_calendar.clone();
+                        let schedule_confirm_hour = schedule_confirm_hour.clone();
+                        let schedule_confirm_minute = schedule_confirm_minute.clone();
+                        div()
+                            .id("download-new-schedule-popover-content")
+                            .debug_selector(|| "download-new-schedule-popover-content".into())
+                            .w(px(286.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.0))
+                            .child(
+                                Calendar::new(&schedule_content_calendar)
+                                    .number_of_months(1)
+                                    .small(),
+                            )
+                            .child(
+                                div()
+                                    .pt(px(8.0))
+                                    .border_t_1()
+                                    .border_color(theme.border_subtle)
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        div()
+                                            .mr(px(4.0))
+                                            .text_size(px(9.5))
+                                            .text_color(theme.text_secondary)
+                                            .child("时间"),
+                                    )
+                                    .child(div().w(px(66.0)).child(
+                                        Select::new(&schedule_hour).menu_width(px(66.0)).small(),
+                                    ))
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(theme.text_muted)
+                                            .child(":"),
+                                    )
+                                    .child(div().w(px(66.0)).child(
+                                        Select::new(&schedule_minute).menu_width(px(66.0)).small(),
+                                    ))
+                                    .child(div().flex_1())
+                                    .child(
+                                        Button::new("download-new-schedule-clear")
+                                            .label("清除")
+                                            .small()
+                                            .ghost()
+                                            .on_click(move |_, _, cx| {
+                                                info!("download delayed-start selection cleared");
+                                                let _ =
+                                                    schedule_clear_view.update(cx, |view, cx| {
+                                                        view.committed_schedule = None;
+                                                        view.schedule_popover_open = false;
+                                                        view.error = None;
+                                                        cx.notify();
+                                                    });
+                                            }),
+                                    )
+                                    .child(
+                                        div()
+                                            .debug_selector(|| {
+                                                "download-new-schedule-confirm".into()
+                                            })
+                                            .child(
+                                                Button::new("download-new-schedule-confirm-button")
+                                                    .label("确定")
+                                                    .small()
+                                                    .custom(schedule_primary_variant)
+                                                    .on_click(move |_, _, cx| {
+                                                        let selection = read_delayed_start_draft(
+                                                            &schedule_confirm_calendar,
+                                                            &schedule_confirm_hour,
+                                                            &schedule_confirm_minute,
+                                                            cx,
+                                                        );
+                                                        let _ = schedule_confirm_view.update(
+                                                            cx,
+                                                            |view, cx| {
+                                                                let selection = match selection {
+                                                                    Ok(selection) => selection,
+                                                                    Err(error) => {
+                                                                        view.error = Some(error);
+                                                                        cx.notify();
+                                                                        return;
+                                                                    }
+                                                                };
+                                                                info!(
+                                                                    "download delayed-start selection committed"
+                                                                );
+                                                                view.committed_schedule =
+                                                                    Some(selection);
+                                                                view.schedule_popover_open = false;
+                                                                view.error = None;
+                                                                cx.notify();
+                                                            },
+                                                        );
+                                                    }),
+                                            ),
+                                    ),
+                            )
+                    }),
+            );
         let footer_actions = if confirmed {
             div()
                 .flex()
@@ -3767,8 +4019,7 @@ impl Render for NewDownloadView {
                                                 }),
                                         ),
                                 )
-                                .child(download_input_field(theme, "文件名", &self.file_name))
-                                .child(download_input_field(theme, "稍后下载", &self.scheduled_at)),
+                                .child(download_input_field(theme, "文件名", &self.file_name)),
                         )
                         .child(
                             div()
@@ -3874,6 +4125,8 @@ impl Render for NewDownloadView {
                 .into_any_element()
         };
         div()
+            .id("download-new-root")
+            .debug_selector(|| "download-new-root".into())
             .size_full()
             .bg(theme.canvas)
             .text_color(theme.text)
@@ -3909,6 +4162,8 @@ impl Render for NewDownloadView {
             .child(body)
             .child(
                 div()
+                    .id("download-new-footer")
+                    .debug_selector(|| "download-new-footer".into())
                     .h(px(44.0))
                     .px(px(16.0))
                     .border_t_1()
@@ -3916,6 +4171,9 @@ impl Render for NewDownloadView {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
+                    .when(confirmed, |footer| {
+                        footer.child(schedule_control).child(div().w(px(8.0)))
+                    })
                     .child(footer_actions)
                     .child(div().flex_1())
                     .child(
@@ -5001,6 +5259,180 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[gpui::test]
+    fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-layout");
+        let application_for_window = application.clone();
+        let default_directory = directory.clone();
+        let default_connection_limit =
+            cx.read(|cx| application.read(cx).default_connection_limit());
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    application_for_window,
+                    default_directory,
+                    default_connection_limit,
+                    window,
+                    cx,
+                )
+            });
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = view_slot
+            .borrow()
+            .clone()
+            .expect("new download view mounted");
+        window
+            .refresh()
+            .expect("render initial new download window");
+        let request = DownloadRequest {
+            source_url: "https://example.test/file.bin".into(),
+            save_directory: directory.clone(),
+            file_name: Some("file.bin".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(default_connection_limit),
+            speed_limit_bytes_per_second: None,
+            scheduled_at_unix_ms: None,
+        };
+        window.update(|window, cx| {
+            let url = view.read(cx).url.clone();
+            url.update(cx, |input, cx| {
+                input.set_value("https://example.test/file.bin", window, cx);
+            });
+            view.update(cx, |view, cx| {
+                view.confirmed_request = Some(request);
+                view.probe = Some(DownloadProbe {
+                    final_url: "https://example.test/file.bin".into(),
+                    file_name: Some("file.bin".into()),
+                    total_bytes: Some(1024),
+                    supports_ranges: true,
+                    content_type: Some("application/octet-stream".into()),
+                    validator: nxtools_download::ResourceValidator::default(),
+                });
+                cx.notify();
+            });
+            window.resize(new_download_window_size(true));
+        });
+        window
+            .refresh()
+            .expect("render confirmed new download window");
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render resized confirmed new download window");
+
+        let schedule = window
+            .debug_bounds("download-new-schedule-control")
+            .expect("schedule control");
+        let footer = window
+            .debug_bounds("download-new-footer")
+            .expect("new download footer");
+        let root = window
+            .debug_bounds("download-new-root")
+            .expect("new download root");
+        assert!(
+            schedule.top() >= footer.top() && schedule.bottom() <= footer.bottom(),
+            "the schedule control must stay inside the fixed footer"
+        );
+        assert!(
+            footer.bottom() <= root.bottom(),
+            "the footer must stay inside the new download window"
+        );
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render opened schedule popover");
+
+        let popup = window
+            .debug_bounds("download-new-schedule-popover-content")
+            .expect("date and time popover");
+        let root_after_open = window
+            .debug_bounds("download-new-root")
+            .expect("new download root after opening schedule");
+        let footer_after_open = window
+            .debug_bounds("download-new-footer")
+            .expect("new download footer after opening schedule");
+        assert_eq!(
+            root_after_open, root,
+            "opening the date-time picker must not resize the download window"
+        );
+        assert_eq!(
+            footer_after_open, footer,
+            "opening the date-time picker must not move or resize the footer"
+        );
+        assert!(
+            popup.left() >= root.left()
+                && popup.right() <= root.right()
+                && popup.top() >= root.top()
+                && popup.bottom() <= root.bottom(),
+            "the date-time picker must snap inside the download window"
+        );
+
+        let confirm = window
+            .debug_bounds("download-new-schedule-confirm")
+            .expect("schedule confirm action");
+        window.simulate_click(confirm.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render committed schedule");
+        window.run_until_parked();
+        window.refresh().expect("render closed schedule popover");
+        let committed = window
+            .read(|cx| view.read(cx).committed_schedule)
+            .expect("confirming the date-time picker must commit the delayed start");
+        assert!(
+            !window.read(|cx| view.read(cx).schedule_popover_open),
+            "confirming the date-time picker must close the popover"
+        );
+
+        let schedule = window
+            .debug_bounds("download-new-schedule-control")
+            .expect("committed schedule control");
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("reopen schedule popover");
+        let calendar = window.read(|cx| view.read(cx).scheduled_calendar.clone());
+        window.update(|window, cx| {
+            calendar.update(cx, |calendar, cx| {
+                calendar.set_date(committed.date + ChronoDuration::days(1), window, cx);
+            });
+        });
+        window.refresh().expect("render modified schedule draft");
+        window.simulate_click(
+            gpui::point(root.left() + px(3.0), root.top() + px(17.0)),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        window.refresh().expect("dismiss modified schedule draft");
+        assert!(
+            !window.read(|cx| view.read(cx).schedule_popover_open),
+            "clicking outside must close the date-time picker"
+        );
+        assert_eq!(
+            window.read(|cx| view.read(cx).committed_schedule),
+            Some(committed),
+            "clicking outside must discard the modified draft"
+        );
+        let request = window
+            .read(|cx| view.read(cx).request(cx))
+            .expect("request after discarding a modified schedule draft");
+        assert_eq!(
+            request.scheduled_at_unix_ms,
+            Some(
+                committed
+                    .resolve_unix_ms(Local::now().timestamp_millis())
+                    .expect("committed schedule remains in the future")
+            ),
+            "submission must continue to use the last confirmed schedule"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
     fn download_application_for_window_test(
         cx: &mut TestAppContext,
         label: &str,
@@ -5322,6 +5754,41 @@ mod tests {
         assert_eq!(
             build_download_schedule(false, false, &no_days, "ignored", "ignored"),
             Ok(None)
+        );
+    }
+
+    #[test]
+    fn optional_delayed_start_uses_selected_local_date_and_time() {
+        let now = Local::now();
+        assert_eq!(
+            resolve_scheduled_start(None, now.timestamp_millis()),
+            Ok(None),
+            "no committed selection means an immediate download"
+        );
+
+        let future = now + ChronoDuration::days(2);
+        let scheduled = resolve_scheduled_start(
+            Some(DelayedStartSelection {
+                date: future.date_naive(),
+                hour: future.hour(),
+                minute: future.minute(),
+            }),
+            now.timestamp_millis(),
+        )
+        .expect("future delayed start")
+        .expect("selected date creates a delayed start");
+        assert!(scheduled > now.timestamp_millis());
+
+        assert_eq!(
+            resolve_scheduled_start(
+                Some(DelayedStartSelection {
+                    date: (now - ChronoDuration::days(1)).date_naive(),
+                    hour: 12,
+                    minute: 0,
+                }),
+                now.timestamp_millis(),
+            ),
+            Err("计划时间必须晚于当前时间".into())
         );
     }
 

@@ -880,13 +880,14 @@ Reverified on 2026-07-29 before implementing the third Stage 3 slice:
 - Scheduling diagnostics carry the command correlation ID and only log task/queue IDs, action,
   due/window timestamps and state transitions. URLs, paths, request headers, cookies and file names
   are excluded.
-- The compact NxTools.Next `NewDownloadView` exposes one optional local-time `稍后下载` field only
-  after a successful probe, alongside destination and file name. It accepts `YYYY-MM-DD HH:MM`,
-  rejects past, invalid and ambiguous local times before submission, preserves the field across a
-  probe refresh, and closes the add window after acceptance. A delayed `StartNow` submission must
-  not open a progress window early; the existing keyed window opens only once the engine admits the
-  task. The field follows the same input focus order, close control and inline validation surface as
-  URL/destination/file name, and it adds no separate popup or focus-stealing window.
+- The compact NxTools.Next `NewDownloadView` exposes optional local date/time scheduling only after
+  a successful probe. The fixed footer owns one compact calendar-icon trigger; clicking it opens an
+  anchored date-time surface with a calendar plus non-editable hour and minute selectors. The
+  surface does not participate in window height or push the footer below the viewport. `确定`
+  commits the draft, `清除` returns to immediate download, and clicking outside discards only the
+  open surface. It rejects past, invalid and ambiguous local times before submission and preserves
+  the committed selection across a probe refresh. A delayed `StartNow` submission must not open a
+  progress window early; the existing keyed window opens only once the engine admits the task.
 - ABDM `desktop/app/.../pages/queue/QueueInfoComponent.kt` presents daily scheduling as one queue
   configuration group: active weekdays first, followed by independent auto-start and auto-stop
   toggles whose time fields are visible only while enabled. Old NxTools
@@ -1072,9 +1073,10 @@ Reverified on 2026-07-30 before implementing the user-selected taskbar overlay s
   those windows receive taskbar buttons. There is therefore no legacy placement or focus behavior
   to preserve for this new surface.
 - NxTools.Next already has the typed `SetTaskbarProgress` seam for per-task window buttons and a
-  low-noise C# `ITaskbarList4` adapter. The new aggregate overlay is a separate interface: Rust
-  produces one presentation model, C# anchors one external GPUI HWND to the taskbar, and GPUI
-  renders it. It must not alter or replace existing per-task taskbar-button progress.
+  low-noise C# `ITaskbarList4` adapter. The taskbar-internal overlay is a separate interface: Rust
+  produces at most three compact presentation lanes (overflow tasks share the last weighted lane),
+  C# anchors one external GPUI HWND to the taskbar, and GPUI renders it. It must not alter or replace
+  existing per-task taskbar-button progress.
 - The visual result is an overlay inside the taskbar's upper edge, but implementation remains
   out-of-process from Explorer. The HWND is no-activate, tool-window, topmost and click-through;
   left/right anchor and X/Y offsets are logical pixels converted with the taskbar DPI and clamped
