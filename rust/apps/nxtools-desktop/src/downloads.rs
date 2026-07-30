@@ -1051,7 +1051,8 @@ impl DownloadApplication {
         let application = cx.entity();
         let platform = Rc::clone(&self.platform);
         let placement = self.config.download.taskbar_progress_overlay.clone();
-        let visible = self.taskbar_overlay_model().is_visible();
+        let initial_model = self.taskbar_overlay_model();
+        let visible = initial_model.is_visible();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
         let window_size = size(
@@ -1108,6 +1109,7 @@ impl DownloadApplication {
                         application.clone(),
                         Rc::clone(&platform),
                         window_handle,
+                        initial_model,
                         cx,
                     )
                 });
@@ -4928,6 +4930,50 @@ mod tests {
                 .expect("system time")
                 .as_nanos()
         ))
+    }
+
+    #[gpui::test]
+    fn taskbar_overlay_window_opens_without_reentering_download_application(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = unique_download_settings_test_directory("taskbar-overlay");
+        std::fs::create_dir_all(&directory).expect("create taskbar overlay test directory");
+        let engine = DownloadEngine::open_in_memory().expect("open taskbar overlay test engine");
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let application = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: directory.clone(),
+                        config: AppConfig::default(),
+                        config_path: directory.join("config.json"),
+                        log_directory: directory.clone(),
+                        database_path: directory.join("downloads.sqlite3"),
+                    },
+                    cx,
+                )
+            })
+        });
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_taskbar_overlay(cx);
+            });
+        });
+
+        assert!(cx.read(|cx| {
+            application
+                .read(cx)
+                .taskbar_overlay_window
+                .as_ref()
+                .is_some()
+        }));
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[gpui::test]

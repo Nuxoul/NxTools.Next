@@ -79,9 +79,9 @@ impl DownloadTaskbarOverlayView {
         application: Entity<DownloadApplication>,
         platform: Rc<PlatformBridge>,
         native_window_handle: i64,
+        initial_model: DownloadTaskbarOverlayModel,
         cx: &mut Context<Self>,
     ) -> Self {
-        let model = application.read(cx).taskbar_overlay_model();
         let platform_for_subscription = Rc::clone(&platform);
         let subscription = cx.observe(&application, move |this, application, cx| {
             let next = application.read(cx).taskbar_overlay_model();
@@ -116,7 +116,7 @@ impl DownloadTaskbarOverlayView {
         });
         Self {
             theme: Theme::zed_dark(),
-            model,
+            model: initial_model,
             native_window_handle,
             _subscription: subscription,
         }
