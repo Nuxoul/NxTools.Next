@@ -3,6 +3,45 @@
 Command failures and integration errors.
 
 ---
+## [ERR-20260730-CARGOFILTERS] cargo_test_accepts_only_one_name_filter
+
+**Logged**: 2026-07-30T16:31:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+`cargo test` accepts one positional test-name filter, not two independent filter arguments.
+
+### Error
+
+```text
+error: unexpected argument 'all_material_symbols_are_embedded' found
+```
+
+### Context
+
+- Attempted to run the schedule-layout and embedded-icon tests in one Cargo invocation by passing
+  both names.
+- Cargo rejected the command before compiling or running product tests.
+
+### Suggested Fix
+
+Run the two filtered tests as separate Cargo commands, or use a single common substring/full suite.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`,
+  `rust/apps/nxtools-desktop/src/assets.rs`
+
+### Resolution
+
+- **Resolved**: 2026-07-30T16:31:00+08:00
+- **Notes**: Replaced the invalid invocation with separate filtered test commands.
+
+---
 
 ## [ERR-20260730-PLATFORMPATH] assumed_desktop_platform_module_path
 

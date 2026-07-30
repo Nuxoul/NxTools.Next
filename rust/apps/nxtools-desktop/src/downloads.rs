@@ -18,7 +18,7 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectState};
-use gpui_component::{Disableable, Icon, IconName, IndexPath, PixelsExt, Root, Sizable};
+use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
     AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor,
     DownloadTaskbarProgressOverlaySettings,
@@ -3802,7 +3802,7 @@ impl Render for NewDownloadView {
                     })
                     .trigger(
                         Button::new("download-new-schedule-trigger")
-                            .icon(Icon::new(IconName::Calendar))
+                            .icon(Icon::new(MaterialIcon::CalendarMonth))
                             .label(schedule_label)
                             .small()
                             .outline(),
@@ -3916,20 +3916,49 @@ impl Render for NewDownloadView {
                     }),
             );
         let footer_actions = if confirmed {
+            Button::new("download-refresh-probe")
+                .icon(Icon::new(MaterialIcon::ManageSearch))
+                .small()
+                .ghost()
+                .disabled(submitting)
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.begin_probe(window, cx);
+                }))
+                .into_any_element()
+        } else {
+            Button::new("download-probe")
+                .icon(Icon::new(if probing {
+                    MaterialIcon::ProgressActivity
+                } else {
+                    MaterialIcon::ManageSearch
+                }))
+                .label(if probing { "正在探测…" } else { "继续" })
+                .small()
+                .custom(download_primary_button_variant(theme, cx))
+                .disabled(probing || submitting)
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.begin_probe(window, cx);
+                }))
+                .into_any_element()
+        };
+        let footer_leading_actions = if confirmed {
             div()
+                .debug_selector(|| "download-new-footer-leading-actions".into())
                 .flex()
                 .items_center()
                 .gap(px(6.0))
-                .child(
-                    Button::new("download-refresh-probe")
-                        .icon(Icon::new(MaterialIcon::ManageSearch))
-                        .small()
-                        .ghost()
-                        .disabled(submitting)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.begin_probe(window, cx);
-                        })),
-                )
+                .child(schedule_control)
+                .child(footer_actions)
+                .into_any_element()
+        } else {
+            footer_actions
+        };
+        let footer_submission_actions = confirmed.then(|| {
+            div()
+                .debug_selector(|| "download-new-footer-submission-actions".into())
+                .flex()
+                .items_center()
+                .gap(px(6.0))
                 .child(
                     Button::new("download-add-to-queue")
                         .label(if submitting {
@@ -3960,22 +3989,7 @@ impl Render for NewDownloadView {
                         })),
                 )
                 .into_any_element()
-        } else {
-            Button::new("download-probe")
-                .icon(Icon::new(if probing {
-                    MaterialIcon::ProgressActivity
-                } else {
-                    MaterialIcon::ManageSearch
-                }))
-                .label(if probing { "正在探测…" } else { "继续" })
-                .small()
-                .custom(download_primary_button_variant(theme, cx))
-                .disabled(probing || submitting)
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.begin_probe(window, cx);
-                }))
-                .into_any_element()
-        };
+        });
         let body = if let Some(probe) = probe {
             let size = probe
                 .total_bytes
@@ -4189,11 +4203,11 @@ impl Render for NewDownloadView {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
-                    .when(confirmed, |footer| {
-                        footer.child(schedule_control).child(div().w(px(8.0)))
-                    })
-                    .child(footer_actions)
+                    .child(footer_leading_actions)
                     .child(div().flex_1())
+                    .when_some(footer_submission_actions, |footer, actions| {
+                        footer.child(actions).child(div().w(px(6.0)))
+                    })
                     .child(
                         Button::new("download-new-cancel")
                             .label("取消")
@@ -4229,7 +4243,7 @@ fn delayed_start_calendar(
                 .items_center()
                 .child(
                     Button::new("download-new-schedule-previous-month")
-                        .icon(Icon::new(IconName::ChevronLeft))
+                        .icon(Icon::new(MaterialIcon::ChevronLeft))
                         .xsmall()
                         .ghost()
                         .on_click(move |_, _, cx| {
@@ -4252,7 +4266,7 @@ fn delayed_start_calendar(
                 )
                 .child(
                     Button::new("download-new-schedule-next-month")
-                        .icon(Icon::new(IconName::ChevronRight))
+                        .icon(Icon::new(MaterialIcon::ChevronRight))
                         .xsmall()
                         .ghost()
                         .on_click(move |_, _, cx| {
@@ -5490,6 +5504,18 @@ mod tests {
         assert!(
             footer.bottom() <= root.bottom(),
             "the footer must stay inside the new download window"
+        );
+        let leading_actions = window
+            .debug_bounds("download-new-footer-leading-actions")
+            .expect("leading footer actions");
+        let submission_actions = window
+            .debug_bounds("download-new-footer-submission-actions")
+            .expect("submission footer actions");
+        assert!(
+            leading_actions.left() >= footer.left()
+                && leading_actions.right() < submission_actions.left()
+                && submission_actions.right() <= footer.right(),
+            "secondary controls must stay left while submit controls form one right-side group"
         );
         window.simulate_click(schedule.center(), Modifiers::default());
         window.run_until_parked();

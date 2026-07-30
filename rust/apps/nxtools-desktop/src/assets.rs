@@ -83,6 +83,12 @@ impl AssetSource for NxToolsAssets {
             "material-symbols/progress-activity.svg" => Some(include_bytes!(
                 "../assets/material-symbols/progress-activity.svg"
             )),
+            "material-symbols/calendar-month.svg" => Some(include_bytes!(
+                "../assets/material-symbols/calendar-month.svg"
+            )),
+            "material-symbols/chevron-left.svg" => Some(include_bytes!(
+                "../assets/material-symbols/chevron-left.svg"
+            )),
             "material-symbols/check.svg" | "icons/check.svg" => {
                 Some(include_bytes!("../assets/material-symbols/check.svg"))
             }
@@ -135,6 +141,8 @@ mod tests {
             "material-symbols/close.svg",
             "material-symbols/info.svg",
             "material-symbols/progress-activity.svg",
+            "material-symbols/calendar-month.svg",
+            "material-symbols/chevron-left.svg",
             "icons/check.svg",
             "icons/chevron-right.svg",
             "icons/circle-x.svg",

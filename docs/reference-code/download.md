@@ -889,6 +889,10 @@ Reverified on 2026-07-29 before implementing the third Stage 3 slice:
   times before submission and preserves the committed selection across a probe refresh. A delayed
   `StartNow` submission must not open a progress window early; the existing keyed window opens only
   once the engine admits the task.
+- Calendar and month-navigation glyphs use locally embedded Google Material Symbols
+  (`calendar_month`, `chevron_left`, `chevron_right`). The desktop asset source does not expose the
+  full gpui-component icon bundle, so using an unregistered `IconName` produces an empty button in
+  the packaged application even when development compilation succeeds.
 - ABDM `desktop/app/.../pages/queue/QueueInfoComponent.kt` presents daily scheduling as one queue
   configuration group: active weekdays first, followed by independent auto-start and auto-stop
   toggles whose time fields are visible only while enabled. Old NxTools

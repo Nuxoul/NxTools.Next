@@ -31,6 +31,8 @@ pub enum MaterialIcon {
     Close,
     Info,
     ProgressActivity,
+    CalendarMonth,
+    ChevronLeft,
     ChevronRight,
     Cancel,
 }
@@ -66,6 +68,8 @@ impl IconNamed for MaterialIcon {
             Self::Close => "material-symbols/close.svg",
             Self::Info => "material-symbols/info.svg",
             Self::ProgressActivity => "material-symbols/progress-activity.svg",
+            Self::CalendarMonth => "material-symbols/calendar-month.svg",
+            Self::ChevronLeft => "material-symbols/chevron-left.svg",
             Self::ChevronRight => "material-symbols/chevron-right.svg",
             Self::Cancel => "material-symbols/cancel.svg",
         }
