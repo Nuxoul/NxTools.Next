@@ -21,6 +21,7 @@ fn task(at: i64) -> DownloadTask {
             connection_limit: Some(8),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: Some(5_000),
+            adaptive_segment_policy: None,
         },
         RequestOrigin::Browser,
         at,

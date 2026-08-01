@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use nxtools_download::{
-    DownloadArtifact, DownloadArtifactKind, DownloadArtifactState, DownloadAttempt,
-    DownloadAttemptError, DownloadAttemptErrorCategory, DownloadDailySchedule, DownloadQueue,
-    DownloadRequest, DownloadRequestError, DownloadRequestHeader, DownloadSchedule,
+    DownloadAdaptiveSegmentPolicy, DownloadArtifact, DownloadArtifactKind, DownloadArtifactState,
+    DownloadAttempt, DownloadAttemptError, DownloadAttemptErrorCategory, DownloadDailySchedule,
+    DownloadQueue, DownloadRequest, DownloadRequestError, DownloadRequestHeader, DownloadSchedule,
     DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskError,
     DownloadWeekday, RequestOrigin, ResourceValidator, TransferPlan, TransferPlanError,
     TransferProtocol,
@@ -20,6 +20,7 @@ fn request() -> DownloadRequest {
         connection_limit: Some(8),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     }
 }
 
@@ -160,6 +161,46 @@ fn request_headers_preserve_order_and_duplicate_names() {
     let restored: DownloadRequest = serde_json::from_str(&json).expect("deserialize request");
 
     assert_eq!(restored.headers, request.headers);
+}
+
+#[test]
+fn adaptive_segment_policy_is_optional_and_rejects_unsafe_ranges() {
+    let mut too_few_segments = request();
+    too_few_segments.adaptive_segment_policy = Some(DownloadAdaptiveSegmentPolicy {
+        enabled: true,
+        max_segments: 7,
+        min_segment_mib: 3,
+    });
+    assert_eq!(
+        too_few_segments.validate(),
+        Err(DownloadRequestError::InvalidAdaptiveMaxSegments(7))
+    );
+
+    let mut invalid_minimum = request();
+    invalid_minimum.adaptive_segment_policy = Some(DownloadAdaptiveSegmentPolicy {
+        enabled: true,
+        max_segments: 32,
+        min_segment_mib: 0,
+    });
+    assert_eq!(
+        invalid_minimum.validate(),
+        Err(DownloadRequestError::InvalidAdaptiveMinSegmentMib(0))
+    );
+
+    let legacy_json = serde_json::json!({
+        "source_url": "https://example.test/archive.zip",
+        "save_directory": "D:\\Downloads",
+        "file_name": "archive.zip",
+        "headers": [],
+        "cookie": null,
+        "referrer": null,
+        "connection_limit": 8,
+        "speed_limit_bytes_per_second": null,
+        "scheduled_at_unix_ms": null
+    });
+    let restored: DownloadRequest =
+        serde_json::from_value(legacy_json).expect("legacy request remains readable");
+    assert_eq!(restored.adaptive_segment_policy, None);
 }
 
 #[test]

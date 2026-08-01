@@ -25,6 +25,7 @@ fn request() -> DownloadRequest {
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     }
 }
 

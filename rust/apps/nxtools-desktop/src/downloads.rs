@@ -14,13 +14,13 @@ use gpui::{
     WindowOptions, div, prelude::*, px, size,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectState};
 use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
-    AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor,
+    AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
     DownloadTaskbarProgressOverlaySettings,
 };
 use nxtools_download::{
@@ -35,15 +35,15 @@ use nxtools_download::{
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, OpenShellTargetCommand, PickDirectoryCommand,
-    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult,
+    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
     SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
     TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
 use crate::download_taskbar_overlay::{
-    DownloadTaskbarOverlayModel, DownloadTaskbarOverlaySample, DownloadTaskbarOverlayView,
-    TASKBAR_OVERLAY_HEIGHT, TASKBAR_OVERLAY_WIDTH, aggregate_taskbar_progress,
+    DownloadTaskbarOverlayModel, DownloadTaskbarOverlaySample, DownloadTaskbarOverlaySegmentSample,
+    DownloadTaskbarOverlayView, aggregate_taskbar_progress,
 };
 use crate::download_window_lifecycle::{
     DownloadWindowDirective, DownloadWindowLifecycle, DownloadWindowPhase,
@@ -59,6 +59,9 @@ pub(crate) enum DownloadApplicationEvent {
         target: DownloadDirectoryTarget,
         path: PathBuf,
     },
+    TaskbarOverlayEditChanged {
+        settings: DownloadTaskbarProgressOverlaySettings,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +74,9 @@ pub(crate) enum DownloadDirectoryTarget {
 struct DownloadSettingsDraft {
     default_directory: PathBuf,
     default_connection_limit: u16,
+    adaptive_segment_scaling_enabled: bool,
+    adaptive_segment_max_segments: u16,
+    adaptive_segment_min_mib: u16,
     max_concurrent_tasks: u16,
     global_speed_limit_bytes_per_second: Option<u64>,
     show_progress_window: bool,
@@ -148,6 +154,7 @@ fn merge_confirmed_download_request(
         confirmed.file_name = current.file_name;
     }
     confirmed.connection_limit = current.connection_limit;
+    confirmed.adaptive_segment_policy = current.adaptive_segment_policy;
     confirmed.scheduled_at_unix_ms = current.scheduled_at_unix_ms;
     Some(confirmed)
 }
@@ -219,6 +226,11 @@ pub(crate) struct DownloadApplication {
     settings_window: Option<AnyWindowHandle>,
     taskbar_overlay_window: Option<AnyWindowHandle>,
     taskbar_overlay_native_window_handle: i64,
+    taskbar_overlay_correlation_id: uuid::Uuid,
+    taskbar_overlay_edit_draft: Option<DownloadTaskbarProgressOverlaySettings>,
+    taskbar_overlay_edit_correlation_id: Option<uuid::Uuid>,
+    taskbar_overlay_edit_gesture_active: bool,
+    pending_taskbar_overlay_gestures: HashSet<uuid::Uuid>,
     config: AppConfig,
     config_path: PathBuf,
     log_directory: PathBuf,
@@ -333,6 +345,11 @@ impl DownloadApplication {
             settings_window: None,
             taskbar_overlay_window: None,
             taskbar_overlay_native_window_handle: 0,
+            taskbar_overlay_correlation_id: uuid::Uuid::new_v4(),
+            taskbar_overlay_edit_draft: None,
+            taskbar_overlay_edit_correlation_id: None,
+            taskbar_overlay_edit_gesture_active: false,
+            pending_taskbar_overlay_gestures: HashSet::new(),
             config,
             config_path,
             log_directory,
@@ -366,20 +383,60 @@ impl DownloadApplication {
     }
 
     pub(crate) fn taskbar_overlay_model(&self) -> DownloadTaskbarOverlayModel {
-        if !self.config.download.taskbar_progress_overlay.enabled {
+        let editing = self.taskbar_overlay_edit_draft.is_some();
+        let settings = self
+            .taskbar_overlay_edit_draft
+            .as_ref()
+            .unwrap_or(&self.config.download.taskbar_progress_overlay);
+        if !settings.enabled && !editing {
             return DownloadTaskbarOverlayModel::Hidden;
         }
-        aggregate_taskbar_progress(self.tasks.iter().map(|task| {
-            let progress = self.latest_progress.get(&task.task.id());
-            DownloadTaskbarOverlaySample {
-                status: task.task.status(),
-                downloaded_bytes: progress
-                    .map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes),
-                total_bytes: progress
-                    .and_then(|progress| progress.total_bytes)
-                    .or(task.total_bytes),
-            }
-        }))
+        aggregate_taskbar_progress(
+            settings,
+            editing,
+            self.tasks.iter().map(|task| {
+                let progress = self.latest_progress.get(&task.task.id());
+                DownloadTaskbarOverlaySample {
+                    status: task.task.status(),
+                    downloaded_bytes: progress
+                        .map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes),
+                    total_bytes: progress
+                        .and_then(|progress| progress.total_bytes)
+                        .or(task.total_bytes),
+                    bytes_per_second: progress.map_or(0, |progress| progress.bytes_per_second),
+                    active_connections: progress.map_or(0, |progress| progress.active_connections),
+                    segments: progress
+                        .map(|progress| {
+                            progress
+                                .segments
+                                .iter()
+                                .map(|segment| DownloadTaskbarOverlaySegmentSample {
+                                    downloaded_bytes: segment.downloaded_bytes,
+                                    total_bytes: segment.total_bytes,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }
+            }),
+        )
+    }
+
+    pub(crate) fn taskbar_overlay_diagnostic_correlation_id(&self) -> uuid::Uuid {
+        self.taskbar_overlay_edit_correlation_id
+            .unwrap_or(self.taskbar_overlay_correlation_id)
+    }
+
+    pub(crate) fn set_taskbar_overlay_edit_gesture_active(&mut self, active: bool) {
+        self.taskbar_overlay_edit_gesture_active = active;
+    }
+
+    pub(crate) fn taskbar_overlay_edit_gesture_active(&self) -> bool {
+        self.taskbar_overlay_edit_gesture_active
+    }
+
+    pub(crate) fn register_taskbar_overlay_edit_gesture(&mut self, command_id: uuid::Uuid) {
+        self.pending_taskbar_overlay_gestures.insert(command_id);
     }
 
     pub(crate) fn default_queue_order(&self) -> Vec<DownloadTaskId> {
@@ -431,6 +488,9 @@ impl DownloadApplication {
         DownloadSettingsDraft {
             default_directory: self.default_directory.clone(),
             default_connection_limit: self.config.download.default_connection_limit,
+            adaptive_segment_scaling_enabled: self.config.download.adaptive_segment_scaling_enabled,
+            adaptive_segment_max_segments: self.config.download.adaptive_segment_max_segments,
+            adaptive_segment_min_mib: self.config.download.adaptive_segment_min_mib,
             max_concurrent_tasks: self
                 .default_queue()
                 .and_then(|queue| queue.max_concurrent_tasks)
@@ -453,6 +513,14 @@ impl DownloadApplication {
 
     fn default_connection_limit(&self) -> u16 {
         self.config.download.default_connection_limit
+    }
+
+    fn default_adaptive_segment_policy(&self) -> nxtools_download::DownloadAdaptiveSegmentPolicy {
+        nxtools_download::DownloadAdaptiveSegmentPolicy {
+            enabled: self.config.download.adaptive_segment_scaling_enabled,
+            max_segments: self.config.download.adaptive_segment_max_segments,
+            min_segment_mib: self.config.download.adaptive_segment_min_mib,
+        }
     }
 
     fn task(&self, task_id: DownloadTaskId) -> Option<&DownloadEngineTask> {
@@ -920,6 +988,7 @@ impl DownloadApplication {
         let application = cx.entity();
         let default_directory = self.default_directory.clone();
         let default_connection_limit = self.default_connection_limit();
+        let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
         let window_size = new_download_window_size(false);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -945,6 +1014,7 @@ impl DownloadApplication {
                         application,
                         default_directory,
                         default_connection_limit,
+                        default_adaptive_segment_policy,
                         window,
                         cx,
                     )
@@ -1056,6 +1126,13 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                let close_application = application.clone();
+                window.on_window_should_close(cx, move |_, cx| {
+                    close_application.update(cx, |application, cx| {
+                        application.handle_settings_window_closed(cx);
+                    });
+                    true
+                });
                 let view = cx.new(|cx| DownloadSettingsView::new(application, initial, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
@@ -1084,12 +1161,10 @@ impl DownloadApplication {
         let placement = self.config.download.taskbar_progress_overlay.clone();
         let initial_model = self.taskbar_overlay_model();
         let visible = initial_model.is_visible();
+        let overlay_correlation_id = self.taskbar_overlay_diagnostic_correlation_id();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
-        let window_size = size(
-            px(TASKBAR_OVERLAY_WIDTH as f32),
-            px(TASKBAR_OVERLAY_HEIGHT as f32),
-        );
+        let window_size = size(px(placement.width as f32), px(placement.height as f32));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -1098,17 +1173,39 @@ impl DownloadApplication {
                 focus: false,
                 show: false,
                 kind: WindowKind::PopUp,
-                is_movable: false,
-                is_resizable: false,
+                is_movable: true,
+                is_resizable: true,
                 is_minimizable: false,
                 display_id: None,
                 window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.DownloadTaskbarProgress".into()),
-                window_min_size: Some(window_size),
+                window_min_size: Some(size(px(72.0), px(6.0))),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                let close_application = application.clone();
+                window.on_window_should_close(cx, move |_, cx| {
+                    let editing = close_application
+                        .read(cx)
+                        .taskbar_overlay_edit_draft
+                        .is_some();
+                    if editing {
+                        close_application.update(cx, |application, cx| {
+                            application.finish_taskbar_overlay_edit(
+                                false,
+                                uuid::Uuid::new_v4(),
+                                cx,
+                            );
+                        });
+                        return false;
+                    }
+                    close_application.update(cx, |application, _| {
+                        application.taskbar_overlay_window = None;
+                        application.taskbar_overlay_native_window_handle = 0;
+                    });
+                    true
+                });
                 let window_handle = if cfg!(test) {
                     0
                 } else {
@@ -1116,11 +1213,16 @@ impl DownloadApplication {
                 };
                 *opened_native_slot.borrow_mut() = window_handle;
                 if window_handle != 0 {
-                    let command =
-                        taskbar_overlay_placement_command(window_handle, &placement, visible);
-                    match platform
-                        .send_command(PlatformCommand::PlaceTaskbarProgressOverlay(command))
-                    {
+                    let command = taskbar_overlay_placement_command(
+                        window_handle,
+                        &placement,
+                        visible,
+                        false,
+                    );
+                    match platform.send_command_correlated(
+                        PlatformCommand::PlaceTaskbarProgressOverlay(command),
+                        overlay_correlation_id,
+                    ) {
                         Ok(correlation_id) => info!(
                             event = "download.taskbar_overlay.accepted",
                             %correlation_id,
@@ -1141,6 +1243,7 @@ impl DownloadApplication {
                         Rc::clone(&platform),
                         window_handle,
                         initial_model,
+                        window,
                         cx,
                     )
                 });
@@ -1160,20 +1263,219 @@ impl DownloadApplication {
         }
     }
 
-    fn apply_taskbar_overlay_placement(&self) -> Result<uuid::Uuid, String> {
+    fn apply_taskbar_overlay_placement(
+        &mut self,
+        correlation_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid, String> {
         let window_handle = self.taskbar_overlay_native_window_handle;
         if window_handle == 0 {
             return Err("任务栏下载进度窗口尚未就绪".into());
         }
+        self.taskbar_overlay_correlation_id = correlation_id;
         self.platform
-            .send_command(PlatformCommand::PlaceTaskbarProgressOverlay(
-                taskbar_overlay_placement_command(
+            .send_command_correlated(
+                PlatformCommand::PlaceTaskbarProgressOverlay(taskbar_overlay_placement_command(
                     window_handle,
                     &self.config.download.taskbar_progress_overlay,
                     self.taskbar_overlay_model().is_visible(),
-                ),
-            ))
+                    false,
+                )),
+                correlation_id,
+            )
             .map_err(|error| format!("无法应用任务栏进度条位置：{error}"))
+    }
+
+    fn begin_taskbar_overlay_edit(
+        &mut self,
+        mut settings: DownloadTaskbarProgressOverlaySettings,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        settings.enabled = true;
+        self.taskbar_overlay_edit_draft = Some(settings.clone());
+        self.taskbar_overlay_edit_correlation_id = Some(correlation_id);
+        self.taskbar_overlay_edit_gesture_active = false;
+        self.pending_taskbar_overlay_gestures.clear();
+        let window_handle = self.taskbar_overlay_native_window_handle;
+        if window_handle == 0 {
+            self.taskbar_overlay_edit_draft = None;
+            self.taskbar_overlay_edit_correlation_id = None;
+            return Err("任务栏覆盖层窗口尚未就绪".into());
+        }
+        self.platform
+            .send_command_correlated(
+                PlatformCommand::PlaceTaskbarProgressOverlay(taskbar_overlay_placement_command(
+                    window_handle,
+                    &settings,
+                    true,
+                    true,
+                )),
+                correlation_id,
+            )
+            .map_err(|error| {
+                self.taskbar_overlay_edit_draft = None;
+                self.taskbar_overlay_edit_correlation_id = None;
+                format!("无法进入任务栏覆盖层编辑模式：{error}")
+            })?;
+        info!(
+            event = "download.taskbar_overlay.edit_started",
+            %correlation_id,
+            width = settings.width,
+            height = settings.height,
+            "taskbar overlay edit mode started"
+        );
+        cx.emit(DownloadApplicationEvent::TaskbarOverlayEditChanged { settings });
+        cx.notify();
+        Ok(())
+    }
+
+    fn update_taskbar_overlay_edit(
+        &mut self,
+        mut settings: DownloadTaskbarProgressOverlaySettings,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        if self.taskbar_overlay_edit_draft.is_none() {
+            return Ok(());
+        }
+        let correlation_id = self
+            .taskbar_overlay_edit_correlation_id
+            .unwrap_or(correlation_id);
+        settings.enabled = true;
+        let mut wrapper = DownloadSettings {
+            taskbar_progress_overlay: settings,
+            ..DownloadSettings::default()
+        };
+        wrapper.normalize();
+        let settings = wrapper.taskbar_progress_overlay;
+        let window_handle = self.taskbar_overlay_native_window_handle;
+        if window_handle == 0 {
+            return Err("任务栏覆盖层窗口尚未就绪".into());
+        }
+        self.platform
+            .send_command_correlated(
+                PlatformCommand::PlaceTaskbarProgressOverlay(taskbar_overlay_placement_command(
+                    window_handle,
+                    &settings,
+                    true,
+                    true,
+                )),
+                correlation_id,
+            )
+            .map_err(|error| format!("无法刷新任务栏覆盖层编辑预览：{error}"))?;
+        self.taskbar_overlay_edit_draft = Some(settings.clone());
+        info!(
+            event = "download.taskbar_overlay.edit_preview_changed",
+            %correlation_id,
+            progress_mode = ?settings.progress_mode,
+            show_progress = settings.show_progress,
+            show_speed = settings.show_speed,
+            show_remaining_time = settings.show_remaining_time,
+            show_active_tasks = settings.show_active_tasks,
+            show_active_connections = settings.show_active_connections,
+            show_transferred_bytes = settings.show_transferred_bytes,
+            "taskbar overlay edit preview changed"
+        );
+        cx.emit(DownloadApplicationEvent::TaskbarOverlayEditChanged { settings });
+        cx.notify();
+        Ok(())
+    }
+
+    pub(crate) fn record_taskbar_overlay_edit_bounds(
+        &mut self,
+        mut settings: DownloadTaskbarProgressOverlaySettings,
+        _correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        if self.taskbar_overlay_edit_draft.is_none() {
+            return;
+        }
+        let raw_settings = settings.clone();
+        let mut wrapper = DownloadSettings {
+            taskbar_progress_overlay: settings.clone(),
+            ..DownloadSettings::default()
+        };
+        wrapper.normalize();
+        settings = wrapper.taskbar_progress_overlay;
+        if settings != raw_settings && self.taskbar_overlay_native_window_handle != 0 {
+            let correlation_id = self.taskbar_overlay_diagnostic_correlation_id();
+            if let Err(error) = self.platform.send_command_correlated(
+                PlatformCommand::PlaceTaskbarProgressOverlay(taskbar_overlay_placement_command(
+                    self.taskbar_overlay_native_window_handle,
+                    &settings,
+                    true,
+                    true,
+                )),
+                correlation_id,
+            ) {
+                warn!(
+                    event = "download.taskbar_overlay.edit_normalize_failed",
+                    %correlation_id,
+                    %error,
+                    "normalized taskbar overlay edit bounds could not be applied"
+                );
+            }
+        }
+        if self.taskbar_overlay_edit_draft.as_ref() == Some(&settings) {
+            return;
+        }
+        self.taskbar_overlay_edit_draft = Some(settings.clone());
+        cx.emit(DownloadApplicationEvent::TaskbarOverlayEditChanged { settings });
+        cx.notify();
+    }
+
+    fn finish_taskbar_overlay_edit(
+        &mut self,
+        committed: bool,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        if self.taskbar_overlay_edit_draft.take().is_none() {
+            return;
+        }
+        self.taskbar_overlay_edit_gesture_active = false;
+        self.pending_taskbar_overlay_gestures.clear();
+        let correlation_id = self
+            .taskbar_overlay_edit_correlation_id
+            .take()
+            .unwrap_or(correlation_id);
+        self.taskbar_overlay_correlation_id = correlation_id;
+        let settings = &self.config.download.taskbar_progress_overlay;
+        let visible = self.taskbar_overlay_model().is_visible();
+        if self.taskbar_overlay_native_window_handle != 0
+            && let Err(error) = self.platform.send_command_correlated(
+                PlatformCommand::PlaceTaskbarProgressOverlay(taskbar_overlay_placement_command(
+                    self.taskbar_overlay_native_window_handle,
+                    settings,
+                    visible,
+                    false,
+                )),
+                correlation_id,
+            )
+        {
+            warn!(
+                event = "download.taskbar_overlay.edit_finish_failed",
+                %correlation_id,
+                %error,
+                committed,
+                "taskbar overlay could not leave edit mode"
+            );
+        } else {
+            info!(
+                event = "download.taskbar_overlay.edit_finished",
+                %correlation_id,
+                committed,
+                "taskbar overlay edit mode finished"
+            );
+        }
+        cx.notify();
+    }
+
+    fn handle_settings_window_closed(&mut self, cx: &mut Context<Self>) {
+        self.settings_window = None;
+        if self.taskbar_overlay_edit_draft.is_some() {
+            self.finish_taskbar_overlay_edit(false, uuid::Uuid::new_v4(), cx);
+        }
     }
 
     fn apply_settings(
@@ -1223,6 +1525,9 @@ impl DownloadApplication {
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
             default_connection_limit: draft.default_connection_limit,
+            adaptive_segment_scaling_enabled: draft.adaptive_segment_scaling_enabled,
+            adaptive_segment_max_segments: draft.adaptive_segment_max_segments,
+            adaptive_segment_min_mib: draft.adaptive_segment_min_mib,
             show_progress_window: draft.show_progress_window,
             show_completion_window: draft.show_completion_window,
             taskbar_progress_overlay: draft.taskbar_progress_overlay.clone(),
@@ -1270,7 +1575,9 @@ impl DownloadApplication {
         self.default_directory = draft.default_directory;
         self.show_progress_window = draft.show_progress_window;
         self.show_completion_window = draft.show_completion_window;
-        match self.apply_taskbar_overlay_placement() {
+        let was_editing_taskbar_overlay = self.taskbar_overlay_edit_draft.take().is_some();
+        let edit_correlation_id = self.taskbar_overlay_edit_correlation_id.take();
+        match self.apply_taskbar_overlay_placement(correlation_id) {
             Ok(overlay_correlation_id) => info!(
                 event = "download.taskbar_overlay.accepted",
                 correlation_id = %overlay_correlation_id,
@@ -1283,6 +1590,15 @@ impl DownloadApplication {
                 %error,
                 "download settings saved but taskbar overlay placement failed"
             ),
+        }
+        if was_editing_taskbar_overlay {
+            let correlation_id = edit_correlation_id.unwrap_or(correlation_id);
+            info!(
+                event = "download.taskbar_overlay.edit_finished",
+                %correlation_id,
+                committed = true,
+                "taskbar overlay edit mode committed with download settings"
+            );
         }
         self.refresh(cx);
         self.notifications.update(cx, |notifications, cx| {
@@ -1804,6 +2120,37 @@ impl DownloadApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if matches!(&notification, PlatformNotification::Connected) {
+            let correlation_id = uuid::Uuid::new_v4();
+            match self.apply_taskbar_overlay_placement(correlation_id) {
+                Ok(command_id) => info!(
+                    event = "download.taskbar_overlay.reconnect_restore_accepted",
+                    %correlation_id,
+                    %command_id,
+                    window_handle = self.taskbar_overlay_native_window_handle,
+                    "saved taskbar overlay placement queued after PlatformHost connected"
+                ),
+                Err(error) => warn!(
+                    event = "download.taskbar_overlay.reconnect_restore_failed",
+                    %correlation_id,
+                    %error,
+                    window_handle = self.taskbar_overlay_native_window_handle,
+                    "saved taskbar overlay placement could not be restored after PlatformHost connected"
+                ),
+            }
+            return;
+        }
+        if let PlatformNotification::Event(PlatformEvent::TaskbarOverlayEditGestureFinished(
+            gesture,
+        )) = &notification
+        {
+            if gesture.window_handle == self.taskbar_overlay_native_window_handle {
+                self.taskbar_overlay_edit_gesture_active = false;
+                self.pending_taskbar_overlay_gestures.clear();
+                cx.notify();
+            }
+            return;
+        }
         let PlatformNotification::CommandResult {
             correlation_id,
             result,
@@ -1811,6 +2158,16 @@ impl DownloadApplication {
         else {
             return;
         };
+        if self
+            .pending_taskbar_overlay_gestures
+            .remove(&correlation_id)
+        {
+            if !result.success {
+                self.taskbar_overlay_edit_gesture_active = false;
+                cx.notify();
+            }
+            return;
+        }
         if let Some(pending) = self.pending_task_window_activations.remove(&correlation_id) {
             if result.success {
                 info!(
@@ -2700,6 +3057,9 @@ fn delayed_start_calendar_title(month: NaiveDate) -> String {
 struct DownloadSettingsInput<'a> {
     default_directory: &'a str,
     connection_limit: &'a str,
+    adaptive_segment_scaling_enabled: bool,
+    adaptive_segment_max_segments: &'a str,
+    adaptive_segment_min_mib: &'a str,
     max_concurrent_tasks: &'a str,
     speed_limit_kib: &'a str,
     show_progress_window: bool,
@@ -2708,6 +3068,15 @@ struct DownloadSettingsInput<'a> {
     taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
     taskbar_overlay_offset_x: &'a str,
     taskbar_overlay_offset_y: &'a str,
+    taskbar_overlay_width: &'a str,
+    taskbar_overlay_height: &'a str,
+    taskbar_overlay_progress_mode: DownloadTaskbarProgressMode,
+    taskbar_overlay_show_progress: bool,
+    taskbar_overlay_show_speed: bool,
+    taskbar_overlay_show_remaining_time: bool,
+    taskbar_overlay_show_active_tasks: bool,
+    taskbar_overlay_show_active_connections: bool,
+    taskbar_overlay_show_transferred_bytes: bool,
 }
 
 fn parse_download_settings_draft(
@@ -2716,6 +3085,9 @@ fn parse_download_settings_draft(
     let DownloadSettingsInput {
         default_directory,
         connection_limit,
+        adaptive_segment_scaling_enabled,
+        adaptive_segment_max_segments,
+        adaptive_segment_min_mib,
         max_concurrent_tasks,
         speed_limit_kib,
         show_progress_window,
@@ -2724,6 +3096,15 @@ fn parse_download_settings_draft(
         taskbar_overlay_anchor,
         taskbar_overlay_offset_x,
         taskbar_overlay_offset_y,
+        taskbar_overlay_width,
+        taskbar_overlay_height,
+        taskbar_overlay_progress_mode,
+        taskbar_overlay_show_progress,
+        taskbar_overlay_show_speed,
+        taskbar_overlay_show_remaining_time,
+        taskbar_overlay_show_active_tasks,
+        taskbar_overlay_show_active_connections,
+        taskbar_overlay_show_transferred_bytes,
     } = input;
     let default_directory = default_directory.trim();
     if default_directory.is_empty() {
@@ -2735,6 +3116,20 @@ fn parse_download_settings_draft(
         .map_err(|_| "连接上限必须是 1 到 64 的整数")?;
     if !(1..=64).contains(&default_connection_limit) {
         return Err("连接上限必须在 1 到 64 之间".into());
+    }
+    let adaptive_segment_max_segments = adaptive_segment_max_segments
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "动态分段上限必须是整数")?;
+    if !(default_connection_limit..=256).contains(&adaptive_segment_max_segments) {
+        return Err("动态分段上限必须在连接数和 256 之间".into());
+    }
+    let adaptive_segment_min_mib = adaptive_segment_min_mib
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "最小可拆分大小必须是 1 到 100 MiB 的整数")?;
+    if !(1..=100).contains(&adaptive_segment_min_mib) {
+        return Err("最小可拆分大小必须在 1 到 100 MiB 之间".into());
     }
     let max_concurrent_tasks = max_concurrent_tasks
         .trim()
@@ -2769,9 +3164,43 @@ fn parse_download_settings_draft(
     {
         return Err("任务栏偏移必须在 -4096 到 4096 之间".into());
     }
+    let taskbar_overlay_width = taskbar_overlay_width
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "任务栏覆盖层宽度必须是整数")?;
+    let mut taskbar_overlay_height = taskbar_overlay_height
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "任务栏覆盖层高度必须是整数")?;
+    if !(72..=640).contains(&taskbar_overlay_width) {
+        return Err("任务栏覆盖层宽度必须在 72 到 640 之间".into());
+    }
+    if !(6..=72).contains(&taskbar_overlay_height) {
+        return Err("任务栏覆盖层高度必须在 6 到 72 之间".into());
+    }
+    if !taskbar_overlay_show_progress
+        && !taskbar_overlay_show_speed
+        && !taskbar_overlay_show_remaining_time
+        && !taskbar_overlay_show_active_tasks
+        && !taskbar_overlay_show_active_connections
+        && !taskbar_overlay_show_transferred_bytes
+    {
+        return Err("任务栏覆盖层至少要显示一项信息".into());
+    }
+    if taskbar_overlay_show_speed
+        || taskbar_overlay_show_remaining_time
+        || taskbar_overlay_show_active_tasks
+        || taskbar_overlay_show_active_connections
+        || taskbar_overlay_show_transferred_bytes
+    {
+        taskbar_overlay_height = taskbar_overlay_height.max(20);
+    }
     Ok(DownloadSettingsDraft {
         default_directory: PathBuf::from(default_directory),
         default_connection_limit,
+        adaptive_segment_scaling_enabled,
+        adaptive_segment_max_segments,
+        adaptive_segment_min_mib,
         max_concurrent_tasks,
         global_speed_limit_bytes_per_second,
         show_progress_window,
@@ -2781,6 +3210,15 @@ fn parse_download_settings_draft(
             anchor: taskbar_overlay_anchor,
             offset_x: taskbar_overlay_offset_x,
             offset_y: taskbar_overlay_offset_y,
+            width: taskbar_overlay_width,
+            height: taskbar_overlay_height,
+            progress_mode: taskbar_overlay_progress_mode,
+            show_progress: taskbar_overlay_show_progress,
+            show_speed: taskbar_overlay_show_speed,
+            show_remaining_time: taskbar_overlay_show_remaining_time,
+            show_active_tasks: taskbar_overlay_show_active_tasks,
+            show_active_connections: taskbar_overlay_show_active_connections,
+            show_transferred_bytes: taskbar_overlay_show_transferred_bytes,
         },
     })
 }
@@ -2790,21 +3228,34 @@ struct DownloadSettingsView {
     application: Entity<DownloadApplication>,
     directory: Entity<InputState>,
     connection_limit: Entity<InputState>,
+    adaptive_segment_max_segments: Entity<InputState>,
+    adaptive_segment_min_mib: Entity<InputState>,
     concurrent_tasks: Entity<InputState>,
     speed_limit_kib: Entity<InputState>,
     taskbar_overlay_offset_x: Entity<InputState>,
     taskbar_overlay_offset_y: Entity<InputState>,
+    taskbar_overlay_width: Entity<InputState>,
+    taskbar_overlay_height: Entity<InputState>,
     scroll: ScrollHandle,
     show_progress_window: bool,
     show_completion_window: bool,
+    adaptive_segment_scaling_enabled: bool,
     taskbar_overlay_enabled: bool,
     taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
+    taskbar_overlay_progress_mode: DownloadTaskbarProgressMode,
+    taskbar_overlay_show_progress: bool,
+    taskbar_overlay_show_speed: bool,
+    taskbar_overlay_show_remaining_time: bool,
+    taskbar_overlay_show_active_tasks: bool,
+    taskbar_overlay_show_active_connections: bool,
+    taskbar_overlay_show_transferred_bytes: bool,
+    taskbar_overlay_editing: bool,
     config_path: String,
     log_directory: String,
     database_path: String,
     saving: bool,
     error: Option<String>,
-    _subscription: Subscription,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl DownloadSettingsView {
@@ -2829,6 +3280,16 @@ impl DownloadSettingsView {
             InputState::new(window, cx)
                 .default_value(snapshot.default_connection_limit.to_string())
                 .placeholder("1-64")
+        });
+        let adaptive_segment_max_segments = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.adaptive_segment_max_segments.to_string())
+                .placeholder("8-256")
+        });
+        let adaptive_segment_min_mib = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.adaptive_segment_min_mib.to_string())
+                .placeholder("1-100")
         });
         let concurrent_tasks = cx.new(|cx| {
             InputState::new(window, cx)
@@ -2855,19 +3316,83 @@ impl DownloadSettingsView {
                 .default_value(snapshot.taskbar_progress_overlay.offset_y.to_string())
                 .placeholder("0")
         });
+        let taskbar_overlay_width = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.taskbar_progress_overlay.width.to_string())
+                .placeholder("132")
+        });
+        let taskbar_overlay_height = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.taskbar_progress_overlay.height.to_string())
+                .placeholder("8")
+        });
         let subscription = cx.subscribe_in(
             &application,
             window,
             |this, _application, event: &DownloadApplicationEvent, window, cx| {
-                let DownloadApplicationEvent::DirectoryPicked { target, path } = event;
-                if *target != DownloadDirectoryTarget::Settings {
-                    return;
+                match event {
+                    DownloadApplicationEvent::DirectoryPicked { target, path } => {
+                        if *target != DownloadDirectoryTarget::Settings {
+                            return;
+                        }
+                        this.directory.update(cx, |input, cx| {
+                            input.set_value(path.to_string_lossy().into_owned(), window, cx);
+                        });
+                        this.error = None;
+                    }
+                    DownloadApplicationEvent::TaskbarOverlayEditChanged { settings } => {
+                        this.taskbar_overlay_offset_x.update(cx, |input, cx| {
+                            input.set_value(settings.offset_x.to_string(), window, cx);
+                        });
+                        this.taskbar_overlay_offset_y.update(cx, |input, cx| {
+                            input.set_value(settings.offset_y.to_string(), window, cx);
+                        });
+                        this.taskbar_overlay_width.update(cx, |input, cx| {
+                            input.set_value(settings.width.to_string(), window, cx);
+                        });
+                        this.taskbar_overlay_height.update(cx, |input, cx| {
+                            input.set_value(settings.height.to_string(), window, cx);
+                        });
+                        this.taskbar_overlay_editing = true;
+                    }
                 }
-                this.directory.update(cx, |input, cx| {
-                    input.set_value(path.to_string_lossy().into_owned(), window, cx);
-                });
-                this.error = None;
                 cx.notify();
+            },
+        );
+        let offset_x_subscription = cx.subscribe_in(
+            &taskbar_overlay_offset_x,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    this.sync_taskbar_overlay_edit(cx);
+                }
+            },
+        );
+        let offset_y_subscription = cx.subscribe_in(
+            &taskbar_overlay_offset_y,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    this.sync_taskbar_overlay_edit(cx);
+                }
+            },
+        );
+        let width_subscription = cx.subscribe_in(
+            &taskbar_overlay_width,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    this.sync_taskbar_overlay_edit(cx);
+                }
+            },
+        );
+        let height_subscription = cx.subscribe_in(
+            &taskbar_overlay_height,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    this.sync_taskbar_overlay_edit(cx);
+                }
             },
         );
         Self {
@@ -2875,32 +3400,56 @@ impl DownloadSettingsView {
             application,
             directory,
             connection_limit,
+            adaptive_segment_max_segments,
+            adaptive_segment_min_mib,
             concurrent_tasks,
             speed_limit_kib,
             taskbar_overlay_offset_x,
             taskbar_overlay_offset_y,
+            taskbar_overlay_width,
+            taskbar_overlay_height,
             scroll: ScrollHandle::new(),
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
+            adaptive_segment_scaling_enabled: snapshot.adaptive_segment_scaling_enabled,
             taskbar_overlay_enabled: snapshot.taskbar_progress_overlay.enabled,
             taskbar_overlay_anchor: snapshot.taskbar_progress_overlay.anchor,
+            taskbar_overlay_progress_mode: snapshot.taskbar_progress_overlay.progress_mode,
+            taskbar_overlay_show_progress: snapshot.taskbar_progress_overlay.show_progress,
+            taskbar_overlay_show_speed: snapshot.taskbar_progress_overlay.show_speed,
+            taskbar_overlay_show_remaining_time: snapshot
+                .taskbar_progress_overlay
+                .show_remaining_time,
+            taskbar_overlay_show_active_tasks: snapshot.taskbar_progress_overlay.show_active_tasks,
+            taskbar_overlay_show_active_connections: snapshot
+                .taskbar_progress_overlay
+                .show_active_connections,
+            taskbar_overlay_show_transferred_bytes: snapshot
+                .taskbar_progress_overlay
+                .show_transferred_bytes,
+            taskbar_overlay_editing: false,
             config_path,
             log_directory,
             database_path,
             saving: false,
             error: None,
-            _subscription: subscription,
+            _subscriptions: vec![
+                subscription,
+                offset_x_subscription,
+                offset_y_subscription,
+                width_subscription,
+                height_subscription,
+            ],
         }
     }
 
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.saving {
-            return;
-        }
-        let correlation_id = uuid::Uuid::new_v4();
-        let draft = match parse_download_settings_draft(DownloadSettingsInput {
+    fn current_draft(&self, cx: &App) -> Result<DownloadSettingsDraft, String> {
+        parse_download_settings_draft(DownloadSettingsInput {
             default_directory: &self.directory.read(cx).value(),
             connection_limit: &self.connection_limit.read(cx).value(),
+            adaptive_segment_scaling_enabled: self.adaptive_segment_scaling_enabled,
+            adaptive_segment_max_segments: &self.adaptive_segment_max_segments.read(cx).value(),
+            adaptive_segment_min_mib: &self.adaptive_segment_min_mib.read(cx).value(),
             max_concurrent_tasks: &self.concurrent_tasks.read(cx).value(),
             speed_limit_kib: &self.speed_limit_kib.read(cx).value(),
             show_progress_window: self.show_progress_window,
@@ -2909,7 +3458,97 @@ impl DownloadSettingsView {
             taskbar_overlay_anchor: self.taskbar_overlay_anchor,
             taskbar_overlay_offset_x: &self.taskbar_overlay_offset_x.read(cx).value(),
             taskbar_overlay_offset_y: &self.taskbar_overlay_offset_y.read(cx).value(),
-        }) {
+            taskbar_overlay_width: &self.taskbar_overlay_width.read(cx).value(),
+            taskbar_overlay_height: &self.taskbar_overlay_height.read(cx).value(),
+            taskbar_overlay_progress_mode: self.taskbar_overlay_progress_mode,
+            taskbar_overlay_show_progress: self.taskbar_overlay_show_progress,
+            taskbar_overlay_show_speed: self.taskbar_overlay_show_speed,
+            taskbar_overlay_show_remaining_time: self.taskbar_overlay_show_remaining_time,
+            taskbar_overlay_show_active_tasks: self.taskbar_overlay_show_active_tasks,
+            taskbar_overlay_show_active_connections: self.taskbar_overlay_show_active_connections,
+            taskbar_overlay_show_transferred_bytes: self.taskbar_overlay_show_transferred_bytes,
+        })
+    }
+
+    fn toggle_taskbar_overlay_edit(&mut self, cx: &mut Context<Self>) {
+        let correlation_id = uuid::Uuid::new_v4();
+        if self.taskbar_overlay_editing {
+            let application = self.application.clone();
+            cx.defer(move |cx| {
+                application.update(cx, |application, cx| {
+                    application.finish_taskbar_overlay_edit(false, correlation_id, cx);
+                });
+            });
+            self.taskbar_overlay_editing = false;
+            cx.notify();
+            return;
+        }
+        let settings = match self.current_draft(cx) {
+            Ok(draft) => draft.taskbar_progress_overlay,
+            Err(error) => {
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        let application = self.application.clone();
+        let view = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let result = application.update(cx, |application, cx| {
+                application.begin_taskbar_overlay_edit(settings, correlation_id, cx)
+            });
+            let _ = view.update(cx, |view, cx| match result {
+                Ok(()) => {
+                    view.taskbar_overlay_editing = true;
+                    view.error = None;
+                    cx.notify();
+                }
+                Err(error) => {
+                    view.error = Some(error);
+                    cx.notify();
+                }
+            });
+        });
+    }
+
+    fn sync_taskbar_overlay_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.taskbar_overlay_editing {
+            return;
+        }
+        let settings = match self.current_draft(cx) {
+            Ok(draft) => draft.taskbar_progress_overlay,
+            Err(error) => {
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        let application = self.application.clone();
+        let view = cx.entity().downgrade();
+        let correlation_id = uuid::Uuid::new_v4();
+        cx.defer(move |cx| {
+            let result = application.update(cx, |application, cx| {
+                application.update_taskbar_overlay_edit(settings, correlation_id, cx)
+            });
+            let _ = view.update(cx, |view, cx| match result {
+                Ok(()) => {
+                    view.error = None;
+                    cx.notify();
+                }
+                Err(error) => {
+                    view.error = Some(error);
+                    cx.notify();
+                }
+            });
+        });
+    }
+
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let correlation_id = uuid::Uuid::new_v4();
+        let draft = match self.current_draft(cx) {
             Ok(draft) => draft,
             Err(error) => {
                 warn!(
@@ -2979,6 +3618,22 @@ impl Render for DownloadSettingsView {
             .into_any_element();
         let connection_control =
             download_settings_input(theme, &self.connection_limit, px(88.0)).into_any_element();
+        let adaptive_max_control =
+            download_settings_input(theme, &self.adaptive_segment_max_segments, px(88.0))
+                .into_any_element();
+        let adaptive_min_control =
+            download_settings_input(theme, &self.adaptive_segment_min_mib, px(88.0))
+                .into_any_element();
+        let adaptive_toggle = download_settings_toggle(
+            theme,
+            "download-settings-adaptive-segments",
+            self.adaptive_segment_scaling_enabled,
+            cx.listener(|this, _, _, cx| {
+                this.adaptive_segment_scaling_enabled = !this.adaptive_segment_scaling_enabled;
+                this.error = None;
+                cx.notify();
+            }),
+        );
         let concurrent_control =
             download_settings_input(theme, &self.concurrent_tasks, px(88.0)).into_any_element();
         let speed_control =
@@ -3019,11 +3674,13 @@ impl Render for DownloadSettingsView {
             cx.listener(|this, _, _, cx| {
                 this.taskbar_overlay_anchor = DownloadTaskbarOverlayAnchor::Left;
                 this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
                 cx.notify();
             }),
             cx.listener(|this, _, _, cx| {
                 this.taskbar_overlay_anchor = DownloadTaskbarOverlayAnchor::Right;
                 this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
                 cx.notify();
             }),
         );
@@ -3033,13 +3690,129 @@ impl Render for DownloadSettingsView {
         let taskbar_offset_y =
             download_settings_input(theme, &self.taskbar_overlay_offset_y, px(88.0))
                 .into_any_element();
+        let taskbar_width = download_settings_input(theme, &self.taskbar_overlay_width, px(88.0))
+            .into_any_element();
+        let taskbar_height = download_settings_input(theme, &self.taskbar_overlay_height, px(88.0))
+            .into_any_element();
+        let taskbar_progress_mode = download_settings_progress_mode(
+            theme,
+            self.taskbar_overlay_progress_mode,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_progress_mode = DownloadTaskbarProgressMode::Aggregate;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_progress_mode = DownloadTaskbarProgressMode::PerTask;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_progress_mode = DownloadTaskbarProgressMode::PerSegment;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_progress_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-progress",
+            self.taskbar_overlay_show_progress,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_progress = !this.taskbar_overlay_show_progress;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_speed_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-speed",
+            self.taskbar_overlay_show_speed,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_speed = !this.taskbar_overlay_show_speed;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_remaining_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-remaining",
+            self.taskbar_overlay_show_remaining_time,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_remaining_time =
+                    !this.taskbar_overlay_show_remaining_time;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_task_count_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-tasks",
+            self.taskbar_overlay_show_active_tasks,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_active_tasks = !this.taskbar_overlay_show_active_tasks;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_connection_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-connections",
+            self.taskbar_overlay_show_active_connections,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_active_connections =
+                    !this.taskbar_overlay_show_active_connections;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_bytes_info = download_settings_toggle(
+            theme,
+            "download-settings-taskbar-show-bytes",
+            self.taskbar_overlay_show_transferred_bytes,
+            cx.listener(|this, _, _, cx| {
+                this.taskbar_overlay_show_transferred_bytes =
+                    !this.taskbar_overlay_show_transferred_bytes;
+                this.error = None;
+                this.sync_taskbar_overlay_edit(cx);
+                cx.notify();
+            }),
+        );
+        let taskbar_edit_control = Button::new("download-settings-taskbar-edit")
+            .icon(Icon::new(if self.taskbar_overlay_editing {
+                MaterialIcon::Check
+            } else {
+                MaterialIcon::Edit
+            }))
+            .label(if self.taskbar_overlay_editing {
+                "结束预览"
+            } else {
+                "编辑布局"
+            })
+            .small()
+            .custom(download_primary_button_variant(theme, cx))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.toggle_taskbar_overlay_edit(cx);
+            }))
+            .into_any_element();
         div()
             .size_full()
             .bg(theme.canvas)
             .text_color(theme.text)
             .flex()
             .flex_col()
-            .child(download_window_titlebar(theme, "下载设置"))
+            .child(download_settings_titlebar(
+                theme,
+                self.application.clone(),
+                self.taskbar_overlay_editing,
+            ))
             .child(
                 div()
                     .id("download-settings-viewport")
@@ -3075,8 +3848,26 @@ impl Render for DownloadSettingsView {
                                     download_settings_row(
                                         theme,
                                         "连接上限",
-                                        "新任务默认分段连接数，范围 1–64",
+                                        "新任务从开始即使用的最大并行连接数，范围 1–64",
                                         connection_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "动态分段",
+                                        "速度稳定时拆分长尾；连接数仍保持在上限内",
+                                        adaptive_toggle,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "分段上限",
+                                        "动态拆分后的最大分段数，范围为连接数到 256",
+                                        adaptive_max_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "最小长尾",
+                                        "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
+                                        adaptive_min_control,
                                     ),
                                     download_settings_row(
                                         theme,
@@ -3122,6 +3913,12 @@ impl Render for DownloadSettingsView {
                                     ),
                                     download_settings_row(
                                         theme,
+                                        "布局预览",
+                                        "无任务也显示模拟数据；可直接拖动和缩放",
+                                        taskbar_edit_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
                                         "锚点",
                                         "从任务栏左侧或右侧计算 X 偏移",
                                         taskbar_anchor,
@@ -3137,6 +3934,60 @@ impl Render for DownloadSettingsView {
                                         "Y 偏移",
                                         "逻辑像素；0 表示紧贴任务栏上沿",
                                         taskbar_offset_y,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "宽度",
+                                        "逻辑像素，范围 72–640",
+                                        taskbar_width,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "高度",
+                                        "逻辑像素，范围 6–72",
+                                        taskbar_height,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "进度模式",
+                                        "总进度、按任务或按当前任务分段显示",
+                                        taskbar_progress_mode,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "进度条",
+                                        "显示所选模式的进度槽",
+                                        taskbar_progress_info,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "速度",
+                                        "显示当前合计下载速度",
+                                        taskbar_speed_info,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "剩余时间",
+                                        "按当前合计速度估算",
+                                        taskbar_remaining_info,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "活动任务数",
+                                        "显示当前正在处理的任务数量",
+                                        taskbar_task_count_info,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "活动连接数",
+                                        "显示所有活动任务的连接合计",
+                                        taskbar_connection_info,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "已下载 / 总大小",
+                                        "显示活动任务的合计字节数",
+                                        taskbar_bytes_info,
                                     ),
                                 ],
                             ))
@@ -3187,7 +4038,23 @@ impl Render for DownloadSettingsView {
                                     .small()
                                     .ghost()
                                     .disabled(self.saving)
-                                    .on_click(|_, window, _| window.remove_window()),
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        if this.taskbar_overlay_editing {
+                                            let application = this.application.clone();
+                                            let correlation_id = uuid::Uuid::new_v4();
+                                            cx.defer(move |cx| {
+                                                application.update(cx, |application, cx| {
+                                                    application.finish_taskbar_overlay_edit(
+                                                        false,
+                                                        correlation_id,
+                                                        cx,
+                                                    );
+                                                });
+                                            });
+                                            this.taskbar_overlay_editing = false;
+                                        }
+                                        window.remove_window();
+                                    })),
                             ),
                     )
                     .child(
@@ -3334,6 +4201,72 @@ fn download_settings_anchor(
         .into_any_element()
 }
 
+fn download_settings_progress_mode(
+    theme: Theme,
+    selected: DownloadTaskbarProgressMode,
+    on_aggregate: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_task: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_segment: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let option = |id: &'static str,
+                  label: &'static str,
+                  active: bool,
+                  on_click: DownloadSettingsClickHandler| {
+        div()
+            .id(id)
+            .h(px(24.0))
+            .px(px(7.0))
+            .rounded(px(4.0))
+            .border_1()
+            .border_color(if active {
+                theme.border_active
+            } else {
+                theme.border_subtle
+            })
+            .bg(if active {
+                theme.element_selected
+            } else {
+                theme.canvas
+            })
+            .text_size(px(9.5))
+            .text_color(if active {
+                theme.text
+            } else {
+                theme.text_secondary
+            })
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_center()
+            .hover(move |style| style.bg(theme.surface_hover))
+            .on_click(on_click)
+            .child(label)
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .child(option(
+            "download-settings-taskbar-mode-aggregate",
+            "总进度",
+            selected == DownloadTaskbarProgressMode::Aggregate,
+            Box::new(on_aggregate),
+        ))
+        .child(option(
+            "download-settings-taskbar-mode-task",
+            "按任务",
+            selected == DownloadTaskbarProgressMode::PerTask,
+            Box::new(on_task),
+        ))
+        .child(option(
+            "download-settings-taskbar-mode-segment",
+            "按分段",
+            selected == DownloadTaskbarProgressMode::PerSegment,
+            Box::new(on_segment),
+        ))
+        .into_any_element()
+}
+
 fn download_settings_section(
     theme: Theme,
     title: &'static str,
@@ -3438,6 +4371,7 @@ struct NewDownloadView {
     schedule_popover_open: bool,
     committed_schedule: Option<DelayedStartSelection>,
     default_connection_limit: u16,
+    default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     probing: bool,
@@ -3452,6 +4386,7 @@ impl NewDownloadView {
         application: Entity<DownloadApplication>,
         default_directory: PathBuf,
         default_connection_limit: u16,
+        default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -3487,7 +4422,9 @@ impl NewDownloadView {
             &application,
             window,
             |this, _application, event: &DownloadApplicationEvent, window, cx| {
-                let DownloadApplicationEvent::DirectoryPicked { target, path } = event;
+                let DownloadApplicationEvent::DirectoryPicked { target, path } = event else {
+                    return;
+                };
                 if *target != DownloadDirectoryTarget::NewTask {
                     return;
                 }
@@ -3511,6 +4448,7 @@ impl NewDownloadView {
             schedule_popover_open: false,
             committed_schedule: None,
             default_connection_limit,
+            default_adaptive_segment_policy,
             confirmed_request: None,
             probe: None,
             probing: false,
@@ -3540,6 +4478,7 @@ impl NewDownloadView {
             connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms,
+            adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
         };
         request.validate().map_err(|error| error.to_string())?;
         Ok(request)
@@ -5074,6 +6013,54 @@ fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoEleme
         .child(download_window_close_button(theme))
 }
 
+fn download_settings_titlebar(
+    theme: Theme,
+    application: Entity<DownloadApplication>,
+    editing: bool,
+) -> impl IntoElement {
+    div()
+        .h(px(34.0))
+        .pl(px(14.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .window_control_area(WindowControlArea::Drag)
+        .flex()
+        .items_center()
+        .child(
+            div()
+                .flex_1()
+                .text_size(px(12.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("下载设置"),
+        )
+        .child(
+            div()
+                .id("download-settings-close")
+                .w(px(38.0))
+                .h_full()
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .justify_center()
+                .hover(move |style| style.bg(theme.danger).text_color(gpui::white()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(move |_, window, cx| {
+                    if editing {
+                        let application = application.clone();
+                        let correlation_id = uuid::Uuid::new_v4();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.finish_taskbar_overlay_edit(false, correlation_id, cx);
+                            });
+                        });
+                    }
+                    window.remove_window();
+                })
+                .child(Icon::new(MaterialIcon::Close).size(px(15.0))),
+        )
+}
+
 fn download_primary_button_variant(theme: Theme, cx: &gpui::App) -> ButtonCustomVariant {
     ButtonCustomVariant::new(cx)
         .color(theme.accent.into())
@@ -5182,6 +6169,7 @@ fn taskbar_overlay_placement_command(
     window_handle: i64,
     settings: &DownloadTaskbarProgressOverlaySettings,
     visible: bool,
+    interactive: bool,
 ) -> PlaceTaskbarProgressOverlayCommand {
     PlaceTaskbarProgressOverlayCommand {
         window_handle,
@@ -5193,8 +6181,9 @@ fn taskbar_overlay_placement_command(
         },
         offset_x: settings.offset_x,
         offset_y: settings.offset_y,
-        width: TASKBAR_OVERLAY_WIDTH,
-        height: TASKBAR_OVERLAY_HEIGHT,
+        width: i32::try_from(settings.width).unwrap_or(640),
+        height: i32::try_from(settings.height).unwrap_or(72),
+        interactive,
     }
 }
 
@@ -5253,6 +6242,7 @@ mod tests {
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -5277,6 +6267,7 @@ mod tests {
             segments: vec![nxtools_download::DownloadSegmentProgress {
                 segment_index: 0,
                 downloaded_bytes: 6,
+                total_bytes: Some(10),
             }],
         };
 
@@ -5318,6 +6309,9 @@ mod tests {
         let draft = parse_download_settings_draft(DownloadSettingsInput {
             default_directory: r"C:\Downloads",
             connection_limit: "8",
+            adaptive_segment_scaling_enabled: true,
+            adaptive_segment_max_segments: "32",
+            adaptive_segment_min_mib: "3",
             max_concurrent_tasks: "3",
             speed_limit_kib: "2048",
             show_progress_window: true,
@@ -5326,6 +6320,15 @@ mod tests {
             taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
             taskbar_overlay_offset_x: "12",
             taskbar_overlay_offset_y: "0",
+            taskbar_overlay_width: "132",
+            taskbar_overlay_height: "8",
+            taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
+            taskbar_overlay_show_progress: true,
+            taskbar_overlay_show_speed: false,
+            taskbar_overlay_show_remaining_time: false,
+            taskbar_overlay_show_active_tasks: false,
+            taskbar_overlay_show_active_connections: false,
+            taskbar_overlay_show_transferred_bytes: false,
         })
         .expect("valid download settings");
 
@@ -5337,10 +6340,19 @@ mod tests {
         );
         assert!(draft.show_progress_window);
         assert!(!draft.show_completion_window);
+        assert_eq!(draft.taskbar_progress_overlay.width, 132);
+        assert_eq!(draft.taskbar_progress_overlay.height, 8);
+        assert_eq!(
+            draft.taskbar_progress_overlay.progress_mode,
+            DownloadTaskbarProgressMode::PerTask
+        );
         assert!(
             parse_download_settings_draft(DownloadSettingsInput {
                 default_directory: r"C:\Downloads",
                 connection_limit: "65",
+                adaptive_segment_scaling_enabled: true,
+                adaptive_segment_max_segments: "65",
+                adaptive_segment_min_mib: "3",
                 max_concurrent_tasks: "3",
                 speed_limit_kib: "0",
                 show_progress_window: true,
@@ -5349,6 +6361,15 @@ mod tests {
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
                 taskbar_overlay_offset_y: "0",
+                taskbar_overlay_width: "132",
+                taskbar_overlay_height: "8",
+                taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
+                taskbar_overlay_show_progress: true,
+                taskbar_overlay_show_speed: false,
+                taskbar_overlay_show_remaining_time: false,
+                taskbar_overlay_show_active_tasks: false,
+                taskbar_overlay_show_active_connections: false,
+                taskbar_overlay_show_transferred_bytes: false,
             })
             .is_err()
         );
@@ -5356,6 +6377,9 @@ mod tests {
             parse_download_settings_draft(DownloadSettingsInput {
                 default_directory: r"C:\Downloads",
                 connection_limit: "8",
+                adaptive_segment_scaling_enabled: true,
+                adaptive_segment_max_segments: "32",
+                adaptive_segment_min_mib: "3",
                 max_concurrent_tasks: "0",
                 speed_limit_kib: "0",
                 show_progress_window: true,
@@ -5364,8 +6388,73 @@ mod tests {
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
                 taskbar_overlay_offset_y: "0",
+                taskbar_overlay_width: "132",
+                taskbar_overlay_height: "8",
+                taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
+                taskbar_overlay_show_progress: true,
+                taskbar_overlay_show_speed: false,
+                taskbar_overlay_show_remaining_time: false,
+                taskbar_overlay_show_active_tasks: false,
+                taskbar_overlay_show_active_connections: false,
+                taskbar_overlay_show_transferred_bytes: false,
             })
             .is_err()
+        );
+        assert!(
+            parse_download_settings_draft(DownloadSettingsInput {
+                default_directory: r"C:\Downloads",
+                connection_limit: "8",
+                adaptive_segment_scaling_enabled: true,
+                adaptive_segment_max_segments: "7",
+                adaptive_segment_min_mib: "3",
+                max_concurrent_tasks: "3",
+                speed_limit_kib: "0",
+                show_progress_window: true,
+                show_completion_window: true,
+                taskbar_overlay_enabled: true,
+                taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
+                taskbar_overlay_offset_x: "12",
+                taskbar_overlay_offset_y: "0",
+                taskbar_overlay_width: "132",
+                taskbar_overlay_height: "8",
+                taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
+                taskbar_overlay_show_progress: true,
+                taskbar_overlay_show_speed: false,
+                taskbar_overlay_show_remaining_time: false,
+                taskbar_overlay_show_active_tasks: false,
+                taskbar_overlay_show_active_connections: false,
+                taskbar_overlay_show_transferred_bytes: false,
+            })
+            .is_err(),
+            "adaptive segment ceiling cannot be below the initial connection count"
+        );
+        assert!(
+            parse_download_settings_draft(DownloadSettingsInput {
+                default_directory: r"C:\Downloads",
+                connection_limit: "8",
+                adaptive_segment_scaling_enabled: true,
+                adaptive_segment_max_segments: "32",
+                adaptive_segment_min_mib: "0",
+                max_concurrent_tasks: "3",
+                speed_limit_kib: "0",
+                show_progress_window: true,
+                show_completion_window: true,
+                taskbar_overlay_enabled: true,
+                taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
+                taskbar_overlay_offset_x: "12",
+                taskbar_overlay_offset_y: "0",
+                taskbar_overlay_width: "132",
+                taskbar_overlay_height: "8",
+                taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
+                taskbar_overlay_show_progress: true,
+                taskbar_overlay_show_speed: false,
+                taskbar_overlay_show_remaining_time: false,
+                taskbar_overlay_show_active_tasks: false,
+                taskbar_overlay_show_active_connections: false,
+                taskbar_overlay_show_transferred_bytes: false,
+            })
+            .is_err(),
+            "adaptive split tail threshold cannot be zero"
         );
     }
 
@@ -5428,6 +6517,8 @@ mod tests {
         let default_directory = directory.clone();
         let default_connection_limit =
             cx.read(|cx| application.read(cx).default_connection_limit());
+        let default_adaptive_segment_policy =
+            cx.read(|cx| application.read(cx).default_adaptive_segment_policy());
         let view_slot = Rc::new(RefCell::new(None));
         let opened_view_slot = Rc::clone(&view_slot);
         let (_root, window) = cx.add_window_view(move |window, cx| {
@@ -5436,6 +6527,7 @@ mod tests {
                     application_for_window,
                     default_directory,
                     default_connection_limit,
+                    default_adaptive_segment_policy,
                     window,
                     cx,
                 )
@@ -5460,6 +6552,7 @@ mod tests {
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
         };
         window.update(|window, cx| {
             let url = view.read(cx).url.clone();
@@ -5668,6 +6761,75 @@ mod tests {
     }
 
     #[gpui::test]
+    fn closing_download_settings_always_leaves_taskbar_overlay_edit_mode(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "settings-edit-close");
+        let correlation_id = uuid::Uuid::new_v4();
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.taskbar_overlay_edit_draft =
+                    Some(DownloadTaskbarProgressOverlaySettings::default());
+                application.taskbar_overlay_edit_correlation_id = Some(correlation_id);
+                application.handle_settings_window_closed(cx);
+            });
+        });
+
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.settings_window.is_none()
+                && application.taskbar_overlay_edit_draft.is_none()
+                && application.taskbar_overlay_edit_correlation_id.is_none()
+        }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn native_move_size_end_closes_only_the_matching_taskbar_edit_gesture(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "taskbar-edit-native-finish");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.taskbar_overlay_native_window_handle = 42;
+                let failed_command_id = uuid::Uuid::new_v4();
+                application.taskbar_overlay_edit_gesture_active = true;
+                application.register_taskbar_overlay_edit_gesture(failed_command_id);
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: failed_command_id,
+                        result: PlatformCommandResult {
+                            success: false,
+                            error: Some("native move rejected".into()),
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+                assert!(!application.taskbar_overlay_edit_gesture_active);
+
+                application.taskbar_overlay_edit_gesture_active = true;
+                application.handle_platform_notification(
+                    PlatformNotification::Event(PlatformEvent::TaskbarOverlayEditGestureFinished(
+                        nxtools_protocol::TaskbarOverlayEditGesture { window_handle: 7 },
+                    )),
+                    cx,
+                );
+                assert!(application.taskbar_overlay_edit_gesture_active);
+                application.handle_platform_notification(
+                    PlatformNotification::Event(PlatformEvent::TaskbarOverlayEditGestureFinished(
+                        nxtools_protocol::TaskbarOverlayEditGesture { window_handle: 42 },
+                    )),
+                    cx,
+                );
+                assert!(!application.taskbar_overlay_edit_gesture_active);
+            });
+        });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         cx: &mut TestAppContext,
     ) {
@@ -5833,6 +6995,9 @@ mod tests {
                     DownloadSettingsDraft {
                         default_directory: directory.clone(),
                         default_connection_limit: 12,
+                        adaptive_segment_scaling_enabled: true,
+                        adaptive_segment_max_segments: 32,
+                        adaptive_segment_min_mib: 3,
                         max_concurrent_tasks: 7,
                         global_speed_limit_bytes_per_second: Some(1024 * 1024),
                         show_progress_window: false,
@@ -6239,6 +7404,7 @@ mod tests {
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
         };
         let current = DownloadRequest {
             save_directory: PathBuf::from(r"D:\Archive"),

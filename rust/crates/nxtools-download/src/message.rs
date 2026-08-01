@@ -289,6 +289,8 @@ pub struct DownloadProgress {
 pub struct DownloadSegmentProgress {
     pub segment_index: u32,
     pub downloaded_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

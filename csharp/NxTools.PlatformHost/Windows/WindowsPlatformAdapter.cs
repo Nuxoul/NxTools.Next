@@ -241,7 +241,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         // requested placement first so an event-driven reapply cannot race in with stale offsets.
         _window?.TrackTaskbarOverlayPlacement(command, correlationId, appliedBounds: null);
         var result = TaskbarOverlayPlacement.Place(command);
-        _window?.TrackTaskbarOverlayPlacement(command, correlationId, result.Data);
+        if (result.Success)
+        {
+            _window?.TrackTaskbarOverlayPlacement(command, correlationId, result.Data);
+        }
+        else
+        {
+            _window?.ForgetTaskbarOverlayPlacement(command.WindowHandle);
+        }
         _log.Write(
             result.Success ? "info" : "warning",
             result.Success
@@ -258,6 +265,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 ["offset_y"] = command.OffsetY,
                 ["width"] = command.Width,
                 ["height"] = command.Height,
+                ["interactive"] = command.Interactive,
                 ["applied_bounds"] = result.Data,
                 ["error"] = result.Error,
                 ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
@@ -273,7 +281,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         var result = TaskbarOverlayPlacement.SetVisibility(
             new IntPtr(command.WindowHandle),
             command.Visible);
-        _window?.TrackTaskbarOverlayVisibility(command);
+        if (result.Success)
+        {
+            _window?.TrackTaskbarOverlayVisibility(command);
+        }
+        else
+        {
+            _window?.ForgetTaskbarOverlayPlacement(command.WindowHandle);
+        }
         _log.Write(
             result.Success ? "info" : "warning",
             result.Success
@@ -587,6 +602,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private const int WmSettingChange = 0x001A;
         private const int WmDisplayChange = 0x007E;
         private const uint EventSystemForeground = 0x0003;
+        private const uint EventSystemMoveSizeEnd = 0x000B;
         private const uint EventObjectCreate = 0x8000;
         private const uint EventObjectDestroy = 0x8001;
         private const uint EventObjectShow = 0x8002;
@@ -640,6 +656,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private IntPtr _fileDialogHideHook;
         private IntPtr _fileDialogLocationHook;
         private IntPtr _fileDialogNameHook;
+        private IntPtr _taskbarOverlayMoveSizeEndHook;
         private ForegroundContext? _pendingClipboardSource;
         private Task _capturePublishTail = Task.CompletedTask;
         private int _clipboardReadAttempts;
@@ -720,6 +737,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             _fileDialogHideHook = InstallOptionalWindowEventHook(EventObjectHide);
             _fileDialogLocationHook = InstallOptionalWindowEventHook(EventObjectLocationChange);
             _fileDialogNameHook = InstallOptionalWindowEventHook(EventObjectNameChange);
+            _taskbarOverlayMoveSizeEndHook = InstallOptionalWindowEventHook(EventSystemMoveSizeEnd);
             SystemEvents.DisplaySettingsChanged += OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged += OnSystemUserPreferenceChanged;
 
@@ -872,6 +890,20 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     ref _taskbarOverlayPlacement,
                     placement with { Visible = command.Visible });
             }
+        }
+
+        public void ForgetTaskbarOverlayPlacement(long windowHandle)
+        {
+            var placement = Volatile.Read(ref _taskbarOverlayPlacement);
+            if (placement?.WindowHandle != windowHandle ||
+                !ReferenceEquals(
+                    Interlocked.CompareExchange(ref _taskbarOverlayPlacement, null, placement),
+                    placement))
+            {
+                return;
+            }
+            _taskbarOverlayCorrelationId = null;
+            _taskbarOverlayAppliedBounds = null;
         }
 
         protected override void WndProc(ref Message message)
@@ -1684,6 +1716,15 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             uint eventThread,
             uint eventTime)
         {
+            if (eventType == EventSystemMoveSizeEnd)
+            {
+                var overlay = Volatile.Read(ref _taskbarOverlayPlacement);
+                if (overlay is not null && window.ToInt64() == overlay.WindowHandle)
+                {
+                    _events.TryWrite(new TaskbarOverlayEditGestureFinishedEvent(overlay.WindowHandle));
+                }
+                return;
+            }
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
             if (TaskbarOverlayPlacement.IsTaskbarWindow(window) ||
                 TaskbarOverlayPlacement.IsTaskbarWindow(new IntPtr(rootWindowHandle)))
@@ -1785,6 +1826,10 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     ["applied_bounds"] = result.Data,
                     ["error"] = result.Error
                 });
+            if (!result.Success)
+            {
+                ForgetTaskbarOverlayPlacement(placement.WindowHandle);
+            }
         }
 
         private void OnSystemDisplaySettingsChanged(object? sender, EventArgs eventArgs) =>
@@ -2411,7 +2456,8 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                          _fileDialogShowHook,
                          _fileDialogHideHook,
                          _fileDialogLocationHook,
-                         _fileDialogNameHook
+                         _fileDialogNameHook,
+                         _taskbarOverlayMoveSizeEndHook
                      })
             {
                 if (hook != IntPtr.Zero)
@@ -2425,6 +2471,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             _fileDialogHideHook = IntPtr.Zero;
             _fileDialogLocationHook = IntPtr.Zero;
             _fileDialogNameHook = IntPtr.Zero;
+            _taskbarOverlayMoveSizeEndHook = IntPtr.Zero;
             while (_pasteRequests.TryDequeue(out var request))
             {
                 request.Completion.TrySetResult(new WindowsCommandResult(false, "Windows adapter is stopping."));

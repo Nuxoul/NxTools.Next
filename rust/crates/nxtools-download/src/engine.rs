@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -65,6 +65,133 @@ struct TransferRateSampler {
     sampled_bytes: u64,
     sampled_at: Instant,
     last_rate: u64,
+}
+
+const ADAPTIVE_SAMPLE_COUNT: usize = 5;
+const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
+const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
+const MIB: u64 = 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdaptiveConnectionDecision {
+    Hold,
+    Grow,
+    DisabledAfterRetry,
+    DisabledForLowBenefit,
+}
+
+#[derive(Debug)]
+struct AdaptiveSegmentController {
+    max_segments: u16,
+    samples: VecDeque<u64>,
+    pending_evaluation: Option<(u64, u16, u16)>,
+    disabled: bool,
+}
+
+impl AdaptiveSegmentController {
+    fn new(max_segments: u16, enabled: bool) -> Self {
+        Self {
+            max_segments,
+            samples: VecDeque::with_capacity(ADAPTIVE_SAMPLE_COUNT),
+            pending_evaluation: None,
+            disabled: !enabled || max_segments <= 1,
+        }
+    }
+
+    fn observe(
+        &mut self,
+        bytes_per_second: u64,
+        segment_count: u16,
+        retry_observed: bool,
+    ) -> AdaptiveConnectionDecision {
+        if self.disabled {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        if retry_observed {
+            self.disabled = true;
+            self.samples.clear();
+            self.pending_evaluation = None;
+            return AdaptiveConnectionDecision::DisabledAfterRetry;
+        }
+        if bytes_per_second == 0 {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        if let Some((_, _, target_segments)) = self.pending_evaluation
+            && segment_count < target_segments
+        {
+            self.samples.clear();
+            return AdaptiveConnectionDecision::Hold;
+        }
+        self.samples.push_back(bytes_per_second);
+        while self.samples.len() > ADAPTIVE_SAMPLE_COUNT {
+            self.samples.pop_front();
+        }
+        if self.samples.len() < ADAPTIVE_SAMPLE_COUNT || !adaptive_samples_are_stable(&self.samples)
+        {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        let average = self.samples.iter().copied().sum::<u64>()
+            / u64::try_from(self.samples.len()).unwrap_or(1);
+        if let Some((baseline_speed, baseline_segments, target_segments)) = self.pending_evaluation
+        {
+            let baseline_segments = baseline_segments.max(1);
+            let added_segments = target_segments.saturating_sub(baseline_segments);
+            let required_gain_percent = u128::from(added_segments)
+                .saturating_mul(100)
+                .saturating_mul(u128::from(ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT))
+                / u128::from(baseline_segments)
+                / 100;
+            let required = u128::from(baseline_speed)
+                .saturating_mul(100_u128.saturating_add(required_gain_percent))
+                / 100;
+            if u128::from(average) < required {
+                self.disabled = true;
+                self.samples.clear();
+                self.pending_evaluation = None;
+                return AdaptiveConnectionDecision::DisabledForLowBenefit;
+            }
+            self.pending_evaluation = None;
+            self.samples.clear();
+            return AdaptiveConnectionDecision::Hold;
+        }
+        if segment_count >= self.max_segments {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        let baseline_segments = segment_count.max(1);
+        self.pending_evaluation = Some((average, baseline_segments, baseline_segments));
+        self.samples.clear();
+        AdaptiveConnectionDecision::Grow
+    }
+
+    fn confirm_growth_target(&mut self, target_segments: u16) {
+        let Some((baseline_speed, baseline_segments, _)) = self.pending_evaluation else {
+            return;
+        };
+        self.pending_evaluation = Some((
+            baseline_speed,
+            baseline_segments,
+            target_segments.max(baseline_segments),
+        ));
+        self.samples.clear();
+    }
+
+    fn cancel_growth(&mut self) {
+        self.pending_evaluation = None;
+        self.samples.clear();
+    }
+}
+
+fn adaptive_samples_are_stable(samples: &VecDeque<u64>) -> bool {
+    let Some(minimum) = samples.iter().copied().min() else {
+        return false;
+    };
+    let Some(maximum) = samples.iter().copied().max() else {
+        return false;
+    };
+    let average = samples.iter().copied().sum::<u64>() / u64::try_from(samples.len()).unwrap_or(1);
+    average > 0
+        && maximum.saturating_sub(minimum).saturating_mul(100)
+            <= average.saturating_mul(ADAPTIVE_STABILITY_PERCENT)
 }
 
 impl TransferRateSampler {
@@ -1694,6 +1821,26 @@ async fn run_task(
             .clone()
     };
     let probe = inner.http.probe(&request).await?;
+    let resume_plan_present = inner.store.load_transfer_plan(task_id)?.is_some();
+    let validator_kind = if probe.validator.etag.is_some() {
+        "etag"
+    } else if probe.validator.last_modified.is_some() {
+        "last_modified"
+    } else {
+        "none"
+    };
+    info!(
+        event = "download.probe.completed",
+        %correlation_id,
+        ?task_id,
+        total_bytes = probe.total_bytes.unwrap_or_default(),
+        total_bytes_known = probe.total_bytes.is_some(),
+        supports_ranges = probe.supports_ranges,
+        validator_kind,
+        resume_plan_present,
+        requested_connections = request.connection_limit.unwrap_or(1),
+        "download resource probe completed"
+    );
     let (temporary_path, final_path) =
         HttpDownloadClient::artifact_paths(&request, &probe, task_id)?;
     tokio::fs::create_dir_all(&request.save_directory).await?;
@@ -1755,7 +1902,16 @@ async fn run_task(
         .await;
     }
 
-    run_single_stream_task(&inner, task_id, &request, &probe, &control).await
+    run_single_stream_task(
+        &inner,
+        task_id,
+        correlation_id,
+        &request,
+        &probe,
+        &control,
+        "probe_single_stream",
+    )
+    .await
 }
 
 async fn preflight_storage_capacity(
@@ -1864,10 +2020,20 @@ async fn preflight_storage_capacity(
 async fn run_single_stream_task(
     inner: &Arc<DownloadEngineInner>,
     task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
     request: &DownloadRequest,
     probe: &DownloadProbe,
     control: &DownloadTransferControl,
+    reason: &'static str,
 ) -> Result<(), DownloadEngineError> {
+    info!(
+        event = "download.single_stream.started",
+        %correlation_id,
+        ?task_id,
+        reason,
+        expected_bytes = probe.total_bytes.unwrap_or_default(),
+        "single-stream transfer started"
+    );
     let progress_inner = Arc::clone(inner);
     let outcome = inner
         .http
@@ -1879,12 +2045,14 @@ async fn run_single_stream_task(
                 progress.total_bytes,
                 1,
                 None,
+                None,
             );
         })
         .await?;
 
     match outcome {
         PreparedDownloadOutcome::Ready(ready) => {
+            let downloaded_bytes = ready.downloaded_bytes;
             {
                 let mut tasks = inner.lock_tasks()?;
                 let state = tasks
@@ -1901,6 +2069,14 @@ async fn run_single_stream_task(
             }
             inner.http.commit_prepared(ready).await?;
             commit_completed_state(inner, task_id)?;
+            info!(
+                event = "download.single_stream.completed",
+                %correlation_id,
+                ?task_id,
+                reason,
+                downloaded_bytes,
+                "single-stream transfer completed"
+            );
         }
         PreparedDownloadOutcome::Paused {
             downloaded_bytes, ..
@@ -1918,6 +2094,14 @@ async fn run_single_stream_task(
             inner.emit(DownloadEvent::TaskChanged {
                 task: state.task.clone(),
             });
+            info!(
+                event = "download.single_stream.paused",
+                %correlation_id,
+                ?task_id,
+                reason,
+                downloaded_bytes,
+                "single-stream transfer paused"
+            );
         }
         PreparedDownloadOutcome::Cancelled { downloaded_bytes } => {
             let mut tasks = inner.lock_tasks()?;
@@ -1933,6 +2117,14 @@ async fn run_single_stream_task(
             inner.emit(DownloadEvent::TaskChanged {
                 task: state.task.clone(),
             });
+            info!(
+                event = "download.single_stream.cancelled",
+                %correlation_id,
+                ?task_id,
+                reason,
+                downloaded_bytes,
+                "single-stream transfer cancelled"
+            );
         }
     }
     Ok(())
@@ -1954,7 +2146,9 @@ fn spawn_segment_transfer(
     task_control: &DownloadTransferControl,
     artifact: &SegmentedArtifact,
     progress_by_segment: &Arc<Mutex<HashMap<u32, u64>>>,
+    segment_lengths: &Arc<Mutex<HashMap<u32, u64>>>,
     active_connections: &Arc<AtomicU16>,
+    retry_observed: &Arc<AtomicBool>,
     total_bytes: u64,
     use_if_range: bool,
     segment: DownloadSegment,
@@ -1968,7 +2162,9 @@ fn spawn_segment_transfer(
     let worker_control = segment_control.clone();
     let progress_inner = Arc::clone(inner);
     let progress_by_segment = Arc::clone(progress_by_segment);
+    let segment_lengths = Arc::clone(segment_lengths);
     let active_connections = Arc::clone(active_connections);
+    let retry_observed = Arc::clone(retry_observed);
     active_connections.fetch_add(1, Ordering::AcqRel);
     transfers.spawn(async move {
         let segment_index = segment.index();
@@ -1976,6 +2172,7 @@ fn spawn_segment_transfer(
         let outcome = loop {
             let attempt_progress_inner = Arc::clone(&progress_inner);
             let attempt_progress_by_segment = Arc::clone(&progress_by_segment);
+            let attempt_segment_lengths = Arc::clone(&segment_lengths);
             let attempt_active_connections = Arc::clone(&active_connections);
             let mut transfer = crate::DownloadSegmentTransferRequest::new(
                 DownloadTransferContext::new(task_id, correlation_id),
@@ -2004,6 +2201,7 @@ fn spawn_segment_transfer(
                         Some(total_bytes),
                         attempt_active_connections.load(Ordering::Acquire),
                         Some(&attempt_progress_by_segment),
+                        Some(&attempt_segment_lengths),
                     );
                 })
                 .await;
@@ -2011,6 +2209,7 @@ fn spawn_segment_transfer(
                 Err(error)
                     if attempt < MAX_SEGMENT_TRANSFER_ATTEMPTS && error.is_retryable_transfer() =>
                 {
+                    retry_observed.store(true, Ordering::Release);
                     let aggregate = progress_by_segment
                         .lock()
                         .map(|mut values| {
@@ -2025,6 +2224,7 @@ fn spawn_segment_transfer(
                         Some(total_bytes),
                         active_connections.load(Ordering::Acquire),
                         Some(progress_by_segment.as_ref()),
+                        Some(segment_lengths.as_ref()),
                     );
                     let delay = segment_retry_delay(attempt);
                     warn!(
@@ -2055,6 +2255,7 @@ fn select_rebalance_candidate(
     task_id: DownloadTaskId,
     worker_controls: &HashMap<u32, DownloadSegmentTransferControl>,
     progress_by_segment: &Arc<Mutex<HashMap<u32, u64>>>,
+    minimum_remaining_bytes: u64,
 ) -> Result<Option<(u32, u64)>, DownloadEngineError> {
     let plan = inner
         .store
@@ -2073,8 +2274,7 @@ fn select_rebalance_candidate(
                 .copied()
                 .unwrap_or_else(|| segment.downloaded_bytes());
             let remaining = segment.len().saturating_sub(observed);
-            (remaining >= MIN_DYNAMIC_SEGMENT_BYTES.saturating_mul(2))
-                .then_some((segment.index(), remaining))
+            (remaining >= minimum_remaining_bytes).then_some((segment.index(), remaining))
         })
         .max_by_key(|(_, remaining)| *remaining))
 }
@@ -2113,7 +2313,7 @@ async fn run_segmented_task(
                 let state = if segment.state == DownloadSegmentState::Completed {
                     DownloadSegmentState::Completed
                 } else {
-                    DownloadSegmentState::Active
+                    DownloadSegmentState::Waiting
                 };
                 let restored_segment = DownloadSegment::new(
                     segment.index(),
@@ -2122,7 +2322,7 @@ async fn run_segmented_task(
                     segment.downloaded_bytes(),
                     state,
                 )?;
-                if state == DownloadSegmentState::Active {
+                if state == DownloadSegmentState::Waiting {
                     inner
                         .store
                         .save_segment_checkpoint(task_id, &restored_segment)?;
@@ -2132,7 +2332,7 @@ async fn run_segmented_task(
                         ?task_id,
                         segment_index = restored_segment.index(),
                         downloaded_bytes = restored_segment.downloaded_bytes(),
-                        "persisted segment checkpoint restored"
+                        "persisted segment checkpoint restored to the waiting queue"
                     );
                 }
                 restored.push(restored_segment);
@@ -2143,7 +2343,8 @@ async fn run_segmented_task(
             (restored, artifact, use_if_range)
         }
         None => {
-            let segments = create_initial_segments(total_bytes, request.connection_limit)?;
+            let max_connections = request.connection_limit.unwrap_or(1).clamp(1, 64);
+            let segments = create_initial_segments(total_bytes, Some(max_connections))?;
             let artifact = SegmentedArtifact::create(&temporary_path, total_bytes)
                 .await
                 .map_err(HttpDownloadError::from)?;
@@ -2191,17 +2392,53 @@ async fn run_segmented_task(
             .map(|segment| (segment.index(), segment.downloaded_bytes()))
             .collect::<HashMap<_, _>>(),
     ));
+    let segment_lengths = Arc::new(Mutex::new(
+        segments
+            .iter()
+            .map(|segment| (segment.index(), segment.len()))
+            .collect::<HashMap<_, _>>(),
+    ));
     let runnable = segments
         .iter()
         .filter(|segment| segment.state != DownloadSegmentState::Completed)
         .cloned()
         .collect::<Vec<_>>();
-    let desired_connections = u16::try_from(runnable.len()).unwrap_or(u16::MAX);
     let active_connections = Arc::new(AtomicU16::new(0));
+    let retry_observed = Arc::new(AtomicBool::new(false));
     let mut transfers = tokio::task::JoinSet::new();
     let mut worker_controls = HashMap::new();
+    let max_connections = request.connection_limit.unwrap_or(1).clamp(1, 64);
+    let mut waiting_segments = VecDeque::new();
     for segment in runnable {
-        let segment_index = segment.index();
+        if worker_controls.len() >= usize::from(max_connections) {
+            let waiting = if segment.state == DownloadSegmentState::Waiting {
+                segment
+            } else {
+                checkpoint_segment(
+                    inner,
+                    task_id,
+                    correlation_id,
+                    &segment,
+                    segment.downloaded_bytes(),
+                    DownloadSegmentState::Waiting,
+                )?
+            };
+            waiting_segments.push_back(waiting);
+            continue;
+        }
+        let active = if segment.state == DownloadSegmentState::Active {
+            segment
+        } else {
+            checkpoint_segment(
+                inner,
+                task_id,
+                correlation_id,
+                &segment,
+                segment.downloaded_bytes(),
+                DownloadSegmentState::Active,
+            )?
+        };
+        let segment_index = active.index();
         let worker_control = spawn_segment_transfer(
             &mut transfers,
             inner,
@@ -2212,10 +2449,12 @@ async fn run_segmented_task(
             control,
             &artifact,
             &progress_by_segment,
+            &segment_lengths,
             &active_connections,
+            &retry_observed,
             total_bytes,
             use_if_range,
-            segment,
+            active,
         );
         worker_controls.insert(segment_index, worker_control);
     }
@@ -2224,7 +2463,124 @@ async fn run_segmented_task(
     let mut paused = false;
     let mut cancelled = false;
     let mut pending_rebalance = None;
-    while let Some(joined) = transfers.join_next().await {
+    let mut adaptive_growth_remaining = 0_usize;
+    let target_connections = usize::from(max_connections);
+    let mut segment_count = segments.len();
+    let adaptive_policy = request.adaptive_segment_policy.unwrap_or_default();
+    let adaptive_max_segments = usize::from(adaptive_policy.max_segments).max(segment_count);
+    let adaptive_min_remaining_bytes =
+        u64::from(adaptive_policy.min_segment_mib).saturating_mul(MIB);
+    let mut adaptive = AdaptiveSegmentController::new(
+        u16::try_from(adaptive_max_segments).unwrap_or(u16::MAX),
+        adaptive_policy.enabled,
+    );
+    let mut adaptive_tick = tokio::time::interval(Duration::from_secs(1));
+    adaptive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    adaptive_tick.tick().await;
+    let mut sampled_at = Instant::now();
+    let mut sampled_bytes = progress_by_segment
+        .lock()
+        .map_err(|_| DownloadEngineError::LockPoisoned)?
+        .values()
+        .copied()
+        .sum::<u64>();
+    loop {
+        let joined = tokio::select! {
+            joined = transfers.join_next() => {
+                let Some(joined) = joined else {
+                    break;
+                };
+                joined
+            }
+            _ = adaptive_tick.tick(), if !paused && !cancelled && first_error.is_none() => {
+                let now = Instant::now();
+                let downloaded = progress_by_segment
+                    .lock()
+                    .map_err(|_| DownloadEngineError::LockPoisoned)?
+                    .values()
+                    .copied()
+                    .sum::<u64>();
+                let elapsed = now.duration_since(sampled_at).as_secs_f64().max(0.001);
+                let speed = (downloaded.saturating_sub(sampled_bytes) as f64 / elapsed)
+                    .min(u64::MAX as f64) as u64;
+                sampled_at = now;
+                sampled_bytes = downloaded;
+                let current_segments = u16::try_from(segment_count).unwrap_or(u16::MAX);
+                match adaptive.observe(
+                    speed,
+                    current_segments,
+                    retry_observed.load(Ordering::Acquire),
+                ) {
+                    AdaptiveConnectionDecision::Grow if pending_rebalance.is_none() => {
+                        adaptive_growth_remaining =
+                            adaptive_max_segments.saturating_sub(segment_count).min(4);
+                        adaptive.confirm_growth_target(
+                            u16::try_from(
+                                segment_count.saturating_add(adaptive_growth_remaining),
+                            )
+                            .unwrap_or(u16::MAX),
+                        );
+                        if let Some((candidate_index, remaining_bytes)) =
+                            select_rebalance_candidate(
+                                inner,
+                                task_id,
+                                &worker_controls,
+                                &progress_by_segment,
+                                adaptive_min_remaining_bytes,
+                            )?
+                            && let Some(candidate_control) = worker_controls.get(&candidate_index)
+                        {
+                            candidate_control.request_rebalance();
+                            pending_rebalance = Some(candidate_index);
+                            adaptive_growth_remaining =
+                                adaptive_growth_remaining.saturating_sub(1);
+                            info!(
+                                event = "download.adaptive_segments.growth_requested",
+                                %correlation_id,
+                                ?task_id,
+                                segment_index = candidate_index,
+                                remaining_bytes,
+                                sampled_bytes_per_second = speed,
+                                current_segments,
+                                target_segments = segment_count
+                                    .saturating_add(adaptive_growth_remaining)
+                                    .saturating_add(1),
+                                max_segments = adaptive_max_segments,
+                                max_connections,
+                                "stable transfer speed allowed one adaptive segment split"
+                            );
+                        } else {
+                            adaptive_growth_remaining = 0;
+                            adaptive.cancel_growth();
+                        }
+                    }
+                    AdaptiveConnectionDecision::DisabledAfterRetry => {
+                        adaptive_growth_remaining = 0;
+                        warn!(
+                            event = "download.adaptive_segments.disabled_after_retry",
+                            %correlation_id,
+                            ?task_id,
+                            current_segments,
+                            "automatic segment splitting disabled after a segment network retry"
+                        );
+                    }
+                    AdaptiveConnectionDecision::DisabledForLowBenefit => {
+                        adaptive_growth_remaining = 0;
+                        info!(
+                            event = "download.adaptive_segments.disabled_low_benefit",
+                            %correlation_id,
+                            ?task_id,
+                            current_segments,
+                            sampled_bytes_per_second = speed,
+                            "automatic segment splitting stopped because the added segments had insufficient benefit"
+                        );
+                    }
+                    AdaptiveConnectionDecision::Grow => adaptive.cancel_growth(),
+                    AdaptiveConnectionDecision::Hold => {}
+                }
+                continue;
+            }
+        };
         let (segment, outcome) =
             joined.map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
         worker_controls.remove(&segment.index());
@@ -2303,6 +2659,7 @@ async fn run_segmented_task(
                                 .cloned()
                                 .ok_or(DownloadEngineError::IncompleteSegmentLayout(task_id))?;
                             inner.persist_transfer_plan_change(task_id, &plan)?;
+                            segment_count = segment_count.saturating_add(1);
                             info!(
                                 event = "download.segment_split.persisted",
                                 %correlation_id,
@@ -2316,18 +2673,29 @@ async fn run_segmented_task(
                                 "durable slow-segment split persisted"
                             );
                             for waiting_segment in [reduced, added] {
-                                let active = DownloadSegment::new(
-                                    waiting_segment.index(),
-                                    waiting_segment.start_byte(),
-                                    waiting_segment.end_byte(),
-                                    waiting_segment.downloaded_bytes(),
-                                    DownloadSegmentState::Active,
-                                )?;
-                                inner.store.save_segment_checkpoint(task_id, &active)?;
                                 progress_by_segment
                                     .lock()
                                     .map_err(|_| DownloadEngineError::LockPoisoned)?
-                                    .insert(active.index(), active.downloaded_bytes());
+                                    .insert(
+                                        waiting_segment.index(),
+                                        waiting_segment.downloaded_bytes(),
+                                    );
+                                segment_lengths
+                                    .lock()
+                                    .map_err(|_| DownloadEngineError::LockPoisoned)?
+                                    .insert(waiting_segment.index(), waiting_segment.len());
+                                if worker_controls.len() >= usize::from(max_connections) {
+                                    waiting_segments.push_back(waiting_segment);
+                                    continue;
+                                }
+                                let active = checkpoint_segment(
+                                    inner,
+                                    task_id,
+                                    correlation_id,
+                                    &waiting_segment,
+                                    waiting_segment.downloaded_bytes(),
+                                    DownloadSegmentState::Active,
+                                )?;
                                 let active_index = active.index();
                                 let worker_control = spawn_segment_transfer(
                                     &mut transfers,
@@ -2339,7 +2707,9 @@ async fn run_segmented_task(
                                     control,
                                     &artifact,
                                     &progress_by_segment,
+                                    &segment_lengths,
                                     &active_connections,
+                                    &retry_observed,
                                     total_bytes,
                                     use_if_range,
                                     active,
@@ -2367,7 +2737,9 @@ async fn run_segmented_task(
                                 control,
                                 &artifact,
                                 &progress_by_segment,
+                                &segment_lengths,
                                 &active_connections,
+                                &retry_observed,
                                 total_bytes,
                                 use_if_range,
                                 active,
@@ -2385,28 +2757,83 @@ async fn run_segmented_task(
             }
         }
 
-        if released_slot
+        if retry_observed.load(Ordering::Acquire) {
+            adaptive_growth_remaining = 0;
+        }
+        while worker_controls.len() < target_connections
+            && !paused
+            && !cancelled
+            && first_error.is_none()
+            && let Some(segment) = waiting_segments.pop_front()
+        {
+            let active = checkpoint_segment(
+                inner,
+                task_id,
+                correlation_id,
+                &segment,
+                segment.downloaded_bytes(),
+                DownloadSegmentState::Active,
+            )?;
+            let segment_index = active.index();
+            let worker_control = spawn_segment_transfer(
+                &mut transfers,
+                inner,
+                task_id,
+                correlation_id,
+                request,
+                probe,
+                control,
+                &artifact,
+                &progress_by_segment,
+                &segment_lengths,
+                &active_connections,
+                &retry_observed,
+                total_bytes,
+                use_if_range,
+                active,
+            );
+            worker_controls.insert(segment_index, worker_control);
+        }
+        let continuing_adaptive_growth = adaptive_growth_remaining > 0;
+        let can_split = adaptive_policy.enabled && segment_count < adaptive_max_segments;
+        let should_rebalance = can_split
+            && (released_slot && worker_controls.len() < target_connections
+                || continuing_adaptive_growth);
+        if should_rebalance
             && !paused
             && !cancelled
             && first_error.is_none()
             && pending_rebalance.is_none()
-            && worker_controls.len() < usize::from(desired_connections)
-            && let Some((candidate_index, remaining_bytes)) =
-                select_rebalance_candidate(inner, task_id, &worker_controls, &progress_by_segment)?
-            && let Some(candidate_control) = worker_controls.get(&candidate_index)
         {
-            candidate_control.request_rebalance();
-            pending_rebalance = Some(candidate_index);
-            info!(
-                event = "download.segment_rebalance.requested",
-                %correlation_id,
-                ?task_id,
-                segment_index = candidate_index,
-                remaining_bytes,
-                active_connections = worker_controls.len(),
-                desired_connections,
-                "released connection slot assigned to the largest unwritten tail"
-            );
+            let minimum_remaining_bytes = adaptive_min_remaining_bytes;
+            if let Some((candidate_index, remaining_bytes)) = select_rebalance_candidate(
+                inner,
+                task_id,
+                &worker_controls,
+                &progress_by_segment,
+                minimum_remaining_bytes,
+            )? && let Some(candidate_control) = worker_controls.get(&candidate_index)
+            {
+                candidate_control.request_rebalance();
+                pending_rebalance = Some(candidate_index);
+                if continuing_adaptive_growth {
+                    adaptive_growth_remaining = adaptive_growth_remaining.saturating_sub(1);
+                }
+                info!(
+                    event = "download.segment_rebalance.requested",
+                    %correlation_id,
+                    ?task_id,
+                    segment_index = candidate_index,
+                    remaining_bytes,
+                    active_connections = worker_controls.len(),
+                    target_connections,
+                    adaptive_growth = continuing_adaptive_growth,
+                    "connection target assigned to the largest unwritten tail"
+                );
+            } else if continuing_adaptive_growth {
+                adaptive_growth_remaining = 0;
+                adaptive.cancel_growth();
+            }
         }
     }
 
@@ -2446,14 +2873,15 @@ async fn run_segmented_task(
         return Ok(());
     }
     if let Some(error) = first_error {
-        if observed_downloaded_bytes == 0 && error.allows_clean_single_stream_fallback() {
+        if !use_if_range && error.allows_clean_single_stream_fallback() {
             warn!(
                 event = "download.segment_transfer.fallback",
                 %correlation_id,
                 ?task_id,
                 reason = error.kind(),
                 segment_count = final_plan.segments().len(),
-                "range transfers rejected before progress; restarting as a single stream"
+                discarded_downloaded_bytes = observed_downloaded_bytes,
+                "range transfers rejected for a fresh task; discarding segmented work and restarting as a single stream"
             );
             inner.store.clear_transfer_plan(task_id)?;
             remove_path_if_exists(&temporary_path)?;
@@ -2468,7 +2896,16 @@ async fn run_segmented_task(
                 state.transfer.downloaded_bytes = 0;
                 inner.persist(state)?;
             }
-            return run_single_stream_task(inner, task_id, request, &fallback_probe, control).await;
+            return run_single_stream_task(
+                inner,
+                task_id,
+                correlation_id,
+                request,
+                &fallback_probe,
+                control,
+                "range_validation_fallback",
+            )
+            .await;
         }
         {
             let mut tasks = inner.lock_tasks()?;
@@ -2623,6 +3060,7 @@ fn publish_transfer_progress(
     total_bytes: Option<u64>,
     active_connections: u16,
     progress_by_segment: Option<&Mutex<HashMap<u32, u64>>>,
+    segment_lengths: Option<&Mutex<HashMap<u32, u64>>>,
 ) {
     if let Ok(mut tasks) = inner.tasks.lock()
         && let Some(state) = tasks.get_mut(&task_id)
@@ -2637,7 +3075,10 @@ fn publish_transfer_progress(
             state.last_progress_event = Some(now);
             let segments = progress_by_segment
                 .and_then(|values| values.lock().ok())
-                .map(|values| download_segment_progress_snapshot(&values))
+                .map(|values| {
+                    let lengths = segment_lengths.and_then(|lengths| lengths.lock().ok());
+                    download_segment_progress_snapshot(&values, lengths.as_deref())
+                })
                 .unwrap_or_default();
             let published_downloaded_bytes = if progress_by_segment.is_some() {
                 segments
@@ -2666,13 +3107,17 @@ fn publish_transfer_progress(
     }
 }
 
-fn download_segment_progress_snapshot(values: &HashMap<u32, u64>) -> Vec<DownloadSegmentProgress> {
+fn download_segment_progress_snapshot(
+    values: &HashMap<u32, u64>,
+    lengths: Option<&HashMap<u32, u64>>,
+) -> Vec<DownloadSegmentProgress> {
     let mut segments = values
         .iter()
         .map(
             |(segment_index, downloaded_bytes)| DownloadSegmentProgress {
                 segment_index: *segment_index,
                 downloaded_bytes: *downloaded_bytes,
+                total_bytes: lengths.and_then(|lengths| lengths.get(segment_index).copied()),
             },
         )
         .collect::<Vec<_>>();
@@ -3077,6 +3522,81 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_segments_grow_only_after_stable_speed_samples() {
+        let mut controller = AdaptiveSegmentController::new(8, true);
+
+        for speed in [10_000, 10_400, 9_800, 10_200] {
+            assert_eq!(
+                controller.observe(speed, 4, false),
+                AdaptiveConnectionDecision::Hold
+            );
+        }
+        assert_eq!(
+            controller.observe(10_100, 4, false),
+            AdaptiveConnectionDecision::Grow
+        );
+        controller.confirm_growth_target(8);
+    }
+
+    #[test]
+    fn adaptive_segments_use_only_post_growth_samples_for_the_benefit_window() {
+        let mut controller = AdaptiveSegmentController::new(8, true);
+        for speed in [10_000, 10_100, 9_900, 10_000, 10_050] {
+            let _ = controller.observe(speed, 4, false);
+        }
+        controller.confirm_growth_target(8);
+
+        for speed in [10_100, 10_200, 10_000, 10_150, 10_100] {
+            assert_eq!(
+                controller.observe(speed, 5, false),
+                AdaptiveConnectionDecision::Hold
+            );
+        }
+        for speed in [10_100, 10_200, 10_000, 10_150] {
+            assert_eq!(
+                controller.observe(speed, 8, false),
+                AdaptiveConnectionDecision::Hold
+            );
+        }
+        assert_eq!(
+            controller.observe(10_100, 8, false),
+            AdaptiveConnectionDecision::DisabledForLowBenefit
+        );
+        assert_eq!(
+            controller.observe(40_000, 8, false),
+            AdaptiveConnectionDecision::Hold
+        );
+    }
+
+    #[test]
+    fn adaptive_segments_stop_after_a_segment_network_retry() {
+        let mut controller = AdaptiveSegmentController::new(8, true);
+
+        assert_eq!(
+            controller.observe(10_000, 4, true),
+            AdaptiveConnectionDecision::DisabledAfterRetry
+        );
+        for _ in 0..5 {
+            assert_eq!(
+                controller.observe(20_000, 4, false),
+                AdaptiveConnectionDecision::Hold
+            );
+        }
+    }
+
+    #[test]
+    fn adaptive_segments_respect_the_user_disable_switch() {
+        let mut controller = AdaptiveSegmentController::new(32, false);
+
+        for _ in 0..10 {
+            assert_eq!(
+                controller.observe(20_000, 8, false),
+                AdaptiveConnectionDecision::Hold
+            );
+        }
+    }
+
+    #[test]
     fn task_detail_command_returns_only_the_selected_tasks_segments_and_bounded_timeline() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let task_id = engine
@@ -3094,6 +3614,7 @@ mod tests {
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -3159,6 +3680,7 @@ mod tests {
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -3207,12 +3729,14 @@ mod tests {
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
             .expect("enqueue task");
         while events.try_recv().is_ok() {}
         let segment_progress = Mutex::new(HashMap::from([(0, 5), (1, 7)]));
+        let segment_lengths = Mutex::new(HashMap::from([(0, 10), (1, 10)]));
 
         publish_transfer_progress(
             &engine.inner,
@@ -3221,6 +3745,7 @@ mod tests {
             Some(20),
             2,
             Some(&segment_progress),
+            Some(&segment_lengths),
         );
 
         let event = events.recv_blocking().expect("progress event");
@@ -3235,6 +3760,14 @@ mod tests {
                 .map(|segment| segment.downloaded_bytes)
                 .sum::<u64>(),
             progress.downloaded_bytes
+        );
+        assert_eq!(
+            progress
+                .segments
+                .iter()
+                .map(|segment| segment.total_bytes)
+                .collect::<Vec<_>>(),
+            vec![Some(10), Some(10)]
         );
     }
 
@@ -3365,6 +3898,7 @@ mod tests {
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
             };
 
             let task_id = engine
@@ -3406,6 +3940,7 @@ mod tests {
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
         };
 
         let task_id = engine
@@ -3440,6 +3975,7 @@ mod tests {
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
             },
             RequestOrigin::Internal,
             1_000,

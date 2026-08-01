@@ -303,6 +303,7 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
         connection_limit: None,
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     }
     .validate()
     .map_err(|error| CliError::syntax(error.to_string()))?;
@@ -545,6 +546,7 @@ fn run_add(
         connection_limit: None,
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     };
     request
         .validate()

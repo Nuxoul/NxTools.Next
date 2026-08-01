@@ -6,13 +6,14 @@ use std::process::Command;
 use std::time::Duration;
 
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
-    DownloadEvent, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadSchedule,
-    DownloadScheduleMoment, DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
-    DownloadWeekday, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy, DownloadBatchAction,
+    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
+    DownloadEngine, DownloadEvent, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
+    DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState, DownloadStatus,
+    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday, RequestOrigin,
+    SqliteDownloadStore, daily_schedule_window_contains,
 };
-use support::{DeterministicHttpServer, concurrent_fixture_bytes};
+use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
 
 fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> DownloadRequest {
     DownloadRequest {
@@ -25,6 +26,7 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     }
 }
 
@@ -640,6 +642,7 @@ fn crash_helper_process() {
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
             },
             RequestOrigin::Internal,
         )
@@ -806,6 +809,35 @@ async fn range_ignored_after_probe_restarts_cleanly_as_a_single_stream() {
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("read fallback artifact"),
         b"0123456789abcdef"
+    );
+}
+
+#[tokio::test]
+async fn range_ignored_after_another_segment_progress_restarts_cleanly_as_a_single_stream() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!("http://{}/range-progress-then-ignored", server.address());
+    request.connection_limit = Some(4);
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit mixed-replica task");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for clean fallback");
+
+    assert_eq!(completed.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        completed.downloaded_bytes,
+        concurrent_fixture_bytes().len() as u64
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin")).expect("read fallback artifact"),
+        concurrent_fixture_bytes()
     );
 }
 
@@ -1300,6 +1332,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
             },
             RequestOrigin::Ui,
         )
@@ -1350,13 +1383,78 @@ async fn dynamic_rebalance_splits_a_slow_tail_without_overlapping_output() {
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin"))
             .expect("read dynamically balanced artifact"),
-        concurrent_fixture_bytes()
+        imbalanced_fixture_bytes()
     );
     assert!(
         server.dynamic_range_attempts() >= 4,
         "a released connection slot must split the slow unwritten tail; attempts={}",
         server.dynamic_range_attempts()
     );
+}
+
+#[tokio::test]
+async fn dynamic_segment_policy_controls_the_real_slot_release_split_path() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+
+    for (label, policy) in [
+        (
+            "disabled",
+            DownloadAdaptiveSegmentPolicy {
+                enabled: false,
+                max_segments: 32,
+                min_segment_mib: 3,
+            },
+        ),
+        (
+            "at-ceiling",
+            DownloadAdaptiveSegmentPolicy {
+                enabled: true,
+                max_segments: 2,
+                min_segment_mib: 3,
+            },
+        ),
+        (
+            "tail-too-small",
+            DownloadAdaptiveSegmentPolicy {
+                enabled: true,
+                max_segments: 32,
+                min_segment_mib: 5,
+            },
+        ),
+    ] {
+        let attempts_before = server.dynamic_range_attempts();
+        let destination = directory.path().join(label);
+        let mut request = request(&server, destination.clone());
+        request.source_url = format!("http://{}/range-imbalanced", server.address());
+        request.file_name = Some(format!("{label}.bin"));
+        request.connection_limit = Some(2);
+        request.adaptive_segment_policy = Some(policy);
+
+        let task_id = engine
+            .submit(request, RequestOrigin::Ui)
+            .expect("submit policy fixture");
+        let completed = engine
+            .wait_for_terminal(task_id, Duration::from_secs(5))
+            .await
+            .expect("wait for policy fixture");
+
+        assert_eq!(
+            completed.task.status(),
+            DownloadStatus::Completed,
+            "{label}"
+        );
+        assert_eq!(
+            server.dynamic_range_attempts() - attempts_before,
+            2,
+            "{label} must keep the original two ranges without splitting"
+        );
+        assert_eq!(
+            std::fs::read(destination.join(format!("{label}.bin"))).expect("read policy fixture"),
+            imbalanced_fixture_bytes()
+        );
+    }
 }
 
 #[tokio::test]
@@ -1388,7 +1486,23 @@ async fn a_dynamically_split_plan_resumes_after_engine_restart() {
         .expect("wait for dynamic pause");
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
     assert!(paused.downloaded_bytes > 0);
-    assert!(paused.downloaded_bytes < concurrent_fixture_bytes().len() as u64);
+    assert!(paused.downloaded_bytes < imbalanced_fixture_bytes().len() as u64);
+    let detail = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::TaskDetail { task_id },
+    });
+    let DownloadCommandOutcome::TaskDetail(detail) = detail.outcome else {
+        panic!("paused task detail must remain available");
+    };
+    assert!(
+        detail
+            .segments
+            .iter()
+            .all(|segment| segment.state != DownloadSegmentState::Active),
+        "paused queued and running segments must all persist as non-active"
+    );
     drop(engine);
 
     let reopened = DownloadEngine::open(&database_path).expect("reopen download engine");
@@ -1409,7 +1523,7 @@ async fn a_dynamically_split_plan_resumes_after_engine_restart() {
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin"))
             .expect("read resumed dynamic artifact"),
-        concurrent_fixture_bytes()
+        imbalanced_fixture_bytes()
     );
 }
 
@@ -1492,6 +1606,74 @@ async fn transient_range_failures_retry_without_losing_the_task_or_artifact() {
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("read retried artifact"),
         b"0123456789abcdef"
+    );
+}
+
+#[tokio::test]
+async fn equivalent_cdn_replica_validator_does_not_restart_a_fresh_segment() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!("http://{}/range-validator-replica", server.address());
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit validator-replica task");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(4))
+        .await
+        .expect("wait for validator-replica retry");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "validator mismatch failed instead of retrying: {:?}",
+        completed.error
+    );
+    assert_eq!(server.validator_range_attempts(), 1);
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin"))
+            .expect("read validator-retried artifact"),
+        b"0123456789abcdef"
+    );
+}
+
+#[tokio::test]
+async fn fresh_concurrent_download_accepts_valid_ranges_from_equivalent_cdn_replicas() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!(
+        "http://{}/range-concurrent-varying-validator",
+        server.address()
+    );
+    request.connection_limit = Some(8);
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit varying-replica task");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for varying-replica task");
+
+    assert_eq!(completed.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        server.varying_validator_full_stream_attempts(),
+        0,
+        "valid concurrent ranges must not be discarded and downloaded again as a full stream"
+    );
+    assert!(
+        server.max_concurrent_range_transfers() >= 2,
+        "the transfer must retain concurrent range requests"
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin")).expect("read completed artifact"),
+        concurrent_fixture_bytes()
     );
 }
 

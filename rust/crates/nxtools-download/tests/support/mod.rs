@@ -10,6 +10,7 @@ use std::time::Duration;
 
 const BODY: &[u8; 16] = b"0123456789abcdef";
 const CONCURRENT_BODY_LEN: usize = 256 * 1024;
+const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
 pub struct DeterministicHttpServer {
     address: SocketAddr,
@@ -19,6 +20,9 @@ pub struct DeterministicHttpServer {
     max_active_range_transfers: Arc<AtomicU64>,
     transient_range_failures_remaining: Arc<AtomicU64>,
     transient_range_attempts: Arc<AtomicU64>,
+    validator_range_failures_remaining: Arc<AtomicU64>,
+    validator_range_attempts: Arc<AtomicU64>,
+    varying_validator_full_stream_attempts: Arc<AtomicU64>,
     dynamic_range_attempts: Arc<AtomicU64>,
     network_available: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
@@ -46,6 +50,9 @@ impl DeterministicHttpServer {
         let max_active_range_transfers = Arc::new(AtomicU64::new(0));
         let transient_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let transient_range_attempts = Arc::new(AtomicU64::new(0));
+        let validator_range_failures_remaining = Arc::new(AtomicU64::new(1));
+        let validator_range_attempts = Arc::new(AtomicU64::new(0));
+        let varying_validator_full_stream_attempts = Arc::new(AtomicU64::new(0));
         let dynamic_range_attempts = Arc::new(AtomicU64::new(0));
         let network_available = Arc::new(AtomicBool::new(true));
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -56,6 +63,11 @@ impl DeterministicHttpServer {
         let listener_transient_range_failures_remaining =
             Arc::clone(&transient_range_failures_remaining);
         let listener_transient_range_attempts = Arc::clone(&transient_range_attempts);
+        let listener_validator_range_failures_remaining =
+            Arc::clone(&validator_range_failures_remaining);
+        let listener_validator_range_attempts = Arc::clone(&validator_range_attempts);
+        let listener_varying_validator_full_stream_attempts =
+            Arc::clone(&varying_validator_full_stream_attempts);
         let listener_dynamic_range_attempts = Arc::clone(&dynamic_range_attempts);
         let listener_network_available = Arc::clone(&network_available);
         let listener_shutdown = Arc::clone(&shutdown);
@@ -76,6 +88,12 @@ impl DeterministicHttpServer {
                             Arc::clone(&listener_transient_range_failures_remaining);
                         let transient_range_attempts =
                             Arc::clone(&listener_transient_range_attempts);
+                        let validator_range_failures_remaining =
+                            Arc::clone(&listener_validator_range_failures_remaining);
+                        let validator_range_attempts =
+                            Arc::clone(&listener_validator_range_attempts);
+                        let varying_validator_full_stream_attempts =
+                            Arc::clone(&listener_varying_validator_full_stream_attempts);
                         let dynamic_range_attempts = Arc::clone(&listener_dynamic_range_attempts);
                         let network_available = Arc::clone(&listener_network_available);
                         let serve = move || {
@@ -87,6 +105,9 @@ impl DeterministicHttpServer {
                                 &max_active_range_transfers,
                                 &transient_range_failures_remaining,
                                 &transient_range_attempts,
+                                &validator_range_failures_remaining,
+                                &validator_range_attempts,
+                                &varying_validator_full_stream_attempts,
                                 &dynamic_range_attempts,
                                 &network_available,
                             );
@@ -113,6 +134,9 @@ impl DeterministicHttpServer {
             max_active_range_transfers,
             transient_range_failures_remaining,
             transient_range_attempts,
+            validator_range_failures_remaining,
+            validator_range_attempts,
+            varying_validator_full_stream_attempts,
             dynamic_range_attempts,
             network_available,
             shutdown,
@@ -134,6 +158,15 @@ impl DeterministicHttpServer {
 
     pub fn transient_range_attempts(&self) -> u64 {
         self.transient_range_attempts.load(Ordering::Acquire)
+    }
+
+    pub fn validator_range_attempts(&self) -> u64 {
+        self.validator_range_attempts.load(Ordering::Acquire)
+    }
+
+    pub fn varying_validator_full_stream_attempts(&self) -> u64 {
+        self.varying_validator_full_stream_attempts
+            .load(Ordering::Acquire)
     }
 
     pub fn dynamic_range_attempts(&self) -> u64 {
@@ -229,6 +262,9 @@ fn serve_connection(
     max_active_range_transfers: &AtomicU64,
     transient_range_failures_remaining: &AtomicU64,
     transient_range_attempts: &AtomicU64,
+    validator_range_failures_remaining: &AtomicU64,
+    validator_range_attempts: &AtomicU64,
+    varying_validator_full_stream_attempts: &AtomicU64,
     dynamic_range_attempts: &AtomicU64,
     network_available: &AtomicBool,
 ) {
@@ -288,6 +324,17 @@ fn serve_connection(
             active_range_transfers,
             max_active_range_transfers,
         ),
+        "/range-concurrent-varying-validator" => serve_concurrent_varying_validator(
+            &mut stream,
+            method,
+            headers.get("range"),
+            active_range_transfers,
+            max_active_range_transfers,
+            varying_validator_full_stream_attempts,
+        ),
+        "/range-progress-then-ignored" => {
+            serve_range_progress_then_ignored(&mut stream, method, headers.get("range"))
+        }
         "/range-concurrent-if-range-incompatible" => {
             if headers.contains_key("if-range") {
                 let body = concurrent_fixture_bytes();
@@ -327,6 +374,13 @@ fn serve_connection(
             headers.get("range"),
             transient_range_failures_remaining,
             transient_range_attempts,
+        ),
+        "/range-validator-replica" => serve_validator_replica_range(
+            &mut stream,
+            method,
+            headers.get("range"),
+            validator_range_failures_remaining,
+            validator_range_attempts,
         ),
         "/range-always-transient" => serve_always_range_error(
             &mut stream,
@@ -678,6 +732,12 @@ pub fn concurrent_fixture_bytes() -> Vec<u8> {
         .collect()
 }
 
+pub fn imbalanced_fixture_bytes() -> Vec<u8> {
+    (0..IMBALANCED_BODY_LEN)
+        .map(|index| (index % 251) as u8)
+        .collect()
+}
+
 fn serve_concurrent_range(
     stream: &mut TcpStream,
     method: &str,
@@ -719,6 +779,113 @@ fn serve_concurrent_range(
         active.fetch_sub(1, Ordering::AcqRel);
         return;
     }
+    write_response(stream, 200, "OK", &common, &body, Some(CONCURRENT_BODY_LEN));
+}
+
+fn serve_concurrent_varying_validator(
+    stream: &mut TcpStream,
+    method: &str,
+    range: Option<&String>,
+    active: &AtomicU64,
+    max_active: &AtomicU64,
+    full_stream_attempts: &AtomicU64,
+) {
+    let base_headers = [
+        ("Accept-Ranges", "bytes"),
+        ("Last-Modified", "Sat, 01 Aug 2026 00:00:00 GMT"),
+    ];
+    if method == "HEAD" {
+        let mut headers = base_headers.to_vec();
+        headers.push(("ETag", "\"probe-replica\""));
+        write_response(stream, 200, "OK", &headers, b"", Some(CONCURRENT_BODY_LEN));
+        return;
+    }
+
+    let body = concurrent_fixture_bytes();
+    if let Some((start, end)) = range.and_then(|value| parse_range(value))
+        && start <= end
+        && end < body.len()
+    {
+        let validator = if (start / 4096) % 2 == 0 {
+            "\"replica-a\""
+        } else {
+            "\"replica-b\""
+        };
+        let content_range = format!("bytes {start}-{end}/{}", body.len());
+        let mut headers = base_headers.to_vec();
+        headers.push(("ETag", validator));
+        headers.push(("Content-Range", &content_range));
+        if (start, end) == (0, 0) {
+            headers[2] = ("ETag", "\"probe-replica\"");
+            write_response(
+                stream,
+                206,
+                "Partial Content",
+                &headers,
+                &body[..1],
+                Some(1),
+            );
+            return;
+        }
+        let current = active.fetch_add(1, Ordering::AcqRel) + 1;
+        max_active.fetch_max(current, Ordering::AcqRel);
+        write_throttled_response(stream, 206, "Partial Content", &headers, &body[start..=end]);
+        active.fetch_sub(1, Ordering::AcqRel);
+        return;
+    }
+
+    full_stream_attempts.fetch_add(1, Ordering::AcqRel);
+    let mut headers = base_headers.to_vec();
+    headers.push(("ETag", "\"full-replica\""));
+    write_response(
+        stream,
+        200,
+        "OK",
+        &headers,
+        &body,
+        Some(CONCURRENT_BODY_LEN),
+    );
+}
+
+fn serve_range_progress_then_ignored(stream: &mut TcpStream, method: &str, range: Option<&String>) {
+    let common = [
+        ("Accept-Ranges", "bytes"),
+        ("ETag", "\"mixed-range-replica\""),
+        ("Last-Modified", "Sat, 01 Aug 2026 00:00:00 GMT"),
+    ];
+    if method == "HEAD" {
+        write_response(stream, 200, "OK", &common, b"", Some(CONCURRENT_BODY_LEN));
+        return;
+    }
+
+    let body = concurrent_fixture_bytes();
+    if let Some((start, end)) = range.and_then(|value| parse_range(value))
+        && start <= end
+        && end < body.len()
+    {
+        let content_range = format!("bytes {start}-{end}/{}", body.len());
+        let mut headers = common.to_vec();
+        headers.push(("Content-Range", &content_range));
+        if (start, end) == (0, 0) || start == 0 {
+            write_response(
+                stream,
+                206,
+                "Partial Content",
+                &headers,
+                &body[start..=end],
+                Some(end - start + 1),
+            );
+            return;
+        }
+
+        // Let the leading segment become observable before another CDN replica ignores Range.
+        // This reproduces the production failure where fallback was incorrectly gated on zero
+        // in-flight progress.
+        thread::sleep(Duration::from_millis(250));
+        write_response(stream, 200, "OK", &common, &body, Some(CONCURRENT_BODY_LEN));
+        return;
+    }
+
     write_response(stream, 200, "OK", &common, &body, Some(CONCURRENT_BODY_LEN));
 }
 
@@ -785,10 +952,10 @@ fn serve_imbalanced_range(
         ("Last-Modified", "Mon, 27 Jul 2026 00:00:00 GMT"),
     ];
     if method == "HEAD" {
-        write_response(stream, 200, "OK", &common, b"", Some(CONCURRENT_BODY_LEN));
+        write_response(stream, 200, "OK", &common, b"", Some(IMBALANCED_BODY_LEN));
         return;
     }
-    let body = concurrent_fixture_bytes();
+    let body = imbalanced_fixture_bytes();
     if let Some((start, end)) = range.and_then(|value| parse_range(value))
         && start <= end
         && end < body.len()
@@ -818,11 +985,18 @@ fn serve_imbalanced_range(
                 Some(end - start + 1),
             );
         } else {
-            write_throttled_response(stream, 206, "Partial Content", &headers, &body[start..=end]);
+            write_throttled_response_with_delay(
+                stream,
+                206,
+                "Partial Content",
+                &headers,
+                &body[start..=end],
+                Duration::from_millis(1),
+            );
         }
         return;
     }
-    write_response(stream, 200, "OK", &common, &body, Some(CONCURRENT_BODY_LEN));
+    write_response(stream, 200, "OK", &common, &body, Some(IMBALANCED_BODY_LEN));
 }
 
 fn serve_transient_range(
@@ -896,6 +1070,32 @@ fn serve_transient_range(
             Some(end - start + 1),
         );
     }
+}
+
+fn serve_validator_replica_range(
+    stream: &mut TcpStream,
+    method: &str,
+    range: Option<&String>,
+    failures_remaining: &AtomicU64,
+    attempts: &AtomicU64,
+) {
+    if method == "HEAD" || range.and_then(|value| parse_range(value)) == Some((0, 0)) {
+        serve_range_with_validator(stream, method, range, "\"validator-stable\"");
+        return;
+    }
+
+    attempts.fetch_add(1, Ordering::AcqRel);
+    let mismatching_replica = failures_remaining
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok();
+    let validator = if mismatching_replica {
+        "\"validator-stale-replica\""
+    } else {
+        "\"validator-stable\""
+    };
+    serve_range_with_validator(stream, method, range, validator);
 }
 
 fn serve_always_range_error(
@@ -1033,6 +1233,24 @@ fn write_throttled_response(
     headers: &[(&str, &str)],
     body: &[u8],
 ) {
+    write_throttled_response_with_delay(
+        stream,
+        status,
+        reason,
+        headers,
+        body,
+        Duration::from_millis(20),
+    );
+}
+
+fn write_throttled_response_with_delay(
+    stream: &mut TcpStream,
+    status: u16,
+    reason: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    delay: Duration,
+) {
     let mut head = format!("HTTP/1.1 {status} {reason}\r\n");
     for (name, value) in headers {
         head.push_str(name);
@@ -1048,7 +1266,7 @@ fn write_throttled_response(
     for chunk in body.chunks(4 * 1024) {
         let _ = stream.write_all(chunk);
         let _ = stream.flush();
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(delay);
     }
 }
 

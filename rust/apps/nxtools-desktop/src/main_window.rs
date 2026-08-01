@@ -5627,6 +5627,7 @@ mod tests {
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -5643,6 +5644,7 @@ mod tests {
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -5936,6 +5938,7 @@ mod tests {
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6222,6 +6225,7 @@ mod tests {
                     connection_limit: Some(4),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6238,6 +6242,7 @@ mod tests {
                     connection_limit: Some(4),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6374,6 +6379,7 @@ mod tests {
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 RequestOrigin::Internal,
             )

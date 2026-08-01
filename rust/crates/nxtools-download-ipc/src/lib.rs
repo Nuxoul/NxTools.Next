@@ -323,6 +323,7 @@ mod tests {
             connection_limit: None,
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
         };
         let added = client
             .command(command_envelope(DownloadCommand::Submit {
@@ -383,6 +384,7 @@ mod tests {
             connection_limit: None,
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
         };
         actor
             .command(command_envelope(DownloadCommand::Submit {
@@ -467,6 +469,7 @@ mod tests {
                     connection_limit: None,
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
                 },
                 mode: DownloadSubmitMode::StartNow,
             }))

@@ -281,7 +281,19 @@ impl HttpDownloadClient {
                 segment.end_byte(),
                 total_bytes,
                 &probe.validator,
+                use_if_range,
             )?;
+            info!(
+                event = "download.segment_response.accepted",
+                correlation_id = %context.correlation_id,
+                task_id = ?context.task_id,
+                segment_index = segment.index(),
+                response_status = response.status().as_u16(),
+                requested_start,
+                requested_end = segment.end_byte(),
+                validator_policy = if use_if_range { "resume_strict" } else { "fresh_range_only" },
+                "segment response passed range validation"
+            );
 
             let mut writer = artifact.open_segment(segment).await?;
             let mut downloaded_bytes = segment.downloaded_bytes();
@@ -393,6 +405,10 @@ impl HttpDownloadClient {
                 task_id = ?context.task_id,
                 segment_index = segment.index(),
                 error_kind = error.kind(),
+                error = %error,
+                requested_start = segment.start_byte().saturating_add(segment.downloaded_bytes()),
+                requested_end = segment.end_byte(),
+                conditional_resume = use_if_range,
                 elapsed_ms = started.elapsed().as_millis(),
                 "segment transfer failed"
             ),
@@ -1031,6 +1047,20 @@ mod tests {
             b"complete bytes"
         );
     }
+
+    #[test]
+    fn validator_mismatch_is_retried_before_failing_the_task() {
+        let error = HttpDownloadError::ResourceValidatorMismatch {
+            validator: "etag",
+            expected: "\"stable-replica\"".into(),
+            actual: Some("\"stale-replica\"".into()),
+        };
+
+        assert!(
+            error.is_retryable_transfer(),
+            "one inconsistent CDN replica must be retried without accepting its bytes"
+        );
+    }
 }
 
 fn valid_probe_range(response: &Response) -> bool {
@@ -1054,6 +1084,7 @@ fn validate_segment_response(
     expected_end: u64,
     expected_total: u64,
     expected_validator: &ResourceValidator,
+    require_validator_match: bool,
 ) -> Result<(), HttpDownloadError> {
     if response.status() != StatusCode::PARTIAL_CONTENT {
         return Err(HttpDownloadError::RangeNotHonored {
@@ -1086,7 +1117,9 @@ fn validate_segment_response(
             actual_bytes: actual_length,
         });
     }
-    validate_response_validator(response, expected_validator)?;
+    if require_validator_match {
+        validate_response_validator(response, expected_validator)?;
+    }
     Ok(())
 }
 
@@ -1263,7 +1296,7 @@ impl HttpDownloadError {
             Self::Status(status) | Self::RangeNotHonored { status } => {
                 matches!(*status, 408 | 425 | 429 | 500..=599)
             }
-            Self::LengthMismatch { .. } => true,
+            Self::LengthMismatch { .. } | Self::ResourceValidatorMismatch { .. } => true,
             Self::Stalled { .. } => true,
             Self::InvalidRequest(_)
             | Self::MissingFileName
@@ -1276,7 +1309,6 @@ impl HttpDownloadError {
             | Self::MalformedContentRange(_)
             | Self::ContentRangeMismatch { .. }
             | Self::ContentLengthMismatch { .. }
-            | Self::ResourceValidatorMismatch { .. }
             | Self::InvalidHeaderName(_)
             | Self::InvalidHeaderValue(_)
             | Self::Io(_)

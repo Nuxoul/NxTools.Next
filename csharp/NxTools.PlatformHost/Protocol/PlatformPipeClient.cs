@@ -153,9 +153,10 @@ internal sealed class PlatformPipeClient(
                 {
                     var started = Stopwatch.GetTimestamp();
                     var logCommandLifecycle = ShouldLogCommandLifecycle(commandName);
+                    var diagnosticCorrelationId = envelope.CorrelationId ?? envelope.Id;
                     if (logCommandLifecycle)
                     {
-                        log.Write("info", "command.received", envelope.Id,
+                        log.Write("info", "command.received", diagnosticCorrelationId,
                             new Dictionary<string, object?>
                             {
                                 ["command"] = commandName
@@ -205,11 +206,11 @@ internal sealed class PlatformPipeClient(
                         "place_taskbar_progress_overlay" =>
                             platformAdapter.PlaceTaskbarProgressOverlay(
                                 PlatformCommandParser.ParsePlaceTaskbarProgressOverlay(envelope),
-                                envelope.Id),
+                                diagnosticCorrelationId),
                         "set_taskbar_progress_overlay_visibility" =>
                             platformAdapter.SetTaskbarProgressOverlayVisibility(
                                 PlatformCommandParser.ParseSetTaskbarProgressOverlayVisibility(envelope),
-                                envelope.Id),
+                                diagnosticCorrelationId),
                         "place_file_dialog_search_window" =>
                             platformAdapter.PlaceFileDialogSearchWindow(
                                 PlatformCommandParser.ParsePlaceFileDialogSearchWindow(envelope)),
@@ -271,7 +272,7 @@ internal sealed class PlatformPipeClient(
                         cancellationToken);
                     if (logCommandLifecycle)
                     {
-                        log.Write(result.Success ? "info" : "error", "command.completed", envelope.Id,
+                        log.Write(result.Success ? "info" : "error", "command.completed", diagnosticCorrelationId,
                             new Dictionary<string, object?>
                             {
                                 ["command"] = commandName,

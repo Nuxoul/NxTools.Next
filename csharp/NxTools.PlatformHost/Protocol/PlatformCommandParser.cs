@@ -61,7 +61,8 @@ internal sealed record PlaceTaskbarProgressOverlayCommand(
     int OffsetX,
     int OffsetY,
     int Width,
-    int Height);
+    int Height,
+    bool Interactive = false);
 internal sealed record SetTaskbarProgressOverlayVisibilityCommand(
     long WindowHandle,
     bool Visible);

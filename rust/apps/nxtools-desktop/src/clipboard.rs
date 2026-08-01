@@ -2033,6 +2033,7 @@ impl ClipboardApplication {
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
             | PlatformEvent::QuickLaunchAutoSwitchRequested(_)
             | PlatformEvent::QuickLaunchFileDialogSearchHostChanged(_)
+            | PlatformEvent::TaskbarOverlayEditGestureFinished(_)
             | PlatformEvent::ElevatedDirectoryHelperRequested(_) => {}
         }
     }

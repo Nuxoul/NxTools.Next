@@ -78,6 +78,12 @@ pub struct DownloadSettings {
     #[serde(default = "default_download_connection_limit")]
     pub default_connection_limit: u16,
     #[serde(default = "default_true")]
+    pub adaptive_segment_scaling_enabled: bool,
+    #[serde(default = "default_download_adaptive_max_segments")]
+    pub adaptive_segment_max_segments: u16,
+    #[serde(default = "default_download_adaptive_min_segment_mib")]
+    pub adaptive_segment_min_mib: u16,
+    #[serde(default = "default_true")]
     pub show_progress_window: bool,
     #[serde(default = "default_true")]
     pub show_completion_window: bool,
@@ -95,6 +101,24 @@ pub struct DownloadTaskbarProgressOverlaySettings {
     pub offset_x: i32,
     #[serde(default)]
     pub offset_y: i32,
+    #[serde(default = "default_taskbar_overlay_width")]
+    pub width: u32,
+    #[serde(default = "default_taskbar_overlay_height")]
+    pub height: u32,
+    #[serde(default)]
+    pub progress_mode: DownloadTaskbarProgressMode,
+    #[serde(default = "default_true")]
+    pub show_progress: bool,
+    #[serde(default)]
+    pub show_speed: bool,
+    #[serde(default)]
+    pub show_remaining_time: bool,
+    #[serde(default)]
+    pub show_active_tasks: bool,
+    #[serde(default)]
+    pub show_active_connections: bool,
+    #[serde(default)]
+    pub show_transferred_bytes: bool,
 }
 
 impl Default for DownloadTaskbarProgressOverlaySettings {
@@ -104,6 +128,15 @@ impl Default for DownloadTaskbarProgressOverlaySettings {
             anchor: DownloadTaskbarOverlayAnchor::Right,
             offset_x: default_taskbar_overlay_offset_x(),
             offset_y: 0,
+            width: default_taskbar_overlay_width(),
+            height: default_taskbar_overlay_height(),
+            progress_mode: DownloadTaskbarProgressMode::PerTask,
+            show_progress: true,
+            show_speed: false,
+            show_remaining_time: false,
+            show_active_tasks: false,
+            show_active_connections: false,
+            show_transferred_bytes: false,
         }
     }
 }
@@ -116,11 +149,23 @@ pub enum DownloadTaskbarOverlayAnchor {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadTaskbarProgressMode {
+    Aggregate,
+    #[default]
+    PerTask,
+    PerSegment,
+}
+
 impl Default for DownloadSettings {
     fn default() -> Self {
         Self {
             default_directory: String::new(),
             default_connection_limit: default_download_connection_limit(),
+            adaptive_segment_scaling_enabled: true,
+            adaptive_segment_max_segments: default_download_adaptive_max_segments(),
+            adaptive_segment_min_mib: default_download_adaptive_min_segment_mib(),
             show_progress_window: true,
             show_completion_window: true,
             taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
@@ -132,18 +177,57 @@ const fn default_download_connection_limit() -> u16 {
     8
 }
 
+const fn default_download_adaptive_max_segments() -> u16 {
+    32
+}
+
+const fn default_download_adaptive_min_segment_mib() -> u16 {
+    3
+}
+
 const fn default_taskbar_overlay_offset_x() -> i32 {
     12
+}
+
+const fn default_taskbar_overlay_width() -> u32 {
+    132
+}
+
+const fn default_taskbar_overlay_height() -> u32 {
+    8
 }
 
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
         self.default_connection_limit = self.default_connection_limit.clamp(1, 64);
+        self.adaptive_segment_max_segments = self
+            .adaptive_segment_max_segments
+            .clamp(self.default_connection_limit, 256);
+        self.adaptive_segment_min_mib = self.adaptive_segment_min_mib.clamp(1, 100);
         self.taskbar_progress_overlay.offset_x =
             self.taskbar_progress_overlay.offset_x.clamp(-4096, 4096);
         self.taskbar_progress_overlay.offset_y =
             self.taskbar_progress_overlay.offset_y.clamp(-4096, 4096);
+        self.taskbar_progress_overlay.width = self.taskbar_progress_overlay.width.clamp(72, 640);
+        self.taskbar_progress_overlay.height = self.taskbar_progress_overlay.height.clamp(6, 72);
+        if !self.taskbar_progress_overlay.show_progress
+            && !self.taskbar_progress_overlay.show_speed
+            && !self.taskbar_progress_overlay.show_remaining_time
+            && !self.taskbar_progress_overlay.show_active_tasks
+            && !self.taskbar_progress_overlay.show_active_connections
+            && !self.taskbar_progress_overlay.show_transferred_bytes
+        {
+            self.taskbar_progress_overlay.show_progress = true;
+        }
+        if self.taskbar_progress_overlay.show_speed
+            || self.taskbar_progress_overlay.show_remaining_time
+            || self.taskbar_progress_overlay.show_active_tasks
+            || self.taskbar_progress_overlay.show_active_connections
+            || self.taskbar_progress_overlay.show_transferred_bytes
+        {
+            self.taskbar_progress_overlay.height = self.taskbar_progress_overlay.height.max(20);
+        }
     }
 }
 
@@ -772,6 +856,9 @@ mod tests {
 
         assert!(settings.default_directory.is_empty());
         assert_eq!(settings.default_connection_limit, 8);
+        assert!(settings.adaptive_segment_scaling_enabled);
+        assert_eq!(settings.adaptive_segment_max_segments, 32);
+        assert_eq!(settings.adaptive_segment_min_mib, 3);
         assert!(settings.show_progress_window);
         assert!(settings.show_completion_window);
         assert!(settings.taskbar_progress_overlay.enabled);
@@ -781,6 +868,66 @@ mod tests {
         );
         assert_eq!(settings.taskbar_progress_overlay.offset_x, 12);
         assert_eq!(settings.taskbar_progress_overlay.offset_y, 0);
+        assert_eq!(settings.taskbar_progress_overlay.width, 132);
+        assert_eq!(settings.taskbar_progress_overlay.height, 8);
+        assert_eq!(
+            settings.taskbar_progress_overlay.progress_mode,
+            DownloadTaskbarProgressMode::PerTask
+        );
+        assert!(settings.taskbar_progress_overlay.show_progress);
+        assert!(!settings.taskbar_progress_overlay.show_speed);
+        assert!(!settings.taskbar_progress_overlay.show_remaining_time);
+        assert!(!settings.taskbar_progress_overlay.show_active_tasks);
+        assert!(!settings.taskbar_progress_overlay.show_active_connections);
+        assert!(!settings.taskbar_progress_overlay.show_transferred_bytes);
+    }
+
+    #[test]
+    fn taskbar_overlay_layout_is_normalized_to_safe_taskbar_bounds() {
+        let mut settings = DownloadSettings::default();
+        settings.taskbar_progress_overlay.width = 4;
+        settings.taskbar_progress_overlay.height = 500;
+
+        settings.normalize();
+
+        assert_eq!(settings.taskbar_progress_overlay.width, 72);
+        assert_eq!(settings.taskbar_progress_overlay.height, 72);
+    }
+
+    #[test]
+    fn adaptive_segment_settings_are_normalized_against_the_connection_limit() {
+        let mut settings = DownloadSettings {
+            default_connection_limit: 48,
+            adaptive_segment_max_segments: 4,
+            adaptive_segment_min_mib: 0,
+            ..DownloadSettings::default()
+        };
+
+        settings.normalize();
+
+        assert_eq!(settings.adaptive_segment_max_segments, 48);
+        assert_eq!(settings.adaptive_segment_min_mib, 1);
+    }
+
+    #[test]
+    fn taskbar_overlay_text_information_keeps_a_readable_minimum_height() {
+        let mut settings = DownloadSettings::default();
+        settings.taskbar_progress_overlay.height = 8;
+        settings.taskbar_progress_overlay.show_speed = true;
+
+        settings.normalize();
+
+        assert_eq!(settings.taskbar_progress_overlay.height, 20);
+    }
+
+    #[test]
+    fn taskbar_overlay_normalization_never_leaves_an_empty_surface() {
+        let mut settings = DownloadSettings::default();
+        settings.taskbar_progress_overlay.show_progress = false;
+
+        settings.normalize();
+
+        assert!(settings.taskbar_progress_overlay.show_progress);
     }
 
     #[test]
@@ -817,6 +964,9 @@ mod tests {
             DownloadSettings {
                 default_directory: r"D:\Downloads".into(),
                 default_connection_limit: 12,
+                adaptive_segment_scaling_enabled: true,
+                adaptive_segment_max_segments: 32,
+                adaptive_segment_min_mib: 3,
                 show_progress_window: false,
                 show_completion_window: false,
                 taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),

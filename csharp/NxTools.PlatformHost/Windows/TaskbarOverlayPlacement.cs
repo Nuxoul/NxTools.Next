@@ -86,12 +86,15 @@ internal static class TaskbarOverlayPlacement
         }
 
         var currentStyle = GetWindowLongPtr(window, GwlExStyle).ToInt64();
-        var desiredStyle = (currentStyle |
-                            WsExNoActivate |
-                            WsExToolWindow |
-                            WsExTransparent |
-                            WsExLayered) &
-                           ~WsExAppWindow;
+        var desiredStyle = (currentStyle | WsExToolWindow | WsExLayered) & ~WsExAppWindow;
+        if (command.Interactive)
+        {
+            desiredStyle &= ~(WsExNoActivate | WsExTransparent);
+        }
+        else
+        {
+            desiredStyle |= WsExNoActivate | WsExTransparent;
+        }
         if (desiredStyle != currentStyle)
         {
             Marshal.SetLastPInvokeError(0);
@@ -166,6 +169,18 @@ internal static class TaskbarOverlayPlacement
         var style = GetWindowLongPtr(window, GwlExStyle).ToInt64();
         var required = WsExNoActivate | WsExToolWindow | WsExTransparent | WsExLayered;
         return (style & required) == required && (style & WsExAppWindow) == 0;
+    }
+
+    internal static bool HasInteractiveOverlayStyles(IntPtr window)
+    {
+        if (window == IntPtr.Zero || !IsWindow(window))
+        {
+            return false;
+        }
+        var style = GetWindowLongPtr(window, GwlExStyle).ToInt64();
+        var required = WsExToolWindow | WsExLayered;
+        var forbidden = WsExNoActivate | WsExTransparent | WsExAppWindow;
+        return (style & required) == required && (style & forbidden) == 0;
     }
 
     internal static bool IsTaskbarWindow(IntPtr window)

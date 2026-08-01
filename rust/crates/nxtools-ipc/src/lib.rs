@@ -68,10 +68,23 @@ impl PlatformBridge {
         &self,
         command: PlatformCommand,
     ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        self.send_command_envelope(Envelope::new(Message::PlatformCommand(command)))
+    }
+
+    pub fn send_command_correlated(
+        &self,
+        command: PlatformCommand,
+        correlation_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        let mut envelope = Envelope::new(Message::PlatformCommand(command));
+        envelope.correlation_id = Some(correlation_id);
+        self.send_command_envelope(envelope)
+    }
+
+    fn send_command_envelope(&self, envelope: Envelope) -> Result<uuid::Uuid, PlatformBridgeError> {
         if !self.is_connected() {
             return Err(PlatformBridgeError::Disconnected);
         }
-        let envelope = Envelope::new(Message::PlatformCommand(command));
         let command_id = envelope.id;
         self.commands
             .try_send(envelope)
@@ -448,6 +461,29 @@ mod tests {
             }))
             .expect_err("disconnected command must be rejected");
         assert!(matches!(error, PlatformBridgeError::Disconnected));
+    }
+
+    #[test]
+    fn bridge_preserves_a_caller_owned_lifecycle_correlation() {
+        let (bridge, server) = platform_bridge(4);
+        server.connected.store(true, Ordering::Release);
+        let lifecycle_id = uuid::Uuid::new_v4();
+
+        bridge
+            .send_command_correlated(
+                PlatformCommand::PasteText(PasteTextCommand {
+                    text: "correlated".into(),
+                    paste_after_write: false,
+                    target_window_handle: 42,
+                    target_focus_window_handle: 43,
+                }),
+                lifecycle_id,
+            )
+            .expect("connected command");
+
+        let envelope = server.commands.try_recv().expect("queued command");
+        assert_eq!(envelope.correlation_id, Some(lifecycle_id));
+        assert_ne!(envelope.id, lifecycle_id);
     }
 
     #[tokio::test]

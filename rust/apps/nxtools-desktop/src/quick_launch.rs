@@ -2969,7 +2969,9 @@ impl QuickLaunchApplication {
                     self.hide_popup(cx);
                 }
             }
-            PlatformEvent::ClipboardCaptured(_) | PlatformEvent::ClipboardPanelRequested(_) => {}
+            PlatformEvent::ClipboardCaptured(_)
+            | PlatformEvent::ClipboardPanelRequested(_)
+            | PlatformEvent::TaskbarOverlayEditGestureFinished(_) => {}
         }
     }
 

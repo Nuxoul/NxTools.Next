@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'windows-build-tools.ps1')
 $profile = if ($Configuration -eq 'Release') { 'release' } else { 'debug' }
 if (-not $OutputPath) {
     $OutputPath = if ($Configuration -eq 'Release') {
@@ -56,6 +57,9 @@ function Stop-ExactPackagedProcess(
 
 Push-Location $root
 try {
+    if ($Configuration -eq 'Release') {
+        Initialize-GpuiReleaseEnvironment
+    }
     if (-not $SkipVerification) {
         & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
     }

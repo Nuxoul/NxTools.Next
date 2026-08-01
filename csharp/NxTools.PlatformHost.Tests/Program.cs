@@ -66,6 +66,7 @@ internal static class Program
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
             ("taskbar overlay placement preserves anchor and logical offsets", TaskbarOverlayPlacementPreservesPayload),
             ("taskbar overlay visibility preserves its native target", TaskbarOverlayVisibilityPreservesPayload),
+            ("taskbar overlay edit finish preserves its native target", TaskbarOverlayEditFinishPreservesPayload),
             ("taskbar overlay bounds scale and clamp inside the taskbar", TaskbarOverlayBoundsScaleAndClamp),
             ("taskbar overlay applies passive styles and a real hide-show lifecycle", TaskbarOverlayUsesPassiveNativeLifecycle),
             ("taskbar progress activates a supported shell interface on STA", TaskbarProgressUsesSupportedShellInterface),
@@ -195,7 +196,8 @@ internal static class Program
                 OffsetX = 12,
                 OffsetY = 0,
                 Width = 132,
-                Height = 8
+                Height = 8,
+                Interactive = true
             }
         });
         var command = PlatformCommandParser.ParsePlaceTaskbarProgressOverlay(envelope);
@@ -207,6 +209,7 @@ internal static class Program
         Assert(command.OffsetY == 0);
         Assert(command.Width == 132);
         Assert(command.Height == 8);
+        Assert(command.Interactive);
         return Task.CompletedTask;
     }
 
@@ -262,6 +265,18 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task TaskbarOverlayEditFinishPreservesPayload()
+    {
+        var envelope = PlatformEventEnvelopeFactory.Create(
+            new TaskbarOverlayEditGestureFinishedEvent(782L));
+        var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
+        Assert(json.Contains(
+            "\"event\":\"taskbar_overlay_edit_gesture_finished\"",
+            StringComparison.Ordinal));
+        Assert(json.Contains("\"window_handle\":782", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
     private static Task TaskbarOverlayUsesPassiveNativeLifecycle()
     {
         Exception? failure = null;
@@ -284,9 +299,23 @@ internal static class Program
                         OffsetX: 12,
                         OffsetY: 0,
                         Width: 132,
-                        Height: 8));
+                        Height: 8,
+                        Interactive: false));
                 Assert(placed.Success);
                 Assert(TaskbarOverlayPlacement.HasPassiveOverlayStyles(overlay.Handle));
+                var editPlaced = TaskbarOverlayPlacement.Place(
+                    new PlaceTaskbarProgressOverlayCommand(
+                        overlay.Handle.ToInt64(),
+                        Enabled: true,
+                        Visible: false,
+                        Anchor: "right",
+                        OffsetX: 12,
+                        OffsetY: 0,
+                        Width: 180,
+                        Height: 24,
+                        Interactive: true));
+                Assert(editPlaced.Success);
+                Assert(TaskbarOverlayPlacement.HasInteractiveOverlayStyles(overlay.Handle));
 
                 using var visibility = new Form
                 {

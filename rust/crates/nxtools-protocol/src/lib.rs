@@ -112,7 +112,13 @@ pub enum PlatformEvent {
     QuickLaunchDirectoryContextResolved(QuickLaunchDirectoryContextResolution),
     QuickLaunchAutoSwitchRequested(QuickLaunchAutoSwitchRequest),
     QuickLaunchFileDialogSearchHostChanged(QuickLaunchFileDialogSearchHost),
+    TaskbarOverlayEditGestureFinished(TaskbarOverlayEditGesture),
     ElevatedDirectoryHelperRequested(ElevatedDirectoryHelperRequest),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskbarOverlayEditGesture {
+    pub window_handle: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -510,6 +516,8 @@ pub struct PlaceTaskbarProgressOverlayCommand {
     pub offset_y: i32,
     pub width: i32,
     pub height: i32,
+    #[serde(default)]
+    pub interactive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -829,6 +837,19 @@ mod tests {
     }
 
     #[test]
+    fn taskbar_overlay_edit_finish_round_trips_as_platform_event() {
+        let envelope = Envelope::new(Message::PlatformEvent(
+            PlatformEvent::TaskbarOverlayEditGestureFinished(TaskbarOverlayEditGesture {
+                window_handle: 42,
+            }),
+        ));
+
+        let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
+            .expect("taskbar edit event must decode");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
     fn paste_text_command_round_trips_with_target_window() {
         let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
             PasteTextCommand {
@@ -1009,6 +1030,7 @@ mod tests {
                 offset_y: 0,
                 width: 280,
                 height: 3,
+                interactive: true,
             }),
         ));
 

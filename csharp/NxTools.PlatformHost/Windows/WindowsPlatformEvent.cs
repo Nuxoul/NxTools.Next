@@ -87,6 +87,8 @@ internal sealed record QuickLaunchFileDialogSearchHostChangedEvent(
     long ChangedAtUnixMs,
     AutoQuickSwitchDirectorySource? QuickSwitchSource = null) : WindowsPlatformEvent;
 
+internal sealed record TaskbarOverlayEditGestureFinishedEvent(long WindowHandle) : WindowsPlatformEvent;
+
 internal sealed record ElevatedDirectoryHelperRequestedEvent(
     string PipeName,
     string AuthenticationToken) : WindowsPlatformEvent;

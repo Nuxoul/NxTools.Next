@@ -34,6 +34,23 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
   `CLSID_TaskbarList` exposes `ITaskbarList4` but rejects a direct `ITaskbarList3` query.
 - Taskbar diagnostics record state changes and 25-percent milestones; identical high-frequency
   progress commands do not generate generic command lifecycle pairs.
+- A CDN can advertise byte ranges during probing but later route segments to inconsistent replicas:
+  some return `206`, others return a full `200`, and validators may differ. A `200` response to a
+  segment is a range-capability inconsistency rather than a transient transfer error, so a fresh task
+  may discard only the current temporary segmented artifact and restart as one full stream. The safety
+  boundary is whether a durable resume checkpoint existed before the attempt (`If-Range`), not whether
+  another concurrent segment reported in-flight progress. Existing durable resume progress is never
+  discarded automatically.
+- ABDM's `HttpDownloadJob.fetchDownloadInfoAndValidate` validates the resource-level length and ETag
+  before creating/resuming parts, while `HttpPartDownloader.connectAndVerify` validates each active
+  part by its response length and `Content-Range` start rather than requiring every CDN replica to
+  repeat the same ETag. NxTools.Next follows that boundary: fresh concurrent segments require a valid
+  `206`, exact range and length; persisted resumes additionally use `If-Range` and strict validator
+  protection. Equivalent replicas must not force a completed partial artifact to be discarded and
+  downloaded again.
+- The taskbar overlay GPUI window can be created before PlatformHost finishes its handshake. Initial
+  native placement is therefore best-effort; `PlatformNotification::Connected` must replay the saved
+  anchor, offsets and size before later visibility changes are relied upon.
 
 ## Old NxTools behavioral source
 
@@ -166,6 +183,21 @@ Verified useful behavior:
 - `CompletedDownloadPage.Actions` attaches Compose `dragAndDropSource` directly to the completed-file action.
   `DownloadItemTransferable` exposes the operating-system file-list flavor, so Compose owns the complete gesture
   on the visible source window instead of forwarding only a click to another process.
+
+### CDN validator and taskbar preview stabilization
+
+Verified on 2026-08-01 after reproducing against `hkg.download.datapacket.com`:
+
+- Different CDN replicas can temporarily return different ETag and Last-Modified values for the same Range URL.
+  NxTools.Next must never write bytes from the mismatching response, but one mismatching segment response is a
+  bounded retry condition rather than an immediate task-wide terminal failure. Persistent mismatch still fails
+  after the existing segment retry budget.
+- The taskbar preview observes Rust-owned download state. The GPUI observer must defer reading the observed
+  `DownloadApplication` and updating the overlay entity until the next application turn; synchronously reading
+  the still-leased application produces `RefCell already borrowed` and leaves preview editing unresponsive.
+- PlatformHost temporarily tracks placement before `SetWindowPos` because Windows can synchronously emit taskbar
+  location events. If placement, visibility, or a later reapply reports an invalid GPUI HWND, that tracked entry
+  must be removed with a compare-and-swap so taskbar/display events cannot keep targeting a destroyed window.
 
 ### CLI entries and behavior
 
@@ -1104,6 +1136,60 @@ Reverified on 2026-07-30 before implementing the user-selected taskbar overlay s
   trigger native positioning or diagnostic writes. The Windows adapter publishes the newly
   requested placement before calling `SetWindowPos`, because that native call can synchronously
   produce a taskbar-location event; the reapply path must never race in with the previous offsets.
+
+Reverified on 2026-07-31 before extending the overlay editor and adaptive connection policy:
+
+- The first NxTools.Next overlay slice is deliberately minimal: `download_taskbar_overlay.rs`
+  renders at most three two-pixel task lanes inside a fixed `132 x 8` logical-pixel window.
+  A single active task therefore produces one lane. The model carries only status, downloaded
+  bytes and total bytes; speed, remaining time, task count, connection count and byte totals are
+  not yet presentation inputs.
+- The extended surface remains one GPUI window. Rust owns its persisted width, height, anchor,
+  offsets, lane mode and visible-information mask; GPUI owns preview/edit chrome and content;
+  C# only applies taskbar DPI, bounds and passive-versus-editable Win32 styles.
+- Normal mode is non-activating, tool-window, topmost and click-through. Settings edit mode may
+  temporarily remove click-through so the user can drag and resize a deterministic preview even
+  when no task is active. Finishing persists the draft; cancelling restores the last saved
+  placement. Leaving edit mode restores passive styles.
+- Overlay dimensions and offsets are bounded and clamped to the primary taskbar. Pointer movement
+  is not logged. Diagnostics cover edit begin, committed/cancelled, native placement accepted and
+  terminal placement failure under one correlation ID.
+- Optional information is independent of transfer execution. Progress lanes stay available in
+  aggregate, per-task and per-segment modes; textual speed, remaining time, active-task count,
+  active-connection count and downloaded/total bytes are separately switchable. Unknown totals or
+  rates use an honest indeterminate/placeholder state instead of a fabricated value.
+
+### Runtime segment-splitting and adaptive-connection findings
+
+Reverified on 2026-07-31:
+
+- ABDM `HttpDownloadJob.kt::getPartDownloader` fills an available downloader slot from an inactive
+  part first. When none exists and `dynamicPartCreationMode` is enabled, it selects splittable
+  active parts by descending remaining length, calls `HttpPartDownloader.splitPart`, persists the
+  new range in the job's part collection and starts it in the free slot. `PartSplitSupport` protects
+  a moving safe zone so the old and new downloader never overlap.
+- Current NxTools.Next implements the same safety shape: when a worker slot becomes available it
+  chooses the largest remaining active segment, asks that worker to flush/synchronize, atomically
+  splits the transfer plan and restarts both non-overlapping ranges. The regression
+  `dynamic_rebalance_splits_a_slow_tail_without_overlapping_output` protects this boundary.
+- Old NxTools `DownloadManagerService.DownloadSegmentsAdaptiveAsync` starts the initial segment set
+  at the configured `ThreadCount` and keeps a separate connection limiter at that same hard cap.
+  Its adaptive accelerator grows the number of queued/persisted segments, not the number of active
+  connections: after five aggregate-speed samples remain within roughly 15 percent deviation it
+  splits up to four useful tails, then waits until the full batch exists before collecting a fresh
+  five-second benefit window. It stops automatic splitting after any segment retry or when the
+  observed gain is below roughly 80 percent of the proportional segment increase. Defaults are
+  enabled, 32 maximum segments and 3 MiB minimum remaining tail.
+- NxTools.Next retains the safe split/restart transaction and layers that speed-sampled segment
+  policy above it. A new task starts all configured connections immediately. Additional split
+  ranges wait in a Rust-owned queue whenever all connection slots are occupied, so the persisted
+  segment count can grow without violating the connection cap. Rust owns sampling, batch state,
+  benefit evaluation, queueing and persistence; C# and GPUI do not participate in scheduling.
+- The old implementation applies its enable switch, maximum segment count and minimum remaining
+  tail to both stable-speed acceleration and the split attempted after a segment completes. The
+  Next implementation follows that same rule: disabling adaptive segmentation must prevent every
+  automatic split path, and a queued segment remains `Waiting` until a connection slot actually
+  starts it. Persisted `Active` count therefore never exceeds the request's connection cap.
 
 ## Resolved phase-0 decisions
 

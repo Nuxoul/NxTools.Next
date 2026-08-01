@@ -103,6 +103,15 @@ internal static class PlatformEventEnvelopeFactory
                         searchHost.QuickSwitchSource
                     }
                 }),
+            TaskbarOverlayEditGestureFinishedEvent gesture =>
+                ProtocolEnvelope.Create("platform_event", new
+                {
+                    Event = "taskbar_overlay_edit_gesture_finished",
+                    Data = new
+                    {
+                        gesture.WindowHandle
+                    }
+                }),
             ElevatedDirectoryHelperRequestedEvent helper => ProtocolEnvelope.Create(
                 "platform_event",
                 new

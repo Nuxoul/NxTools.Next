@@ -2,27 +2,35 @@ use gpui::{
     Animation, AnimationExt, Context, Entity, IntoElement, Render, Subscription, Window, div,
     prelude::*, px, transparent_black,
 };
+use gpui_component::PixelsExt;
+use nxtools_core::{DownloadTaskbarProgressMode, DownloadTaskbarProgressOverlaySettings};
 use nxtools_download::DownloadStatus;
 use nxtools_ipc::PlatformBridge;
-use nxtools_protocol::{PlatformCommand, SetTaskbarProgressOverlayVisibilityCommand};
+use nxtools_protocol::{
+    BeginWindowMoveCommand, BeginWindowResizeCommand, PlatformCommand,
+    SetTaskbarProgressOverlayVisibilityCommand,
+};
 use std::{rc::Rc, time::Duration};
 use tracing::{info, warn};
 
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
 
-pub(crate) const TASKBAR_OVERLAY_WIDTH: i32 = 132;
-pub(crate) const TASKBAR_OVERLAY_HEIGHT: i32 = 8;
-const TASKBAR_OVERLAY_MAX_LANES: usize = 3;
+const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
 const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
-const _: () = {
-    assert!(TASKBAR_OVERLAY_WIDTH <= 160);
-    assert!(TASKBAR_OVERLAY_HEIGHT <= 8);
-};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTaskbarOverlaySample {
     pub status: DownloadStatus,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub bytes_per_second: u64,
+    pub active_connections: u16,
+    pub segments: Vec<DownloadTaskbarOverlaySegmentSample>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DownloadTaskbarOverlaySegmentSample {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
 }
@@ -38,7 +46,19 @@ pub(crate) enum DownloadTaskbarOverlayModel {
     Hidden,
     Visible {
         lanes: Vec<DownloadTaskbarOverlayLane>,
+        metrics: DownloadTaskbarOverlayMetrics,
+        settings: DownloadTaskbarProgressOverlaySettings,
+        editing: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DownloadTaskbarOverlayMetrics {
+    pub active_tasks: usize,
+    pub active_connections: u32,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub bytes_per_second: u64,
 }
 
 impl DownloadTaskbarOverlayModel {
@@ -50,13 +70,13 @@ impl DownloadTaskbarOverlayModel {
     fn visible_lane_count(&self) -> usize {
         match self {
             Self::Hidden => 0,
-            Self::Visible { lanes } => lanes.len(),
+            Self::Visible { lanes, .. } => lanes.len(),
         }
     }
 }
 
-fn taskbar_progress_lane(
-    samples: impl IntoIterator<Item = DownloadTaskbarOverlaySample>,
+fn taskbar_progress_lane<'a>(
+    samples: impl IntoIterator<Item = &'a DownloadTaskbarOverlaySample>,
 ) -> DownloadTaskbarOverlayLane {
     let mut completed = 0_u64;
     let mut total = 0_u64;
@@ -74,10 +94,92 @@ fn taskbar_progress_lane(
     }
 }
 
+fn taskbar_segment_progress_lane<'a>(
+    segments: impl IntoIterator<Item = &'a DownloadTaskbarOverlaySegmentSample>,
+) -> DownloadTaskbarOverlayLane {
+    let mut completed = 0_u64;
+    let mut total = 0_u64;
+    for segment in segments {
+        let Some(segment_total) = segment.total_bytes.filter(|total| *total > 0) else {
+            return DownloadTaskbarOverlayLane::Indeterminate;
+        };
+        completed = completed.saturating_add(segment.downloaded_bytes.min(segment_total));
+        total = total.saturating_add(segment_total);
+    }
+    if total == 0 {
+        DownloadTaskbarOverlayLane::Indeterminate
+    } else {
+        DownloadTaskbarOverlayLane::Determinate { completed, total }
+    }
+}
+
+fn taskbar_overlay_max_lanes(
+    settings: &DownloadTaskbarProgressOverlaySettings,
+    editing: bool,
+) -> usize {
+    let show_text = settings.show_speed
+        || settings.show_remaining_time
+        || settings.show_active_tasks
+        || settings.show_active_connections
+        || settings.show_transferred_bytes;
+    let editing_padding = if editing { 2 } else { 0 };
+    let text_space = if show_text {
+        10 + if settings.show_progress { 2 } else { 0 }
+    } else {
+        0
+    };
+    let available = settings
+        .height
+        .saturating_sub(editing_padding)
+        .saturating_sub(text_space);
+    usize::try_from((available.saturating_add(1) / 3).clamp(1, 8))
+        .unwrap_or(TASKBAR_OVERLAY_MAX_LANES)
+}
+
+fn taskbar_overlay_edit_samples() -> Vec<DownloadTaskbarOverlaySample> {
+    vec![
+        DownloadTaskbarOverlaySample {
+            status: DownloadStatus::Downloading,
+            downloaded_bytes: 314 * 1024 * 1024,
+            total_bytes: Some(1024 * 1024 * 1024),
+            bytes_per_second: 10 * 1024 * 1024,
+            active_connections: 4,
+            segments: vec![
+                DownloadTaskbarOverlaySegmentSample {
+                    downloaded_bytes: 96,
+                    total_bytes: Some(256),
+                },
+                DownloadTaskbarOverlaySegmentSample {
+                    downloaded_bytes: 82,
+                    total_bytes: Some(256),
+                },
+                DownloadTaskbarOverlaySegmentSample {
+                    downloaded_bytes: 74,
+                    total_bytes: Some(256),
+                },
+                DownloadTaskbarOverlaySegmentSample {
+                    downloaded_bytes: 62,
+                    total_bytes: Some(256),
+                },
+            ],
+        },
+        DownloadTaskbarOverlaySample {
+            status: DownloadStatus::Downloading,
+            downloaded_bytes: 420 * 1024 * 1024,
+            total_bytes: Some(1024 * 1024 * 1024),
+            bytes_per_second: 14 * 1024 * 1024,
+            active_connections: 4,
+            segments: Vec::new(),
+        },
+    ]
+}
+
 pub(crate) fn aggregate_taskbar_progress(
+    settings: &DownloadTaskbarProgressOverlaySettings,
+    editing: bool,
     samples: impl IntoIterator<Item = DownloadTaskbarOverlaySample>,
 ) -> DownloadTaskbarOverlayModel {
-    let active = samples
+    let mut active = samples
         .into_iter()
         .filter(|sample| {
             matches!(
@@ -90,28 +192,91 @@ pub(crate) fn aggregate_taskbar_progress(
             )
         })
         .collect::<Vec<_>>();
-    if active.is_empty() {
+    if active.is_empty() && !editing {
         return DownloadTaskbarOverlayModel::Hidden;
     }
-    let split_at = active
-        .len()
-        .min(TASKBAR_OVERLAY_MAX_LANES.saturating_sub(1));
-    let mut lanes = active[..split_at]
-        .iter()
-        .copied()
-        .map(|sample| taskbar_progress_lane([sample]))
-        .collect::<Vec<_>>();
-    if split_at < active.len() {
-        lanes.push(taskbar_progress_lane(active[split_at..].iter().copied()));
+    if active.is_empty() {
+        active = taskbar_overlay_edit_samples();
     }
-    DownloadTaskbarOverlayModel::Visible { lanes }
+    let mut total_bytes = Some(0_u64);
+    let mut downloaded_bytes = 0_u64;
+    let mut bytes_per_second = 0_u64;
+    let mut active_connections = 0_u32;
+    for sample in &active {
+        downloaded_bytes = downloaded_bytes.saturating_add(sample.downloaded_bytes);
+        bytes_per_second = bytes_per_second.saturating_add(sample.bytes_per_second);
+        active_connections =
+            active_connections.saturating_add(u32::from(sample.active_connections));
+        total_bytes = total_bytes
+            .zip(sample.total_bytes)
+            .map(|(left, right)| left.saturating_add(right));
+    }
+    let metrics = DownloadTaskbarOverlayMetrics {
+        active_tasks: active.len(),
+        active_connections,
+        downloaded_bytes,
+        total_bytes,
+        bytes_per_second,
+    };
+    let max_lanes = taskbar_overlay_max_lanes(settings, editing);
+    let lanes = match settings.progress_mode {
+        DownloadTaskbarProgressMode::Aggregate => vec![taskbar_progress_lane(active.iter())],
+        DownloadTaskbarProgressMode::PerTask => {
+            let split_at = active.len().min(max_lanes.saturating_sub(1));
+            let mut lanes = active[..split_at]
+                .iter()
+                .map(|sample| taskbar_progress_lane([sample]))
+                .collect::<Vec<_>>();
+            if split_at < active.len() {
+                lanes.push(taskbar_progress_lane(active[split_at..].iter()));
+            }
+            lanes
+        }
+        DownloadTaskbarProgressMode::PerSegment => {
+            let segments = active
+                .first()
+                .map(|sample| sample.segments.as_slice())
+                .unwrap_or_default();
+            let split_at = segments.len().min(max_lanes.saturating_sub(1));
+            let mut lanes = segments[..split_at]
+                .iter()
+                .map(|segment| taskbar_segment_progress_lane([segment]))
+                .collect::<Vec<_>>();
+            if split_at < segments.len() {
+                lanes.push(taskbar_segment_progress_lane(segments[split_at..].iter()));
+            }
+            if lanes.is_empty() {
+                lanes.push(taskbar_progress_lane(active.iter()));
+            }
+            lanes
+        }
+    };
+    DownloadTaskbarOverlayModel::Visible {
+        lanes,
+        metrics,
+        settings: settings.clone(),
+        editing,
+    }
 }
 
 pub(crate) struct DownloadTaskbarOverlayView {
     theme: Theme,
     model: DownloadTaskbarOverlayModel,
+    application: Entity<DownloadApplication>,
+    platform: Rc<PlatformBridge>,
     native_window_handle: i64,
     _subscription: Subscription,
+    _bounds_subscription: Subscription,
+    edit_reference: Option<TaskbarEditGeometryReference>,
+    edit_gesture_active: bool,
+}
+
+#[derive(Clone, Copy)]
+struct TaskbarEditGeometryReference {
+    anchor: nxtools_core::DownloadTaskbarOverlayAnchor,
+    taskbar_edge_x: f32,
+    taskbar_top: f32,
+    correlation_id: uuid::Uuid,
 }
 
 impl DownloadTaskbarOverlayView {
@@ -120,26 +285,45 @@ impl DownloadTaskbarOverlayView {
         platform: Rc<PlatformBridge>,
         native_window_handle: i64,
         initial_model: DownloadTaskbarOverlayModel,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let platform_for_subscription = Rc::clone(&platform);
-        let subscription = cx.observe(&application, move |this, application, cx| {
-            let next = application.read(cx).taskbar_overlay_model();
-            if this.model != next {
-                let visibility_changed = this.model.is_visible() != next.is_visible();
-                let next_visible = next.is_visible();
-                this.model = next;
-                cx.notify();
-                if visibility_changed && this.native_window_handle != 0 {
-                    match platform_for_subscription.send_command(
+        let observed_application = application.clone();
+        let observed_view = cx.entity();
+        let subscription = cx.observe(&application, move |_, _, cx| {
+            let application = observed_application.clone();
+            let view = observed_view.clone();
+            let platform = Rc::clone(&platform_for_subscription);
+            cx.defer(move |cx| {
+                let (next, correlation_id) = {
+                    let application = application.read(cx);
+                    (
+                        application.taskbar_overlay_model(),
+                        application.taskbar_overlay_diagnostic_correlation_id(),
+                    )
+                };
+                view.update(cx, |this, cx| {
+                    if this.model == next {
+                        return;
+                    }
+                    let visibility_changed = this.model.is_visible() != next.is_visible();
+                    let next_visible = next.is_visible();
+                    this.model = next;
+                    cx.notify();
+                    if !visibility_changed || this.native_window_handle == 0 {
+                        return;
+                    }
+                    match platform.send_command_correlated(
                         PlatformCommand::SetTaskbarProgressOverlayVisibility(
                             SetTaskbarProgressOverlayVisibilityCommand {
                                 window_handle: this.native_window_handle,
                                 visible: next_visible,
                             },
                         ),
+                        correlation_id,
                     ) {
-                        Ok(correlation_id) => info!(
+                        Ok(_) => info!(
                             event = "download.taskbar_overlay.visibility_accepted",
                             %correlation_id,
                             visible = next_visible,
@@ -152,45 +336,316 @@ impl DownloadTaskbarOverlayView {
                             "taskbar overlay visibility change could not be queued"
                         ),
                     }
-                }
+                });
+            });
+        });
+        let bounds_application = application.clone();
+        let bounds_subscription = cx.observe_window_bounds(window, move |this, window, cx| {
+            let DownloadTaskbarOverlayModel::Visible {
+                settings,
+                editing: true,
+                ..
+            } = &this.model
+            else {
+                this.edit_reference = None;
+                this.edit_gesture_active = false;
+                return;
+            };
+            if !this.edit_gesture_active
+                || !bounds_application
+                    .read(cx)
+                    .taskbar_overlay_edit_gesture_active()
+            {
+                this.edit_reference = None;
+                this.edit_gesture_active = false;
+                return;
             }
+            let bounds = window.bounds();
+            let x = bounds.origin.x.as_f32();
+            let y = bounds.origin.y.as_f32();
+            let width = bounds.size.width.as_f32();
+            let height = bounds.size.height.as_f32();
+            if this
+                .edit_reference
+                .is_some_and(|reference| reference.anchor != settings.anchor)
+            {
+                this.edit_reference = None;
+                return;
+            }
+            let reference =
+                *this
+                    .edit_reference
+                    .get_or_insert_with(|| TaskbarEditGeometryReference {
+                        anchor: settings.anchor,
+                        taskbar_edge_x: match settings.anchor {
+                            nxtools_core::DownloadTaskbarOverlayAnchor::Left => {
+                                x - settings.offset_x as f32
+                            }
+                            nxtools_core::DownloadTaskbarOverlayAnchor::Right => {
+                                x + width + settings.offset_x as f32
+                            }
+                        },
+                        taskbar_top: y - settings.offset_y as f32,
+                        correlation_id: uuid::Uuid::new_v4(),
+                    });
+            let mut next = settings.clone();
+            next.width = width.round().max(0.0) as u32;
+            next.height = height.round().max(0.0) as u32;
+            next.offset_x = match settings.anchor {
+                nxtools_core::DownloadTaskbarOverlayAnchor::Left => {
+                    (x - reference.taskbar_edge_x).round() as i32
+                }
+                nxtools_core::DownloadTaskbarOverlayAnchor::Right => {
+                    (reference.taskbar_edge_x - x - width).round() as i32
+                }
+            };
+            next.offset_y = (y - reference.taskbar_top).round() as i32;
+            if &next == settings {
+                return;
+            }
+            let application = bounds_application.clone();
+            cx.defer(move |cx| {
+                application.update(cx, |application, cx| {
+                    application.record_taskbar_overlay_edit_bounds(
+                        next,
+                        reference.correlation_id,
+                        cx,
+                    );
+                });
+            });
         });
         Self {
             theme: Theme::zed_dark(),
             model: initial_model,
+            application,
+            platform,
             native_window_handle,
             _subscription: subscription,
+            _bounds_subscription: bounds_subscription,
+            edit_reference: None,
+            edit_gesture_active: false,
         }
+    }
+
+    fn begin_edit_gesture(&mut self, window: &Window, correlation_id: uuid::Uuid) {
+        if let DownloadTaskbarOverlayModel::Visible {
+            settings,
+            editing: true,
+            ..
+        } = &self.model
+        {
+            let bounds = window.bounds();
+            let x = bounds.origin.x.as_f32();
+            let y = bounds.origin.y.as_f32();
+            let width = bounds.size.width.as_f32();
+            self.edit_reference = Some(TaskbarEditGeometryReference {
+                anchor: settings.anchor,
+                taskbar_edge_x: match settings.anchor {
+                    nxtools_core::DownloadTaskbarOverlayAnchor::Left => {
+                        x - settings.offset_x as f32
+                    }
+                    nxtools_core::DownloadTaskbarOverlayAnchor::Right => {
+                        x + width + settings.offset_x as f32
+                    }
+                },
+                taskbar_top: y - settings.offset_y as f32,
+                correlation_id,
+            });
+            self.edit_gesture_active = true;
+        }
+    }
+
+    fn finish_edit_gesture(&mut self) {
+        self.edit_gesture_active = false;
+        self.edit_reference = None;
     }
 }
 
 impl Render for DownloadTaskbarOverlayView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
-        let root = div()
+        let mut root = div()
             .size_full()
             .relative()
             .bg(transparent_black())
-            .overflow_hidden()
-            .flex()
-            .flex_col()
-            .justify_center()
-            .gap(px(1.0));
+            .overflow_hidden();
         match &self.model {
             DownloadTaskbarOverlayModel::Hidden => root,
-            DownloadTaskbarOverlayModel::Visible { lanes } => root.children(
-                lanes
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(index, lane)| taskbar_progress_lane_element(theme, index, lane)),
-            ),
+            DownloadTaskbarOverlayModel::Visible {
+                lanes,
+                metrics,
+                settings,
+                editing,
+            } => {
+                let width = settings.width.saturating_sub(if *editing { 10 } else { 0 }) as f32;
+                let show_text = settings.show_speed
+                    || settings.show_remaining_time
+                    || settings.show_active_tasks
+                    || settings.show_active_connections
+                    || settings.show_transferred_bytes;
+                let move_platform = Rc::clone(&self.platform);
+                let move_handle = self.native_window_handle;
+                root = root
+                    .when(*editing, |root| {
+                        root.bg(theme.surface_raised)
+                            .border_1()
+                            .border_color(theme.accent)
+                            .rounded(px(3.0))
+                            .cursor_move()
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _event, window, cx| {
+                                cx.stop_propagation();
+                                if move_handle == 0 {
+                                    return;
+                                }
+                                let correlation_id = this
+                                    .application
+                                    .read(cx)
+                                    .taskbar_overlay_diagnostic_correlation_id();
+                                this.begin_edit_gesture(window, correlation_id);
+                                this.application.update(cx, |application, _| {
+                                    application.set_taskbar_overlay_edit_gesture_active(true);
+                                });
+                                match move_platform.send_command_correlated(
+                                    PlatformCommand::BeginWindowMove(BeginWindowMoveCommand {
+                                        window_handle: move_handle,
+                                    }),
+                                    correlation_id,
+                                ) {
+                                    Ok(command_id) => {
+                                        this.application.update(cx, |application, _| {
+                                            application.register_taskbar_overlay_edit_gesture(
+                                                command_id,
+                                            );
+                                        });
+                                        info!(
+                                            event = "download.taskbar_overlay.move_accepted",
+                                            %correlation_id,
+                                            %command_id,
+                                            "taskbar overlay move gesture accepted"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        this.finish_edit_gesture();
+                                        this.application.update(cx, |application, _| {
+                                            application
+                                                .set_taskbar_overlay_edit_gesture_active(false);
+                                        });
+                                        warn!(
+                                            event = "download.taskbar_overlay.move_accept_failed",
+                                            %correlation_id,
+                                            %error,
+                                            "taskbar overlay move gesture could not be queued"
+                                        );
+                                    }
+                                }
+                            }))
+                    })
+                    .child(
+                        div()
+                            .size_full()
+                            .px(px(if *editing { 5.0 } else { 0.0 }))
+                            .py(px(if *editing { 1.0 } else { 0.0 }))
+                            .flex()
+                            .flex_col()
+                            .justify_center()
+                            .gap(px(if show_text && settings.show_progress {
+                                2.0
+                            } else {
+                                0.0
+                            }))
+                            .when(show_text, |content| {
+                                content.child(taskbar_metrics_element(theme, *metrics, settings))
+                            })
+                            .when(settings.show_progress, |content| {
+                                content.child(
+                                    div().w_full().flex().flex_col().gap(px(1.0)).children(
+                                        lanes.iter().copied().enumerate().map(|(index, lane)| {
+                                            taskbar_progress_lane_element(theme, width, index, lane)
+                                        }),
+                                    ),
+                                )
+                            }),
+                    );
+                if *editing {
+                    let resize_platform = Rc::clone(&self.platform);
+                    let resize_handle = self.native_window_handle;
+                    root = root.child(
+                        div()
+                            .absolute()
+                            .right_0()
+                            .bottom_0()
+                            .w(px(12.0))
+                            .h(px(12.0))
+                            .cursor_e_resize()
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _event, window, cx| {
+                                cx.stop_propagation();
+                                if resize_handle == 0 {
+                                    return;
+                                }
+                                let correlation_id = this
+                                    .application
+                                    .read(cx)
+                                    .taskbar_overlay_diagnostic_correlation_id();
+                                this.begin_edit_gesture(window, correlation_id);
+                                this.application.update(cx, |application, _| {
+                                    application.set_taskbar_overlay_edit_gesture_active(true);
+                                });
+                                match resize_platform.send_command_correlated(
+                                    PlatformCommand::BeginWindowResize(BeginWindowResizeCommand {
+                                        window_handle: resize_handle,
+                                    }),
+                                    correlation_id,
+                                ) {
+                                    Ok(command_id) => {
+                                        this.application.update(cx, |application, _| {
+                                            application.register_taskbar_overlay_edit_gesture(
+                                                command_id,
+                                            );
+                                        });
+                                        info!(
+                                            event = "download.taskbar_overlay.resize_accepted",
+                                            %correlation_id,
+                                            %command_id,
+                                            "taskbar overlay resize gesture accepted"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        this.finish_edit_gesture();
+                                        this.application.update(cx, |application, _| {
+                                            application
+                                                .set_taskbar_overlay_edit_gesture_active(false);
+                                        });
+                                        warn!(
+                                            event = "download.taskbar_overlay.resize_accept_failed",
+                                            %correlation_id,
+                                            %error,
+                                            "taskbar overlay resize gesture could not be queued"
+                                        );
+                                    }
+                                }
+                            }))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right(px(2.0))
+                                    .bottom(px(2.0))
+                                    .w(px(5.0))
+                                    .h(px(5.0))
+                                    .border_r_1()
+                                    .border_b_1()
+                                    .border_color(theme.text_muted),
+                            ),
+                    );
+                }
+                root
+            }
         }
     }
 }
 
 fn taskbar_progress_lane_element(
     theme: Theme,
+    width: f32,
     index: usize,
     lane: DownloadTaskbarOverlayLane,
 ) -> gpui::AnyElement {
@@ -208,15 +663,13 @@ fn taskbar_progress_lane_element(
                     .top_0()
                     .left_0()
                     .h_full()
-                    .w(px(TASKBAR_OVERLAY_WIDTH as f32 * 0.35))
+                    .w(px(width * 0.35))
                     .bg(theme.accent)
                     .opacity(0.78)
                     .with_animation(
                         ("download-taskbar-indeterminate", index),
                         Animation::new(Duration::from_millis(1_400)).repeat(),
-                        |segment, delta| {
-                            segment.left(px(TASKBAR_OVERLAY_WIDTH as f32 * 0.65 * delta))
-                        },
+                        move |segment, delta| segment.left(px(width * 0.65 * delta)),
                     ),
             )
             .into_any_element(),
@@ -228,14 +681,86 @@ fn taskbar_progress_lane_element(
             }
             .clamp(0.0, 1.0);
             track
-                .child(
-                    div()
-                        .h_full()
-                        .w(px(TASKBAR_OVERLAY_WIDTH as f32 * ratio))
-                        .bg(theme.accent),
-                )
+                .child(div().h_full().w(px(width * ratio)).bg(theme.accent))
                 .into_any_element()
         }
+    }
+}
+
+fn taskbar_metrics_element(
+    theme: Theme,
+    metrics: DownloadTaskbarOverlayMetrics,
+    settings: &DownloadTaskbarProgressOverlaySettings,
+) -> gpui::AnyElement {
+    let eta = metrics
+        .total_bytes
+        .filter(|total| metrics.bytes_per_second > 0 && *total > metrics.downloaded_bytes)
+        .map(|total| {
+            format_compact_duration(
+                total.saturating_sub(metrics.downloaded_bytes) / metrics.bytes_per_second,
+            )
+        })
+        .unwrap_or_else(|| "—".to_owned());
+    div()
+        .w_full()
+        .min_w_0()
+        .h(px(10.0))
+        .flex()
+        .items_center()
+        .gap(px(7.0))
+        .text_size(px(9.0))
+        .text_color(theme.text_secondary)
+        .when(settings.show_speed, |row| {
+            row.child(format!(
+                "{}/s",
+                format_compact_bytes(metrics.bytes_per_second)
+            ))
+        })
+        .when(settings.show_remaining_time, |row| {
+            row.child(format!("剩 {eta}"))
+        })
+        .when(settings.show_active_tasks, |row| {
+            row.child(format!("{} 任务", metrics.active_tasks))
+        })
+        .when(settings.show_active_connections, |row| {
+            row.child(format!("{} 连接", metrics.active_connections))
+        })
+        .when(settings.show_transferred_bytes, |row| {
+            row.child(match metrics.total_bytes {
+                Some(total) => format!(
+                    "{} / {}",
+                    format_compact_bytes(metrics.downloaded_bytes),
+                    format_compact_bytes(total)
+                ),
+                None => format_compact_bytes(metrics.downloaded_bytes),
+            })
+        })
+        .into_any_element()
+}
+
+fn format_compact_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.1}G", bytes / GIB)
+    } else if bytes >= MIB {
+        format!("{:.1}M", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.0}K", bytes / KIB)
+    } else {
+        format!("{bytes:.0}B")
+    }
+}
+
+fn format_compact_duration(seconds: u64) -> String {
+    if seconds >= 3600 {
+        format!("{}h{}m", seconds / 3600, seconds % 3600 / 60)
+    } else if seconds >= 60 {
+        format!("{}m{}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
     }
 }
 
@@ -243,146 +768,291 @@ fn taskbar_progress_lane_element(
 mod tests {
     use super::*;
 
+    fn settings() -> DownloadTaskbarProgressOverlaySettings {
+        DownloadTaskbarProgressOverlaySettings::default()
+    }
+
+    fn sample(
+        status: DownloadStatus,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    ) -> DownloadTaskbarOverlaySample {
+        DownloadTaskbarOverlaySample {
+            status,
+            downloaded_bytes,
+            total_bytes,
+            bytes_per_second: 1_024,
+            active_connections: 2,
+            segments: Vec::new(),
+        }
+    }
+
+    fn lanes(model: &DownloadTaskbarOverlayModel) -> &[DownloadTaskbarOverlayLane] {
+        match model {
+            DownloadTaskbarOverlayModel::Visible { lanes, .. } => lanes,
+            DownloadTaskbarOverlayModel::Hidden => &[],
+        }
+    }
+
     #[test]
     fn active_downloads_preserve_their_individual_progress() {
-        let model = aggregate_taskbar_progress([
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 20,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Waiting,
-                downloaded_bytes: 50,
-                total_bytes: Some(100),
-            },
-        ]);
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Downloading, 20, Some(100)),
+                sample(DownloadStatus::Waiting, 50, Some(100)),
+            ],
+        );
 
         assert_eq!(
-            model,
-            DownloadTaskbarOverlayModel::Visible {
-                lanes: vec![
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 20,
-                        total: 100,
-                    },
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 50,
-                        total: 100,
-                    },
-                ]
-            }
+            lanes(&model),
+            &[
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 20,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 50,
+                    total: 100,
+                },
+            ]
         );
     }
 
     #[test]
     fn aggregate_progress_hides_without_active_tasks() {
-        let model = aggregate_taskbar_progress([
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Paused,
-                downloaded_bytes: 20,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Completed,
-                downloaded_bytes: 100,
-                total_bytes: Some(100),
-            },
-        ]);
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Paused, 20, Some(100)),
+                sample(DownloadStatus::Completed, 100, Some(100)),
+            ],
+        );
 
         assert_eq!(model, DownloadTaskbarOverlayModel::Hidden);
     }
 
     #[test]
     fn aggregate_progress_is_indeterminate_when_an_active_length_is_unknown() {
-        let model = aggregate_taskbar_progress([
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 20,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Probing,
-                downloaded_bytes: 0,
-                total_bytes: None,
-            },
-        ]);
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Downloading, 20, Some(100)),
+                sample(DownloadStatus::Probing, 0, None),
+            ],
+        );
 
         assert_eq!(
-            model,
-            DownloadTaskbarOverlayModel::Visible {
-                lanes: vec![
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 20,
-                        total: 100,
-                    },
-                    DownloadTaskbarOverlayLane::Indeterminate,
-                ]
-            }
+            lanes(&model),
+            &[
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 20,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Indeterminate,
+            ]
         );
     }
 
     #[test]
     fn separate_active_downloads_keep_separate_taskbar_progress_lanes() {
-        let model = aggregate_taskbar_progress([
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 25,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Waiting,
-                downloaded_bytes: 150,
-                total_bytes: Some(300),
-            },
-        ]);
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Downloading, 25, Some(100)),
+                sample(DownloadStatus::Waiting, 150, Some(300)),
+            ],
+        );
 
         assert_eq!(model.visible_lane_count(), 2);
     }
 
     #[test]
     fn overflow_downloads_share_the_last_weighted_lane() {
-        let model = aggregate_taskbar_progress([
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 10,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 20,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Downloading,
-                downloaded_bytes: 30,
-                total_bytes: Some(100),
-            },
-            DownloadTaskbarOverlaySample {
-                status: DownloadStatus::Waiting,
-                downloaded_bytes: 150,
-                total_bytes: Some(300),
-            },
-        ]);
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Downloading, 10, Some(100)),
+                sample(DownloadStatus::Downloading, 20, Some(100)),
+                sample(DownloadStatus::Downloading, 30, Some(100)),
+                sample(DownloadStatus::Waiting, 150, Some(300)),
+            ],
+        );
 
         assert_eq!(
-            model,
-            DownloadTaskbarOverlayModel::Visible {
-                lanes: vec![
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 10,
-                        total: 100,
-                    },
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 20,
-                        total: 100,
-                    },
-                    DownloadTaskbarOverlayLane::Determinate {
-                        completed: 180,
-                        total: 400,
-                    },
-                ]
-            }
+            lanes(&model),
+            &[
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 10,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 20,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 180,
+                    total: 400,
+                },
+            ]
         );
+    }
+
+    #[test]
+    fn edit_mode_stays_visible_with_deterministic_preview_data() {
+        let model = aggregate_taskbar_progress(&settings(), true, []);
+
+        assert!(model.is_visible());
+        assert_eq!(model.visible_lane_count(), 2);
+        assert!(matches!(
+            model,
+            DownloadTaskbarOverlayModel::Visible { editing: true, .. }
+        ));
+    }
+
+    #[test]
+    fn edit_preview_reflects_each_progress_mode_without_active_tasks() {
+        let mut settings = settings();
+        settings.progress_mode = DownloadTaskbarProgressMode::Aggregate;
+        let aggregate = aggregate_taskbar_progress(&settings, true, []);
+        settings.progress_mode = DownloadTaskbarProgressMode::PerTask;
+        let per_task = aggregate_taskbar_progress(&settings, true, []);
+        settings.progress_mode = DownloadTaskbarProgressMode::PerSegment;
+        let per_segment = aggregate_taskbar_progress(&settings, true, []);
+
+        assert_eq!(aggregate.visible_lane_count(), 1);
+        assert_eq!(per_task.visible_lane_count(), 2);
+        assert_eq!(per_segment.visible_lane_count(), 2);
+        assert_ne!(lanes(&per_task), lanes(&per_segment));
+    }
+
+    #[test]
+    fn aggregate_mode_uses_one_weighted_lane() {
+        let mut settings = settings();
+        settings.progress_mode = DownloadTaskbarProgressMode::Aggregate;
+        let model = aggregate_taskbar_progress(
+            &settings,
+            false,
+            [
+                sample(DownloadStatus::Downloading, 20, Some(100)),
+                sample(DownloadStatus::Downloading, 150, Some(300)),
+            ],
+        );
+
+        assert_eq!(
+            lanes(&model),
+            &[DownloadTaskbarOverlayLane::Determinate {
+                completed: 170,
+                total: 400,
+            }]
+        );
+    }
+
+    #[test]
+    fn per_segment_mode_uses_real_segment_lengths() {
+        let mut settings = settings();
+        settings.height = 20;
+        settings.progress_mode = DownloadTaskbarProgressMode::PerSegment;
+        let mut active = sample(DownloadStatus::Downloading, 30, Some(100));
+        active.segments = vec![
+            DownloadTaskbarOverlaySegmentSample {
+                downloaded_bytes: 10,
+                total_bytes: Some(25),
+            },
+            DownloadTaskbarOverlaySegmentSample {
+                downloaded_bytes: 20,
+                total_bytes: Some(75),
+            },
+            DownloadTaskbarOverlaySegmentSample {
+                downloaded_bytes: 0,
+                total_bytes: None,
+            },
+        ];
+
+        let model = aggregate_taskbar_progress(&settings, false, [active]);
+
+        assert_eq!(
+            lanes(&model),
+            &[
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 10,
+                    total: 25,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 20,
+                    total: 75,
+                },
+                DownloadTaskbarOverlayLane::Indeterminate,
+            ]
+        );
+    }
+
+    #[test]
+    fn per_segment_mode_aggregates_overflow_instead_of_dropping_it() {
+        let mut settings = settings();
+        settings.progress_mode = DownloadTaskbarProgressMode::PerSegment;
+        let mut active = sample(DownloadStatus::Downloading, 150, Some(500));
+        active.segments = (0..5)
+            .map(|index| DownloadTaskbarOverlaySegmentSample {
+                downloaded_bytes: (index + 1) * 10,
+                total_bytes: Some(100),
+            })
+            .collect();
+
+        let model = aggregate_taskbar_progress(&settings, false, [active]);
+
+        assert_eq!(
+            lanes(&model),
+            &[
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 10,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 20,
+                    total: 100,
+                },
+                DownloadTaskbarOverlayLane::Determinate {
+                    completed: 120,
+                    total: 300,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn text_and_edit_chrome_reduce_lane_capacity_before_rendering() {
+        let mut settings = settings();
+        settings.height = 20;
+        settings.show_speed = true;
+
+        assert_eq!(taskbar_overlay_max_lanes(&settings, false), 3);
+        assert_eq!(taskbar_overlay_max_lanes(&settings, true), 2);
+    }
+
+    #[test]
+    fn overlay_metrics_aggregate_all_active_tasks() {
+        let model = aggregate_taskbar_progress(
+            &settings(),
+            false,
+            [
+                sample(DownloadStatus::Downloading, 20, Some(100)),
+                sample(DownloadStatus::Waiting, 40, Some(200)),
+            ],
+        );
+
+        let DownloadTaskbarOverlayModel::Visible { metrics, .. } = model else {
+            panic!("active downloads should keep the overlay visible");
+        };
+        assert_eq!(metrics.active_tasks, 2);
+        assert_eq!(metrics.active_connections, 4);
+        assert_eq!(metrics.downloaded_bytes, 60);
+        assert_eq!(metrics.total_bytes, Some(300));
+        assert_eq!(metrics.bytes_per_second, 2_048);
     }
 }

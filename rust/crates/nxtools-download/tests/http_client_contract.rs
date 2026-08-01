@@ -24,6 +24,7 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
     }
 }
 
@@ -335,7 +336,8 @@ async fn a_changed_resource_validator_is_rejected_before_segment_writes() {
                 &segment,
                 &artifact,
                 &DownloadSegmentTransferControl::new(DownloadTransferControl::new()),
-            ),
+            )
+            .with_resume_validator(),
             |_| {},
         )
         .await

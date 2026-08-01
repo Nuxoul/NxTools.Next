@@ -76,6 +76,23 @@ pub struct DownloadRequestHeader {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadAdaptiveSegmentPolicy {
+    pub enabled: bool,
+    pub max_segments: u16,
+    pub min_segment_mib: u16,
+}
+
+impl Default for DownloadAdaptiveSegmentPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_segments: 32,
+            min_segment_mib: 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadRequest {
     pub source_url: String,
@@ -89,6 +106,8 @@ pub struct DownloadRequest {
     #[serde(default)]
     pub speed_limit_bytes_per_second: Option<u64>,
     pub scheduled_at_unix_ms: Option<i64>,
+    #[serde(default)]
+    pub adaptive_segment_policy: Option<DownloadAdaptiveSegmentPolicy>,
 }
 
 impl DownloadRequest {
@@ -112,6 +131,19 @@ impl DownloadRequest {
             && !(1..=64).contains(&limit)
         {
             return Err(DownloadRequestError::InvalidConnectionLimit(limit));
+        }
+        if let Some(policy) = self.adaptive_segment_policy {
+            let initial_segments = self.connection_limit.unwrap_or(1).clamp(1, 64);
+            if !(initial_segments..=256).contains(&policy.max_segments) {
+                return Err(DownloadRequestError::InvalidAdaptiveMaxSegments(
+                    policy.max_segments,
+                ));
+            }
+            if !(1..=100).contains(&policy.min_segment_mib) {
+                return Err(DownloadRequestError::InvalidAdaptiveMinSegmentMib(
+                    policy.min_segment_mib,
+                ));
+            }
         }
         if self.speed_limit_bytes_per_second == Some(0) {
             return Err(DownloadRequestError::InvalidSpeedLimit);
@@ -147,6 +179,12 @@ pub enum DownloadRequestError {
     InvalidFileName,
     #[error("download connection limit must be between 1 and 64, got {0}")]
     InvalidConnectionLimit(u16),
+    #[error(
+        "adaptive segment maximum must be between the initial connection count and 256, got {0}"
+    )]
+    InvalidAdaptiveMaxSegments(u16),
+    #[error("adaptive minimum segment size must be between 1 and 100 MiB, got {0}")]
+    InvalidAdaptiveMinSegmentMib(u16),
     #[error("download speed limit must be greater than zero; omit it for unlimited")]
     InvalidSpeedLimit,
     #[error("download request contains an invalid header")]
