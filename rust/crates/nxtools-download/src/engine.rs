@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tracing::{info, warn};
 
@@ -57,6 +58,7 @@ struct EngineTaskState {
     transfer: StoredTransferState,
     control: Option<DownloadTransferControl>,
     last_progress_event: Option<Instant>,
+    latest_progress: Option<DownloadProgress>,
     transfer_rate: Option<TransferRateSampler>,
 }
 
@@ -71,6 +73,7 @@ const ADAPTIVE_SAMPLE_COUNT: usize = 5;
 const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
 const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
 const MIB: u64 = 1024 * 1024;
+const AGGREGATE_RATE_STALE_AFTER: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AdaptiveConnectionDecision {
@@ -362,6 +365,7 @@ impl DownloadEngine {
                     transfer,
                     control: None,
                     last_progress_event: None,
+                    latest_progress: None,
                     transfer_rate: None,
                 },
             );
@@ -1043,9 +1047,9 @@ impl DownloadEngine {
         download_runtime()?;
 
         let candidates = self.inner.store.load_eligible_queue_order(queue_id)?;
-        let mut admitted = 0_usize;
+        let mut admitted_task_ids = Vec::new();
         for task_id in candidates {
-            if admitted >= available_slots {
+            if admitted_task_ids.len() >= available_slots {
                 break;
             }
             let restored_segment_bytes =
@@ -1082,6 +1086,7 @@ impl DownloadEngine {
                     )?,
                 ));
                 committed.last_progress_event = None;
+                committed.latest_progress = None;
                 self.inner.store.save_task_with_transfer_and_eligibility(
                     &committed.task,
                     &committed.transfer,
@@ -1098,13 +1103,19 @@ impl DownloadEngine {
                 task_id,
                 correlation_id,
             )?;
-            admitted += 1;
+            admitted_task_ids.push(task_id);
+        }
+        if !admitted_task_ids.is_empty() {
+            self.inner.emit(DownloadEvent::TasksAdmitted {
+                correlation_id,
+                task_ids: admitted_task_ids.clone(),
+            });
         }
         info!(
             event = "download.queue.admitted",
             %correlation_id,
             queue_id,
-            admitted,
+            admitted = admitted_task_ids.len(),
             active_before = active_count,
             max_concurrent_tasks = limit,
             "eligible download tasks admitted from queue"
@@ -1151,7 +1162,7 @@ impl DownloadEngine {
             sequence: self.inner.event_sequencer.current(),
             tasks,
             queues: self.inner.store.load_queues()?,
-            aggregate_metrics: DownloadAggregateMetrics::default(),
+            aggregate_metrics: self.inner.aggregate_metrics()?,
             task_details,
         })
     }
@@ -1258,6 +1269,7 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadTaskId, DownloadEngineError> {
         request.validate()?;
+        let request_fingerprint = Self::submission_fingerprint(&request, origin, mode)?;
         let now = now_unix_ms();
         let delayed_until_due = request
             .scheduled_at_unix_ms
@@ -1272,11 +1284,29 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        self.inner.store.save_task_with_transfer_and_queue(
+        if let Some((existing_task_id, existing_fingerprint)) =
+            self.inner.store.load_submission_receipt(correlation_id)?
+        {
+            if existing_fingerprint != request_fingerprint {
+                return Err(DownloadEngineError::DuplicateRequestConflict(
+                    correlation_id,
+                ));
+            }
+            info!(
+                event = "download.submit.duplicate_replayed",
+                %correlation_id,
+                task_id = %existing_task_id.as_uuid(),
+                "duplicate download submission returned the durable prior acceptance"
+            );
+            return Ok(existing_task_id);
+        }
+        self.inner.store.save_task_with_transfer_queue_and_receipt(
             &task,
             &transfer,
             "default",
             mode == DownloadSubmitMode::StartNow && !delayed_until_due,
+            correlation_id,
+            &request_fingerprint,
         )?;
         self.inner.lock_tasks()?.insert(
             task_id,
@@ -1285,6 +1315,7 @@ impl DownloadEngine {
                 transfer,
                 control,
                 last_progress_event: None,
+                latest_progress: None,
                 transfer_rate: None,
             },
         );
@@ -1311,6 +1342,17 @@ impl DownloadEngine {
             );
         }
         Ok(task_id)
+    }
+
+    fn submission_fingerprint(
+        request: &DownloadRequest,
+        origin: RequestOrigin,
+        mode: DownloadSubmitMode,
+    ) -> Result<String, DownloadEngineError> {
+        let encoded =
+            serde_json::to_vec(&(request, origin, mode)).map_err(DownloadStorageError::from)?;
+        let digest = Sha256::digest(encoded);
+        Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
     }
 
     /// Releases delayed submissions whose absolute schedule has elapsed.
@@ -1720,6 +1762,11 @@ impl DownloadEngineInner {
         Ok(())
     }
 
+    fn aggregate_metrics(&self) -> Result<DownloadAggregateMetrics, DownloadEngineError> {
+        let tasks = self.lock_tasks()?;
+        Ok(aggregate_metrics_at(&tasks, Instant::now()))
+    }
+
     fn emit(&self, event: DownloadEvent) {
         let Ok(envelope) = self.event_sequencer.next(now_unix_ms(), event) else {
             return;
@@ -1873,6 +1920,7 @@ async fn run_task(
             .task
             .transition_to(DownloadStatus::Downloading, now_unix_ms())?;
         state.last_progress_event = None;
+        state.latest_progress = None;
         state.transfer_rate = Some(TransferRateSampler::new(
             state.transfer.downloaded_bytes,
             Instant::now(),
@@ -2062,6 +2110,7 @@ async fn run_single_stream_task(
                 state
                     .task
                     .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
+                state.latest_progress = None;
                 inner.persist(state)?;
                 inner.emit(DownloadEvent::TaskChanged {
                     task: state.task.clone(),
@@ -2090,6 +2139,7 @@ async fn run_single_stream_task(
                 .task
                 .transition_to(DownloadStatus::Paused, now_unix_ms())?;
             state.control = None;
+            state.latest_progress = None;
             inner.persist(state)?;
             inner.emit(DownloadEvent::TaskChanged {
                 task: state.task.clone(),
@@ -2113,6 +2163,7 @@ async fn run_single_stream_task(
                 .task
                 .transition_to(DownloadStatus::Cancelled, now_unix_ms())?;
             state.control = None;
+            state.latest_progress = None;
             inner.persist(state)?;
             inner.emit(DownloadEvent::TaskChanged {
                 task: state.task.clone(),
@@ -2938,6 +2989,7 @@ async fn run_segmented_task(
         state
             .task
             .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
+        state.latest_progress = None;
         inner.persist(state)?;
         inner.emit(DownloadEvent::TaskChanged {
             task: state.task.clone(),
@@ -3046,6 +3098,7 @@ fn transition_transfer_to_terminal(
     state.transfer.downloaded_bytes = downloaded_bytes;
     state.task.transition_to(status, now_unix_ms())?;
     state.control = None;
+    state.latest_progress = None;
     inner.persist(state)?;
     inner.emit(DownloadEvent::TaskChanged {
         task: state.task.clone(),
@@ -3093,18 +3146,55 @@ fn publish_transfer_progress(
                 .transfer_rate
                 .get_or_insert_with(|| TransferRateSampler::new(published_downloaded_bytes, now))
                 .sample(published_downloaded_bytes, now);
-            inner.emit(DownloadEvent::TaskProgress {
-                progress: DownloadProgress {
-                    task_id,
-                    downloaded_bytes: published_downloaded_bytes,
-                    total_bytes,
-                    bytes_per_second,
-                    active_connections,
-                    segments,
-                },
-            });
+            let progress = DownloadProgress {
+                task_id,
+                downloaded_bytes: published_downloaded_bytes,
+                total_bytes,
+                bytes_per_second,
+                active_connections,
+                segments,
+            };
+            state.latest_progress = Some(progress.clone());
+            inner.emit(DownloadEvent::TaskProgress { progress });
         }
     }
+}
+
+fn aggregate_metrics_at(
+    tasks: &HashMap<DownloadTaskId, EngineTaskState>,
+    now: Instant,
+) -> DownloadAggregateMetrics {
+    let mut metrics = DownloadAggregateMetrics::default();
+    for state in tasks.values().filter(|state| {
+        matches!(
+            state.task.status(),
+            DownloadStatus::Probing
+                | DownloadStatus::Waiting
+                | DownloadStatus::Downloading
+                | DownloadStatus::Finalizing
+                | DownloadStatus::Verifying
+        )
+    }) {
+        metrics.active_tasks = metrics.active_tasks.saturating_add(1);
+        let Some(progress) = state.latest_progress.as_ref() else {
+            continue;
+        };
+        metrics.active_connections = metrics
+            .active_connections
+            .saturating_add(u32::from(progress.active_connections));
+        let rate_is_fresh = state.last_progress_event.is_some_and(|sampled_at| {
+            now.saturating_duration_since(sampled_at) <= AGGREGATE_RATE_STALE_AFTER
+        });
+        if rate_is_fresh {
+            metrics.downloaded_bytes_per_second = metrics
+                .downloaded_bytes_per_second
+                .saturating_add(progress.bytes_per_second);
+            metrics.disk_write_bytes_per_second = metrics
+                .disk_write_bytes_per_second
+                .saturating_add(progress.bytes_per_second);
+        }
+    }
+    metrics
 }
 
 fn download_segment_progress_snapshot(
@@ -3432,6 +3522,8 @@ pub enum DownloadEngineError {
     Runtime(String),
     #[error("timed out waiting for download task: {0:?}")]
     WaitTimeout(DownloadTaskId),
+    #[error("download submission request id {0} was already used for a different payload")]
+    DuplicateRequestConflict(uuid::Uuid),
 }
 
 impl DownloadEngineError {
@@ -3482,6 +3574,7 @@ impl DownloadEngineError {
                 (DownloadFaultCode::Network, true)
             }
             Self::ResourceChanged(_) => (DownloadFaultCode::Protocol, false),
+            Self::DuplicateRequestConflict(_) => (DownloadFaultCode::Protocol, false),
             Self::Http(_) => (DownloadFaultCode::Protocol, false),
             Self::Runtime(_) | Self::WaitTimeout(_) => (DownloadFaultCode::Unavailable, true),
         };
@@ -3611,6 +3704,8 @@ mod tests {
                     }],
                     cookie: Some("private-cookie".into()),
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -3677,6 +3772,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -3714,6 +3811,81 @@ mod tests {
     }
 
     #[test]
+    fn batch_resume_emits_correlation_scoped_admission_waves_in_queue_order() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let events = engine.take_event_receiver().expect("take event receiver");
+        let first = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/first-wave.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("first-wave.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue first task");
+        let second = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/second-wave.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("second-wave.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue second task");
+        while events.try_recv().is_ok() {}
+        let correlation_id = uuid::Uuid::new_v4();
+
+        let outcome = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: correlation_id,
+            origin: RequestOrigin::Ui,
+            command: DownloadCommand::Batch {
+                task_ids: vec![first, second],
+                action: DownloadBatchAction::Resume,
+            },
+        });
+        assert!(matches!(
+            outcome.outcome,
+            DownloadCommandOutcome::Batch { .. }
+        ));
+
+        let admitted = std::iter::from_fn(|| events.try_recv().ok())
+            .filter_map(|event| match event.event {
+                DownloadEvent::TasksAdmitted {
+                    correlation_id: observed,
+                    task_ids,
+                } => {
+                    assert_eq!(observed, correlation_id);
+                    Some(task_ids)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(admitted, vec![first, second]);
+    }
+
+    #[test]
     fn segmented_progress_total_and_segment_snapshot_are_published_atomically() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let events = engine.take_event_receiver().expect("take event receiver");
@@ -3726,6 +3898,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -3769,6 +3943,86 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Some(10), Some(10)]
         );
+    }
+
+    #[test]
+    fn snapshot_aggregate_metrics_follow_live_written_progress_and_terminal_state() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/aggregate.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("aggregate.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
+                    connection_limit: Some(2),
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        {
+            let mut tasks = engine.inner.lock_tasks().expect("lock tasks");
+            let state = tasks.get_mut(&task_id).expect("task state");
+            for status in [
+                DownloadStatus::Probing,
+                DownloadStatus::Waiting,
+                DownloadStatus::Downloading,
+            ] {
+                state
+                    .task
+                    .transition_to(status, now_unix_ms())
+                    .expect("advance live task");
+            }
+            state.transfer_rate = Some(TransferRateSampler::new(0, Instant::now()));
+        }
+        publish_transfer_progress(&engine.inner, task_id, 128, Some(1_024), 2, None, None);
+        std::thread::sleep(Duration::from_millis(500));
+        publish_transfer_progress(&engine.inner, task_id, 640, Some(1_024), 2, None, None);
+
+        let live = engine
+            .command_snapshot(DownloadQuery::default())
+            .expect("live snapshot")
+            .aggregate_metrics;
+        assert_eq!(live.active_tasks, 1);
+        assert_eq!(live.active_connections, 2);
+        assert!(live.downloaded_bytes_per_second > 0);
+        assert_eq!(
+            live.disk_write_bytes_per_second, live.downloaded_bytes_per_second,
+            "HTTP progress is published only after the artifact write succeeds"
+        );
+        let stale = {
+            let tasks = engine.inner.lock_tasks().expect("lock tasks");
+            aggregate_metrics_at(
+                &tasks,
+                Instant::now() + AGGREGATE_RATE_STALE_AFTER + Duration::from_millis(1),
+            )
+        };
+        assert_eq!(stale.active_tasks, 1);
+        assert_eq!(stale.active_connections, 2);
+        assert_eq!(stale.downloaded_bytes_per_second, 0);
+        assert_eq!(stale.disk_write_bytes_per_second, 0);
+
+        {
+            let mut tasks = engine.inner.lock_tasks().expect("lock tasks");
+            tasks
+                .get_mut(&task_id)
+                .expect("task state")
+                .task
+                .transition_to(DownloadStatus::Paused, now_unix_ms())
+                .expect("pause task");
+        }
+        let paused = engine
+            .command_snapshot(DownloadQuery::default())
+            .expect("paused snapshot")
+            .aggregate_metrics;
+        assert_eq!(paused, DownloadAggregateMetrics::default());
     }
 
     #[test]
@@ -3895,6 +4149,8 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
@@ -3937,6 +4193,8 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
@@ -3972,6 +4230,8 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
@@ -4017,6 +4277,7 @@ mod tests {
                 transfer,
                 control: None,
                 last_progress_event: None,
+                latest_progress: None,
                 transfer_rate: None,
             },
         );

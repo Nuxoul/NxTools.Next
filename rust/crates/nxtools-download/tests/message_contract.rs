@@ -22,6 +22,8 @@ fn request() -> DownloadRequest {
         }],
         cookie: None,
         referrer: Some("https://example.test/".to_owned()),
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
@@ -151,6 +153,29 @@ fn events_are_sequence_numbered_and_faults_are_machine_readable() {
     assert_eq!(value["event"], json!("command_rejected"));
     assert_eq!(value["data"]["fault"]["code"], json!("invalid_state"));
     assert_eq!(value["data"]["fault"]["retryable"], json!(false));
+}
+
+#[test]
+fn admitted_task_waves_keep_the_scheduler_correlation_and_order() {
+    let correlation_id =
+        Uuid::parse_str("87654321-4321-8765-4321-876543218765").expect("fixed id is valid");
+    let first = DownloadTaskId::new();
+    let second = DownloadTaskId::new();
+    let event = DownloadEventEnvelope {
+        sequence: 42,
+        emitted_at_unix_ms: 9_001,
+        event: DownloadEvent::TasksAdmitted {
+            correlation_id,
+            task_ids: vec![first, second],
+        },
+    };
+
+    let value = serde_json::to_value(event).expect("serialize admission wave");
+
+    assert_eq!(value["event"], json!("tasks_admitted"));
+    assert_eq!(value["data"]["correlation_id"], json!(correlation_id));
+    assert_eq!(value["data"]["task_ids"][0], json!(first));
+    assert_eq!(value["data"]["task_ids"][1], json!(second));
 }
 
 #[test]

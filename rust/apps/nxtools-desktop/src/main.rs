@@ -67,6 +67,11 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
         .context("desktop runtime did not provide a download engine")?;
     let download_default_directory = runtime.download_default_directory.clone();
     let download_database_path = runtime.download_database_path.clone();
+    let incompatible_download_schema = runtime.incompatible_download_schema;
+    let download_ui_requests = runtime
+        .download_ui_requests
+        .take()
+        .context("desktop runtime did not provide the download UI request stream")?;
     let app_config = runtime.config.clone();
     let config_path = runtime.config_path.clone();
     let log_dir = runtime.log_dir.clone();
@@ -103,6 +108,19 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
             component_theme.colors.scrollbar_thumb_hover = visual_theme.text_muted.into();
 
             let notifications = cx.new(|_| NotificationCenter::default());
+            if let Some(schema) = incompatible_download_schema {
+                notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "download-database-newer-schema",
+                        "下载历史来自较新版本",
+                        format!(
+                            "检测到数据库版本 {}，当前版本支持到 {}。原数据库保持不变，已使用独立兼容数据库。",
+                            schema.current, schema.supported
+                        ),
+                        cx,
+                    );
+                });
+            }
             let platform_bridge = Rc::new(platform_bridge);
             let indexer_bridge = Rc::new(indexer_bridge);
             let quick_launch = cx.new(|_| {
@@ -160,6 +178,20 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
             downloads.update(cx, |downloads, cx| {
                 downloads.open_taskbar_overlay(cx);
             });
+            let downloads_for_browser = downloads.downgrade();
+            cx.spawn(async move |cx| {
+                while let Ok(intake) = download_ui_requests.recv().await {
+                    if downloads_for_browser
+                        .update(cx, |downloads, cx| {
+                            downloads.handle_browser_download_ui(intake, cx);
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            })
+            .detach();
             cx.set_global(ClipboardApplicationGlobal::new(clipboard.clone()));
             let dispatcher = cx.new(|cx| {
                 PlatformEventDispatcher::new(
@@ -329,7 +361,11 @@ fn protected_package_matches_release(release: &Path, protected: &Path) -> Result
     let Some(protected_directory) = protected.parent() else {
         return Ok(false);
     };
-    for name in ["NxTools.Indexer.exe", "NxTools.PlatformHost.exe"] {
+    for name in [
+        "NxTools.Indexer.exe",
+        "NxTools.PlatformHost.exe",
+        "NxTools.Cli.exe",
+    ] {
         if !matching_files(
             &release_directory.join(name),
             &protected_directory.join(name),
@@ -394,6 +430,7 @@ mod protected_desktop_tests {
                 "NxTools.PlatformHost.exe",
                 b"approved platform host".as_slice(),
             ),
+            ("NxTools.Cli.exe", b"approved browser host".as_slice()),
         ] {
             std::fs::write(release_dir.join(name), bytes).expect("release binary");
             std::fs::write(protected_dir.join(name), bytes).expect("protected binary");

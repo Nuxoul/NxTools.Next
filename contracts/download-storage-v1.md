@@ -2,7 +2,7 @@
 
 Status: frozen for download phase 0
 
-Last updated: 2026-07-29
+Last updated: 2026-08-02
 
 ## Location and ownership
 
@@ -24,6 +24,12 @@ Schema version 2 adds `download_queue_items`. It stores one queue membership per
 integer position and whether the task is eligible for automatic admission. Migration places
 existing tasks into the default queue in stable creation order but does not auto-start them.
 Reordering replaces all positions in one transaction and preserves eligibility.
+
+Schema version 3 adds the durable user-paused admission bit. Version 4 adds the bounded per-task
+timeline and its status/transfer-plan triggers. Version 5 adds `download_submission_receipts`,
+which binds a correlated submission request ID to its task ID and a payload fingerprint in the
+same transaction that creates the task. Replaying an identical request returns the prior task;
+reusing the ID for different content is rejected. Deleting a task cascades its receipt.
 
 ## Migration rules
 

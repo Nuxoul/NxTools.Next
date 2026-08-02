@@ -1,0 +1,19 @@
+{
+  "name": "download-ui-window-discovery",
+  "steps": [
+    {
+      "action": "select_window",
+      "selector": {
+        "title": "NxTools",
+        "visible": true,
+        "min_width": 700,
+        "min_height": 500,
+        "timeout_ms": 8000
+      }
+    },
+    {
+      "action": "capture",
+      "name": "main-window"
+    }
+  ]
+}

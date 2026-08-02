@@ -18,6 +18,8 @@ fn task(at: i64) -> DownloadTask {
             }],
             cookie: Some("session=test".to_owned()),
             referrer: Some("https://example.test/downloads".to_owned()),
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: Some(8),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: Some(5_000),

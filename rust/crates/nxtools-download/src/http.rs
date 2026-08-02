@@ -23,6 +23,7 @@ const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub struct HttpDownloadClient {
     client: Client,
+    loopback_client: Client,
     stall_timeout: Duration,
     #[cfg(test)]
     injected_artifact_fault: Option<InjectedArtifactFault>,
@@ -37,14 +38,22 @@ impl HttpDownloadClient {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
-        let client = Client::builder()
-            .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .read_timeout(stall_timeout)
-            .connect_timeout(stall_timeout)
-            .build()?;
+        let build_client = |disable_proxy: bool| {
+            let mut builder = Client::builder()
+                .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
+                .redirect(reqwest::redirect::Policy::limited(10))
+                .read_timeout(stall_timeout)
+                .connect_timeout(stall_timeout);
+            if disable_proxy {
+                builder = builder.no_proxy();
+            }
+            builder.build()
+        };
+        let client = build_client(false)?;
+        let loopback_client = build_client(true)?;
         Ok(Self {
             client,
+            loopback_client,
             stall_timeout,
             #[cfg(test)]
             injected_artifact_fault: None,
@@ -615,7 +624,9 @@ impl HttpDownloadClient {
         request: &DownloadRequest,
         range_probe: bool,
     ) -> Result<Response, HttpDownloadError> {
-        let mut builder = self.client.request(method, &request.source_url);
+        let mut builder = self
+            .client_for_url(&request.source_url)
+            .request(method, &request.source_url);
         for header in &request.headers {
             let name = HeaderName::from_bytes(header.name.as_bytes())
                 .map_err(|_| HttpDownloadError::InvalidHeaderName(header.name.clone()))?;
@@ -647,7 +658,7 @@ impl HttpDownloadClient {
         validator: &ResourceValidator,
         use_if_range: bool,
     ) -> Result<Response, HttpDownloadError> {
-        let mut builder = self.client.get(final_url);
+        let mut builder = self.client_for_url(final_url).get(final_url);
         for header in &request.headers {
             let name = HeaderName::from_bytes(header.name.as_bytes())
                 .map_err(|_| HttpDownloadError::InvalidHeaderName(header.name.clone()))?;
@@ -683,6 +694,27 @@ impl HttpDownloadClient {
             }
         } else {
             HttpDownloadError::Client(error)
+        }
+    }
+
+    fn client_for_url(&self, url: &str) -> &Client {
+        let is_loopback = reqwest::Url::parse(url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .is_some_and(|host| {
+                let host = host
+                    .strip_prefix('[')
+                    .and_then(|host| host.strip_suffix(']'))
+                    .unwrap_or(&host);
+                host.eq_ignore_ascii_case("localhost")
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|address| address.is_loopback())
+            });
+        if is_loopback {
+            &self.loopback_client
+        } else {
+            &self.client
         }
     }
 }
@@ -1012,6 +1044,28 @@ impl ProbeMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loopback_resources_bypass_the_remote_proxy_client() {
+        let client = HttpDownloadClient::new().expect("create HTTP client");
+
+        assert!(std::ptr::eq(
+            client.client_for_url("http://127.0.0.1:32100/resource"),
+            &client.loopback_client
+        ));
+        assert!(std::ptr::eq(
+            client.client_for_url("http://[::1]:32100/resource"),
+            &client.loopback_client
+        ));
+        assert!(std::ptr::eq(
+            client.client_for_url("http://localhost:32100/resource"),
+            &client.loopback_client
+        ));
+        assert!(std::ptr::eq(
+            client.client_for_url("https://example.com/resource"),
+            &client.client
+        ));
+    }
 
     #[tokio::test]
     async fn final_artifact_is_absent_until_the_commit_rename() {

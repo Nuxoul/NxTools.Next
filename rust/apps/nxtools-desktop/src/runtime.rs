@@ -1,21 +1,24 @@
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::mpsc::SyncSender;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use async_channel::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use nxtools_clipboard::ClipboardHistory;
 use nxtools_core::{AppConfig, AppPaths, LogGuard, SingleInstanceGuard, init_file_logging};
-use nxtools_download::DownloadEngine;
-use nxtools_download::DownloadStatus;
-use nxtools_download_ipc::{DOWNLOAD_PIPE_NAME, DownloadHostActivity, run_download_host};
+use nxtools_download::{DownloadEngine, DownloadEngineError, DownloadStatus, DownloadStorageError};
+use nxtools_download_ipc::{
+    DOWNLOAD_PIPE_NAME, DOWNLOAD_UI_PIPE_NAME, DownloadHostActivity, DownloadUiOpenResponse,
+    DownloadUiRequest, run_download_host, run_download_ui_host,
+};
 use nxtools_finder::{FinderCatalog, default_application_roots};
 use nxtools_ipc::{
     INDEXER_PIPE_NAME, connect_local_indexer_pipe, read_bounded_sync_frame, write_envelope_sync,
@@ -93,10 +96,81 @@ pub struct DesktopRuntime {
     pub download_engine: Option<DownloadEngine>,
     pub download_default_directory: PathBuf,
     pub download_database_path: PathBuf,
+    pub incompatible_download_schema: Option<IncompatibleDownloadSchema>,
+    pub download_ui_requests: Option<AsyncReceiver<DownloadUiIntake>>,
     _instance: SingleInstanceGuard,
     _log_guard: LogGuard,
     _platform_host: Option<PlatformHostSupervisor>,
     _indexer: Option<IndexerSupervisor>,
+}
+
+pub(crate) struct DownloadUiIntake {
+    pub request: DownloadUiRequest,
+    pub response: SyncSender<DownloadUiOpenResponse>,
+    pub accepted_at: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IncompatibleDownloadSchema {
+    pub current: u32,
+    pub supported: u32,
+}
+
+struct OpenedDownloadEngine {
+    engine: DownloadEngine,
+    database_path: PathBuf,
+    incompatible_primary_schema: Option<IncompatibleDownloadSchema>,
+}
+
+fn open_download_engine(primary_path: &Path) -> Result<OpenedDownloadEngine> {
+    match DownloadEngine::open(primary_path) {
+        Ok(engine) => Ok(OpenedDownloadEngine {
+            engine,
+            database_path: primary_path.to_path_buf(),
+            incompatible_primary_schema: None,
+        }),
+        Err(DownloadEngineError::Storage(DownloadStorageError::UnsupportedSchema {
+            current,
+            supported,
+        })) => {
+            let database_path = compatible_download_database_path(primary_path, supported);
+            warn!(
+                event = "download.database.compatibility_fallback",
+                current_schema = current,
+                supported_schema = supported,
+                "newer download database preserved; using a side-by-side compatible database"
+            );
+            let engine = DownloadEngine::open(database_path.clone()).with_context(|| {
+                format!(
+                    "failed to initialize the schema {supported} compatibility download database"
+                )
+            })?;
+            Ok(OpenedDownloadEngine {
+                engine,
+                database_path,
+                incompatible_primary_schema: Some(IncompatibleDownloadSchema {
+                    current,
+                    supported,
+                }),
+            })
+        }
+        Err(error) => Err(error).context("failed to initialize the download engine"),
+    }
+}
+
+fn compatible_download_database_path(primary_path: &Path, supported: u32) -> PathBuf {
+    let stem = primary_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("downloads");
+    let file_name = primary_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map_or_else(
+            || format!("{stem}.schema-{supported}"),
+            |extension| format!("{stem}.schema-{supported}.{extension}"),
+        );
+    primary_path.with_file_name(file_name)
 }
 
 impl DesktopRuntime {
@@ -124,10 +198,12 @@ impl DesktopRuntime {
             &default_application_roots(),
         )
         .context("failed to initialize the application launcher catalog")?;
-        let download_database_path = paths.data_dir.join("downloads.sqlite3");
-        let download_engine = DownloadEngine::open(download_database_path.clone())
-            .context("failed to initialize the download engine")?;
+        let opened_downloads = open_download_engine(&paths.data_dir.join("downloads.sqlite3"))?;
+        let download_database_path = opened_downloads.database_path;
+        let incompatible_download_schema = opened_downloads.incompatible_primary_schema;
+        let download_engine = opened_downloads.engine;
         start_download_host(download_engine.clone())?;
+        let download_ui_requests = start_download_ui_intake()?;
         let download_default_directory = std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .map(|home| home.join("Downloads"))
@@ -151,6 +227,8 @@ impl DesktopRuntime {
             download_engine: Some(download_engine),
             download_default_directory,
             download_database_path,
+            incompatible_download_schema,
+            download_ui_requests: Some(download_ui_requests),
             _instance: instance,
             _log_guard: log_guard,
             _platform_host: platform_host,
@@ -159,12 +237,46 @@ impl DesktopRuntime {
     }
 }
 
+fn start_download_ui_intake() -> Result<AsyncReceiver<DownloadUiIntake>> {
+    let (sender, receiver) = async_channel::bounded::<DownloadUiIntake>(32);
+    thread::Builder::new()
+        .name("download-ui-ipc".into())
+        .spawn(move || {
+            let handler = Arc::new(move |request: DownloadUiRequest| {
+                let (response_sender, response_receiver) = mpsc::sync_channel(1);
+                let intake = DownloadUiIntake {
+                    request,
+                    response: response_sender,
+                    accepted_at: Instant::now(),
+                };
+                if sender.send_blocking(intake).is_err() {
+                    return DownloadUiOpenResponse::Rejected {
+                        code: "ui_unavailable".into(),
+                        message: "NxTools desktop is not available".into(),
+                    };
+                }
+                response_receiver
+                    .recv_timeout(Duration::from_secs(12))
+                    .unwrap_or_else(|_| DownloadUiOpenResponse::Rejected {
+                        code: "ui_timeout".into(),
+                        message: "NxTools did not open the download window in time".into(),
+                    })
+            });
+            if let Err(error) = run_download_ui_host(DOWNLOAD_UI_PIPE_NAME, handler) {
+                error!(%error, "download UI IPC server stopped");
+            }
+        })
+        .context("failed to start download UI IPC thread")?;
+    Ok(receiver)
+}
+
 pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
     let paths = AppPaths::discover()?;
     let _instance = SingleInstanceGuard::acquire_with_timeout(&paths, "desktop", instance_wait)?;
     let _log_guard = init_file_logging(&paths, "download-host")?;
-    let engine = DownloadEngine::open(paths.data_dir.join("downloads.sqlite3"))
-        .context("failed to initialize the background download engine")?;
+    let engine = open_download_engine(&paths.data_dir.join("downloads.sqlite3"))
+        .context("failed to initialize the background download engine")?
+        .engine;
     let background_events = engine
         .take_event_receiver()
         .context("failed to attach the background engine event drain")?;
@@ -526,6 +638,49 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn newer_download_schema_uses_a_side_by_side_database_without_modifying_the_original() {
+        let supported = nxtools_download::DOWNLOAD_SCHEMA_VERSION;
+        let directory = tempfile::tempdir().expect("create database directory");
+        let primary = directory.path().join("downloads.sqlite3");
+        let connection = rusqlite::Connection::open(&primary).expect("create newer database");
+        connection
+            .pragma_update(None, "user_version", 9_u32)
+            .expect("mark newer schema");
+        drop(connection);
+
+        let opened = open_download_engine(&primary).expect("open compatible download database");
+
+        assert_eq!(
+            opened.database_path,
+            directory
+                .path()
+                .join(format!("downloads.schema-{supported}.sqlite3"))
+        );
+        assert_eq!(
+            opened.incompatible_primary_schema,
+            Some(IncompatibleDownloadSchema {
+                current: 9,
+                supported,
+            })
+        );
+        assert_eq!(
+            rusqlite::Connection::open(&primary)
+                .expect("reopen original database")
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .expect("read original schema"),
+            9,
+            "the newer database must remain untouched"
+        );
+        assert_eq!(
+            rusqlite::Connection::open(&opened.database_path)
+                .expect("open side-by-side database")
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .expect("read compatible schema"),
+            supported
+        );
+    }
 
     #[test]
     fn indexer_commands_are_bounded_and_rejected_while_disconnected() {

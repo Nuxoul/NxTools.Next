@@ -19,6 +19,7 @@ internal static class IndexerServiceInstaller
     private const string BinaryHashValueName = "NxToolsBinarySha256";
     private const string DesktopHashValueName = "NxToolsDesktopSha256";
     private const string PlatformHostHashValueName = "NxToolsPlatformHostSha256";
+    private const string CliHashValueName = "NxToolsCliSha256";
     private const string DesktopPathValueName = "NxToolsDesktopPath";
     private const string ServiceSddl =
         "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)" +
@@ -57,6 +58,7 @@ internal static class IndexerServiceInstaller
 
             if (IsInstalledAt(indexerPath) && TryStartService(log))
             {
+                _ = BrowserNativeMessagingRegistration.RegisterForCurrentPackage(log);
                 return new WindowsCommandResult(true, Data: "running");
             }
 
@@ -80,9 +82,12 @@ internal static class IndexerServiceInstaller
                     false,
                     $"索引服务安装失败（退出码 {installer.ExitCode}）。");
             }
-            return IsInstalledAt(indexerPath)
-                ? new WindowsCommandResult(true, Data: "installed")
-                : new WindowsCommandResult(false, "安装程序结束，但服务注册路径未通过验证。");
+            if (IsInstalledAt(indexerPath))
+            {
+                _ = BrowserNativeMessagingRegistration.RegisterForCurrentPackage(log);
+                return new WindowsCommandResult(true, Data: "installed");
+            }
+            return new WindowsCommandResult(false, "安装程序结束，但服务注册路径未通过验证。");
         }
         catch (Win32Exception error) when (error.NativeErrorCode == 1223)
         {
@@ -111,6 +116,7 @@ internal static class IndexerServiceInstaller
                 ?? throw new InvalidOperationException("Cannot locate NxTools.PlatformHost.exe.");
             indexerPath = ValidatePackagedIndexerPath(hostPath, indexerPath);
             var desktopPath = ValidatePackagedSibling(hostPath, "NxTools.exe");
+            var cliPath = ValidatePackagedSibling(hostPath, "NxTools.Cli.exe");
             PinCurrentProcessImage();
             string trustedPlatformHostHash;
             lock (ProcessImageGate)
@@ -128,6 +134,9 @@ internal static class IndexerServiceInstaller
             using var desktopSource = TrustedBinary.Open(
                 desktopPath,
                 ReleaseBinaryManifest.DesktopSha256);
+            using var cliSource = TrustedBinary.Open(
+                cliPath,
+                ReleaseBinaryManifest.CliSha256);
 
             var serviceExists = ServiceExists();
             if (serviceExists)
@@ -140,8 +149,10 @@ internal static class IndexerServiceInstaller
                 Path.Combine(protectedDirectory, "NxTools.PlatformHost.exe");
             var protectedDesktopPath =
                 Path.Combine(protectedDirectory, "NxTools.exe");
+            var protectedCliPath =
+                Path.Combine(protectedDirectory, "NxTools.Cli.exe");
             StopProtectedProcesses(
-                [protectedDesktopPath, protectedPlatformHostPath],
+                [protectedDesktopPath, protectedPlatformHostPath, protectedCliPath],
                 Environment.ProcessId,
                 log);
             using var protectedDirectories =
@@ -158,6 +169,10 @@ internal static class IndexerServiceInstaller
                 desktopSource,
                 protectedDirectory,
                 "NxTools.exe");
+            protectedCliPath = DeployProtectedBinary(
+                cliSource,
+                protectedDirectory,
+                "NxTools.Cli.exe");
             protectedDirectories.Validate();
             ValidateDeployedBinary(
                 protectedIndexerPath,
@@ -168,6 +183,9 @@ internal static class IndexerServiceInstaller
             ValidateDeployedBinary(
                 protectedDesktopPath,
                 desktopSource.Sha256);
+            ValidateDeployedBinary(
+                protectedCliPath,
+                cliSource.Sha256);
             RunSc([
                 RegistrationVerb(serviceExists), ServiceName,
                 "binPath=", $"\"{protectedIndexerPath}\" --service",
@@ -193,6 +211,10 @@ internal static class IndexerServiceInstaller
                 key.SetValue(
                     PlatformHostHashValueName,
                     platformHostSource.Sha256,
+                    RegistryValueKind.String);
+                key.SetValue(
+                    CliHashValueName,
+                    cliSource.Sha256,
                     RegistryValueKind.String);
                 key.SetValue(
                     DesktopPathValueName,
@@ -264,6 +286,7 @@ internal static class IndexerServiceInstaller
         var binaryHash = key?.GetValue(BinaryHashValueName) as string;
         var desktopHash = key?.GetValue(DesktopHashValueName) as string;
         var platformHostHash = key?.GetValue(PlatformHostHashValueName) as string;
+        var cliHash = key?.GetValue(CliHashValueName) as string;
         var registeredDesktopPath = key?.GetValue(DesktopPathValueName) as string;
         var sourceDirectory = Path.GetDirectoryName(indexerPath);
         var desktopPath = sourceDirectory is null
@@ -272,6 +295,9 @@ internal static class IndexerServiceInstaller
         var sourcePlatformHostPath = sourceDirectory is null
             ? null
             : Path.Combine(sourceDirectory, "NxTools.PlatformHost.exe");
+        var sourceCliPath = sourceDirectory is null
+            ? null
+            : Path.Combine(sourceDirectory, "NxTools.Cli.exe");
         var protectedDirectory = ProtectedServiceDirectory();
         var protectedIndexerPath =
             Path.Combine(protectedDirectory, "NxTools.Indexer.exe");
@@ -279,20 +305,26 @@ internal static class IndexerServiceInstaller
             Path.Combine(protectedDirectory, "NxTools.PlatformHost.exe");
         var protectedDesktopPath =
             Path.Combine(protectedDirectory, "NxTools.exe");
+        var protectedCliPath =
+            Path.Combine(protectedDirectory, "NxTools.Cli.exe");
         if (imagePath is null ||
             objectName is null ||
             startMode is null ||
             binaryHash is null ||
             desktopHash is null ||
             platformHostHash is null ||
+            cliHash is null ||
             registeredDesktopPath is null ||
             desktopPath is null ||
             sourcePlatformHostPath is null ||
+            sourceCliPath is null ||
             !File.Exists(desktopPath) ||
             !File.Exists(sourcePlatformHostPath) ||
+            !File.Exists(sourceCliPath) ||
             !File.Exists(protectedIndexerPath) ||
             !File.Exists(protectedPlatformHostPath) ||
-            !File.Exists(protectedDesktopPath))
+            !File.Exists(protectedDesktopPath) ||
+            !File.Exists(protectedCliPath))
         {
             return false;
         }
@@ -309,6 +341,8 @@ internal static class IndexerServiceInstaller
                 BinaryHashMatches(desktopHash, protectedDesktopPath) &&
                 BinaryHashMatches(platformHostHash, sourcePlatformHostPath) &&
                 BinaryHashMatches(platformHostHash, protectedPlatformHostPath) &&
+                BinaryHashMatches(cliHash, sourceCliPath) &&
+                BinaryHashMatches(cliHash, protectedCliPath) &&
                 RegistrationMatches(
                 new IndexerServiceRegistration(
                     imagePath,

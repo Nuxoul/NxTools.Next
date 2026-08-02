@@ -17,6 +17,8 @@ fn request() -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: Some(8),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,

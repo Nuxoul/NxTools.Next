@@ -4,6 +4,75 @@ Capabilities requested by the user.
 
 ---
 
+## [FEAT-20260802-003] browser-native-messaging-takeover
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: downloads
+
+### Requested Capability
+
+Connect and optimize the existing NxTools browser extension instead of creating a new extension,
+while preserving its project identity and UI style. Browser downloads, context-menu actions, batch
+resources and Blob data must reach the NxTools.Next download engine without manual testing.
+
+### Resolution
+
+- Reused the original extension identity and surface.
+- Replaced the unauthenticated loopback command socket with bounded Native Messaging.
+- Added durable idempotency, metadata persistence, browser-safe fallback and Windows registration.
+- Added repeatable Native Host and Chrome for Testing automation with popup screenshot capture.
+
+### Metadata
+
+- Frequency: first_time
+- Related Features: download_takeover, native_messaging, browser_automation
+
+---
+
+## [FEAT-20260802-UIAUTO] windows_ui_acceptance_automation
+
+**Logged**: 2026-08-02T18:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Requested Capability
+
+Run NxTools in a background-friendly Windows acceptance session, drive UI actions such as opening
+the download page and entering a test URL, capture screenshots, and produce assertions without
+requiring manual acceptance.
+
+### User Context
+
+Repeated download and taskbar-overlay checks currently require the user to click through the UI and
+report visual failures manually.
+
+### Complexity Estimate
+
+complex
+
+### Suggested Implementation
+
+Provide a checked-in Windows harness with an explicit scenario file, deterministic local HTTP
+fixture, window-relative input steps, HWND/style assertions, screenshot artifacts and a machine-
+readable result. Keep production input and download paths unchanged.
+
+### Metadata
+
+- Frequency: recurring
+- Related Features: download_ui, taskbar_overlay, release_acceptance
+
+### Resolution
+
+- **Resolved**: 2026-08-02T18:53:00+08:00
+- **Notes**: Added a checked-in JSON-driven Win32 harness, deterministic slow HTTP fixture and
+  download acceptance wrapper. It drives the real GPUI windows, captures PNGs, asserts native
+  visible/topmost state across a foreground switch, and verifies the final artifact size.
+
+---
+
 ## [FEAT-20260718-001] clipboard-native-paste-actions
 
 **Logged**: 2026-07-18T10:05:00+08:00

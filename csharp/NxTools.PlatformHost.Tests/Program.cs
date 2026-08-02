@@ -125,7 +125,8 @@ internal static class Program
             ("indexer service installer only accepts packaged sibling", IndexerServiceInstallerAcceptsOnlyPackagedSibling),
             ("protected indexer service root stays under ProgramData", ProtectedIndexerServiceRootStaysUnderProgramData),
             ("indexer service update stops only exact protected executable paths", IndexerServiceUpdateStopsOnlyExactProtectedPaths),
-            ("indexer service registration requires service arguments", IndexerServiceRegistrationRequiresServiceArguments)
+            ("indexer service registration requires service arguments", IndexerServiceRegistrationRequiresServiceArguments),
+            ("browser Native Messaging registration preserves extension identity and browser-specific allow lists", BrowserNativeMessagingRegistrationPreservesIdentity)
         };
 
         foreach (var test in tests)
@@ -303,6 +304,25 @@ internal static class Program
                         Interactive: false));
                 Assert(placed.Success);
                 Assert(TaskbarOverlayPlacement.HasPassiveOverlayStyles(overlay.Handle));
+                Assert(TaskbarOverlayPlacement.IsTopmost(overlay.Handle));
+
+                overlay.TopMost = false;
+                Assert(!TaskbarOverlayPlacement.IsTopmost(overlay.Handle));
+                Assert(TaskbarOverlayPlacement.SetVisibility(overlay.Handle, true).Success);
+                Assert(TaskbarOverlayPlacement.IsTopmost(overlay.Handle));
+
+                using var foreground = new Form
+                {
+                    ShowInTaskbar = false,
+                    FormBorderStyle = FormBorderStyle.None,
+                    StartPosition = FormStartPosition.Manual,
+                    Bounds = new System.Drawing.Rectangle(-32_000, -32_000, 1, 1)
+                };
+                foreground.Show();
+                foreground.Activate();
+                Application.DoEvents();
+                Assert(TaskbarOverlayPlacement.IsVisible(overlay.Handle));
+                Assert(TaskbarOverlayPlacement.IsTopmost(overlay.Handle));
                 var editPlaced = TaskbarOverlayPlacement.Place(
                     new PlaceTaskbarProgressOverlayCommand(
                         overlay.Handle.ToInt64(),
@@ -3491,6 +3511,43 @@ internal static class Program
         Assert(Equals(inputFailure.Fields["win32_error"], 87));
         Assert(Equals(inputFailure.Fields["input_struct_size"], IntPtr.Size == 8 ? 40 : 28));
         return Task.CompletedTask;
+    }
+
+    private static Task BrowserNativeMessagingRegistrationPreservesIdentity()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-native-registration-{Guid.NewGuid():N}");
+        var package = Path.Combine(root, "package");
+        var manifests = Path.Combine(root, "manifests");
+        Directory.CreateDirectory(package);
+        var nativeHost = Path.Combine(package, "NxTools.Cli.exe");
+        File.WriteAllText(nativeHost, "native host fixture");
+        var registry = new RecordingNativeMessagingRegistry();
+
+        BrowserNativeMessagingRegistration.Register(nativeHost, manifests, registry);
+
+        var chromiumManifestPath = Path.Combine(manifests, "chromium-native-host.json");
+        var firefoxManifestPath = Path.Combine(manifests, "firefox-native-host.json");
+        using var chromium = JsonDocument.Parse(File.ReadAllText(chromiumManifestPath));
+        using var firefox = JsonDocument.Parse(File.ReadAllText(firefoxManifestPath));
+        Assert(chromium.RootElement.GetProperty("name").GetString() ==
+               BrowserNativeMessagingRegistration.HostName);
+        Assert(chromium.RootElement.GetProperty("path").GetString() == Path.GetFullPath(nativeHost));
+        Assert(chromium.RootElement.GetProperty("allowed_origins")[0].GetString() ==
+               $"chrome-extension://{BrowserNativeMessagingRegistration.ChromiumExtensionId}/");
+        Assert(firefox.RootElement.GetProperty("allowed_extensions")[0].GetString() ==
+               BrowserNativeMessagingRegistration.FirefoxExtensionId);
+        Assert(BrowserNativeMessagingRegistration.ChromiumRegistryKeys.All(key =>
+            registry.Values.TryGetValue(key, out var value) && value == chromiumManifestPath));
+        Assert(registry.Values[BrowserNativeMessagingRegistration.FirefoxRegistryKey] ==
+               firefoxManifestPath);
+        return Task.CompletedTask;
+    }
+
+    private sealed class RecordingNativeMessagingRegistry : INativeMessagingRegistry
+    {
+        public Dictionary<string, string> Values { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public void SetCurrentUserDefaultValue(string subKey, string value) => Values[subKey] = value;
     }
 
     private static Task PlatformLogWritesStructuredJsonLines()

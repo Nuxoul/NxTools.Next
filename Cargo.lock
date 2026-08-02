@@ -4005,10 +4005,12 @@ name = "nxtools-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "nxtools-download",
  "nxtools-download-ipc",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "url",
  "uuid",
 ]
@@ -4058,6 +4060,7 @@ dependencies = [
  "nxtools-ipc",
  "nxtools-protocol",
  "raw-window-handle",
+ "rusqlite",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
@@ -4077,6 +4080,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo 0.39.6",
  "tempfile",
  "thiserror 2.0.18",

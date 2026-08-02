@@ -3,6 +3,368 @@
 Command failures and integration errors.
 
 ---
+
+## [ERR-20260802-MV3-BLOCKING-WEBREQUEST] Chrome rejected the extension's blocking listener
+
+**Logged**: 2026-08-02T21:25:22+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+The browser extension loaded with a Manifest V3 permission error and its popup also emitted CSP
+errors for dynamically generated inline progress styles.
+
+### Error
+
+```text
+You do not have permission to use blocking webRequest listeners.
+Applying inline style violates the Content Security Policy directive "default-src 'self'".
+```
+
+### Context
+
+- Ordinary unpacked Chrome/Edge installation, not an `ExtensionInstallForcelist` deployment.
+- The legacy listener was registered by `background.js::registerHeaderCapture`.
+- The enhanced real-browser smoke exposed the existing popup CSP violation after the listener fix.
+
+### Suggested Fix
+
+Do not request `webRequestBlocking`. Remove the blocking listener, keep the Downloads API durable
+handoff, and avoid inline popup styles under the extension CSP.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `browser_extension/nxtools-interceptor/background.js`, `browser_extension/nxtools-interceptor/popup.js`, `browser_extension/nxtools-interceptor/popup.css`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T21:25:22+08:00
+- **Notes**: Version 0.5.1 passed all 10 extension contracts plus real source and packaged Chromium
+  handoff tests with no background/popup errors and no residual smoke tasks.
+
+---
+
+## [ERR-20260802-EXEC-CELL-LOST] Background build result handle was lost
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Status**: resolved
+**Area**: verification tooling
+
+### Summary
+
+A long-running full Debug build outlived a conversation compaction, after which its execution cell
+could no longer be queried. The missing handle did not establish whether the build passed or failed.
+
+### Error
+
+```text
+exec cell 246 not found
+```
+
+### Resolution
+
+Reran the same constrained Debug build from the beginning and required an explicit exit code. The
+replacement run completed successfully with exit code 0 in 156.4 seconds.
+
+### Prevention
+
+Treat a missing background-cell handle as indeterminate and rerun the exact gate; never infer a pass
+from missing output.
+
+---
+
+## [ERR-20260802-PROTECTEDCLIFIXTURE] protected_package_test_missing_cli_fixture
+
+**Logged**: 2026-08-02T20:18:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The protected-package regression failed after CLI became part of the atomic protected package
+because its identical-package fixture still created only the original three binaries.
+
+### Error
+
+```text
+assertion failed: protected_package_matches_release(&release, &protected)
+```
+
+### Context
+
+- The production comparison correctly required `NxTools.Cli.exe` in both release and protected roots.
+- The test fixture was not extended in the same patch.
+
+### Suggested Fix
+
+Keep the protected-package fixture list sourced from every binary checked by
+`protected_package_matches_release`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/main.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T20:19:00+08:00
+- **Notes**: Added identical CLI fixture bytes to both package roots; the exact regression is rerun next.
+
+---
+
+## [ERR-20260802-NATIVEREGUSING] browser_native_registration_missing_diagnostics_using
+
+**Logged**: 2026-08-02T20:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+The first PlatformHost build of Native Messaging registration failed because the new file used
+`Stopwatch` without importing `System.Diagnostics`.
+
+### Error
+
+```text
+CS0103: 当前上下文中不存在名称“Stopwatch”
+```
+
+### Context
+
+- Command: `dotnet build csharp/NxTools.PlatformHost.Tests/NxTools.PlatformHost.Tests.csproj -c Debug`
+- The project enables implicit usings, but `System.Diagnostics` is not among the generated imports.
+
+### Suggested Fix
+
+Add an explicit `using System.Diagnostics;` whenever a new PlatformHost file uses `Stopwatch`, then
+rerun the exact C# test project with warnings treated as errors.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `csharp/NxTools.PlatformHost/Windows/BrowserNativeMessagingRegistration.cs`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T20:07:00+08:00
+- **Notes**: Added the explicit diagnostics import; the PlatformHost test project built and its
+  executable completed successfully.
+
+---
+
+## [ERR-20260802-TASKBARZORDER] taskbar_overlay_loses_foreground_visibility
+
+**Logged**: 2026-08-02T18:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: ui
+
+### Summary
+
+The taskbar-internal download overlay can disappear after another window or application is clicked.
+
+### Context
+
+- Rust only requests `visible=false` after the active aggregate becomes empty or editing ends.
+- Native placement initially uses `SetWindowPos(HWND_TOPMOST)`, but the later visibility-only path
+  uses `ShowWindow` and verifies visibility without reasserting or checking topmost z-order.
+- The existing real-window test does not exercise foreground switching or topmost recovery.
+
+### Suggested Fix
+
+Make the tracked placement the single visibility boundary, restore bounds and topmost on show, add a
+real HWND regression that demotes the overlay and changes foreground, and include verified
+visible/topmost state in the terminal lifecycle diagnostic.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `csharp/NxTools.PlatformHost/Windows/TaskbarOverlayPlacement.cs`,
+  `csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T18:53:00+08:00
+- **Notes**: Showing now atomically restores `HWND_TOPMOST`; every foreground transition replays
+  the tracked placement; real-window regression, native diagnostics and both public/local automated
+  download scenarios verified visible/topmost state before and after the foreground switch.
+
+---
+
+## [ERR-20260802-STARTUPSCHEMA] stage3_package_rejected_newer_local_download_schema
+
+**Logged**: 2026-08-02T09:38:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+The Stage 3 acceptance package exited before opening its window because a previously run newer
+build left a schema 9 download database while the current remote source supports schema 4.
+
+### Error
+
+```text
+NxTools could not start: desktop startup failed: failed to initialize the download engine:
+download database schema 9 is newer than supported schema 4
+```
+
+### Context
+
+- The failure reproduces with the packaged `NxTools.exe` and exit code 1.
+- Storage correctly rejected the newer schema before migration or ordinary writes.
+- The database contains user task history and must not be deleted or relabeled as schema 4.
+- A first reproduction helper using redirected `Start-Process` output was rejected by command
+  policy; direct PowerShell invocation then captured the exact error without modifying data.
+- The first all-target Clippy pass rejected an unnecessary `Path::to_path_buf`; the engine already
+  accepts `&Path`, so the compatibility opener now passes the borrowed path directly.
+
+### Suggested Fix
+
+Keep the strict storage guard. At the shared runtime open boundary, handle only the typed
+newer-schema error by opening a stable side-by-side schema-4 database, log the schema decision and
+surface a startup notification that the newer database remains preserved.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/runtime.rs`,
+  `rust/crates/nxtools-download/src/storage.rs`
+- See Also: `ERR-20260802-DOTNETSDK`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T18:13:00+08:00
+- **Notes**: Desktop and background-host startup now preserve the schema 9 primary database and
+  select a stable schema 4 sibling only for the typed newer-schema error. A real database regression,
+  all 238 desktop tests, all-target Clippy, architecture gates, Debug startup and packaged protected
+  startup passed. The schema 9 file hash stayed unchanged; the protected Desktop, PlatformHost and
+  Indexer hashes match the package.
+
+---
+
+## [ERR-20260802-001] cargo-test-multiple-filter-arguments
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Cargo rejected a test command containing two positional test-name filters.
+
+### Error
+
+`error: unexpected argument '<second-test-name>' found`
+
+### Context
+
+- Two focused download tests were supplied as separate positional filters.
+- No build or project state was changed by the rejected command.
+
+### Suggested Fix
+
+Run the focused filters as separate Cargo invocations, or use one shared substring filter.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+
+- **Resolved**: 2026-08-02T00:00:00+08:00
+- **Notes**: Split the focused tests into sequential commands.
+
+---
+## [ERR-20260802-DOTNETSDK] pinned_dotnet_sdk_missing_on_packaging_host
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: medium
+**Status**: open
+**Area**: infra
+
+### Summary
+
+The repository pins .NET SDK 8.0.421, but the workstation currently has only 8.0.405 and 9.0.313.
+
+### Error
+
+```text
+A compatible .NET SDK was not found.
+Requested SDK version: 8.0.421
+```
+
+### Context
+
+- The first C# verification command was rejected before project evaluation.
+- Running the repository's console-based PlatformHost regression suite from the parent directory
+  selected installed SDK 9.0.313 and passed in Release configuration.
+- The tracked `global.json` must not be permanently downgraded to accommodate one workstation.
+- The Release package was successfully produced with a temporary SDK 9.0.313 selection targeting
+  `net8.0-windows`; `global.json` was then restored byte-for-byte to the pinned 8.0.421 selection.
+
+### Suggested Fix
+
+Install SDK 8.0.421 for exact repository-toolchain parity. Until then, use an explicitly documented
+temporary SDK selection for local verification/package creation and restore `global.json` exactly.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `global.json`, `csharp/NxTools.PlatformHost.Tests/NxTools.PlatformHost.Tests.csproj`
+
+---
+## [ERR-20260802-PACKAGETIMEOUT] release_package_wrapper_outlived_tool_wait
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+The first Release package wrapper exceeded the 30-minute shell wait while its child Cargo build
+continued long enough to finish all three Rust binaries.
+
+### Error
+
+```text
+command timed out after 1804010 milliseconds
+```
+
+### Context
+
+- The required single-job, non-incremental Release build produced fresh desktop, indexer and CLI
+  executables after the tool wait expired.
+- The interrupted parent had not yet written the manifest, published PlatformHost or copied the
+  package, so the artifacts directory was not treated as valid.
+
+### Suggested Fix
+
+After a wrapper timeout, inspect the exact parent/child processes and output timestamps before
+retrying. Never start a concurrent second Cargo build while the first one remains alive.
+
+### Metadata
+
+- Reproducible: environment-dependent
+- Related Files: `scripts/package.ps1`, `target/release`, `artifacts/win-x64`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T00:00:00+08:00
+- **Notes**: After the original processes exited and the fresh Rust binaries were verified, the
+  same wrapper reused them, completed in eight seconds, published PlatformHost and created the
+  package. Package hashes match the Release source binaries.
+
+---
 ## [ERR-20260730-PSRANGES] powershell_nested_range_array_type_mismatch
 
 **Logged**: 2026-07-30T16:48:00+08:00
@@ -481,8 +843,8 @@ repeated. Do not change production transfer logic without a repeatable red signa
 
 - Reproducible: no
 - Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
-- Recurrence-Count: 4
-- Last-Seen: 2026-07-30
+- Recurrence-Count: 5
+- Last-Seen: 2026-08-02
 
 ### Resolution
 
@@ -496,7 +858,10 @@ repeated. Do not change production transfer logic without a repeatable red signa
   Both exact contracts passed immediately. A following combined run still intermittently missed the
   dynamic-split checkpoint and the single-stream speed-limit contract failed only in the suite;
   even a single-thread suite retained the speed-limit flake, while three immediate exact reruns all
-  passed. No download-engine production code was changed by the task-window slice.
+  passed. No download-engine production code was changed by the task-window slice. On 2026-08-02,
+  the combined download suite's deliberate drop/stall fixture surfaced Windows socket error 10054
+  while every engine, protocol, storage and message test passed; the exact fixture contract is rerun
+  before classifying it. The immediate exact rerun passed, confirming the same fixture-only flake.
 
 ---
 
@@ -5385,6 +5750,53 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
   after the failure; verification resumed only after the compiler exited and commit recovered.
 
 ---
+## [ERR-20260802-DOWNLOADUIGATE] download_ui_gate_scanned_obsolete_drag_boundary
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The download UI architecture gate still expected the native OLE call directly in
+`WindowsPlatformAdapter`, although that adapter now delegates to the dedicated STA
+`NativeFileDragCoordinator`.
+
+### Error
+
+```text
+The Windows adapter must use the reference-compatible OLE file-drag source.
+```
+
+### Context
+
+- The production call chain remained intact:
+  `WindowsPlatformAdapter.BeginFileDragAsync` -> `NativeFileDragCoordinator.BeginAsync` ->
+  `NativeFileDragService.TryDragFile`.
+- The failure was caused by the source-scanning gate lagging behind the established non-blocking
+  coordinator boundary.
+
+### Suggested Fix
+
+Assert both edges of the real call chain instead of requiring the OLE call in the adapter itself.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/architecture/download-ui-lifecycle.ps1`,
+  `csharp/NxTools.PlatformHost/Windows/NativeFileDragCoordinator.cs`
+
+### Resolution
+
+- **Resolved**: 2026-08-02T00:00:00+08:00
+- **Notes**: The gate now verifies adapter-to-coordinator delegation and the coordinator-to-native
+  OLE call separately. A second stale assertion expecting `SHDoDragDrop` was aligned with the
+  current Ole32 `DoDragDrop` plus source-HWND capture-release boundary. The validation runner also
+  corrected its local script name from the nonexistent `download-taskbar-overlay-lifecycle.ps1`
+  to `taskbar-overlay-lifecycle.ps1`. No C# product behavior changed.
+
+---
 ## [ERR-20260728-GITPUBLISH] github_publish_prerequisites_missing
 
 **Logged**: 2026-07-28T17:43:00+08:00
@@ -5464,5 +5876,152 @@ then, confirm this failure with the exact test before changing transfer producti
 
 - **Resolved**: 2026-07-28T17:55:00+08:00
 - **Notes**: Exact Release test passed on the immediate rerun; no product change was needed.
+  The same fixture raced once during the 2026-08-02 full Release package gate; an immediate exact
+  `engine_contract` rerun passed all 43 tests under the same constrained Release environment.
+
+---
+
+## [ERR-20260802-LOOPBACK-PROXY] System proxy intercepted loopback range fixtures
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Status**: resolved
+**Area**: download HTTP boundary
+
+### Summary
+
+The Release HTTP contract intermittently received status 502 for a request addressed to
+`127.0.0.1`, so malformed-range cases reported the wrong error type. Repeated exact runs confirmed
+that the local fixture was occasionally being replaced by a proxy response.
+
+### Error
+
+```text
+unexpected error for /advertised-range-ignored: RangeNotHonored { status: 502 }
+```
+
+### Resolution
+
+Added a dedicated proxy-disabled reqwest client selected only for `localhost` and loopback IP URLs.
+Remote URLs continue to use the normal client and system proxy behavior. This also protects the
+browser Blob bearer-token range URL from proxy observation. The exact Release regression then
+passed 10 consecutive runs.
+
+### Related Files
+
+- `rust/crates/nxtools-download/src/http.rs`
+- `rust/crates/nxtools-download/tests/http_client_contract.rs`
+- `docs/reference-code/download.md`
+
+---
+
+## [ERR-20260802-IPC-FIXTURE-NONBLOCKING] Accepted HTTP fixture stream inherited nonblocking mode
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Status**: resolved
+**Area**: download IPC test fixture
+
+### Summary
+
+The IPC end-to-end HTTP fixture made its listener nonblocking and assumed the accepted socket would
+be blocking. On Windows the accepted socket could also be nonblocking, so its first read failed with
+WSAEWOULDBLOCK before any response was produced.
+
+### Error
+
+```text
+read HTTP request: Os { code: 10035, kind: WouldBlock }
+```
+
+### Resolution
+
+Explicitly restore blocking mode on the accepted fixture socket before reading the HTTP request.
+This is test-only synchronization; production IPC and download behavior are unchanged.
+
+### Related Files
+
+- `rust/crates/nxtools-download-ipc/src/lib.rs`
+
+---
+## [ERR-20260802-BROWSER-UI-HARNESS] Windows PowerShell automation incompatibilities
+
+**Logged**: 2026-08-02T22:12:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The browser smoke invoked the Windows UI harness through Windows PowerShell 5.1, while the harness
+assumed PowerShell 7/.NET and newer C# compiler features.
+
+### Error
+
+```text
+System.Drawing.Common could not be found
+init/out var syntax was rejected
+Get-FileHash was unavailable
+```
+
+### Resolution
+
+The harness falls back to `System.Drawing`, uses C# 5-compatible interop declarations, finds the
+existing NxTools process by visible HWND instead of `MainWindowTitle`, receives the executable path
+explicitly, and computes SHA-256 through `System.Security.Cryptography`. The final real Chrome run
+passed all 15 UI/file steps.
+
+### Related Files
+
+- `tests/runtime/windows-ui-automation.ps1`
+- `tests/runtime/browser-extension-smoke.mjs`
+
+---
+## [ERR-20260802-POWERSHELL-DIAGNOSTICS] PowerShell diagnostic command composition
+
+**Logged**: 2026-08-02T22:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+Two ad-hoc diagnostics violated workstation PowerShell conventions: one piped a statement-level
+`foreach` directly into formatting, and another assigned to the read-only automatic `$Host`
+variable. An over-composed fixture command was also rejected by the command safety policy.
+
+### Resolution
+
+Assign loop output to a named task-specific variable before formatting, never reuse automatic
+PowerShell variables, and split fixture start, readiness, test and cleanup into explicit commands
+with verified exact process IDs and paths.
+
+---
+## [ERR-20260802-EXTENSION-MANIFEST-PATH] Browser extension manifest path assumption
+
+**Logged**: 2026-08-02T22:56:36+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+A read-only pre-push inspection assumed `browser_extension/manifest.json`, but the checked-in
+extension root is `browser_extension/nxtools-interceptor/`.
+
+### Error
+
+```text
+Cannot find path '.\browser_extension\manifest.json' because it does not exist.
+```
+
+### Resolution
+
+Enumerate untracked files before opening a newly added subtree, then use the discovered path
+`browser_extension/nxtools-interceptor/manifest.json`. No repository operation depended on the
+failed read.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `browser_extension/nxtools-interceptor/manifest.json`
 
 ---

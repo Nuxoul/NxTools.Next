@@ -6,10 +6,10 @@ Last verified: 2026-07-28.
 
 | Source | Role | Reuse rule |
 | --- | --- | --- |
-| `D:\RiderProject\NxTools` | Existing NxTools user-visible behavior and legacy migration format | Preserve useful behavior; do not carry its architecture into NxTools.Next |
+| `D:\Code\NxTools` | Existing NxTools user-visible behavior and legacy migration format | Preserve useful behavior; do not carry its architecture into NxTools.Next |
 | `D:\Code\ab-download-manager-master` | Primary HTTP, queue, destination and CLI source reference | Apache-2.0; concepts or attributed compatible reuse are allowed |
 | `D:\Code\FluxDown-main` | Rust engine, event, persistence and dynamic-segment research | AGPL-3.0; clean-room behavioral/architectural reference only, no code copying |
-| `D:\RiderProject\NxTools.Next` | Product implementation target | MIT OR Apache-2.0 |
+| `D:\Code\NxTools.Next` | Product implementation target | MIT OR Apache-2.0 |
 
 The old NxTools application is the behavior source when the references disagree about existing product behavior.
 ABDM is the primary implementation reference for HTTP transfer and CLI interactions. FluxDown is useful for
@@ -67,7 +67,11 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
 | `Services/AppStateStore.cs` | Atomic JSON state save at `%LOCALAPPDATA%\NxTools\downloader-state.json` |
 | `Services/LocalApiService.cs` | Loopback HTTP/WebSocket task intake and control |
 | `Services/BrowserExtensionPackageService.cs` | Browser extension packaging and installation |
+| `browser_extension/nxtools-interceptor/manifest.json` | Original Manifest V3 identity, permissions, Firefox extension ID and browser entry points |
 | `browser_extension/nxtools-interceptor/background.js` | Download interception, request context, Blob/media discovery and desktop handoff |
+| `browser_extension/nxtools-interceptor/content-script.js` | Page-context bridge used to read Blob resources in their owning tab/frame |
+| `browser_extension/nxtools-interceptor/page-hook.js` | In-page Blob/media discovery hooks |
+| `browser_extension/nxtools-interceptor/popup.html`, `popup.js`, `popup.css` | Existing extension popup, settings, resource list and batch actions |
 | `Views/MainWindow.axaml` | Legacy task list, filters, categories, details and settings |
 | `Views/MainWindow.axaml.cs` | Legacy per-task progress/completion window registry, reuse, placement and foreground behavior |
 | `Views/AddDownloadWindow.axaml` | Legacy URL, save path, category and task settings flow |
@@ -133,12 +137,128 @@ Verified invariants:
 - Browser handoff failure must not silently discard the browser's original download.
 - Request headers, Cookie and Referrer belong to the request context and must survive pause/resume.
 
+### Verified browser-integration lifecycle
+
+Original extension source: `D:\Code\NxTools\browser_extension\nxtools-interceptor`.
+The migration reuses this extension and its identity; it does not create a second extension project.
+
+```text
+Chrome/Edge downloads.onCreated
+  -> background.js interceptBrowserDownload
+  -> sendDownloadItem -> sendDownloadPayload
+  -> addDownloadToNxTools -> LocalApiService WebSocket create_task
+  -> legacy AddTaskAsync
+
+Popup/context menu/resource sniffing
+  -> sendUrl or sendResource
+  -> sendDownloadPayload
+  -> the same desktop create_task boundary
+
+Blob resource
+  -> content-script/page-hook read Blob bytes in the owning page/frame
+  -> legacy WebSocket BlobBase64
+  -> LocalApiService.PrepareBrowserBlobRequest
+  -> local cache file exposed as a loopback HTTP range resource
+```
+
+Verified legacy defects that must not be migrated:
+
+- `interceptBrowserDownload` cancels the browser item before desktop acceptance. Its failure path starts a
+  new browser download with only `{ url }`, so filename, request headers, Cookie and Referrer can be lost.
+- Firefox response-stage preemption returns `{ cancel: true }` before the asynchronous handoff is accepted;
+  a failed handoff therefore has no reliable browser-owned fallback.
+- `LocalApiService` accepts an unauthenticated loopback WebSocket and a message as large as 64 MiB.
+- Extension diagnostics include full URL and page/resource URL fields. Signed URLs, query credentials,
+  Cookie and request headers must never enter production logs.
+
+Migration invariants:
+
+- The browser-owned download remains recoverable until NxTools returns a correlated, durable acceptance.
+- One browser event carries one idempotency key across extension, native host and download IPC. A retry with
+  that key returns the prior result instead of creating a second task.
+- URL, safe filename, declared size, declared range support, Header, Cookie and Referrer are validated at the
+  Rust host boundary and persist in `DownloadRequest`; probe results remain authoritative, and secrets and
+  full signed URLs are never logged.
+- Native Messaging is the authenticated browser-to-host control plane. Messages use a four-byte
+  little-endian length prefix and a Chrome-safe maximum below 1 MiB. Every response echoes the request ID.
+- Blob bytes are split into sequential Native Messaging frames below the control-message ceiling and
+  written into a Rust-owned bounded stage (512 MiB total, 384 KiB base64 chunks). After commit, the
+  Rust host exposes only an unguessable loopback range URL and submits a normal Rust-owned request;
+  no unauthenticated general-purpose loopback task API is opened.
+- The Rust native host submits through `nxtools-download-ipc`; neither the extension nor the host opens or
+  modifies the task database directly.
+- C# owns per-user Windows Native Messaging registration and writes manifests that point only to the exact
+  packaged Rust host beside the approved package. Chrome/Edge use `allowed_origins`; Firefox uses the stable
+  `nxtools-download-interceptor@nxtools.local` ID.
+
 The legacy `DownloadManagerService.cs` is over 4,500 lines and mixes multiple responsibilities. It is a behavior
 inventory, not a module structure to reproduce.
 
 ## AB Download Manager reference
 
 Root: `D:\Code\ab-download-manager-master`
+
+Browser integration root: `D:\Code\ab-download-manager-browser-integration`
+
+### Browser Native Messaging entries
+
+| File | Verified responsibility |
+| --- | --- |
+| `src/backend/NativeMessagingApi.ts` | `ping` and `add` application operations over Native Messaging |
+| `src/backend/nativemessaging/NativeMessagingTransport.ts` | Connected/one-shot ports, correlated pending requests and request timeout |
+| `src/backend/nativemessaging/NativeMessagingProtocol.ts` | Browser/native ID prefixes, typed envelope validation and error decoding |
+| `src/backend/CompositeAppApi.ts` | Transport choice and connection fallback |
+| `src/linkgrabber/Manifest3DownloadLinkInterceptor.ts` | Manifest V3 download interception boundary |
+| `src/linkgrabber/DownloadLinkInterceptor.ts` | Download handoff lifecycle and browser cancellation policy |
+| `src/interfaces/AddDownloadRequest.ts`, `DownloadRequestItem.ts` | Browser-to-app URL/header/referrer/filename request contract |
+| `downloader/desktop/.../nativemessaging/host/stdio/StdioProtocol.kt` | Four-byte native-endian framing and 4 MiB host-side hard bound |
+| `downloader/desktop/.../nativemessaging/host/DefinedHandlers.kt` | Native `ping`/`add` handlers; add delegates to desktop IPC |
+| `downloader/desktop/.../nativemessaging/NativeMessaging.kt` | Host loop and application wake/connect boundary |
+| `downloader/desktop/.../utils/native_messaging/NativeMessagingManifestApplier.kt` | Firefox/Chromium manifest files and per-user registry writes |
+
+ABDM confirms that Native Messaging is an application IPC adapter, not a persistence adapter: the native
+host frames bounded JSON, correlates responses, wakes/connects the application and delegates `add`; it does
+not edit the download database. Chromium and Firefox require different allow-list manifest fields.
+
+Reverified on 2026-08-02 after the browser handoff created a hidden `Created` task instead of opening the
+confirmation window:
+
+- ABDM `DefinedHandlers.kt::AddDownloadNativeRequestHandler` obtains the wake-capable desktop IPC service and
+  calls `IDefaultAppIPCService.addDownloadByGui`; `DefaultAppIPCServiceImpl.kt::addDownloadByGui` delegates to
+  `IntegrationHandlerImp.kt::addDownloadByGui`. Only `options.silentAdd` selects `SilentImportOptions`;
+  the ordinary browser path imports into the visible GUI.
+- Old NxTools `MainWindowViewModel.ConfigureLocalApi` branches on `request.OpenDialog`, marshals the request to
+  `OpenDownloadDialogFromLocalApi`, creates `AddDownloadDialogViewModel`, preserves URL, Header, Cookie,
+  Referrer, filename and directory, then requests `Views/MainWindow.axaml.cs::ShowAddDownloadWindow`.
+  `RunAddDownloadAutoParseWhenNeeded` waits for the window to load before starting the probe. The live add
+  window is reused, restored, brought to the foreground and centered instead of creating a background task.
+- Therefore `openDialog=true` is a visible-UI lifecycle request, not `DownloadSubmitMode::QueueOnly`.
+  Native Messaging must wake/connect the full GPUI desktop, apply the external request to one add-download
+  window, start its generation-scoped probe on the next application turn and acknowledge only after that
+  window exists. No download task may be persisted until the user confirms Download/Add.
+- The browser filename is only a pre-probe hint. An authoritative probe filename (especially
+  `Content-Disposition`) replaces that hint; a later user edit remains authoritative. Header, Cookie and
+  Referrer remain request credentials and must be used by both probe and the confirmed task without being
+  written to diagnostics.
+- Repeated open requests reuse/activate the current add-download window. Dismissal creates no task; a failed
+  UI handoff leaves the browser-owned download recoverable. Diagnostics carry one correlation/request ID
+  across extension, native host and desktop and record accepted, window-opened/probe-started and terminal
+  success/failure without URL, path, filename or credential payloads.
+
+Reverified on 2026-08-02 after an ordinary Chrome/Edge installation rejected a blocking
+`webRequest.onHeadersReceived` listener:
+
+- `Manifest3DownloadLinkInterceptor.ts` makes `canBlockResponse()` return `false`; its response callback
+  neither passes nor cancels a request through `webRequest`.
+- `DownloadLinkInterceptor.ts::redirectDownloadsToExtension` adds `"blocking"` only when that capability is
+  true, and always keeps `downloads.onCreated` as the Manifest V3 handoff boundary.
+- The old NxTools `background.js::registerHeaderCapture` unconditionally registered a blocking main-frame
+  listener even though `handlePreemptiveBrowserDownload` returned an empty object. That listener is a legacy
+  defect, not behavior to migrate: ordinary user-installed Manifest V3 extensions cannot use it.
+- NxTools.Next therefore uses non-blocking `webRequest` listeners only for request/response metadata. The
+  browser-owned download remains recoverable through `downloads.onDeterminingFilename` or
+  `downloads.onCreated` until Native Messaging returns correlated durable acceptance; only then may the
+  extension cancel the browser item, with cancellation compensation preserving the one-task invariant.
 
 ### HTTP and lifecycle entries
 
@@ -893,6 +1013,66 @@ Reverified on 2026-07-29 before implementing the second Stage 3 slice:
 - Queue diagnostics use correlation IDs and record only task IDs, queue IDs, action, position and
   slot counts. URLs, headers, cookies, file names and file contents remain excluded from logs.
 
+### Phase 3 automatic-window waves and aggregate-status findings
+
+Reverified on 2026-08-02 before completing the remaining Stage 3 slices:
+
+- AB Download Manager opens a keyed single-download dialog from
+  `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt` when
+  `DownloadManagerEvents.OnJobStarting` is observed and the global progress-dialog setting is on.
+  `openDownloadDialog` reuses an existing component by download ID and otherwise adds one keyed
+  component. `pages/singleDownloadPage/ShowDownloadDialogs.kt` renders those keyed components and
+  handles an explicit bring-to-front effect for a user-requested reopen.
+- Old NxTools keeps progress windows in a task-ID registry in `Views/MainWindow.axaml.cs`; its useful
+  invariant remains one progress/completion surface per task. Neither reference defines a safe
+  large-batch focus policy, so NxTools.Next adds one product rule at the existing keyed-window
+  boundary instead of creating an aggregate download-window framework.
+- An explicit single `StartNow` submission and an explicit task-window reopen retain immediate
+  focus feedback. Queue admission, delayed schedules, CLI admission and batch resume are automatic
+  presentation paths: one correlation-scoped admission wave may open at most its first admitted
+  task window, without activation. Later tasks in the same wave remain in the main list. If their
+  progress window was suppressed, their terminal transition remains notification-only; it must not
+  recreate a completion-window storm.
+- The admission wave is identified by the Rust command/scheduler correlation ID, not by a UI timer.
+  Restored work admitted before the desktop snapshot baseline remains silent. Diagnostics record one
+  accepted/opened/suppressed summary per wave and never log per-progress-frame decisions.
+- `DownloadAggregateMetrics` in `rust/crates/nxtools-download/src/message.rs` is the canonical seam
+  for total download rate, successful artifact-write rate, active task count and active connection
+  count. Before this Stage 3 slice, `DownloadEngine::command_snapshot` returned its default zero
+  value; the implementation must derive it from Rust-owned live task/progress state rather than
+  recomputing it in GPUI or C#.
+- HTTP progress callbacks run only after `write_all` succeeds in `rust/crates/nxtools-download/src/http.rs`.
+  The aggregate disk-write rate may therefore sample those successfully written byte deltas. A stale
+  rate decays to zero, terminal state changes clear live contribution immediately, and the existing
+  bounded 80 ms progress event cadence is sufficient to refresh the main-window status strip without
+  polling or idle animation frames.
+- The main download status strip reuses the existing page's canvas/surface layers, subtle one-pixel
+  borders, compact 9.5--10.5 px typography and current spacing constants. It adds no new font,
+  gradient, card language or decorative animation.
+
+### Newer local download-schema startup compatibility
+
+Reverified on 2026-08-02 after the Stage 3 acceptance package exited before opening its window:
+
+- The current remote implementation intentionally supports download schema 4 and rejects a larger
+  `PRAGMA user_version` before enabling WAL or running migrations. That storage guard remains the
+  authority and must not be weakened by pretending a schema 9 database is schema 4.
+- This workstation retains a schema 9 `downloads.sqlite3` produced by a previously run newer build.
+  Its schema is additive relative to schema 4, but it also contains later-phase tables and request
+  fields. The Stage 3 build must not write, downgrade, rename or delete that database merely to
+  reach the main window.
+- Neither AB Download Manager nor old NxTools supplies a safe downgrade rule for a database created
+  by a newer application. The conservative product behavior is therefore side-by-side isolation:
+  retain the canonical newer database untouched and open a stable sibling database named for the
+  maximum schema this binary supports.
+- Desktop and background-host startup must share that one Rust-owned selection boundary. A typed
+  `UnsupportedSchema { current, supported }` result is the only condition that may select the
+  sibling; corruption, permissions and all other storage errors remain fatal.
+- The fallback is observable, not silent: emit one low-noise startup event containing only current
+  and supported schema numbers, then show one existing-style error notification explaining that
+  the newer history is preserved but not loaded by this build. Do not log database paths or task
+  payloads.
+
 ### Phase 3 daily scheduling and delayed-admission findings
 
 Reverified on 2026-07-29 before implementing the third Stage 3 slice:
@@ -1159,6 +1339,25 @@ Reverified on 2026-07-31 before extending the overlay editor and adaptive connec
   active-connection count and downloaded/total bytes are separately switchable. Unknown totals or
   rates use an honest indeterminate/placeholder state instead of a fabricated value.
 
+Reverified on 2026-08-02 after the passive overlay disappeared behind other foreground windows:
+
+- Neither ABDM's per-window Java `Taskbar` integration nor old NxTools supplies a persistent
+  taskbar-internal HWND lifecycle to copy; the already recorded NxTools.Next native boundary remains
+  authoritative for this new surface.
+- `DownloadTaskbarOverlayView::new` changes native visibility only when Rust's aggregate model moves
+  between active/editing and inactive. A foreground-window change is not a Rust hide request.
+- `WindowsPlatformAdapter.SetTaskbarProgressOverlayVisibility` currently reaches
+  `TaskbarOverlayPlacement.SetVisibility`, which only calls `ShowWindow`. It neither reasserts the
+  topmost z-order nor verifies it. The placement path does use `SetWindowPos(HWND_TOPMOST, ...,
+  SWP_NOACTIVATE)`, while the native lifecycle regression only checks passive styles and a basic
+  hide/show round trip; it cannot detect a visible overlay falling behind Explorer or another
+  top-level window.
+- The required invariant is therefore explicit: every transition to visible must atomically
+  restore the last device-pixel bounds and `HWND_TOPMOST` without activation; foreground changes
+  must leave the passive overlay visible, non-activating, click-through and in the topmost band.
+  Visibility diagnostics must distinguish requested visibility from the verified final visible and
+  topmost state, without logging transfer byte ticks.
+
 ### Runtime segment-splitting and adaptive-connection findings
 
 Reverified on 2026-07-31:
@@ -1200,6 +1399,9 @@ Reverified on 2026-07-31:
 ## Open research items
 
 - Whether Windows system proxy resolution can remain wholly in Rust or needs one C# discovery command.
-- The final authenticated browser transport: Native Messaging only, or Native Messaging plus a bounded loopback
-  channel for large Blob payloads.
+- The authenticated browser transport is resolved: Native Messaging carries bounded control messages and
+  sequential bounded Blob chunks. The committed Rust-owned stage is then served through an unguessable,
+  resource-only loopback range URL; there is no loopback command/control endpoint. Loopback transfers must
+  use a proxy-disabled HTTP client so a Windows/system proxy cannot observe the bearer-token URL or replace
+  the local range response; ordinary remote downloads retain the configured/system proxy behavior.
 - HLS/DASH shared protocol seam must wait until the HTTP implementation and one media implementation both exist.

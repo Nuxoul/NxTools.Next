@@ -23,11 +23,75 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
     }
+}
+
+#[test]
+fn correlated_submission_is_exactly_once_and_survives_restart() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database = directory.path().join("downloads.db");
+    let request_id = uuid::Uuid::new_v4();
+    let submission = request(&server, directory.path().join("artifact"));
+
+    let first_task_id = {
+        let engine = DownloadEngine::open(&database).expect("open first engine");
+        let first = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id,
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::Submit {
+                request: submission.clone(),
+                mode: DownloadSubmitMode::QueueOnly,
+            },
+        });
+        let DownloadCommandOutcome::Accepted {
+            task_id: Some(first_task_id),
+        } = first.outcome
+        else {
+            panic!("first browser submission was not accepted");
+        };
+        first_task_id
+    };
+
+    let reopened = DownloadEngine::open(&database).expect("reopen engine");
+    let replay = reopened.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id,
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::Submit {
+            request: submission,
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        replay.outcome,
+        DownloadCommandOutcome::Accepted { task_id: Some(task_id) } if task_id == first_task_id
+    ));
+    assert_eq!(reopened.tasks().expect("load tasks").len(), 1);
+
+    let mut conflicting = request(&server, directory.path().join("different"));
+    conflicting.file_name = Some("different.bin".into());
+    let conflict = reopened.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id,
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::Submit {
+            request: conflicting,
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        conflict.outcome,
+        DownloadCommandOutcome::Rejected { .. }
+    ));
+    assert_eq!(reopened.tasks().expect("load tasks").len(), 1);
 }
 
 #[tokio::test]
@@ -639,6 +703,8 @@ fn crash_helper_process() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
@@ -1329,6 +1395,8 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,

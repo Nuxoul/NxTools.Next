@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -24,13 +24,17 @@ use nxtools_core::{
     DownloadTaskbarProgressOverlaySettings,
 };
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
-    DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
-    DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
-    RequestOrigin,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
+    DownloadEngine, DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe,
+    DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
+    DownloadRequest, DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot,
+    DownloadStatus, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId,
+    DownloadWeekday, RequestOrigin,
+};
+use nxtools_download_ipc::{
+    DOWNLOAD_IPC_PROTOCOL_VERSION, DownloadUiDismissRequest, DownloadUiOpenRequest,
+    DownloadUiOpenResponse, DownloadUiRequest,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -52,6 +56,8 @@ use crate::icons::MaterialIcon;
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::native_window_handle;
+
+const AGGREGATE_STATUS_STALE_REFRESH_DELAY: Duration = Duration::from_millis(2_100);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
@@ -121,21 +127,63 @@ fn submit_presentation_plan(
     }
 }
 
-fn should_open_admitted_progress_window(
-    known_to_desktop: bool,
-    awaiting_delayed_progress: bool,
-    origin: RequestOrigin,
-    status: DownloadStatus,
-) -> bool {
-    (awaiting_delayed_progress || (!known_to_desktop && origin == RequestOrigin::Cli))
-        && matches!(
-            status,
-            DownloadStatus::Probing
-                | DownloadStatus::Waiting
-                | DownloadStatus::Downloading
-                | DownloadStatus::Finalizing
-                | DownloadStatus::Verifying
-        )
+const MAX_TRACKED_ADMISSION_WAVES: usize = 128;
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct AdmissionWindowDecision {
+    open_task: Option<DownloadTaskId>,
+    suppressed_count: usize,
+    new_wave: bool,
+}
+
+#[derive(Default)]
+struct AutomaticDownloadWindowWaves {
+    handled: HashSet<uuid::Uuid>,
+    order: VecDeque<uuid::Uuid>,
+    suppress_terminal: HashSet<DownloadTaskId>,
+}
+
+impl AutomaticDownloadWindowWaves {
+    fn observe(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        task_ids: impl IntoIterator<Item = DownloadTaskId>,
+        show_progress_window: bool,
+    ) -> AdmissionWindowDecision {
+        let mut unique = HashSet::new();
+        let task_ids = task_ids
+            .into_iter()
+            .filter(|task_id| unique.insert(*task_id))
+            .collect::<Vec<_>>();
+        if task_ids.is_empty() {
+            return AdmissionWindowDecision::default();
+        }
+        let new_wave = self.handled.insert(correlation_id);
+        if new_wave {
+            self.order.push_back(correlation_id);
+            while self.order.len() > MAX_TRACKED_ADMISSION_WAVES {
+                if let Some(expired) = self.order.pop_front() {
+                    self.handled.remove(&expired);
+                }
+            }
+        }
+        let first_suppressed = usize::from(new_wave);
+        self.suppress_terminal
+            .extend(task_ids.iter().skip(first_suppressed).copied());
+        AdmissionWindowDecision {
+            open_task: (new_wave && show_progress_window).then_some(task_ids[0]),
+            suppressed_count: task_ids.len().saturating_sub(first_suppressed),
+            new_wave,
+        }
+    }
+
+    fn take_terminal_suppression(&mut self, task_id: DownloadTaskId) -> bool {
+        self.suppress_terminal.remove(&task_id)
+    }
+
+    fn remove_task(&mut self, task_id: DownloadTaskId) {
+        self.suppress_terminal.remove(&task_id);
+    }
 }
 
 fn refresh_immediately_after_remove() -> bool {
@@ -164,6 +212,12 @@ struct DownloadTaskWindow {
     view: Entity<DownloadTaskWindowView>,
     native_window_handle: i64,
     generation: uuid::Uuid,
+}
+
+#[derive(Clone)]
+struct NewDownloadWindow {
+    window: AnyWindowHandle,
+    view: Entity<NewDownloadView>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,8 +260,10 @@ pub(crate) struct DownloadApplication {
     task_detail: Option<DownloadTaskDetail>,
     task_detail_error: Option<(DownloadTaskId, String)>,
     queues: Vec<DownloadQueue>,
+    aggregate_metrics: DownloadAggregateMetrics,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
+    automatic_window_waves: AutomaticDownloadWindowWaves,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
     pending_task_window_activations: HashMap<uuid::Uuid, PendingTaskWindowActivation>,
@@ -221,7 +277,7 @@ pub(crate) struct DownloadApplication {
         reason = "retained for the Phase 3 task context-menu delete action"
     )]
     delete_confirmation_windows: HashMap<DownloadTaskId, AnyWindowHandle>,
-    new_download_window: Option<AnyWindowHandle>,
+    new_download_window: Option<NewDownloadWindow>,
     schedule_window: Option<AnyWindowHandle>,
     settings_window: Option<AnyWindowHandle>,
     taskbar_overlay_window: Option<AnyWindowHandle>,
@@ -240,6 +296,7 @@ pub(crate) struct DownloadApplication {
     pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
     last_event_sequence: u64,
+    aggregate_stale_refresh_task: Option<Task<()>>,
     _event_task: Task<()>,
 }
 
@@ -268,13 +325,24 @@ impl DownloadApplication {
         };
         let show_progress_window = config.download.show_progress_window;
         let show_completion_window = config.download.show_completion_window;
-        let (tasks, queues) = match load_download_snapshot(&engine) {
-            Ok(snapshot) => (snapshot.task_details, snapshot.queues),
-            Err(error) => {
-                warn!(%error, "could not load the download snapshot for the desktop");
-                (Vec::new(), Vec::new())
-            }
-        };
+        let (tasks, queues, aggregate_metrics, baseline_event_sequence) =
+            match load_download_snapshot(&engine) {
+                Ok(snapshot) => (
+                    snapshot.task_details,
+                    snapshot.queues,
+                    snapshot.aggregate_metrics,
+                    snapshot.sequence,
+                ),
+                Err(error) => {
+                    warn!(%error, "could not load the download snapshot for the desktop");
+                    (
+                        Vec::new(),
+                        Vec::new(),
+                        DownloadAggregateMetrics::default(),
+                        0,
+                    )
+                }
+            };
         let mut task_window_lifecycle = DownloadWindowLifecycle::default();
         let awaiting_delayed_progress = tasks
             .iter()
@@ -329,8 +397,10 @@ impl DownloadApplication {
             task_detail: None,
             task_detail_error: None,
             queues,
+            aggregate_metrics,
             latest_progress: HashMap::new(),
             awaiting_delayed_progress,
+            automatic_window_waves: AutomaticDownloadWindowWaves::default(),
             task_window_lifecycle,
             task_windows: HashMap::new(),
             pending_task_window_activations: HashMap::new(),
@@ -358,7 +428,8 @@ impl DownloadApplication {
             show_completion_window,
             pending_directory_picker: None,
             notified_terminal_states,
-            last_event_sequence: 0,
+            last_event_sequence: baseline_event_sequence,
+            aggregate_stale_refresh_task: None,
             _event_task: event_task,
         }
     }
@@ -531,6 +602,10 @@ impl DownloadApplication {
 
     pub(crate) fn progress(&self, task_id: DownloadTaskId) -> Option<&DownloadProgress> {
         self.latest_progress.get(&task_id)
+    }
+
+    pub(crate) const fn aggregate_metrics(&self) -> DownloadAggregateMetrics {
+        self.aggregate_metrics
     }
 
     pub(crate) fn submit(
@@ -973,15 +1048,30 @@ impl DownloadApplication {
     }
 
     pub(crate) fn open_new_download_window(&mut self, cx: &mut Context<Self>) {
-        if let Some(window) = self.new_download_window {
-            if window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
-                return;
+        if let Ok(opened) = self.ensure_new_download_window(cx) {
+            let _ = opened.window.update(cx, |_, window, _| {
+                window.activate_window();
+                window.refresh();
+            });
+            return;
+        }
+        self.notifications.update(cx, |notifications, cx| {
+            notifications.show_error(
+                "download-new-window",
+                "无法打开新建下载窗口",
+                "GPUI 无法创建下载确认窗口",
+                cx,
+            );
+        });
+    }
+
+    fn ensure_new_download_window(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Result<NewDownloadWindow, String> {
+        if let Some(opened) = self.new_download_window.clone() {
+            if opened.window.update(cx, |_, _, _| {}).is_ok() {
+                return Ok(opened);
             }
             self.new_download_window = None;
         }
@@ -991,50 +1081,169 @@ impl DownloadApplication {
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
         let window_size = new_download_window_size(false);
         let window_bounds = WindowBounds::centered(window_size, cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(window_bounds),
-                titlebar: None,
-                focus: true,
-                show: true,
-                kind: WindowKind::Normal,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
-                app_id: Some("NxTools.NewDownload".into()),
-                window_min_size: Some(window_size),
-                window_decorations: Some(WindowDecorations::Client),
-                tabbing_identifier: None,
-            },
-            move |window, cx| {
-                let view = cx.new(|cx| {
-                    NewDownloadView::new(
-                        application,
-                        default_directory,
-                        default_connection_limit,
-                        default_adaptive_segment_policy,
-                        window,
-                        cx,
-                    )
-                });
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
-        match opened {
-            Ok(window) => self.new_download_window = Some(window.into()),
-            Err(error) => {
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        "download-new-window",
-                        "无法打开新建下载窗口",
-                        error.to_string(),
-                        cx,
-                    );
-                });
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let opened = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(window_bounds),
+                    titlebar: None,
+                    focus: true,
+                    show: true,
+                    kind: WindowKind::Normal,
+                    is_movable: true,
+                    is_resizable: false,
+                    is_minimizable: false,
+                    display_id: None,
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    app_id: Some("NxTools.NewDownload".into()),
+                    window_min_size: Some(window_size),
+                    window_decorations: Some(WindowDecorations::Client),
+                    tabbing_identifier: None,
+                },
+                move |window, cx| {
+                    let view = cx.new(|cx| {
+                        NewDownloadView::new(
+                            application,
+                            default_directory,
+                            default_connection_limit,
+                            default_adaptive_segment_policy,
+                            window,
+                            cx,
+                        )
+                    });
+                    *opened_view_slot.borrow_mut() = Some(view.clone());
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        let view = view_slot
+            .borrow_mut()
+            .take()
+            .ok_or_else(|| "download confirmation view was not created".to_owned())?;
+        let opened = NewDownloadWindow {
+            window: opened.into(),
+            view,
+        };
+        self.new_download_window = Some(opened.clone());
+        Ok(opened)
+    }
+
+    pub(crate) fn handle_browser_download_ui(
+        &mut self,
+        intake: crate::runtime::DownloadUiIntake,
+        cx: &mut Context<Self>,
+    ) {
+        match intake.request {
+            DownloadUiRequest::Open(request) => {
+                self.handle_browser_download_dialog(
+                    *request,
+                    intake.response,
+                    intake.accepted_at,
+                    cx,
+                );
+            }
+            DownloadUiRequest::Dismiss(request) => {
+                self.dismiss_browser_download_dialog(request, intake.response, cx);
             }
         }
+    }
+
+    fn handle_browser_download_dialog(
+        &mut self,
+        external: DownloadUiOpenRequest,
+        response: std::sync::mpsc::SyncSender<DownloadUiOpenResponse>,
+        accepted_at: Instant,
+        cx: &mut Context<Self>,
+    ) {
+        let request_id = external.request_id;
+        info!(
+            event = "download.browser_dialog.accepted",
+            %request_id,
+            "browser download dialog request accepted"
+        );
+        if external.protocol_version != DOWNLOAD_IPC_PROTOCOL_VERSION {
+            let _ = response.send(DownloadUiOpenResponse::Rejected {
+                code: "protocol_incompatible".into(),
+                message: "download UI protocol version is incompatible".into(),
+            });
+            return;
+        }
+        if let Err(error) = external.request.validate() {
+            let _ = response.send(DownloadUiOpenResponse::Rejected {
+                code: "invalid_request".into(),
+                message: error.to_string(),
+            });
+            return;
+        }
+        let opened = match self.ensure_new_download_window(cx) {
+            Ok(opened) => opened,
+            Err(message) => {
+                let _ = response.send(DownloadUiOpenResponse::Rejected {
+                    code: "window_open_failed".into(),
+                    message,
+                });
+                return;
+            }
+        };
+        cx.defer(move |cx| {
+            let applied = opened.window.update(cx, |_, window, cx| {
+                opened.view.update(cx, |view, cx| {
+                    view.apply_external_request(external, window, cx);
+                });
+                window.activate_window();
+                window.refresh();
+            });
+            let result = if applied.is_ok() {
+                info!(
+                    event = "download.browser_dialog.opened",
+                    %request_id,
+                    elapsed_ms = accepted_at.elapsed().as_millis(),
+                    "browser download dialog opened and probe started"
+                );
+                DownloadUiOpenResponse::Accepted {
+                    dialog_request_id: request_id,
+                }
+            } else {
+                warn!(
+                    event = "download.browser_dialog.failed",
+                    %request_id,
+                    elapsed_ms = accepted_at.elapsed().as_millis(),
+                    error_code = "window_unavailable",
+                    "browser download dialog window became unavailable"
+                );
+                DownloadUiOpenResponse::Rejected {
+                    code: "window_unavailable".into(),
+                    message: "download confirmation window became unavailable".into(),
+                }
+            };
+            let _ = response.send(result);
+        });
+    }
+
+    fn dismiss_browser_download_dialog(
+        &mut self,
+        request: DownloadUiDismissRequest,
+        response: std::sync::mpsc::SyncSender<DownloadUiOpenResponse>,
+        cx: &mut Context<Self>,
+    ) {
+        let dialog_request_id = request.dialog_request_id;
+        let matching = self.new_download_window.as_ref().is_some_and(|opened| {
+            opened.view.read(cx).external_request_id == Some(dialog_request_id)
+        });
+        if matching && let Some(opened) = self.new_download_window.take() {
+            let _ = opened
+                .window
+                .update(cx, |_, window, _| window.remove_window());
+        }
+        info!(
+            event = "download.browser_dialog.dismissed",
+            request_id = %request.request_id,
+            %dialog_request_id,
+            matched = matching,
+            "browser download dialog dismissal completed"
+        );
+        let _ = response.send(DownloadUiOpenResponse::Dismissed { dialog_request_id });
     }
 
     pub(crate) fn open_schedule_window(&mut self, cx: &mut Context<Self>) {
@@ -2268,6 +2477,17 @@ impl DownloadApplication {
         self.refresh_snapshot(true, cx);
     }
 
+    fn schedule_aggregate_stale_refresh(&mut self, cx: &mut Context<Self>) {
+        self.aggregate_stale_refresh_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(AGGREGATE_STATUS_STALE_REFRESH_DELAY)
+                .await;
+            let _ = this.update(cx, |application, cx| {
+                application.refresh_snapshot(false, cx);
+            });
+        }));
+    }
+
     fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
         let Ok(snapshot) = load_download_snapshot(&self.engine) else {
             return;
@@ -2276,6 +2496,7 @@ impl DownloadApplication {
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
         self.queues = snapshot.queues;
+        self.aggregate_metrics = snapshot.aggregate_metrics;
         if refresh_task_detail
             && let Some(task_id) = self
                 .task_detail
@@ -2308,6 +2529,18 @@ impl DownloadApplication {
             .collect::<Vec<_>>();
         for (task_id, status) in task_states {
             let mut directive = self.task_window_lifecycle.task_changed(task_id, status);
+            if matches!(
+                directive,
+                DownloadWindowDirective::Open(
+                    DownloadWindowPhase::Completed | DownloadWindowPhase::Failed
+                )
+            ) && self
+                .automatic_window_waves
+                .take_terminal_suppression(task_id)
+            {
+                self.task_window_lifecycle.window_closed(task_id);
+                directive = DownloadWindowDirective::None;
+            }
             if !self.show_completion_window
                 && matches!(
                     directive,
@@ -2324,6 +2557,9 @@ impl DownloadApplication {
 
     fn handle_engine_event(&mut self, envelope: DownloadEventEnvelope, cx: &mut Context<Self>) {
         let sequence = envelope.sequence;
+        if sequence <= self.last_event_sequence {
+            return;
+        }
         if self.last_event_sequence != 0 && sequence != self.last_event_sequence + 1 {
             warn!(
                 expected_sequence = self.last_event_sequence + 1,
@@ -2332,21 +2568,11 @@ impl DownloadApplication {
             );
         }
         self.last_event_sequence = sequence;
-        let admitted_progress_task = match &envelope.event {
-            DownloadEvent::TaskChanged { task } => {
-                let known_to_desktop = self
-                    .tasks
-                    .iter()
-                    .any(|candidate| candidate.task.id() == task.id());
-                (self.show_progress_window
-                    && should_open_admitted_progress_window(
-                        known_to_desktop,
-                        self.awaiting_delayed_progress.contains(&task.id()),
-                        task.origin(),
-                        task.status(),
-                    ))
-                .then_some(task.id())
-            }
+        let admission_wave = match &envelope.event {
+            DownloadEvent::TasksAdmitted {
+                correlation_id,
+                task_ids,
+            } => Some((*correlation_id, task_ids.clone())),
             _ => None,
         };
         let is_progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
@@ -2358,10 +2584,12 @@ impl DownloadApplication {
                     apply_progress_to_task_detail(detail, &progress);
                 }
                 self.latest_progress.insert(progress.task_id, progress);
+                self.schedule_aggregate_stale_refresh(cx);
             }
             DownloadEvent::TaskRemoved { task_id } => {
                 self.latest_progress.remove(&task_id);
                 self.awaiting_delayed_progress.remove(&task_id);
+                self.automatic_window_waves.remove_task(task_id);
                 let directive = self.task_window_lifecycle.task_removed(task_id);
                 self.apply_task_window_directive(task_id, directive, cx);
             }
@@ -2373,23 +2601,46 @@ impl DownloadApplication {
                     self.awaiting_delayed_progress.remove(&task.id());
                 }
             }
-            DownloadEvent::CommandRejected { .. } | DownloadEvent::SnapshotRequired { .. } => {}
+            DownloadEvent::TasksAdmitted { .. }
+            | DownloadEvent::CommandRejected { .. }
+            | DownloadEvent::SnapshotRequired { .. } => {}
         }
         self.refresh_snapshot(!is_progress_event, cx);
-        if let Some(task_id) = admitted_progress_task {
-            let still_active = self.task(task_id).is_some_and(|task| {
-                matches!(
-                    task.task.status(),
-                    DownloadStatus::Probing
-                        | DownloadStatus::Waiting
-                        | DownloadStatus::Downloading
-                        | DownloadStatus::Finalizing
-                        | DownloadStatus::Verifying
-                )
-            });
-            if still_active {
-                self.awaiting_delayed_progress.remove(&task_id);
-                let directive = self.task_window_lifecycle.request_progress(task_id);
+        if let Some((correlation_id, admitted_task_ids)) = admission_wave {
+            let active_task_ids = admitted_task_ids
+                .into_iter()
+                .filter(|task_id| {
+                    self.task(*task_id).is_some_and(|task| {
+                        matches!(
+                            task.task.status(),
+                            DownloadStatus::Probing
+                                | DownloadStatus::Waiting
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Finalizing
+                                | DownloadStatus::Verifying
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            for task_id in &active_task_ids {
+                self.awaiting_delayed_progress.remove(task_id);
+            }
+            let decision = self.automatic_window_waves.observe(
+                correlation_id,
+                active_task_ids,
+                self.show_progress_window,
+            );
+            if decision.new_wave {
+                info!(
+                    event = "download.task_window.admission_wave",
+                    %correlation_id,
+                    opened = decision.open_task.is_some(),
+                    suppressed_count = decision.suppressed_count,
+                    "automatic download window wave processed"
+                );
+            }
+            if let Some(task_id) = decision.open_task {
+                let directive = self.task_window_lifecycle.request_progress_passive(task_id);
                 self.apply_task_window_directive(task_id, directive, cx);
             }
         }
@@ -4364,6 +4615,9 @@ struct NewDownloadView {
     url: Entity<InputState>,
     directory: Entity<InputState>,
     file_name: Entity<InputState>,
+    external_request_context: Option<DownloadRequest>,
+    external_file_name_hint: Option<String>,
+    external_request_id: Option<uuid::Uuid>,
     scheduled_date: NaiveDate,
     scheduled_month: NaiveDate,
     scheduled_hour: Entity<SelectState<Vec<String>>>,
@@ -4441,6 +4695,9 @@ impl NewDownloadView {
             url,
             directory,
             file_name,
+            external_request_context: None,
+            external_file_name_hint: None,
+            external_request_id: None,
             scheduled_date,
             scheduled_month,
             scheduled_hour,
@@ -4468,20 +4725,81 @@ impl NewDownloadView {
         }
         let scheduled_at_unix_ms =
             resolve_scheduled_start(self.committed_schedule, Local::now().timestamp_millis())?;
-        let request = DownloadRequest {
-            source_url: url,
-            save_directory: PathBuf::from(directory),
-            file_name: (!file_name.is_empty()).then_some(file_name),
-            headers: Vec::new(),
-            cookie: None,
-            referrer: None,
-            connection_limit: Some(self.default_connection_limit),
-            speed_limit_bytes_per_second: None,
-            scheduled_at_unix_ms,
-            adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
-        };
+        let mut request = self
+            .external_request_context
+            .clone()
+            .unwrap_or(DownloadRequest {
+                source_url: String::new(),
+                save_directory: PathBuf::new(),
+                file_name: None,
+                headers: Vec::new(),
+                cookie: None,
+                referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
+                connection_limit: None,
+                speed_limit_bytes_per_second: None,
+                scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
+            });
+        request.source_url = url;
+        request.save_directory = PathBuf::from(directory);
+        request.file_name = (!file_name.is_empty()).then_some(file_name);
+        request.connection_limit = Some(
+            request
+                .connection_limit
+                .unwrap_or(self.default_connection_limit),
+        );
+        request.scheduled_at_unix_ms = scheduled_at_unix_ms;
+        request.adaptive_segment_policy = Some(
+            request
+                .adaptive_segment_policy
+                .unwrap_or(self.default_adaptive_segment_policy),
+        );
         request.validate().map_err(|error| error.to_string())?;
         Ok(request)
+    }
+
+    fn apply_external_request(
+        &mut self,
+        external: DownloadUiOpenRequest,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+        self.confirmed_request = None;
+        self.probe = None;
+        self.error = None;
+        self.committed_schedule = None;
+        self.external_request_id = Some(external.request_id);
+        self.external_file_name_hint = external
+            .browser_file_name_is_hint
+            .then(|| external.request.file_name.clone())
+            .flatten();
+        self.external_request_context = Some(external.request.clone());
+        self.url.update(cx, |input, cx| {
+            input.set_value(external.request.source_url, window, cx);
+        });
+        self.directory.update(cx, |input, cx| {
+            input.set_value(
+                external
+                    .request
+                    .save_directory
+                    .to_string_lossy()
+                    .into_owned(),
+                window,
+                cx,
+            );
+        });
+        self.file_name.update(cx, |input, cx| {
+            input.set_value(external.request.file_name.unwrap_or_default(), window, cx);
+        });
+        info!(
+            event = "download.browser_dialog.probe_started",
+            request_id = %external.request_id,
+            "browser download dialog fields applied"
+        );
+        self.begin_probe(window, cx);
     }
 
     fn reset_schedule_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -4522,6 +4840,7 @@ impl NewDownloadView {
         };
         self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
         let generation = self.probe_generation;
+        let correlation_id = self.external_request_id.unwrap_or_else(uuid::Uuid::new_v4);
         self.probing = true;
         self.error = None;
         self.confirmed_request = None;
@@ -4538,7 +4857,7 @@ impl NewDownloadView {
                     engine
                         .handle_command(DownloadCommandEnvelope {
                             protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
-                            request_id: uuid::Uuid::new_v4(),
+                            request_id: correlation_id,
                             origin: RequestOrigin::Ui,
                             command: DownloadCommand::Probe {
                                 request: request_for_probe,
@@ -4556,17 +4875,28 @@ impl NewDownloadView {
                 let confirmed = match outcome {
                     DownloadCommandOutcome::Probe(probe) => {
                         info!(
+                            event = "download.browser_dialog.probe_completed",
+                            %correlation_id,
                             generation,
-                            file_name = ?probe.file_name,
                             total_bytes = ?probe.total_bytes,
                             supports_ranges = probe.supports_ranges,
                             "download link probe completed"
                         );
                         let mut confirmed = request;
-                        if confirmed.file_name.is_none() {
+                        let visible_file_name = this.file_name.read(cx).value().to_string();
+                        let may_replace_hint = this
+                            .external_file_name_hint
+                            .as_ref()
+                            .map_or(visible_file_name.trim().is_empty(), |hint| {
+                                visible_file_name == *hint
+                            });
+                        if may_replace_hint && probe.file_name.is_some() {
                             confirmed.file_name = probe.file_name.clone();
                             resolved_file_name = probe.file_name.clone();
+                        } else if !visible_file_name.trim().is_empty() {
+                            confirmed.file_name = Some(visible_file_name);
                         }
+                        this.external_file_name_hint = None;
                         this.confirmed_request = Some(confirmed);
                         this.probe = Some(probe);
                         this.error = None;
@@ -6239,6 +6569,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -6509,6 +6841,82 @@ mod tests {
     }
 
     #[gpui::test]
+    fn browser_handoff_opens_and_hydrates_the_real_window_before_creating_a_task(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "browser-download-window");
+        let (response, received) = std::sync::mpsc::sync_channel(1);
+        let request_id = uuid::Uuid::new_v4();
+        let request = DownloadRequest {
+            source_url: "http://127.0.0.1:1/server-name.bin".into(),
+            save_directory: directory.clone(),
+            file_name: Some("browser-hint.bin".into()),
+            headers: vec![nxtools_download::DownloadRequestHeader {
+                name: "X-Fixture".into(),
+                value: "preserved".into(),
+            }],
+            cookie: Some("session=preserved".into()),
+            referrer: Some("https://example.test/page".into()),
+            declared_size_bytes: Some(123),
+            declared_supports_ranges: Some(true),
+            connection_limit: None,
+            speed_limit_bytes_per_second: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.handle_browser_download_ui(
+                    crate::runtime::DownloadUiIntake {
+                        request: DownloadUiRequest::Open(Box::new(DownloadUiOpenRequest {
+                            protocol_version: 1,
+                            request_id,
+                            idempotency_key: "browser-window-regression".into(),
+                            request,
+                            browser_file_name_is_hint: true,
+                        })),
+                        response,
+                        accepted_at: Instant::now(),
+                    },
+                    cx,
+                );
+            });
+        });
+        cx.run_until_parked();
+
+        assert_eq!(
+            received.try_recv().expect("window-open acknowledgement"),
+            DownloadUiOpenResponse::Accepted {
+                dialog_request_id: request_id
+            }
+        );
+        cx.read(|cx| {
+            let application = application.read(cx);
+            assert!(
+                application.tasks.is_empty(),
+                "opening the dialog must not persist a task"
+            );
+            let opened = application
+                .new_download_window
+                .as_ref()
+                .expect("browser handoff must open the real GPUI window");
+            let visible = opened.view.read(cx).request(cx).expect("hydrated request");
+            assert_eq!(visible.file_name.as_deref(), Some("browser-hint.bin"));
+            assert_eq!(visible.headers.len(), 1);
+            assert_eq!(visible.cookie.as_deref(), Some("session=preserved"));
+            assert_eq!(
+                visible.referrer.as_deref(),
+                Some("https://example.test/page")
+            );
+            assert_eq!(visible.declared_size_bytes, Some(123));
+        });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory) =
@@ -6549,6 +6957,8 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
@@ -7149,45 +7559,51 @@ mod tests {
     }
 
     #[test]
-    fn a_new_active_cli_task_opens_one_desktop_progress_window() {
-        for status in [
-            DownloadStatus::Probing,
-            DownloadStatus::Waiting,
-            DownloadStatus::Downloading,
-            DownloadStatus::Finalizing,
-            DownloadStatus::Verifying,
-        ] {
-            assert!(should_open_admitted_progress_window(
-                false,
-                false,
-                RequestOrigin::Cli,
-                status
-            ));
-        }
-        assert!(!should_open_admitted_progress_window(
-            true,
-            false,
-            RequestOrigin::Cli,
-            DownloadStatus::Downloading
-        ));
-        assert!(!should_open_admitted_progress_window(
-            false,
-            false,
-            RequestOrigin::Cli,
-            DownloadStatus::Created
-        ));
-        assert!(!should_open_admitted_progress_window(
-            false,
-            false,
-            RequestOrigin::Ui,
-            DownloadStatus::Downloading
-        ));
-        assert!(should_open_admitted_progress_window(
-            true,
-            true,
-            RequestOrigin::Ui,
-            DownloadStatus::Downloading
-        ));
+    fn one_admission_wave_opens_only_its_first_task_without_terminal_fallbacks_for_the_rest() {
+        let correlation_id = uuid::Uuid::new_v4();
+        let first = DownloadTaskId::new();
+        let second = DownloadTaskId::new();
+        let third = DownloadTaskId::new();
+        let mut waves = AutomaticDownloadWindowWaves::default();
+
+        assert_eq!(
+            waves.observe(correlation_id, [first, second], true),
+            AdmissionWindowDecision {
+                open_task: Some(first),
+                suppressed_count: 1,
+                new_wave: true,
+            }
+        );
+        assert!(!waves.take_terminal_suppression(first));
+        assert!(waves.take_terminal_suppression(second));
+        assert_eq!(
+            waves.observe(correlation_id, [third], true),
+            AdmissionWindowDecision {
+                open_task: None,
+                suppressed_count: 1,
+                new_wave: false,
+            }
+        );
+        assert!(waves.take_terminal_suppression(third));
+    }
+
+    #[test]
+    fn disabling_automatic_progress_keeps_one_completion_anchor_per_wave() {
+        let correlation_id = uuid::Uuid::new_v4();
+        let first = DownloadTaskId::new();
+        let second = DownloadTaskId::new();
+        let mut waves = AutomaticDownloadWindowWaves::default();
+
+        assert_eq!(
+            waves.observe(correlation_id, [first, second], false),
+            AdmissionWindowDecision {
+                open_task: None,
+                suppressed_count: 1,
+                new_wave: true,
+            }
+        );
+        assert!(!waves.take_terminal_suppression(first));
+        assert!(waves.take_terminal_suppression(second));
     }
 
     #[test]
@@ -7401,6 +7817,8 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,

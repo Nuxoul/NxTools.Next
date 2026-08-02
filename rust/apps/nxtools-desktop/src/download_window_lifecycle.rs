@@ -38,6 +38,26 @@ impl DownloadWindowLifecycle {
         self.request_window(task_id, DownloadWindowPhase::Progress)
     }
 
+    pub(crate) fn request_progress_passive(
+        &mut self,
+        task_id: DownloadTaskId,
+    ) -> DownloadWindowDirective {
+        match self.open.entry(task_id) {
+            Entry::Occupied(mut entry) => {
+                if *entry.get() != DownloadWindowPhase::Progress {
+                    entry.insert(DownloadWindowPhase::Progress);
+                    DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Progress)
+                } else {
+                    DownloadWindowDirective::RefreshExisting
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(DownloadWindowPhase::Progress);
+                DownloadWindowDirective::Open(DownloadWindowPhase::Progress)
+            }
+        }
+    }
+
     pub(crate) fn request_window(
         &mut self,
         task_id: DownloadTaskId,
@@ -133,6 +153,25 @@ mod tests {
         assert_eq!(
             lifecycle.request_progress(task_id),
             DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Progress)
+        );
+        assert_eq!(
+            lifecycle.request_progress(task_id),
+            DownloadWindowDirective::FocusExisting(DownloadWindowPhase::Progress)
+        );
+    }
+
+    #[test]
+    fn automatic_progress_requests_never_focus_or_duplicate_a_task_window() {
+        let task_id = DownloadTaskId::new();
+        let mut lifecycle = DownloadWindowLifecycle::default();
+
+        assert_eq!(
+            lifecycle.request_progress_passive(task_id),
+            DownloadWindowDirective::Open(DownloadWindowPhase::Progress)
+        );
+        assert_eq!(
+            lifecycle.request_progress_passive(task_id),
+            DownloadWindowDirective::RefreshExisting
         );
         assert_eq!(
             lifecycle.request_progress(task_id),

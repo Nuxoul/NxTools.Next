@@ -1,0 +1,214 @@
+{
+  "name": "download-ui-http-acceptance",
+  "steps": [
+    {
+      "action": "close_matching_windows",
+      "selector": {
+        "visible": true,
+        "min_width": 420,
+        "max_width": 600,
+        "min_height": 140,
+        "max_height": 340
+      }
+    },
+    {
+      "action": "select_window",
+      "selector": {
+        "title": "NxTools",
+        "visible": true,
+        "min_width": 700,
+        "min_height": 500,
+        "timeout_ms": 8000
+      }
+    },
+    {
+      "action": "capture",
+      "name": "01-download-page"
+    },
+    {
+      "action": "click",
+      "x": 1030,
+      "y": 65
+    },
+    {
+      "action": "wait",
+      "milliseconds": 150
+    },
+    {
+      "action": "click",
+      "x_ratio": 0.94,
+      "y_ratio": 0.12
+    },
+    {
+      "action": "select_window",
+      "selector": {
+        "visible": true,
+        "min_width": 480,
+        "max_width": 540,
+        "min_height": 160,
+        "max_height": 220,
+        "timeout_ms": 3000
+      }
+    },
+    {
+      "action": "click",
+      "x": 250,
+      "y": 78
+    },
+    {
+      "action": "wait",
+      "milliseconds": 120
+    },
+    {
+      "action": "type_text",
+      "text_env": "NXTOOLS_UI_DOWNLOAD_URL"
+    },
+    {
+      "action": "capture",
+      "name": "02-download-url-entered"
+    },
+    {
+      "action": "wait",
+      "milliseconds": 250
+    },
+    {
+      "action": "click",
+      "x": 54,
+      "y": 147
+    },
+    {
+      "action": "select_window",
+      "selector": {
+        "visible": true,
+        "min_width": 480,
+        "max_width": 540,
+        "min_height": 250,
+        "max_height": 330,
+        "timeout_ms": 5000
+      }
+    },
+    {
+      "action": "capture",
+      "name": "03-download-probed"
+    },
+    {
+      "action": "click",
+      "x": 170,
+      "y": 126
+    },
+    {
+      "action": "key",
+      "virtual_key": 35
+    },
+    {
+      "action": "repeat_key",
+      "virtual_key": 8,
+      "count": 220
+    },
+    {
+      "action": "type_text",
+      "text_env": "NXTOOLS_UI_DOWNLOAD_DIRECTORY"
+    },
+    {
+      "action": "click",
+      "x": 180,
+      "y": 181
+    },
+    {
+      "action": "key",
+      "virtual_key": 35
+    },
+    {
+      "action": "repeat_key",
+      "virtual_key": 8,
+      "count": 100
+    },
+    {
+      "action": "type_text",
+      "text_env": "NXTOOLS_UI_DOWNLOAD_NAME"
+    },
+    {
+      "action": "capture",
+      "name": "04-download-target-ready"
+    },
+    {
+      "action": "click",
+      "x": 388,
+      "y": 250
+    },
+    {
+      "action": "select_window",
+      "selector": {
+        "visible": true,
+        "min_width": 420,
+        "max_width": 480,
+        "min_height": 160,
+        "max_height": 220,
+        "timeout_ms": 5000
+      }
+    },
+    {
+      "action": "capture",
+      "name": "05-download-progress-window"
+    },
+    {
+      "action": "assert_window",
+      "selector": {
+        "visible": true,
+        "min_width": 200,
+        "max_width": 320,
+        "min_height": 20,
+        "max_height": 80,
+        "timeout_ms": 3000
+      },
+      "topmost": true
+    },
+    {
+      "action": "capture",
+      "name": "06-taskbar-overlay-before-foreground-switch"
+    },
+    {
+      "action": "select_window",
+      "selector": {
+        "title": "NxTools",
+        "visible": true,
+        "min_width": 700,
+        "min_height": 500
+      }
+    },
+    {
+      "action": "activate"
+    },
+    {
+      "action": "click",
+      "x": 350,
+      "y": 105
+    },
+    {
+      "action": "wait",
+      "milliseconds": 250
+    },
+    {
+      "action": "assert_window",
+      "selector": {
+        "visible": true,
+        "min_width": 200,
+        "max_width": 320,
+        "min_height": 20,
+        "max_height": 80,
+        "timeout_ms": 3000
+      },
+      "topmost": true
+    },
+    {
+      "action": "capture",
+      "name": "07-taskbar-overlay-after-foreground-switch"
+    },
+    {
+      "action": "assert_file",
+      "path_env": "NXTOOLS_UI_DOWNLOAD_PATH",
+      "minimum_bytes_env": "NXTOOLS_UI_EXPECTED_BYTES",
+      "timeout_ms": 30000
+    }
+  ]
+}

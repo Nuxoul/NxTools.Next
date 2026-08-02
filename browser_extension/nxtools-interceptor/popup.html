@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NxTools</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div>
+        <h1>NxTools</h1>
+        <p id="statusText">正在连接 NxTools</p>
+      </div>
+      <span id="statusDot" class="dot"></span>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-view="tasks">任务</button>
+      <button class="tab" data-view="resources">资源</button>
+      <button class="tab" data-view="advanced">高级</button>
+      <button class="tab" data-view="settings">设置</button>
+    </nav>
+
+    <section id="tasksView" class="view active">
+      <div class="summary">
+        <div>
+          <span>当前页面</span>
+          <strong id="activeTabTitle">-</strong>
+        </div>
+        <button id="sendTabButton">解析页面</button>
+      </div>
+      <label class="switch-row site-toggle" id="siteToggleRow">
+        <span>
+          <strong>本网站启用接管</strong>
+          <small id="siteToggleHint">-</small>
+        </span>
+        <input id="siteEnabledToggle" type="checkbox">
+      </label>
+      <div class="section-head">
+        <span>桌面任务</span>
+        <small id="taskCountText">0</small>
+      </div>
+      <div id="taskList" class="list"></div>
+    </section>
+
+    <section id="resourcesView" class="view">
+      <div class="filter-row">
+        <button class="pill active" data-resource-filter="all">全部</button>
+        <button class="pill" data-resource-filter="streaming">流媒体</button>
+        <button class="pill" data-resource-filter="video">视频</button>
+        <button class="pill" data-resource-filter="audio">音频</button>
+        <button class="pill" data-resource-filter="download">文件</button>
+      </div>
+      <div class="section-head">
+        <span>当前页面嗅探</span>
+        <div class="head-actions">
+          <button id="mergeResourcesButton" class="ghost">批量下载</button>
+          <button id="clearResourcesButton" class="ghost">清空</button>
+        </div>
+      </div>
+      <div id="currentResourceList" class="list"></div>
+      <div class="section-head muted">
+        <span>其他页面资源</span>
+      </div>
+      <div id="otherResourceList" class="list compact-list"></div>
+    </section>
+
+    <section id="advancedView" class="view">
+      <section class="panel">
+        <div class="section-head inline">
+          <span>页面媒体</span>
+          <small id="mediaStateText">-</small>
+        </div>
+        <select id="mediaSelect" class="select"></select>
+        <div class="media-actions">
+          <button id="mediaPlayButton">播放/暂停</button>
+          <button id="mediaPipButton">画中画</button>
+          <button id="mediaScreenshotButton">截图</button>
+        </div>
+        <div class="range-row">
+          <span>进度</span>
+          <input id="mediaTimeRange" type="range" min="0" max="1000" value="0">
+        </div>
+        <div class="range-row">
+          <span>音量</span>
+          <input id="mediaVolumeRange" type="range" min="0" max="100" value="100">
+        </div>
+        <div class="media-actions">
+          <button id="mediaMuteButton">静音</button>
+          <button id="mediaLoopButton">循环</button>
+          <div class="speed-control">
+            <input id="mediaSpeedInput" type="number" min="0.25" max="4" step="0.05" value="1.25">
+            <button id="mediaSpeedButton">应用倍速</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel feature-grid">
+        <button id="featureOverlayButton" class="feature-card">
+          <strong>媒体悬浮按钮</strong>
+          <small>在视频旁显示“下载此媒体”</small>
+        </button>
+        <button id="featureDeepScanButton" class="feature-card">
+          <strong>深度资源嗅探</strong>
+          <small>扫描页面、Performance 与网络资源</small>
+        </button>
+        <button id="featureMobileUaButton" class="feature-card">
+          <strong>模拟手机 UA</strong>
+          <small>对当前标签页修改 User-Agent</small>
+        </button>
+      </section>
+    </section>
+
+    <section id="settingsView" class="view">
+      <section class="panel">
+        <div class="actions">
+          <button id="saveButton" class="primary">保存</button>
+          <button id="testButton">测试连接</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label class="switch-row">
+          <span>
+            <strong>拦截浏览器下载</strong>
+            <small>发送到 NxTools 后取消浏览器原下载</small>
+          </span>
+          <input id="interceptDownloads" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>接管后加入队列</strong>
+            <small>开启时等待手动开始；关闭时立即下载</small>
+          </span>
+          <input id="openDialog" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>页面资源嗅探</strong>
+            <small>捕获 m3u8、mpd、音视频和可下载资源</small>
+          </span>
+          <input id="captureResources" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>媒体悬浮下载按钮</strong>
+            <small>参考 Ghost 逻辑，靠近当前视频显示下载入口</small>
+          </span>
+          <input id="mediaOverlayEnabled" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>拖放目标窗口</strong>
+            <small>拖拽网页链接时显示 Drop Target，松手后发送到 NxTools</small>
+          </span>
+          <input id="dropTargetEnabled" type="checkbox">
+        </label>
+        <div class="drop-target-settings">
+          <label class="field">
+            <span>位置</span>
+            <select id="dropTargetPosition" class="select">
+              <option value="left-top">左上</option>
+              <option value="left-bottom">左下</option>
+              <option value="right-top">右上</option>
+              <option value="right-bottom">右下</option>
+              <option value="center-top">中间顶部</option>
+              <option value="center-bottom">中间底部</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>宽度</span>
+            <input id="dropTargetWidth" type="text" inputmode="numeric">
+          </label>
+          <label class="field">
+            <span>高度</span>
+            <input id="dropTargetHeight" type="text" inputmode="numeric">
+          </label>
+        </div>
+        <label class="switch-row">
+          <span>
+            <strong>清理浏览器下载记录</strong>
+            <small>避免留下被接管的取消任务</small>
+          </span>
+          <input id="eraseBrowserHistory" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>携带 Header</strong>
+            <small>保留 Referer、UA、Range 等请求信息</small>
+          </span>
+          <input id="includeRequestHeaders" type="checkbox">
+        </label>
+        <label class="switch-row">
+          <span>
+            <strong>携带 Cookie</strong>
+            <small>用于登录态资源</small>
+          </span>
+          <input id="includeCookies" type="checkbox">
+        </label>
+      </section>
+    </section>
+
+    <p id="messageText" class="message"></p>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

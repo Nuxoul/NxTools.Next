@@ -11,4 +11,5 @@
 *.suo
 *.log
 *.pdb
+node_modules/
 .DS_Store

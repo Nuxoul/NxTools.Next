@@ -6,8 +6,14 @@ $ErrorActionPreference = "Stop"
 
 $sourcePath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads.rs"
 $source = Get-Content -LiteralPath $sourcePath -Raw
+$nativeHostPath = Join-Path $RepositoryRoot "rust\apps\nxtools-cli\src\browser_native_host.rs"
+$nativeHost = Get-Content -LiteralPath $nativeHostPath -Raw
+$downloadIpcPath = Join-Path $RepositoryRoot "rust\crates\nxtools-download-ipc\src\lib.rs"
+$downloadIpc = Get-Content -LiteralPath $downloadIpcPath -Raw
 $platformAdapterPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs"
 $platformAdapter = Get-Content -LiteralPath $platformAdapterPath -Raw
+$nativeFileDragCoordinatorPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\NativeFileDragCoordinator.cs"
+$nativeFileDragCoordinator = Get-Content -LiteralPath $nativeFileDragCoordinatorPath -Raw
 $nativeFileDragPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\NativeFileDragService.cs"
 $nativeFileDrag = Get-Content -LiteralPath $nativeFileDragPath -Raw
 
@@ -39,6 +45,21 @@ Assert-SourceContains `
 Assert-SourceContains `
     -Pattern 'window.resize(new_download_window_size(confirmed));' `
     -Message "The add window must expand only after probing succeeds."
+if (-not $nativeHost.Contains('BrowserDownloadTarget::OpenDialog') -or
+    -not $nativeHost.Contains('connect_download_ui_or_start(executable)')) {
+    throw "Browser openDialog requests must cross the visible desktop UI boundary."
+}
+if ($nativeHost.Contains('payload.open_dialog || payload.start_immediately == Some(false)')) {
+    throw "Browser openDialog must never be mapped to a queue-only task submission."
+}
+if (-not $downloadIpc.Contains('DOWNLOAD_UI_PIPE_NAME') -or
+    -not $source.Contains('handle_browser_download_dialog')) {
+    throw "The authenticated browser UI pipe must terminate at the GPUI download dialog."
+}
+if (-not $source.Contains('external_request_context') -or
+    -not $source.Contains('browser_file_name_is_hint')) {
+    throw "The visible dialog must preserve browser credentials and treat its filename as a probe hint."
+}
 Assert-SourceContains `
     -Pattern 'DownloadWindowPhase::Progress => size(px(440.0), px(176.0))' `
     -Message "The progress window must remain compact and content-driven."
@@ -69,8 +90,11 @@ if ($dragBody.Contains("cx.defer(")) {
 if (-not $dragBody.Contains("source_window_handle")) {
     throw "The pressed GPUI window HWND must cross the protocol seam with the completed artifact."
 }
-if (-not $platformAdapter.Contains("NativeFileDragService.TryDragFile")) {
-    throw "The Windows adapter must use the reference-compatible OLE file-drag source."
+if (-not $platformAdapter.Contains("_fileDragCoordinator.BeginAsync(command, correlationId, cancellationToken)")) {
+    throw "The Windows adapter must hand native file drag to the non-blocking coordinator."
+}
+if (-not $nativeFileDragCoordinator.Contains("NativeFileDragService.TryDragFile")) {
+    throw "The native file-drag coordinator must use the reference-compatible OLE file-drag source."
 }
 if ($platformAdapter.Contains("_fileDragSource.DoDragDrop(")) {
     throw "The hidden WinForms control drag path can strand the native OLE loop."
@@ -82,9 +106,17 @@ if (-not $nativeFileDrag.Contains("WmCancelMode") -or
 if (-not $nativeFileDrag.Contains("GetAsyncKeyState")) {
     throw "The C# drag adapter must reject a gesture that ended before the OLE handoff."
 }
-if (-not $nativeFileDrag.Contains("SHDoDragDrop")) {
-    throw "The native Shell drag loop must receive the visible GPUI source HWND."
+if (-not $nativeFileDrag.Contains("private static extern int DoDragDrop(") -or
+    -not $nativeFileDrag.Contains("TryReleaseSourcePointerCapture(sourceWindow")) {
+    throw "The native OLE drag loop must release the visible GPUI source HWND capture before entering DoDragDrop."
 }
+
+Assert-SourceContains `
+    -Pattern 'request_progress_passive(task_id)' `
+    -Message "Automatic download admission must open its progress window without stealing focus."
+Assert-SourceContains `
+    -Pattern 'download.task_window.admission_wave' `
+    -Message "Automatic download admission waves must retain one correlation-scoped diagnostic boundary."
 
 if ($source.Contains('"等待链接探测"')) {
     throw "The initial add window must not reserve a blank probe card."

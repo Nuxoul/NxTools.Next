@@ -10,11 +10,14 @@ use nxtools_download::{
     DownloadSubmitMode, DownloadTaskId, DownloadWeekday,
 };
 use nxtools_download_ipc::{
-    DOWNLOAD_PIPE_NAME, DownloadIpcClient, DownloadIpcProtocolIncompatible, command_envelope,
+    DOWNLOAD_PIPE_NAME, DOWNLOAD_UI_PIPE_NAME, DownloadIpcClient, DownloadIpcProtocolIncompatible,
+    DownloadUiIpcClient, command_envelope,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+pub mod browser_native_host;
 
 pub const EXIT_SUCCESS: u8 = 0;
 pub const EXIT_SYNTAX: u8 = 2;
@@ -300,6 +303,8 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
         headers: headers.clone(),
         cookie: None,
         referrer: None,
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: None,
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
@@ -543,6 +548,8 @@ fn run_add(
         headers,
         cookie: None,
         referrer: None,
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: None,
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
@@ -846,7 +853,7 @@ fn fetch_task(
         })
 }
 
-fn connect_or_start(executable: &Path) -> Result<DownloadIpcClient, CliError> {
+pub(crate) fn connect_or_start(executable: &Path) -> Result<DownloadIpcClient, CliError> {
     if let Ok(client) = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150)) {
         return Ok(client);
     }
@@ -863,6 +870,35 @@ fn connect_or_start(executable: &Path) -> Result<DownloadIpcClient, CliError> {
     }
     Err(CliError::host(last_error.unwrap_or_else(|| {
         anyhow::anyhow!("download host did not become available within five seconds")
+    })))
+}
+
+pub(crate) fn connect_download_ui_or_start(
+    executable: &Path,
+) -> Result<DownloadUiIpcClient, CliError> {
+    if let Ok(client) =
+        DownloadUiIpcClient::connect(DOWNLOAD_UI_PIPE_NAME, Duration::from_millis(150))
+    {
+        return Ok(client);
+    }
+    let host = host_executable_for(executable);
+    start_visible_host(&host).map_err(CliError::host)?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last_launch = Instant::now();
+    let mut last_error = None;
+    while Instant::now() < deadline {
+        match DownloadUiIpcClient::connect(DOWNLOAD_UI_PIPE_NAME, Duration::from_millis(250)) {
+            Ok(client) => return Ok(client),
+            Err(error) => last_error = Some(error),
+        }
+        if last_launch.elapsed() >= Duration::from_secs(1) {
+            let _ = start_visible_host(&host);
+            last_launch = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(75));
+    }
+    Err(CliError::host(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!("download UI did not become available within fifteen seconds")
     })))
 }
 
@@ -892,6 +928,27 @@ fn start_background_host(host: &Path) -> Result<()> {
     command
         .spawn()
         .with_context(|| format!("failed to start download host {}", host.display()))?;
+    Ok(())
+}
+
+fn start_visible_host(host: &Path) -> Result<()> {
+    if !host.is_file() {
+        anyhow::bail!("packaged desktop was not found at {}", host.display());
+    }
+    let mut command = Command::new(host);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+        .spawn()
+        .with_context(|| format!("failed to start NxTools desktop {}", host.display()))?;
     Ok(())
 }
 

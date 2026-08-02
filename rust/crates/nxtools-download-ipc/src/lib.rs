@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandResult, DownloadEngine, DownloadEventEnvelope,
+    DownloadCommandResult, DownloadEngine, DownloadEventEnvelope, DownloadRequest,
 };
 use nxtools_ipc::{
     LocalPipeConnection, accept_current_user_pipe, connect_local_pipe, read_bounded_sync_frame,
@@ -17,7 +17,220 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const DOWNLOAD_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-download-v1";
+pub const DOWNLOAD_UI_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-download-ui-v1";
 pub const DOWNLOAD_IPC_PROTOCOL_VERSION: u16 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadUiOpenRequest {
+    pub protocol_version: u16,
+    pub request_id: uuid::Uuid,
+    pub idempotency_key: String,
+    pub request: DownloadRequest,
+    pub browser_file_name_is_hint: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadUiDismissRequest {
+    pub protocol_version: u16,
+    pub request_id: uuid::Uuid,
+    pub dialog_request_id: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadUiRequest {
+    Open(Box<DownloadUiOpenRequest>),
+    Dismiss(DownloadUiDismissRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DownloadUiOpenResponse {
+    Accepted { dialog_request_id: uuid::Uuid },
+    Dismissed { dialog_request_id: uuid::Uuid },
+    Rejected { code: String, message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "frame", content = "data", rename_all = "snake_case")]
+enum DownloadUiIpcFrame {
+    Hello {
+        protocol_version: u16,
+        client_version: String,
+    },
+    HelloAck {
+        protocol_version: u16,
+        server_version: String,
+    },
+    Open(Box<DownloadUiOpenRequest>),
+    Dismiss(DownloadUiDismissRequest),
+    Response(DownloadUiOpenResponse),
+    Error {
+        code: String,
+        message: String,
+    },
+}
+
+pub struct DownloadUiIpcClient {
+    connection: LocalPipeConnection,
+}
+
+impl DownloadUiIpcClient {
+    pub fn connect(pipe_name: &str, timeout: Duration) -> Result<Self> {
+        let mut connection = connect_local_pipe(pipe_name, timeout)?;
+        write_ui_frame(
+            &mut connection.writer,
+            &DownloadUiIpcFrame::Hello {
+                protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
+                client_version: env!("CARGO_PKG_VERSION").into(),
+            },
+        )?;
+        match read_ui_frame(&mut connection.reader)? {
+            Some(DownloadUiIpcFrame::HelloAck {
+                protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
+                ..
+            }) => Ok(Self { connection }),
+            Some(DownloadUiIpcFrame::Error { code, message }) => {
+                bail!("download UI rejected the IPC handshake ({code}): {message}")
+            }
+            Some(frame) => bail!("download UI returned an invalid handshake frame: {frame:?}"),
+            None => bail!("download UI disconnected during handshake"),
+        }
+    }
+
+    pub fn open_dialog(
+        &mut self,
+        request: DownloadUiOpenRequest,
+    ) -> Result<DownloadUiOpenResponse> {
+        write_ui_frame(
+            &mut self.connection.writer,
+            &DownloadUiIpcFrame::Open(Box::new(request)),
+        )?;
+        match read_ui_frame(&mut self.connection.reader)? {
+            Some(DownloadUiIpcFrame::Response(response)) => Ok(response),
+            Some(DownloadUiIpcFrame::Error { code, message }) => {
+                bail!("download UI rejected the request ({code}): {message}")
+            }
+            Some(frame) => bail!("download UI returned an unexpected frame: {frame:?}"),
+            None => bail!("download UI disconnected before acknowledging the dialog"),
+        }
+    }
+
+    pub fn dismiss_dialog(
+        &mut self,
+        request: DownloadUiDismissRequest,
+    ) -> Result<DownloadUiOpenResponse> {
+        write_ui_frame(
+            &mut self.connection.writer,
+            &DownloadUiIpcFrame::Dismiss(request),
+        )?;
+        match read_ui_frame(&mut self.connection.reader)? {
+            Some(DownloadUiIpcFrame::Response(response)) => Ok(response),
+            Some(DownloadUiIpcFrame::Error { code, message }) => {
+                bail!("download UI rejected the request ({code}): {message}")
+            }
+            Some(frame) => bail!("download UI returned an unexpected frame: {frame:?}"),
+            None => bail!("download UI disconnected before acknowledging the dismissal"),
+        }
+    }
+}
+
+pub fn run_download_ui_host(
+    pipe_name: &str,
+    handler: Arc<dyn Fn(DownloadUiRequest) -> DownloadUiOpenResponse + Send + Sync>,
+) -> Result<()> {
+    loop {
+        let connection = accept_current_user_pipe(pipe_name)
+            .with_context(|| format!("failed to accept download UI client on {pipe_name}"))?;
+        let handler = Arc::clone(&handler);
+        std::thread::Builder::new()
+            .name("download-ui-ipc-client".into())
+            .spawn(move || {
+                if let Err(error) = handle_ui_client(connection, handler) {
+                    tracing::warn!(%error, "download UI IPC client disconnected with an error");
+                }
+            })
+            .context("failed to start download UI IPC client thread")?;
+    }
+}
+
+fn handle_ui_client(
+    mut connection: LocalPipeConnection,
+    handler: Arc<dyn Fn(DownloadUiRequest) -> DownloadUiOpenResponse + Send + Sync>,
+) -> Result<()> {
+    let hello = read_ui_frame(&mut connection.reader)?
+        .context("download UI client disconnected before handshake")?;
+    let DownloadUiIpcFrame::Hello {
+        protocol_version, ..
+    } = hello
+    else {
+        write_ui_frame(
+            &mut connection.writer,
+            &DownloadUiIpcFrame::Error {
+                code: "invalid_frame".into(),
+                message: "the first frame must be hello".into(),
+            },
+        )?;
+        return Ok(());
+    };
+    if protocol_version != DOWNLOAD_IPC_PROTOCOL_VERSION {
+        write_ui_frame(
+            &mut connection.writer,
+            &DownloadUiIpcFrame::Error {
+                code: "protocol_incompatible".into(),
+                message: format!(
+                    "client requested {protocol_version}; UI supports {DOWNLOAD_IPC_PROTOCOL_VERSION}"
+                ),
+            },
+        )?;
+        return Ok(());
+    }
+    write_ui_frame(
+        &mut connection.writer,
+        &DownloadUiIpcFrame::HelloAck {
+            protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
+            server_version: env!("CARGO_PKG_VERSION").into(),
+        },
+    )?;
+    let frame = read_ui_frame(&mut connection.reader)?
+        .context("download UI client disconnected before sending a request")?;
+    let request = match frame {
+        DownloadUiIpcFrame::Open(request) => DownloadUiRequest::Open(request),
+        DownloadUiIpcFrame::Dismiss(request) => DownloadUiRequest::Dismiss(request),
+        _ => {
+            write_ui_frame(
+                &mut connection.writer,
+                &DownloadUiIpcFrame::Error {
+                    code: "invalid_frame".into(),
+                    message: "expected an open-dialog or dismiss-dialog request".into(),
+                },
+            )?;
+            return Ok(());
+        }
+    };
+    let response = handler(request);
+    write_ui_frame(
+        &mut connection.writer,
+        &DownloadUiIpcFrame::Response(response),
+    )
+}
+
+fn write_ui_frame(writer: &mut impl Write, frame: &DownloadUiIpcFrame) -> Result<()> {
+    let encoded = serde_json::to_string(frame).context("failed to encode download UI IPC frame")?;
+    if encoded.len() > nxtools_protocol::MAX_FRAME_BYTES {
+        bail!("download UI IPC frame exceeds the bounded frame limit");
+    }
+    writer.write_all(encoded.as_bytes())?;
+    writer.write_all(b"\n")?;
+    writer
+        .flush()
+        .context("failed to flush download UI IPC frame")
+}
+
+fn read_ui_frame(reader: &mut impl BufRead) -> Result<Option<DownloadUiIpcFrame>> {
+    read_bounded_sync_frame(reader)?
+        .map(|frame| serde_json::from_str(&frame).context("failed to decode download UI IPC frame"))
+        .transpose()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "frame", content = "data", rename_all = "snake_case")]
@@ -320,6 +533,8 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: None,
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
@@ -346,6 +561,80 @@ mod tests {
         };
         assert_eq!(snapshot.tasks.len(), 1);
         assert_eq!(engine.tasks().expect("host engine tasks").len(), 1);
+    }
+
+    #[test]
+    fn browser_ui_client_reaches_the_visible_desktop_boundary_without_submitting() {
+        let pipe_name = format!(
+            r"\\.\pipe\nxtools-download-ui-test-{}",
+            uuid::Uuid::new_v4()
+        );
+        let request_id = uuid::Uuid::new_v4();
+        let host_name = pipe_name.clone();
+        std::thread::spawn(move || {
+            let handler = Arc::new(move |request: DownloadUiRequest| match request {
+                DownloadUiRequest::Open(request) => {
+                    assert_eq!(request.request_id, request_id);
+                    assert_eq!(request.request.headers.len(), 1);
+                    assert_eq!(request.request.cookie.as_deref(), Some("session=fixture"));
+                    DownloadUiOpenResponse::Accepted {
+                        dialog_request_id: request.request_id,
+                    }
+                }
+                DownloadUiRequest::Dismiss(request) => DownloadUiOpenResponse::Dismissed {
+                    dialog_request_id: request.dialog_request_id,
+                },
+            });
+            let _ = run_download_ui_host(&host_name, handler);
+        });
+        let mut client = DownloadUiIpcClient::connect(&pipe_name, Duration::from_secs(2))
+            .expect("connect visible desktop UI");
+        let response = client
+            .open_dialog(DownloadUiOpenRequest {
+                protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
+                request_id,
+                idempotency_key: "browser-ui-boundary".into(),
+                request: DownloadRequest {
+                    source_url: "https://example.test/fixture.bin".into(),
+                    save_directory: PathBuf::from(r"C:\Downloads"),
+                    file_name: Some("fixture.bin".into()),
+                    headers: vec![nxtools_download::DownloadRequestHeader {
+                        name: "X-Fixture".into(),
+                        value: "preserved".into(),
+                    }],
+                    cookie: Some("session=fixture".into()),
+                    referrer: Some("https://example.test/page".into()),
+                    declared_size_bytes: Some(42),
+                    declared_supports_ranges: Some(true),
+                    connection_limit: None,
+                    speed_limit_bytes_per_second: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                },
+                browser_file_name_is_hint: true,
+            })
+            .expect("open dialog response");
+        assert_eq!(
+            response,
+            DownloadUiOpenResponse::Accepted {
+                dialog_request_id: request_id
+            }
+        );
+        drop(client);
+        let mut client = DownloadUiIpcClient::connect(&pipe_name, Duration::from_secs(2))
+            .expect("reconnect visible desktop UI");
+        assert_eq!(
+            client
+                .dismiss_dialog(DownloadUiDismissRequest {
+                    protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
+                    request_id: uuid::Uuid::new_v4(),
+                    dialog_request_id: request_id,
+                })
+                .expect("dismiss dialog response"),
+            DownloadUiOpenResponse::Dismissed {
+                dialog_request_id: request_id
+            }
+        );
     }
 
     #[test]
@@ -381,6 +670,8 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            declared_size_bytes: None,
+            declared_supports_ranges: None,
             connection_limit: None,
             speed_limit_bytes_per_second: None,
             scheduled_at_unix_ms: None,
@@ -423,6 +714,9 @@ mod tests {
                     }
                     Err(error) => panic!("accept HTTP request: {error}"),
                 };
+                stream
+                    .set_nonblocking(false)
+                    .expect("make accepted HTTP fixture stream blocking");
                 let mut request = [0_u8; 2048];
                 let read = stream.read(&mut request).expect("read HTTP request");
                 let request = String::from_utf8_lossy(&request[..read]);
@@ -466,6 +760,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: None,
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,

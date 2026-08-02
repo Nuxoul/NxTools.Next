@@ -1,0 +1,7 @@
+{
+  "name": "nxtools-next-browser-automation",
+  "private": true,
+  "devDependencies": {
+    "puppeteer-core": "25.4.0"
+  }
+}

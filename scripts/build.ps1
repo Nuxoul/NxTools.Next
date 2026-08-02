@@ -6,6 +6,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-build-tools.ps1')
+$env:CARGO_BUILD_JOBS = '1'
+$env:CARGO_INCREMENTAL = '0'
+$env:RUSTFLAGS = '-C codegen-units=256'
 
 function Assert-NativeSuccess([string]$Step) {
     if ($LASTEXITCODE -ne 0) {
@@ -21,6 +24,15 @@ Push-Location $root
 try {
     & '.\tests\architecture\quick-launch-lifecycle.ps1'
     & '.\tests\architecture\indexer-lifecycle.ps1'
+    & '.\tests\architecture\download-ui-lifecycle.ps1'
+    & '.\tests\architecture\taskbar-overlay-lifecycle.ps1'
+
+    node --check '.\browser_extension\nxtools-interceptor\background.js'
+    Assert-NativeSuccess 'browser extension background syntax'
+    node --check '.\browser_extension\nxtools-interceptor\popup.js'
+    Assert-NativeSuccess 'browser extension popup syntax'
+    node --test '.\browser_extension\nxtools-interceptor\tests\*.test.cjs'
+    Assert-NativeSuccess 'browser extension tests'
 
     cargo fmt --all --check
     Assert-NativeSuccess 'cargo fmt'
@@ -42,13 +54,13 @@ try {
     Assert-NativeSuccess 'cargo test'
 
     if ($Configuration -eq 'Release') {
-        cargo build --release -p nxtools-desktop -p nxtools-indexer
+        cargo build --release -p nxtools-desktop -p nxtools-indexer -p nxtools-cli
         Assert-NativeSuccess 'cargo release binaries'
         & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
             -Profile 'release'
     }
     else {
-        cargo build -p nxtools-desktop -p nxtools-indexer
+        cargo build -p nxtools-desktop -p nxtools-indexer -p nxtools-cli
         Assert-NativeSuccess 'cargo debug binaries'
         & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
             -Profile 'debug'

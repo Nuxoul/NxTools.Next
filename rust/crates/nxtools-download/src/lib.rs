@@ -102,6 +102,10 @@ pub struct DownloadRequest {
     pub headers: Vec<DownloadRequestHeader>,
     pub cookie: Option<String>,
     pub referrer: Option<String>,
+    #[serde(default)]
+    pub declared_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub declared_supports_ranges: Option<bool>,
     pub connection_limit: Option<u16>,
     #[serde(default)]
     pub speed_limit_bytes_per_second: Option<u64>,

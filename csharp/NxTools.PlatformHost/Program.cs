@@ -41,6 +41,7 @@ internal static class Program
             ["is_64_bit"] = Environment.Is64BitProcess,
             ["os_version"] = Environment.OSVersion.VersionString
         });
+        _ = BrowserNativeMessagingRegistration.RegisterForCurrentPackage(log);
         if (!Application.SetHighDpiMode(HighDpiMode.PerMonitorV2))
         {
             Console.Error.WriteLine("PlatformHost could not enable PerMonitorV2 DPI awareness.");

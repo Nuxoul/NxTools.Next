@@ -84,6 +84,7 @@ Phase 1 accepts HTTP and HTTPS only. A request contains:
 - save directory and optional single-component file name;
 - ordered request headers;
 - optional Cookie and Referrer;
+- optional caller-declared size and range-support hints; probe results remain authoritative;
 - optional connection limit from 1 through 64;
 - optional positive per-task speed limit in bytes per second;
 - optional absolute UTC Unix-millisecond schedule timestamp.

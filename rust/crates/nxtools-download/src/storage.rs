@@ -15,7 +15,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 4;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 5;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 
 pub struct SqliteDownloadStore {
@@ -56,6 +56,9 @@ impl SqliteDownloadStore {
         }
         if current < 4 {
             connection.execute_batch(SCHEMA_V4)?;
+        }
+        if current < 5 {
+            connection.execute_batch(SCHEMA_V5)?;
         }
 
         Ok(Self {
@@ -707,6 +710,7 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn save_task_with_transfer_and_queue(
         &self,
         task: &DownloadTask,
@@ -719,6 +723,63 @@ impl SqliteDownloadStore {
         save_task_row(&transaction, task)?;
         save_transfer_state_row(&transaction, task.id(), state)?;
         append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn load_submission_receipt(
+        &self,
+        request_id: Uuid,
+    ) -> Result<Option<(DownloadTaskId, String)>, DownloadStorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT task_id, request_fingerprint FROM download_submission_receipts WHERE request_id = ?1",
+                [request_id.to_string()],
+                |row| {
+                    let task_id = row.get::<_, String>(0)?;
+                    let parsed = Uuid::parse_str(&task_id).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?;
+                    Ok((DownloadTaskId::from_uuid(parsed), row.get(1)?))
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn save_task_with_transfer_queue_and_receipt(
+        &self,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        is_eligible: bool,
+        request_id: Uuid,
+        request_fingerprint: &str,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.execute(
+            r#"
+            INSERT INTO download_submission_receipts(
+                request_id, task_id, request_fingerprint, accepted_at_unix_ms
+            ) VALUES (?1, ?2, ?3, ?4)
+            "#,
+            params![
+                request_id.to_string(),
+                task.id().as_uuid().to_string(),
+                request_fingerprint,
+                now_unix_ms(),
+            ],
+        )?;
         transaction.commit()?;
         Ok(())
     }
@@ -1482,6 +1543,23 @@ PRAGMA user_version = 4;
 COMMIT;
 "#;
 
+const SCHEMA_V5: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_submission_receipts (
+    request_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    request_fingerprint TEXT NOT NULL,
+    accepted_at_unix_ms INTEGER NOT NULL
+);
+
+CREATE INDEX download_submission_receipts_task_idx
+    ON download_submission_receipts(task_id);
+
+PRAGMA user_version = 5;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1519,7 +1597,7 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 4);
+            assert_eq!(store.schema_version().expect("schema version"), 5);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -1575,7 +1653,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 4);
+        assert_eq!(store.schema_version().expect("schema version"), 5);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -1629,6 +1707,8 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,
@@ -1651,6 +1731,8 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                declared_size_bytes: None,
+                declared_supports_ranges: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 scheduled_at_unix_ms: None,

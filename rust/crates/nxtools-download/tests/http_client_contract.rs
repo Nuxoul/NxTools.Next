@@ -21,6 +21,8 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        declared_size_bytes: None,
+        declared_supports_ranges: None,
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
         scheduled_at_unix_ms: None,
@@ -274,26 +276,32 @@ async fn malformed_or_ignored_ranges_are_rejected_before_the_artifact_is_changed
 
         match expected_error {
             "content_range" => {
-                assert!(matches!(
-                    error,
-                    HttpDownloadError::ContentRangeMismatch { .. }
-                ))
+                assert!(
+                    matches!(&error, HttpDownloadError::ContentRangeMismatch { .. }),
+                    "unexpected error for {path}: {error:?}"
+                )
             }
-            "ignored" => assert!(matches!(
-                error,
-                HttpDownloadError::RangeNotHonored { status: 200 }
-            )),
+            "ignored" => assert!(
+                matches!(&error, HttpDownloadError::RangeNotHonored { status: 200 }),
+                "unexpected error for {path}: {error:?}"
+            ),
             "missing_content_range" => {
-                assert!(matches!(error, HttpDownloadError::MissingContentRange))
+                assert!(
+                    matches!(&error, HttpDownloadError::MissingContentRange),
+                    "unexpected error for {path}: {error:?}"
+                )
             }
             "content_length" => {
-                assert!(matches!(
-                    error,
-                    HttpDownloadError::ContentLengthMismatch {
-                        expected_bytes: 4,
-                        actual_bytes: 5,
-                    }
-                ))
+                assert!(
+                    matches!(
+                        &error,
+                        HttpDownloadError::ContentLengthMismatch {
+                            expected_bytes: 4,
+                            actual_bytes: 5,
+                        }
+                    ),
+                    "unexpected error for {path}: {error:?}"
+                )
             }
             _ => unreachable!(),
         }

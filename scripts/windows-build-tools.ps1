@@ -38,4 +38,7 @@ function Initialize-GpuiReleaseEnvironment {
         throw 'Release builds of GPUI 0.2.2 require fxc.exe. Install the Windows 10/11 SDK, or set GPUI_FXC_PATH to an existing x64 fxc.exe.'
     }
     $env:GPUI_FXC_PATH = $fxcPath
+    $env:CARGO_BUILD_JOBS = '1'
+    $env:CARGO_INCREMENTAL = '0'
+    $env:RUSTFLAGS = '-C codegen-units=256'
 }

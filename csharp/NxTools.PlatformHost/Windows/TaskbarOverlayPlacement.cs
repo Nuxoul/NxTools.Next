@@ -19,6 +19,7 @@ internal static class TaskbarOverlayPlacement
 {
     private static readonly IntPtr HwndTopmost = new(-1);
     private const int GwlExStyle = -20;
+    private const long WsExTopmost = 0x00000008L;
     private const long WsExTransparent = 0x00000020L;
     private const long WsExToolWindow = 0x00000080L;
     private const long WsExLayered = 0x00080000L;
@@ -26,6 +27,8 @@ internal static class TaskbarOverlayPlacement
     private const long WsExNoActivate = 0x08000000L;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoSize = 0x0001;
     private const int SwHide = 0;
     private const int SwShowNoActivate = 4;
 
@@ -139,9 +142,15 @@ internal static class TaskbarOverlayPlacement
         {
             _ = ShowWindow(window, SwHide);
         }
+        if ((command.Visible && !IsWindowVisible(window)) || !IsTopmost(window))
+        {
+            return new WindowsCommandResult(
+                false,
+                "Windows did not preserve the requested taskbar overlay visible/topmost state.");
+        }
         return new WindowsCommandResult(
             true,
-            Data: $"{bounds.Left},{bounds.Top},{bounds.Width},{bounds.Height};dpi={dpi};visible={command.Visible}");
+            Data: $"{bounds.Left},{bounds.Top},{bounds.Width},{bounds.Height};dpi={dpi};visible={command.Visible};topmost=True");
     }
 
     internal static WindowsCommandResult SetVisibility(IntPtr window, bool visible)
@@ -152,12 +161,34 @@ internal static class TaskbarOverlayPlacement
                 false,
                 "The GPUI taskbar overlay window handle is invalid.");
         }
-        _ = ShowWindow(window, visible ? SwShowNoActivate : SwHide);
-        return IsWindowVisible(window) == visible
+        if (visible)
+        {
+            if (!SetWindowPos(
+                    window,
+                    HwndTopmost,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SwpNoActivate | SwpNoMove | SwpNoSize | SwpShowWindow))
+            {
+                return new WindowsCommandResult(
+                    false,
+                    $"Could not show the taskbar overlay as topmost (Win32={Marshal.GetLastWin32Error()}).");
+            }
+        }
+        else
+        {
+            _ = ShowWindow(window, SwHide);
+        }
+        var verifiedVisible = IsWindowVisible(window);
+        var verifiedTopmost = IsTopmost(window);
+        return verifiedVisible == visible && (!visible || verifiedTopmost)
             ? new WindowsCommandResult(true)
             : new WindowsCommandResult(
                 false,
-                "Windows did not apply the requested taskbar overlay visibility.");
+                $"Windows did not apply the requested taskbar overlay state " +
+                $"(visible={verifiedVisible}, topmost={verifiedTopmost}).");
     }
 
     internal static bool HasPassiveOverlayStyles(IntPtr window)
@@ -182,6 +213,18 @@ internal static class TaskbarOverlayPlacement
         var forbidden = WsExNoActivate | WsExTransparent | WsExAppWindow;
         return (style & required) == required && (style & forbidden) == 0;
     }
+
+    internal static bool IsTopmost(IntPtr window)
+    {
+        if (window == IntPtr.Zero || !IsWindow(window))
+        {
+            return false;
+        }
+        return (GetWindowLongPtr(window, GwlExStyle).ToInt64() & WsExTopmost) != 0;
+    }
+
+    internal static bool IsVisible(IntPtr window) =>
+        window != IntPtr.Zero && IsWindow(window) && IsWindowVisible(window);
 
     internal static bool IsTaskbarWindow(IntPtr window)
     {

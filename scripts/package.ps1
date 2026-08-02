@@ -114,6 +114,8 @@ try {
     Copy-PackageFile ".\target\$profile\nxtools-cli.exe" (Join-Path $destination 'NxTools.Cli.exe')
     Copy-PackageFile ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" (Join-Path $destination 'NxTools.PlatformHost.exe')
     Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE', '.\THIRD_PARTY_NOTICES.md' $destination
+    & (Join-Path $PSScriptRoot 'package-browser-extension.ps1') `
+        -Destination (Join-Path $destination 'browser_extension')
     $packageCompleted = $true
 }
 finally {

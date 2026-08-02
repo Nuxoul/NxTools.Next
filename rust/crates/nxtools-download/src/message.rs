@@ -258,6 +258,10 @@ pub enum DownloadEvent {
     TaskChanged {
         task: DownloadTask,
     },
+    TasksAdmitted {
+        correlation_id: Uuid,
+        task_ids: Vec<DownloadTaskId>,
+    },
     TaskRemoved {
         task_id: DownloadTaskId,
     },

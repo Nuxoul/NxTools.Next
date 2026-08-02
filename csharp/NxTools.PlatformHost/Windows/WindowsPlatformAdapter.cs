@@ -299,6 +299,10 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             {
                 ["window_handle"] = command.WindowHandle,
                 ["visible"] = command.Visible,
+                ["verified_visible"] = TaskbarOverlayPlacement.IsVisible(
+                    new IntPtr(command.WindowHandle)),
+                ["verified_topmost"] = TaskbarOverlayPlacement.IsTopmost(
+                    new IntPtr(command.WindowHandle)),
                 ["error"] = result.Error,
                 ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
             });
@@ -1254,6 +1258,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             if (window != IntPtr.Zero)
             {
                 ProcessForeground(_foregroundContextProvider.Capture(window));
+                ReapplyTaskbarOverlayPlacement();
             }
         }
 

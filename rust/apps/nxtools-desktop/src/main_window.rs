@@ -21,9 +21,10 @@ use nxtools_core::{
     ClipboardSettings, CustomCommandSettings,
 };
 use nxtools_download::{
-    DownloadBatchAction, DownloadEngineTask, DownloadProgress, DownloadQueuePlacement,
-    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskDetail, DownloadTaskId,
-    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, RequestOrigin,
+    DownloadAggregateMetrics, DownloadBatchAction, DownloadEngineTask, DownloadProgress,
+    DownloadQueuePlacement, DownloadSegment, DownloadSegmentState, DownloadStatus,
+    DownloadTaskDetail, DownloadTaskId, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    RequestOrigin,
 };
 use nxtools_protocol::{IndexPhase, IndexStatus, ShellOpenAction};
 use tracing::info;
@@ -48,6 +49,7 @@ const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
 const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
+const DOWNLOAD_STATUS_STRIP_HEIGHT: f32 = 26.0;
 const DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY: Duration = Duration::from_millis(250);
 const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = 154.0;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
@@ -1799,11 +1801,12 @@ impl MainWindow {
             .value()
             .trim()
             .to_owned();
-        let (total_count, counts, visible_tasks) = self
+        let (total_count, counts, visible_tasks, aggregate_metrics) = self
             .downloads
             .upgrade()
             .map(|application| {
-                let tasks = application.read(cx).tasks();
+                let application = application.read(cx);
+                let tasks = application.tasks();
                 (
                     tasks.len(),
                     download_filter_counts(tasks.iter().map(|task| task.task.status())),
@@ -1813,6 +1816,7 @@ impl MainWindow {
                         &search_query,
                         self.download_sort,
                     ),
+                    application.aggregate_metrics(),
                 )
             })
             .unwrap_or_default();
@@ -2198,6 +2202,7 @@ impl MainWindow {
                         workspace.child(detail)
                     }),
             )
+            .child(download_global_status_strip(theme, aggregate_metrics))
             .into_any_element()
     }
 
@@ -5175,6 +5180,87 @@ fn download_status_presentation(
     }
 }
 
+fn download_global_status_strip(
+    theme: Theme,
+    metrics: DownloadAggregateMetrics,
+) -> impl IntoElement {
+    let idle = metrics.active_tasks == 0;
+    div()
+        .id("download-global-status")
+        .debug_selector(|| "download-global-status".into())
+        .h(px(DOWNLOAD_STATUS_STRIP_HEIGHT))
+        .px(px(12.0))
+        .border_t_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .items_center()
+        .gap(px(12.0))
+        .child(download_global_status_value(
+            theme,
+            "总速度",
+            format!(
+                "{}/s",
+                format_download_bytes(metrics.downloaded_bytes_per_second)
+            ),
+        ))
+        .child(download_status_separator(theme))
+        .child(download_global_status_value(
+            theme,
+            "活动",
+            metrics.active_tasks.to_string(),
+        ))
+        .child(download_status_separator(theme))
+        .child(download_global_status_value(
+            theme,
+            "连接",
+            metrics.active_connections.to_string(),
+        ))
+        .child(download_status_separator(theme))
+        .child(download_global_status_value(
+            theme,
+            "磁盘",
+            format!(
+                "{}/s",
+                format_download_bytes(metrics.disk_write_bytes_per_second)
+            ),
+        ))
+        .child(div().flex_1())
+        .child(
+            div()
+                .text_size(px(9.5))
+                .text_color(if idle {
+                    theme.text_muted
+                } else {
+                    theme.accent_text
+                })
+                .child(if idle { "空闲" } else { "传输中" }),
+        )
+}
+
+fn download_global_status_value(
+    theme: Theme,
+    label: &'static str,
+    value: String,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(5.0))
+        .text_size(px(9.5))
+        .child(div().text_color(theme.text_muted).child(label))
+        .child(
+            div()
+                .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+                .text_color(theme.text_secondary)
+                .child(value),
+        )
+}
+
+fn download_status_separator(theme: Theme) -> impl IntoElement {
+    div().w(px(1.0)).h(px(10.0)).bg(theme.border_subtle)
+}
+
 fn format_download_bytes(bytes: u64) -> String {
     const KIB: f64 = 1024.0;
     const MIB: f64 = 1024.0 * KIB;
@@ -5445,10 +5531,10 @@ mod tests {
 
     use super::{
         DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT,
-        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
-        DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
-        DownloadTaskFilter, MainWindow, download_context_capabilities, download_context_menu_plan,
-        download_filter_counts, download_queue_placement_capabilities,
+        DOWNLOAD_STATUS_STRIP_HEIGHT, DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT,
+        DownloadContextCapabilities, DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey,
+        DownloadSortState, DownloadTaskFilter, MainWindow, download_context_capabilities,
+        download_context_menu_plan, download_filter_counts, download_queue_placement_capabilities,
         download_segment_strip_cells, download_tasks_for_view, file_index_summary,
         format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
         notification_transition, prepare_download_context_selection, quick_find_scroll_step,
@@ -5463,6 +5549,7 @@ mod tests {
         assert_eq!(DOWNLOAD_TABLE_HEADER_HEIGHT, 28.0);
         assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 46.0);
         assert_eq!(DOWNLOAD_DETAIL_HEIGHT, 176.0);
+        assert_eq!(DOWNLOAD_STATUS_STRIP_HEIGHT, 26.0);
     }
 
     #[test]
@@ -5624,6 +5711,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -5641,6 +5730,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -5935,6 +6026,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -6222,6 +6315,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(4),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -6239,6 +6334,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(4),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,
@@ -6290,8 +6387,15 @@ mod tests {
         let segment_tab = window
             .debug_bounds("download-detail-tab-segments")
             .expect("download segment detail tab bounds");
+        let global_status = window
+            .debug_bounds("download-global-status")
+            .expect("download global status bounds");
         assert!(page_header.contains(&search.origin));
         assert!(page_header.contains(&search.bottom_right()));
+        assert_eq!(
+            global_status.size.height.as_f32(),
+            DOWNLOAD_STATUS_STRIP_HEIGHT
+        );
         window.simulate_click(segment_tab.center(), Modifiers::default());
         assert_eq!(
             window.read(|cx| main_window.read(cx).download_detail_tab),
@@ -6376,6 +6480,8 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    declared_size_bytes: None,
+                    declared_supports_ranges: None,
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     scheduled_at_unix_ms: None,

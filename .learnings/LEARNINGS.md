@@ -6,6 +6,169 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260802-MV3-NONBLOCKING] correction
+
+**Logged**: 2026-08-02T21:25:22+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+An ordinary user-installed Manifest V3 extension must never register a blocking `webRequest`
+listener; adding `webRequestBlocking` is not a valid Chrome/Edge fix.
+
+### Details
+
+The migrated browser extension retained an unconditional legacy `onHeadersReceived` listener with
+`"blocking"`. Chrome permits that capability only for force-installed enterprise extensions, and
+the callback did no useful cancellation work. AB Download Manager's MV3 adapter explicitly reports
+that response blocking is unavailable and uses the Downloads API boundary instead. The first real
+browser smoke checked the handoff result but did not fail on extension background errors, so it
+missed both this registration error and CSP-blocked popup progress styles.
+
+### Suggested Action
+
+For MV3 browser integrations, observe request metadata non-blockingly, wait for durable native-host
+acceptance, and only then cancel the browser-owned download through `chrome.downloads`. Gate releases
+with both a source contract and real Service Worker/popup error capture.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `browser_extension/nxtools-interceptor/background.js`, `tests/runtime/browser-extension-smoke.mjs`
+- Tags: chrome, edge, manifest-v3, webrequest, automation, csp
+- Pattern-Key: browser.mv3_nonblocking_handoff
+- Recurrence-Count: 1
+- First-Seen: 2026-08-02
+- Last-Seen: 2026-08-02
+
+### Resolution
+
+- **Resolved**: 2026-08-02T21:25:22+08:00
+- **Notes**: Removed the blocking listener, replaced the popup inline progress style with a CSP-safe
+  native progress element, added static contracts and real browser background-error diagnostics,
+  then passed source and packaged Chrome handoff regressions.
+
+---
+
+## [LRN-20260802-CHROME-EXTENSION-AUTOMATION] Use the DevTools extension domain on current Chrome
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Area**: browser automation
+
+### Learning
+
+Google Chrome 137+ ignores `--load-extension`; a target URL alone also cannot wake an extension that
+was never installed. Current automated extension tests should use Puppeteer's DevTools pipe with
+`--enable-unsafe-extension-debugging`, start with `enableExtensions: true`, and explicitly await
+`browser.installExtension(path)`.
+
+Puppeteer 25.4.0's array-valued `enableExtensions` launch branch does not reliably await its nested
+installation promises, so explicit installation gives deterministic errors and preserves the browser
+for diagnosis. Keep the runner in `.mjs`; setting root package `type=module` changes the existing
+extension `.js` contract tests. On Windows, Chrome for Testing may also require the documented
+AppContainer read/execute ACL on its extracted directory.
+
+### Metadata
+
+- Source: debugging
+- Related Files: `tests/runtime/browser-extension-smoke.mjs`, `package.json`
+- Tags: chrome, puppeteer, extensions, native-messaging, windows
+- Pattern-Key: browser.chrome_extension_devtools_install
+- Recurrence-Count: 1
+- First-Seen: 2026-08-02
+- Last-Seen: 2026-08-02
+
+---
+
+## [LRN-20260802-GPUIAUTOMATION] best_practice
+
+**Logged**: 2026-08-02T18:53:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Reliable GPUI Windows acceptance automation needs explicit focus settling, throttled character
+messages, window-relative selectors and native state assertions.
+
+### Details
+
+Zero-delay `WM_CHAR` delivery immediately after a posted click can lose the prefix while GPUI is
+still applying focus. Wait briefly after the click and throttle characters. Coordinate scenarios
+must also tolerate transient notification cards that cover a target button. `PrintWindow` captures
+the composed GPUI HWND without requiring manual screenshots, while `WS_EX_TOPMOST` and visibility
+must be asserted independently of pixels.
+
+### Suggested Action
+
+Keep UI acceptance steps data-driven, use unique artifact paths, provide a deterministic local HTTP
+fallback, and record both PNG evidence and machine-readable native assertions.
+
+### Metadata
+
+- Source: debugging
+- Related Files: `tests/runtime/windows-ui-automation.ps1`,
+  `tests/runtime/download-ui-smoke.ps1`
+- Tags: gpui, windows, automation, screenshots, focus
+- Pattern-Key: windows.gpui_acceptance_harness
+- Recurrence-Count: 1
+- First-Seen: 2026-08-02
+- Last-Seen: 2026-08-02
+
+### Resolution
+
+- **Resolved**: 2026-08-02T18:53:00+08:00
+- **Notes**: Public 100 MB and local slow-fixture acceptance runs both passed unattended.
+
+---
+
+## [LRN-20260802-001] correction
+
+**Logged**: 2026-08-02T00:00:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+NxTools.Next feature work must preserve the checked-out project's existing code and UI language
+instead of introducing an assistant-selected visual direction or unrelated capability.
+
+### Details
+
+The user explicitly requires the remaining download phases to follow `docs/download-plan.md`, the
+reference projects, and the current NxTools.Next GPUI implementation. New download UI must reuse
+the existing theme tokens, density, typography, components and interaction architecture. Scope is
+limited to the named phase items; visual novelty is not a product requirement.
+
+### Suggested Action
+
+Before each slice, freeze the reference behavior and current visual invariants, add a real-boundary
+regression, and reject unrelated features or new design systems. Do not commit or push unless the
+user explicitly requests it.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `docs/download-plan.md`, `docs/reference-code/download.md`, `rust/apps/nxtools-desktop/src/main_window.rs`
+- Tags: scope, reference-driven, gpui, visual-consistency
+- Pattern-Key: download.reference_scope_and_visual_parity
+- Recurrence-Count: 1
+- First-Seen: 2026-08-02
+- Last-Seen: 2026-08-02
+
+### Resolution
+
+- **Resolved**: 2026-08-02T00:00:00+08:00
+- **Notes**: The Stage 3 completion reused the existing theme, density and keyed-window lifecycle,
+  stayed within the two canonical download-plan items, added no unrelated media capability, and
+  produced a validated package without committing or pushing Git changes.
+
+---
+
 ## [LRN-20260727-001] correction
 
 **Logged**: 2026-07-27T17:45:00+08:00
@@ -1207,5 +1370,47 @@ operation is actually required.
 
 - **Resolved**: 2026-07-28T17:48:00+08:00
 - **Notes**: Switched the active publication flow to plain Git.
+
+---
+## [LRN-20260802-BROWSER-DIALOG] correction
+
+**Logged**: 2026-08-02T22:12:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: browser download integration
+
+### Summary
+
+`openDialog=true` is a visible application lifecycle request, not a queue-only download mode.
+
+### Details
+
+The first browser implementation treated the extension's confirmation setting as
+`DownloadSubmitMode::QueueOnly`. This produced a durable `Created` task with a URL-path filename but
+never started the full desktop or showed the download confirmation window. Result-only automation
+mistook task persistence for a correct ABDM/NxTools front-end handoff.
+
+### Suggested Action
+
+For migrated integrations, test the native show/focus boundary and pre-confirmation task count.
+Route browser confirmation requests through a dedicated authenticated UI channel, keep request
+credentials in the hydrated view, make probe metadata authoritative over untouched filename hints,
+and compensate browser cancellation failure by dismissing that correlated dialog.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `rust/apps/nxtools-cli/src/browser_native_host.rs`, `rust/apps/nxtools-desktop/src/downloads.rs`, `rust/crates/nxtools-download-ipc/src/lib.rs`
+- Tags: download, browser, native-messaging, gpui, lifecycle
+- Pattern-Key: browser.open_dialog_is_ui_lifecycle
+- Recurrence-Count: 1
+- First-Seen: 2026-08-02
+- Last-Seen: 2026-08-02
+
+### Resolution
+
+- **Resolved**: 2026-08-02T22:12:00+08:00
+- **Notes**: Real Chrome automation now requires the visible confirmation window, clicks it, and
+  verifies the final file; the package/protected four-binary hashes match.
 
 ---

@@ -38,4 +38,33 @@ if (-not $handler.Contains('apply_taskbar_overlay_placement')) {
     throw "The PlatformHost reconnect branch must replay the persisted taskbar overlay placement."
 }
 
+$placementPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\TaskbarOverlayPlacement.cs"
+$placement = Get-Content -LiteralPath $placementPath -Raw
+$visibilityStart = $placement.IndexOf('internal static WindowsCommandResult SetVisibility')
+$passiveStyleStart = $placement.IndexOf('internal static bool HasPassiveOverlayStyles', $visibilityStart)
+if ($visibilityStart -lt 0 -or $passiveStyleStart -le $visibilityStart) {
+    throw "Could not isolate the native taskbar-overlay visibility boundary."
+}
+$visibility = $placement.Substring($visibilityStart, $passiveStyleStart - $visibilityStart)
+if (-not $visibility.Contains('HwndTopmost') -or
+    -not $visibility.Contains('SetWindowPos(') -or
+    -not $visibility.Contains('IsTopmost(window)')) {
+    throw "Showing the taskbar overlay must atomically restore and verify HWND_TOPMOST."
+}
+
+$adapterPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs"
+$adapter = Get-Content -LiteralPath $adapterPath -Raw
+$foregroundStart = $adapter.IndexOf('private void OnForegroundChanged(')
+$processForegroundStart = $adapter.IndexOf('private void ProcessForeground(', $foregroundStart)
+if ($foregroundStart -lt 0 -or $processForegroundStart -le $foregroundStart) {
+    throw "Could not isolate the Windows foreground-change callback."
+}
+$foreground = $adapter.Substring($foregroundStart, $processForegroundStart - $foregroundStart)
+if (-not $foreground.Contains('ReapplyTaskbarOverlayPlacement();')) {
+    throw "A foreground-window transition must reassert the tracked taskbar-overlay placement."
+}
+if (-not $adapter.Contains('["verified_topmost"] = TaskbarOverlayPlacement.IsTopmost(')) {
+    throw "Taskbar-overlay visibility diagnostics must record the verified topmost state."
+}
+
 Write-Host "Taskbar overlay lifecycle architecture gate passed."
