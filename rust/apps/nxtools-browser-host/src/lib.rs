@@ -586,17 +586,9 @@ fn command_browser_dialog_with_retry(
     );
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            warn!(
-                event = "browser_native_host.dialog_consumer_timeout",
-                %correlation_id,
-                attempts,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "interactive desktop did not attach the browser dialog consumer before the deadline"
-            );
-            return Ok(result);
+        if !remaining.is_zero() {
+            std::thread::sleep(retry_delay.min(remaining));
         }
-        std::thread::sleep(retry_delay.min(remaining));
         if Instant::now() >= deadline {
             warn!(
                 event = "browser_native_host.dialog_consumer_timeout",
