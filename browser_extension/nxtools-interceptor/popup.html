@@ -29,19 +29,19 @@
       <span id="captureAgeText" class="signal-meta">—</span>
     </div>
 
-    <nav class="tabs" aria-label="扩展功能">
-      <button class="tab active" data-view="tasks" aria-selected="true">
+    <nav class="tabs" role="tablist" aria-label="扩展功能">
+      <button id="tasksTab" class="tab active" role="tab" data-view="tasks" aria-controls="tasksView" aria-selected="true">
         <span>任务</span><small id="taskTabCount" class="tab-count">0</small>
       </button>
-      <button class="tab" data-view="resources" aria-selected="false">
+      <button id="resourcesTab" class="tab" role="tab" data-view="resources" aria-controls="resourcesView" aria-selected="false">
         <span>捕获</span><small id="resourceTabCount" class="tab-count">0</small>
       </button>
-      <button class="tab" data-view="advanced" aria-selected="false"><span>工具</span></button>
-      <button class="tab" data-view="settings" aria-selected="false"><span>设置</span></button>
+      <button id="advancedTab" class="tab" role="tab" data-view="advanced" aria-controls="advancedView" aria-selected="false"><span>工具</span></button>
+      <button id="settingsTab" class="tab" role="tab" data-view="settings" aria-controls="settingsView" aria-selected="false"><span>设置</span></button>
     </nav>
 
     <main id="mainContent" class="workspace">
-      <section id="tasksView" class="view active" aria-label="下载任务">
+      <section id="tasksView" class="view active" role="tabpanel" aria-labelledby="tasksTab" aria-hidden="false">
         <div class="page-context">
           <div class="page-copy">
             <span class="eyebrow">ACTIVE TAB</span>
@@ -66,7 +66,7 @@
         <div id="taskList" class="list task-list"></div>
       </section>
 
-      <section id="resourcesView" class="view" aria-label="页面捕获资源">
+      <section id="resourcesView" class="view" role="tabpanel" aria-labelledby="resourcesTab" aria-hidden="true">
         <div class="resource-toolbar">
           <div class="filter-row" aria-label="资源类型过滤">
             <button class="pill active" data-resource-filter="all">全部</button>
@@ -93,7 +93,7 @@
         <div id="otherResourceList" class="list compact-list resource-list"></div>
       </section>
 
-      <section id="advancedView" class="view" aria-label="页面工具">
+      <section id="advancedView" class="view" role="tabpanel" aria-labelledby="advancedTab" aria-hidden="true">
         <section class="panel tool-panel">
           <div class="section-head inline">
             <span>页面媒体</span>
@@ -139,7 +139,7 @@
         </section>
       </section>
 
-      <section id="settingsView" class="view" aria-label="扩展设置">
+      <section id="settingsView" class="view" role="tabpanel" aria-labelledby="settingsTab" aria-hidden="true">
         <section class="settings-intro">
           <div>
             <span class="eyebrow">TRANSPORT</span>

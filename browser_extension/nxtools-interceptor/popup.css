@@ -31,7 +31,8 @@ html {
 }
 
 body {
-  width: 456px;
+  width: min(456px, 100vw);
+  min-width: min(360px, 100vw);
   min-height: 540px;
   margin: 0;
   overflow: hidden;
@@ -328,8 +329,8 @@ p {
 }
 
 .workspace {
-  min-height: 420px;
-  max-height: 535px;
+  min-height: min(420px, calc(100vh - 154px));
+  max-height: min(445px, calc(100vh - 154px));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: #364049 transparent;

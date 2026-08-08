@@ -30,7 +30,43 @@ const MAX_REQUEST_KIND_BYTES: usize = 32;
 const MAX_EXTENSION_VERSION_BYTES: usize = 32;
 const MAX_TASK_ACTION_BYTES: usize = 16;
 const MAX_EXTENSION_LOG_EVENT_BYTES: usize = 96;
-const MAX_EXTENSION_LOG_LEVEL_BYTES: usize = 16;
+const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
+    "bilibili_tracks_incomplete",
+    "bilibili_tracks_selected",
+    "blob_download_intercept_disabled",
+    "blob_download_intercept_failed",
+    "blob_download_intercepted",
+    "blob_download_resource_missing",
+    "blob_source_resolved",
+    "browser_download_already_preempted",
+    "browser_download_site_disabled",
+    "content_bridge_inject_failed",
+    "content_media_resource_failed",
+    "content_resource_choices_built",
+    "douyin_video_candidates_empty",
+    "douyin_video_selected",
+    "drop_target_download",
+    "handoff_failed",
+    "handoff_prepare",
+    "handoff_rejected",
+    "handoff_result",
+    "page_context_resources_cleared",
+    "page_hook_inject_failed",
+    "page_media_dom_empty_resources_present",
+    "page_media_download_requested",
+    "page_media_no_resource",
+    "page_media_resource_selected",
+    "page_media_resource_selected_missing",
+    "page_media_site_match_failed",
+    "page_scan_no_receiver",
+    "request_resource_no_tab",
+    "resource_cached",
+    "resource_no_tab",
+    "resource_rejected",
+    "send_resource_missing",
+    "youtube_captured_selected",
+    "youtube_progressive_selected",
+];
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,28 +112,16 @@ struct BrowserDownloadPayload {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserExtensionLogPayload {
-    #[serde(default)]
-    level: String,
     event: String,
 }
 
 fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Result<()> {
     bounded(
-        "extensionLog.level",
-        &payload.level,
-        MAX_EXTENSION_LOG_LEVEL_BYTES,
-    )?;
-    bounded(
         "extensionLog.event",
         &payload.event,
         MAX_EXTENSION_LOG_EVENT_BYTES,
     )?;
-    if payload.event.is_empty()
-        || !payload
-            .event
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
-    {
+    if !ALLOWED_EXTENSION_LOG_EVENTS.contains(&payload.event.as_str()) {
         bail!("browser extension log event is invalid");
     }
     Ok(())
@@ -237,7 +261,6 @@ fn handle_request(
                 event = "browser_extension.event",
                 request_id,
                 extension_event = %payload.event,
-                extension_level = %payload.level,
                 "bounded browser extension event received"
             );
             Ok(BrowserResponse::ok(request_id, None))
@@ -705,14 +728,12 @@ mod tests {
     #[test]
     fn extension_log_keeps_only_bounded_event_identity() {
         let accepted = BrowserExtensionLogPayload {
-            level: "info".into(),
             event: "resource_cached".into(),
         };
         validate_extension_log_payload(&accepted).expect("bounded extension event should pass");
 
         let invalid = BrowserExtensionLogPayload {
-            level: "info".into(),
-            event: "resource cached / secret".into(),
+            event: "not_allowlisted".into(),
         };
         assert!(validate_extension_log_payload(&invalid).is_err());
     }

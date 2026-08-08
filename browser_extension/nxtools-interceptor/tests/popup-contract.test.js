@@ -27,6 +27,9 @@ test("popup uses semantic landmarks and an honest browser handoff label", () => 
   assert.doesNotMatch(html, /交接后等待手动开始/);
   assert.match(html, /Native Messaging/);
   assert.match(html, /合并 · 后续/);
+  assert.match(html, /role="tablist"/);
+  assert.equal((html.match(/role="tab"/g) || []).length, 4);
+  assert.equal((html.match(/role="tabpanel"/g) || []).length, 4);
 });
 
 test("every popup script element id exists exactly once", () => {
@@ -40,7 +43,7 @@ test("every popup script element id exists exactly once", () => {
 
 test("popup visual system keeps compact tokens, focus and reduced-motion gates", () => {
   assert.match(css, /--accent:\s*#53c7d8/i);
-  assert.match(css, /width:\s*456px/);
+  assert.match(css, /width:\s*min\(456px,\s*100vw\)/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /signal-sweep/);

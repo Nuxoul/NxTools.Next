@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const policy = require("../capture-policy.js");
 
 function test(name, callback) {
@@ -19,6 +21,8 @@ test("response metadata upgrades a request-stage resource", () => {
     url: "https://cdn.example.test/file",
     filename: "file",
     filenameSource: "url",
+    metadataSource: "request",
+    requestContextSource: "browser",
     mime: "",
     size: 0,
     pageTitle: "Release page",
@@ -32,6 +36,8 @@ test("response metadata upgrades a request-stage resource", () => {
     url: "https://cdn.example.test/file",
     filename: "nxtools-0.6.0.zip",
     filenameSource: "content-disposition",
+    metadataSource: "response",
+    requestContextSource: "browser",
     mime: "application/zip",
     size: 1048576,
     pageTitle: "",
@@ -59,21 +65,27 @@ test("later weak page observations cannot erase authoritative metadata", () => {
   const merged = policy.mergeCapturedResource({
     filename: "archive.zip",
     filenameSource: "content-disposition",
+    metadataSource: "response",
+    requestContextSource: "browser",
     mime: "application/zip",
     size: 8192,
     pageTitle: "Builds",
     pageUrl: "https://example.test/builds",
     referer: "https://example.test/builds",
+    requestHeaders: { referer: "https://example.test/builds", authorization: "browser value" },
     source: "webRequest-response",
     capturedAt: 100
   }, {
     filename: "resource.bin",
     filenameSource: "page",
-    mime: "application/octet-stream",
-    size: 0,
+    metadataSource: "page",
+    requestContextSource: "page",
+    mime: "video/mp4",
+    size: 999999,
     pageTitle: "",
     pageUrl: "",
-    referer: "",
+    referer: "https://untrusted.example.test/",
+    requestHeaders: { referer: "https://untrusted.example.test/", authorization: "page value" },
     source: "performance:fetch",
     capturedAt: 300
   });
@@ -83,6 +95,8 @@ test("later weak page observations cannot erase authoritative metadata", () => {
   assert.equal(merged.size, 8192);
   assert.equal(merged.pageTitle, "Builds");
   assert.equal(merged.referer, "https://example.test/builds");
+  assert.equal(merged.requestHeaders.authorization, "browser value");
+  assert.equal(merged.requestHeaders.referer, "https://example.test/builds");
   assert.equal(merged.capturedAt, 300);
 });
 
@@ -109,6 +123,23 @@ test("popup projection omits privileged request context", () => {
   assert.equal("pageUrl" in projected, false);
 });
 
+test("storage projection never persists page or request context", () => {
+  const projected = policy.projectResourceForStorage({
+    id: "resource-1",
+    url: "https://cdn.example.test/archive.zip",
+    pageTitle: "Private account",
+    pageUrl: "https://private.example.test/account",
+    referer: "https://private.example.test/account",
+    requestHeaders: { cookie: "session=secret" },
+    filename: "archive.zip"
+  });
+
+  assert.equal(projected.filename, "archive.zip");
+  for (const field of ["pageTitle", "pageUrl", "referer", "requestHeaders"]) {
+    assert.equal(field in projected, false, `${field} must remain worker-only`);
+  }
+});
+
 test("popup resources are deduplicated by stable id", () => {
   const shared = { id: "stable", url: "https://cdn.example.test/file", capturedAt: 100 };
   const resources = policy.uniqueCapturedResources([
@@ -119,6 +150,13 @@ test("popup resources are deduplicated by stable id", () => {
 
   assert.deepEqual(resources.map((resource) => resource.id), ["stable", "other"]);
   assert.equal(resources[0].capturedAt, 200);
+});
+
+test("worker capture never trusts page-supplied request headers or persists context", () => {
+  const background = fs.readFileSync(path.resolve(__dirname, "..", "background.js"), "utf8");
+  assert.doesNotMatch(background, /payload\.requestHeaders/);
+  assert.match(background, /projectResourceForStorage\(resource\)/);
+  assert.match(background, /mergeCapturedResource\(cached, merged\)/);
 });
 
 console.log("capture policy tests passed");

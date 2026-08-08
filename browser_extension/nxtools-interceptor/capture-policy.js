@@ -23,6 +23,39 @@
     inferred: 10
   };
 
+  const METADATA_SOURCE_RANK = {
+    response: 100,
+    page: 50,
+    request: 30,
+    inferred: 10
+  };
+
+  const REQUEST_CONTEXT_SOURCE_RANK = {
+    browser: 100,
+    page: 40,
+    inferred: 10
+  };
+
+  const Sources = Object.freeze({
+    filename: Object.freeze({
+      contentDisposition: "content-disposition",
+      page: "page",
+      url: "url",
+      inferred: "inferred"
+    }),
+    metadata: Object.freeze({
+      response: "response",
+      page: "page",
+      request: "request",
+      inferred: "inferred"
+    }),
+    requestContext: Object.freeze({
+      browser: "browser",
+      page: "page",
+      inferred: "inferred"
+    })
+  });
+
   function nonEmpty(value) {
     return typeof value === "string" && value.trim().length > 0;
   }
@@ -68,16 +101,68 @@
     };
   }
 
-  function chooseMime(existingMime, incomingMime) {
-    const existing = String(existingMime || "").trim().toLowerCase();
-    const incoming = String(incomingMime || "").trim().toLowerCase();
+  function sourceRank(resource, field, ranks) {
+    return ranks[String(resource?.[field] || "inferred").toLowerCase()] || ranks.inferred;
+  }
+
+  function chooseMime(existingResource, incomingResource) {
+    const existing = String(existingResource?.mime || "").trim().toLowerCase();
+    const incoming = String(incomingResource?.mime || "").trim().toLowerCase();
     if (!incoming) {
       return existing;
     }
-    if (!GENERIC_MIME_TYPES.has(incoming) || GENERIC_MIME_TYPES.has(existing)) {
+    const existingRank = sourceRank(existingResource, "metadataSource", METADATA_SOURCE_RANK);
+    const incomingRank = sourceRank(incomingResource, "metadataSource", METADATA_SOURCE_RANK);
+    if ((!GENERIC_MIME_TYPES.has(incoming) && incomingRank >= existingRank) || GENERIC_MIME_TYPES.has(existing)) {
       return incoming;
     }
     return existing;
+  }
+
+  function chooseSize(existingResource, incomingResource) {
+    const existing = Number(existingResource?.size || 0);
+    const incoming = Number(incomingResource?.size || 0);
+    if (!Number.isFinite(incoming) || incoming <= 0) {
+      return Number.isFinite(existing) && existing > 0 ? existing : 0;
+    }
+    if (!Number.isFinite(existing) || existing <= 0) {
+      return incoming;
+    }
+    const existingRank = sourceRank(existingResource, "metadataSource", METADATA_SOURCE_RANK);
+    const incomingRank = sourceRank(incomingResource, "metadataSource", METADATA_SOURCE_RANK);
+    if (incomingRank > existingRank) {
+      return incoming;
+    }
+    return incomingRank === existingRank ? Math.max(existing, incoming) : existing;
+  }
+
+  function chooseRequestContextSource(existingResource, incomingResource) {
+    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    return incomingRank >= existingRank
+      ? incomingResource?.requestContextSource || Sources.requestContext.inferred
+      : existingResource?.requestContextSource || Sources.requestContext.inferred;
+  }
+
+  function chooseContextText(existingResource, incomingResource, field) {
+    const existing = existingResource?.[field] || "";
+    const incoming = incomingResource?.[field] || "";
+    if (!nonEmpty(incoming)) {
+      return existing;
+    }
+    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    return !nonEmpty(existing) || incomingRank >= existingRank ? incoming : existing;
+  }
+
+  function mergeRequestHeaders(existingResource, incomingResource) {
+    const existingHeaders = existingResource?.requestHeaders || {};
+    const incomingHeaders = incomingResource?.requestHeaders || {};
+    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    return incomingRank >= existingRank
+      ? { ...existingHeaders, ...incomingHeaders }
+      : { ...existingHeaders };
   }
 
   function preferText(incoming, existing) {
@@ -88,10 +173,10 @@
     const existing = existingResource || {};
     const incoming = incomingResource || {};
     const filename = chooseFilename(existing, incoming);
-    const existingSize = Number(existing.size || 0);
-    const incomingSize = Number(incoming.size || 0);
     const existingCapturedAt = Number(existing.capturedAt || 0);
     const incomingCapturedAt = Number(incoming.capturedAt || 0);
+    const existingMetadataRank = sourceRank(existing, "metadataSource", METADATA_SOURCE_RANK);
+    const incomingMetadataRank = sourceRank(incoming, "metadataSource", METADATA_SOURCE_RANK);
 
     return {
       ...existing,
@@ -101,23 +186,22 @@
       blobUrl: preferText(incoming.blobUrl, existing.blobUrl),
       pageKey: preferText(incoming.pageKey, existing.pageKey),
       pageTitle: preferText(incoming.pageTitle, existing.pageTitle),
-      pageUrl: preferText(incoming.pageUrl, existing.pageUrl),
-      referer: preferText(incoming.referer, existing.referer),
+      pageUrl: chooseContextText(existing, incoming, "pageUrl"),
+      referer: chooseContextText(existing, incoming, "referer"),
       filename: filename.filename,
       filenameSource: filename.filenameSource,
-      mime: chooseMime(existing.mime, incoming.mime),
-      size: Math.max(
-        Number.isFinite(existingSize) ? existingSize : 0,
-        Number.isFinite(incomingSize) ? incomingSize : 0),
+      metadataSource: incomingMetadataRank >= existingMetadataRank
+        ? incoming.metadataSource || Sources.metadata.inferred
+        : existing.metadataSource || Sources.metadata.inferred,
+      requestContextSource: chooseRequestContextSource(existing, incoming),
+      mime: chooseMime(existing, incoming),
+      size: chooseSize(existing, incoming),
       width: Math.max(Number(existing.width || 0), Number(incoming.width || 0)),
       height: Math.max(Number(existing.height || 0), Number(incoming.height || 0)),
       supportsRange: Boolean(existing.supportsRange || incoming.supportsRange),
       mediaHint: incoming.mediaHint || incoming.assetHint || existing.mediaHint || existing.assetHint || null,
       assetHint: incoming.assetHint || existing.assetHint || null,
-      requestHeaders: {
-        ...(existing.requestHeaders || {}),
-        ...(incoming.requestHeaders || {})
-      },
+      requestHeaders: mergeRequestHeaders(existing, incoming),
       capturedAt: Math.max(existingCapturedAt, incomingCapturedAt) || Date.now()
     };
   }
@@ -137,6 +221,17 @@
     };
   }
 
+  function projectResourceForStorage(resource) {
+    const {
+      requestHeaders: _requestHeaders,
+      referer: _referer,
+      pageUrl: _pageUrl,
+      pageTitle: _pageTitle,
+      ...persistent
+    } = resource || {};
+    return persistent;
+  }
+
   function uniqueCapturedResources(resources) {
     const unique = new Map();
     for (const resource of resources || []) {
@@ -150,8 +245,10 @@
   }
 
   return {
+    Sources,
     mergeCapturedResource,
     projectResourceForPopup,
+    projectResourceForStorage,
     uniqueCapturedResources
   };
 });

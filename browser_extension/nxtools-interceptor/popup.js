@@ -732,7 +732,9 @@ function setView(view) {
     button.setAttribute("aria-selected", String(active));
   });
   document.querySelectorAll(".view").forEach((section) => {
-    section.classList.toggle("active", section.id === `${view}View`);
+    const active = section.id === `${view}View`;
+    section.classList.toggle("active", active);
+    section.setAttribute("aria-hidden", String(!active));
   });
 }
 

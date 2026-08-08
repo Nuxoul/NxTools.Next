@@ -724,6 +724,12 @@ Native Messaging request ID，不写扩展消息、URL 或请求上下文。捕�
 无界面 Chromium 已完成 456 px 实际 CSS 渲染检查。仍需用户在真实浏览器验证复杂页面捕获、
 网站开关、确认窗预填和 Popup 各页交互，因此阶段 4 checklist 保持未勾选。
 
+同轮两轴审查补强了来源权威边界：响应 MIME/大小、浏览器 Referrer/Header 不再被 DOM 或
+Performance 观察覆盖，页面提供的 Header 对象直接忽略，同 URL 补全统一调用相同策略；持久
+资源缓存会移除 Header、Referrer、页面 URL/标题，并在启动时清洗旧快照。BrowserHost 只接受
+固定白名单中的扩展事件名且不记录扩展提供的 level/message。Popup 补齐 tablist/tab/tabpanel
+语义与 600 px 内的高度约束；相应定向测试、架构门禁、BrowserHost 测试和 Clippy 再次通过。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。

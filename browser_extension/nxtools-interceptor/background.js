@@ -1774,6 +1774,8 @@ function cacheResource(resource) {
     pageUrl: boundedCapturedUrl(resource.pageUrl),
     filename: boundedCapturedText(resource.filename),
     filenameSource: boundedCapturedText(resource.filenameSource, 64),
+    metadataSource: boundedCapturedText(resource.metadataSource, 64),
+    requestContextSource: boundedCapturedText(resource.requestContextSource, 64),
     mime: boundedCapturedText(resource.mime, 256).toLowerCase(),
     referer: boundedCapturedUrl(resource.referer),
     source: boundedCapturedText(resource.source, 128),
@@ -1818,18 +1820,7 @@ function cacheResource(resource) {
       if (cached.id === merged.id || normalizeResourceUrlKey(cached.url) !== mergedUrl) {
         continue;
       }
-      cached.filename = cached.filename && !isGenericResourceName(cached.filename) ? cached.filename : merged.filename;
-      cached.mime = merged.mime || cached.mime;
-      cached.size = merged.size > 0 ? merged.size : cached.size;
-      cached.mediaHint = merged.mediaHint || cached.mediaHint || null;
-      cached.assetHint = merged.assetHint || cached.assetHint || null;
-      cached.width = merged.width > 0 ? merged.width : cached.width;
-      cached.height = merged.height > 0 ? merged.height : cached.height;
-      cached.supportsRange = Boolean(cached.supportsRange || merged.supportsRange);
-      cached.requestHeaders = {
-        ...(cached.requestHeaders || {}),
-        ...(merged.requestHeaders || {})
-      };
+      Object.assign(cached, NxToolsCapturePolicy.mergeCapturedResource(cached, merged));
     }
   }
 
@@ -1860,9 +1851,10 @@ function serializeResources() {
   pruneResources();
   const result = {};
   for (const [tabId, bucket] of resourcesByTab) {
-    result[String(tabId)] = [...bucket.values()]
+    result[String(tabId)] = NxToolsCapturePolicy.uniqueCapturedResources([...bucket.values()])
       .sort((left, right) => right.capturedAt - left.capturedAt)
-      .slice(0, RESOURCE_LIMIT_PER_TAB);
+      .slice(0, RESOURCE_LIMIT_PER_TAB)
+      .map((resource) => NxToolsCapturePolicy.projectResourceForStorage(resource));
   }
   return result;
 }
@@ -1916,6 +1908,10 @@ async function loadPersistentResources() {
     }
   }
   pruneResources();
+  await chrome.storage.local.set({
+    [STORAGE_RESOURCE_KEY]: serializeResources(),
+    [STORAGE_LAST_TAB_KEY]: lastActiveTabId
+  });
 }
 
 function mobileRuleId(tabId) {
@@ -2408,7 +2404,11 @@ async function captureNetworkResource(details) {
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : redirectHint?.initiator || tab?.url || "",
     filename,
-    filenameSource: meta.filename ? "content-disposition" : "url",
+    filenameSource: meta.filename
+      ? NxToolsCapturePolicy.Sources.filename.contentDisposition
+      : NxToolsCapturePolicy.Sources.filename.url,
+    metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
+    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
     mime: meta.mime,
     size: meta.size,
     mediaHint: meta.assetHint || null,
@@ -2485,7 +2485,9 @@ async function captureRequestResource(details) {
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : tab?.url || "",
     filename,
-    filenameSource: "url",
+    filenameSource: NxToolsCapturePolicy.Sources.filename.url,
+    metadataSource: NxToolsCapturePolicy.Sources.metadata.request,
+    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
     mime,
     size: 0,
     supportsRange: Boolean(headerSnapshot?.supportsRange),
@@ -2513,10 +2515,7 @@ async function capturePageResource(sender, payload) {
 
   const tab = await tabInfo(tabId);
   const headerSnapshot = isHttpUrl(payloadUrl) ? resolveHeaderSnapshot(payloadUrl) : null;
-  const headers = sanitizeCapturedHeaderObject({
-    ...(headerSnapshot?.headers || {}),
-    ...(payload.requestHeaders || {})
-  });
+  const headers = sanitizeCapturedHeaderObject(headerSnapshot?.headers || {});
   const referer = boundedCapturedUrl(headers.referer || payload.href || tab?.url || "");
   if (referer) {
     headers.referer = referer;
@@ -2544,7 +2543,15 @@ async function capturePageResource(sender, payload) {
     pageTitle: tab?.title || "",
     pageUrl: payload.href || tab?.url || "",
     filename,
-    filenameSource: cleanFileName(payload.filename) ? "page" : (getFileNameFromUrl(primaryUrl) ? "url" : "inferred"),
+    filenameSource: cleanFileName(payload.filename)
+      ? NxToolsCapturePolicy.Sources.filename.page
+      : (getFileNameFromUrl(primaryUrl)
+        ? NxToolsCapturePolicy.Sources.filename.url
+        : NxToolsCapturePolicy.Sources.filename.inferred),
+    metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
+    requestContextSource: Object.keys(headers).length > 0
+      ? NxToolsCapturePolicy.Sources.requestContext.browser
+      : NxToolsCapturePolicy.Sources.requestContext.page,
     mime: payloadMime,
     size: Number(payload.size || 0),
     width: Number(payload.width || 0),
@@ -2568,17 +2575,22 @@ async function capturePageResource(sender, payload) {
       pageTitle: tab?.title || "",
       pageUrl: payload.href || tab?.url || "",
       filename: ensureFileNameForUrl(filename || getFileNameFromUrl(sourceUrl), sourceUrl, sourceMime || payloadMime),
-      filenameSource: cleanFileName(payload.filename) ? "page" : (getFileNameFromUrl(sourceUrl) ? "url" : "inferred"),
+      filenameSource: cleanFileName(payload.filename)
+        ? NxToolsCapturePolicy.Sources.filename.page
+        : (getFileNameFromUrl(sourceUrl)
+          ? NxToolsCapturePolicy.Sources.filename.url
+          : NxToolsCapturePolicy.Sources.filename.inferred),
+      metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
+      requestContextSource: Object.keys(sourceHeaderSnapshot?.headers || {}).length > 0
+        ? NxToolsCapturePolicy.Sources.requestContext.browser
+        : NxToolsCapturePolicy.Sources.requestContext.page,
       mime: sourceMime || payloadMime,
       size: Number(payload.sourceSize || payload.size || 0),
       width: Number(payload.width || 0),
       height: Number(payload.height || 0),
       supportsRange: Boolean(sourceHeaderSnapshot?.supportsRange),
       referer,
-      requestHeaders: sanitizeCapturedHeaderObject({
-        ...(sourceHeaderSnapshot?.headers || {}),
-        ...(payload.requestHeaders || {})
-      }),
+      requestHeaders: sanitizeCapturedHeaderObject(sourceHeaderSnapshot?.headers || {}),
       source: `${String(payload.source || "content")}-source-url`,
       capturedAt: Date.now()
     });
@@ -2746,6 +2758,11 @@ async function sendPreemptedBrowserDownload(details, meta) {
     pageTitle: tab?.title || "",
     pageUrl: referer || tab?.url || "",
     filename: fileName,
+    filenameSource: meta.filename
+      ? NxToolsCapturePolicy.Sources.filename.contentDisposition
+      : NxToolsCapturePolicy.Sources.filename.url,
+    metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
+    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
     mime: meta.mime,
     size: meta.size,
     supportsRange: Boolean(meta.supportsRange || headerSnapshot?.supportsRange),
