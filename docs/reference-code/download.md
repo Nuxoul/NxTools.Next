@@ -395,10 +395,15 @@ product compatibility baseline rather than designing a replacement from memory:
   `BrowserSubmit`. The former is accepted only while GPUI has attached a bounded private in-process
   receiver and confirms successful window creation within five seconds; a headless DownloadHost,
   timeout or window-creation failure rejects it. If no pipe exists, BrowserHost launches the
-  protected normal `NxTools.exe` for a window request, waits for the pipe and retries only the
+  protected `NxTools.exe --browser-dialog --browser-correlation-id <id>` for a window request,
+  waits for the pipe and retries only the
   typed, retryable consumer-not-attached startup result while GPUI attaches its receiver. Queue
   delivery and GPUI window-creation failures are non-retryable; it never substitutes a headless host
-  for this path. URL/request context reaches `NewDownloadView` without entering the
+  for this path. The dedicated launch intent makes the ordinary main window hidden/non-focusing;
+  after PlatformHost connects, a typed native command shows it with `SW_SHOWMINNOACTIVE` and accepts
+  success only after `IsWindowVisible + IsIconic` readback. The add-download surface independently
+  keeps the existing topmost and foreground-activation commands. URL/request context reaches
+  `NewDownloadView` without entering the
   serializable event stream, preserving Header/Cookie/Referrer confidentiality. Direct submissions
   remain persistently idempotent and start `NxTools.exe --background` when no engine is available.
 - Official primary sources checked: Chrome
@@ -435,6 +440,10 @@ product compatibility baseline rather than designing a replacement from memory:
   calculation and collapse the surface to a narrow strip. Keep `html/body` at the intended fixed
   Popup width and constrain the internal scrolling workspace with fixed bounds; test viewport-unit
   absence at that root boundary separately from ordinary responsive-page rules.
+- The old Avalonia startup used `WindowState.Minimized` before assigning the main window. GPUI 0.2.2
+  has no initial-minimized `WindowOptions`; showing first and minimizing later can flash and cannot
+  report an observed native result. NxTools.Next therefore creates this one startup main window with
+  `show=false` and delegates `SW_SHOWMINNOACTIVE` plus `IsIconic` readback to PlatformHost.
 
 ### Windows actions
 

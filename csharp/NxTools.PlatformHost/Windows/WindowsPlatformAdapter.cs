@@ -374,6 +374,35 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         return result;
     }
 
+    public WindowsCommandResult SetWindowMinimized(
+        SetWindowMinimizedCommand command,
+        Guid correlationId)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var window = new IntPtr(command.WindowHandle);
+        var result = NativeMethods.SetWindowMinimized(window);
+        var after = NativeMethods.CaptureWindowPresentation(window);
+        _log.Write(
+            result.Success ? "info" : "error",
+            result.Success
+                ? "download.browser_startup.main_window_native_minimized"
+                : "download.browser_startup.main_window_native_minimize_failed",
+            correlationId,
+            new Dictionary<string, object?>
+            {
+                ["window_handle"] = command.WindowHandle,
+                ["success"] = result.Success,
+                ["error_present"] = !string.IsNullOrEmpty(result.Error),
+                ["after_visible"] = after.Visible,
+                ["foreground_window_handle"] = after.ForegroundWindowHandle,
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
+        return result;
+    }
+
+    internal static WindowsCommandResult MinimizeNativeWindowForTest(long windowHandle) =>
+        NativeMethods.SetWindowMinimized(new IntPtr(windowHandle));
+
     private void LogWindowPresentation(
         string eventName,
         long windowHandle,
@@ -2583,6 +2612,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private const uint DefaultDpi = 96;
         private const int SwHide = 0;
         private const int SwShowNoActivate = 4;
+        private const int SwShowMinNoActive = 7;
 
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         internal delegate void WinEventDelegate(
@@ -3025,6 +3055,27 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             return IsWindowVisible(window) == visible
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(false, "Windows did not apply the requested visibility state.");
+        }
+
+        internal static WindowsCommandResult SetWindowMinimized(IntPtr window)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+
+            _ = ShowWindow(window, SwShowMinNoActive);
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (IsWindowVisible(window) && IsIconic(window) && GetForegroundWindow() != window)
+                {
+                    return new WindowsCommandResult(true);
+                }
+                Thread.Sleep(10);
+            }
+            return new WindowsCommandResult(
+                false,
+                "Windows did not show the requested GPUI window minimized without activation.");
         }
 
         internal static NativeWindowPresentationState CaptureWindowPresentation(IntPtr window)

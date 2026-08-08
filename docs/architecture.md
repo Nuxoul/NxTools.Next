@@ -22,7 +22,9 @@ NxTools.Cli.exe
 Browser extension
   +---- NxTools.BrowserHost.exe (Rust Native Messaging adapter)
           -> browser-owned lifetime; exits when the native stdio channel closes
-          -> opens normal NxTools.exe for confirmation-window requests
+          -> opens NxTools.exe --browser-dialog for confirmation-window requests;
+             GPUI creates the main window hidden, then PlatformHost shows it minimized/no-activate
+             while the add-download window claims foreground
           -> opens NxTools.exe --background only for non-interactive download commands
 ```
 

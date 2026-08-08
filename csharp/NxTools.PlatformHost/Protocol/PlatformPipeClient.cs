@@ -216,6 +216,9 @@ internal sealed class PlatformPipeClient(
                                 PlatformCommandParser.ParsePlaceFileDialogSearchWindow(envelope)),
                         "set_window_owner" => platformAdapter.SetWindowOwner(
                             PlatformCommandParser.ParseSetWindowOwner(envelope)),
+                        "set_window_minimized" => platformAdapter.SetWindowMinimized(
+                            PlatformCommandParser.ParseSetWindowMinimized(envelope),
+                            diagnosticCorrelationId),
                         "set_window_visibility" => platformAdapter.SetWindowVisibility(
                             PlatformCommandParser.ParseSetWindowVisibility(envelope)),
                         "set_window_position" => platformAdapter.SetWindowPosition(

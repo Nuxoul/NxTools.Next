@@ -25,7 +25,9 @@ use gpui::{
 use gpui_component::{Root, Theme, ThemeMode};
 use main_window::MainWindow;
 use notifications::NotificationCenter;
-use platform_events::{PlatformEventDispatcher, PlatformEventDispatcherGlobal};
+use platform_events::{
+    BrowserStartupWindow, PlatformEventDispatcher, PlatformEventDispatcherGlobal,
+};
 use quick_launch::QuickLaunchApplication;
 use runtime::DesktopRuntime;
 use sha2::{Digest, Sha256};
@@ -36,9 +38,61 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::Once;
+use std::time::Instant;
 use tracing::{error, info};
+use uuid::Uuid;
 
-fn run(instance_wait: std::time::Duration) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesktopLaunchMode {
+    Normal,
+    BrowserDialog { correlation_id: Uuid },
+    Background,
+}
+
+impl DesktopLaunchMode {
+    fn from_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Self> {
+        let arguments = arguments.into_iter().collect::<Vec<_>>();
+        let background = arguments.iter().any(|argument| argument == "--background");
+        let browser_dialog = arguments
+            .iter()
+            .any(|argument| argument == "--browser-dialog");
+        if background && browser_dialog {
+            anyhow::bail!("desktop startup modes --background and --browser-dialog conflict");
+        }
+        if background {
+            return Ok(Self::Background);
+        }
+        if !browser_dialog {
+            return Ok(Self::Normal);
+        }
+        let correlation_id = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--browser-correlation-id")
+            .context("--browser-dialog requires --browser-correlation-id")?
+            .get(1)
+            .context("--browser-dialog requires a correlation ID value")?
+            .parse::<Uuid>()
+            .context("--browser-correlation-id must be a UUID")?;
+        Ok(Self::BrowserDialog { correlation_id })
+    }
+
+    const fn main_window_focus(self) -> bool {
+        !matches!(self, Self::BrowserDialog { .. })
+    }
+
+    const fn main_window_show(self) -> bool {
+        !matches!(self, Self::BrowserDialog { .. })
+    }
+
+    const fn correlation_id(self) -> Option<Uuid> {
+        match self {
+            Self::BrowserDialog { correlation_id } => Some(correlation_id),
+            Self::Normal | Self::Background => None,
+        }
+    }
+}
+
+fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Result<()> {
     let mut runtime = DesktopRuntime::initialize(instance_wait)?;
     install_panic_logging();
     let platform_bridge = runtime
@@ -161,20 +215,11 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                 downloads.open_taskbar_overlay(cx);
             });
             cx.set_global(ClipboardApplicationGlobal::new(clipboard.clone()));
-            let dispatcher = cx.new(|cx| {
-                PlatformEventDispatcher::new(
-                    platform_bridge,
-                    clipboard.downgrade(),
-                    quick_launch.clone(),
-                    downloads.clone(),
-                    cx,
-                )
-            });
-            cx.set_global(PlatformEventDispatcherGlobal::new(dispatcher));
 
-            let clipboard = clipboard.downgrade();
-            let quick_launch = quick_launch.downgrade();
-            let downloads = downloads.downgrade();
+            let clipboard_for_window = clipboard.downgrade();
+            let quick_launch_for_window = quick_launch.downgrade();
+            let downloads_for_window = downloads.downgrade();
+            let startup_started_at = Instant::now();
             let window = cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::centered(size(px(1060.0), px(500.0)), cx)),
@@ -183,8 +228,8 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                         appears_transparent: true,
                         traffic_light_position: None,
                     }),
-                    focus: true,
-                    show: true,
+                    focus: launch_mode.main_window_focus(),
+                    show: launch_mode.main_window_show(),
                     kind: WindowKind::Normal,
                     is_movable: true,
                     is_resizable: true,
@@ -199,9 +244,9 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                 move |window, cx| {
                     let main_window = cx.new(|cx| {
                         MainWindow::new(
-                            clipboard,
-                            quick_launch,
-                            downloads,
+                            clipboard_for_window,
+                            quick_launch_for_window,
+                            downloads_for_window,
                             notifications.clone(),
                             window,
                             cx,
@@ -210,10 +255,47 @@ fn run(instance_wait: std::time::Duration) -> Result<()> {
                     cx.new(|cx| Root::new(main_window, window, cx))
                 },
             );
+            let browser_startup_window = match (&window, launch_mode.correlation_id()) {
+                (Ok(window), Some(correlation_id)) => {
+                    match window.update(cx, |_, window, _| crate::ui::native_window_handle(window))
+                    {
+                        Ok(Some(window_handle)) if window_handle != 0 => {
+                            Some(BrowserStartupWindow::new(
+                                window_handle,
+                                correlation_id,
+                                startup_started_at,
+                            ))
+                        }
+                        _ => {
+                            error!(
+                                event = "download.browser_startup.main_window_handle_failed",
+                                success = false,
+                                %correlation_id,
+                                elapsed_ms = startup_started_at.elapsed().as_millis(),
+                                "desktop could not resolve its hidden browser-startup main window"
+                            );
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
             if let Err(error) = window {
                 tracing::error!(%error, "failed to open main window");
                 cx.quit();
+                return;
             }
+            let dispatcher = cx.new(|cx| {
+                PlatformEventDispatcher::new(
+                    Rc::clone(&platform_bridge),
+                    browser_startup_window,
+                    clipboard.downgrade(),
+                    quick_launch,
+                    downloads,
+                    cx,
+                )
+            });
+            cx.set_global(PlatformEventDispatcherGlobal::new(dispatcher));
         });
 
     drop(runtime);
@@ -238,17 +320,24 @@ fn install_panic_logging() {
 
 fn main() {
     let instance_wait = protected_restart_instance_wait();
+    let launch_mode = match DesktopLaunchMode::from_arguments(std::env::args()) {
+        Ok(launch_mode) => launch_mode,
+        Err(error) => {
+            eprintln!("NxTools could not parse its startup intent: {error:#}");
+            std::process::exit(2);
+        }
+    };
     match relaunch_protected_desktop_when_current() {
         Ok(true) => return,
         Ok(false) => {}
         Err(error) => eprintln!("NxTools could not use the protected desktop copy: {error:#}"),
     }
-    let background = std::env::args().any(|argument| argument == "--background");
-    let result = if background {
-        runtime::run_background_download_host(instance_wait)
-            .context("background download host startup failed")
-    } else {
-        run(instance_wait).context("desktop startup failed")
+    let result = match launch_mode {
+        DesktopLaunchMode::Background => runtime::run_background_download_host(instance_wait)
+            .context("background download host startup failed"),
+        DesktopLaunchMode::Normal | DesktopLaunchMode::BrowserDialog { .. } => {
+            run(instance_wait, launch_mode).context("desktop startup failed")
+        }
     };
     if let Err(error) = result {
         eprintln!("NxTools could not start: {error:#}");
@@ -379,6 +468,62 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod protected_desktop_tests {
     use super::*;
+
+    #[test]
+    fn browser_dialog_launch_minimizes_main_window_without_claiming_focus() {
+        let correlation_id = uuid::Uuid::new_v4();
+        let launch_mode = DesktopLaunchMode::from_arguments([
+            "NxTools.exe".to_string(),
+            "--browser-dialog".to_string(),
+            "--browser-correlation-id".to_string(),
+            correlation_id.to_string(),
+        ])
+        .expect("valid browser startup intent");
+
+        assert_eq!(
+            launch_mode,
+            DesktopLaunchMode::BrowserDialog { correlation_id }
+        );
+        assert!(!launch_mode.main_window_focus());
+        assert!(!launch_mode.main_window_show());
+        assert_eq!(launch_mode.correlation_id(), Some(correlation_id));
+    }
+
+    #[test]
+    fn ordinary_and_background_launches_keep_their_existing_presentation() {
+        let normal = DesktopLaunchMode::from_arguments(["NxTools.exe".to_string()])
+            .expect("normal startup intent");
+        let background = DesktopLaunchMode::from_arguments([
+            "NxTools.exe".to_string(),
+            "--background".to_string(),
+        ])
+        .expect("background startup intent");
+
+        assert_eq!(normal, DesktopLaunchMode::Normal);
+        assert!(normal.main_window_focus());
+        assert!(normal.main_window_show());
+        assert_eq!(background, DesktopLaunchMode::Background);
+    }
+
+    #[test]
+    fn browser_dialog_launch_rejects_a_missing_or_malformed_correlation_id() {
+        assert!(
+            DesktopLaunchMode::from_arguments([
+                "NxTools.exe".to_string(),
+                "--browser-dialog".to_string(),
+            ])
+            .is_err()
+        );
+        assert!(
+            DesktopLaunchMode::from_arguments([
+                "NxTools.exe".to_string(),
+                "--browser-dialog".to_string(),
+                "--browser-correlation-id".to_string(),
+                "not-a-uuid".to_string(),
+            ])
+            .is_err()
+        );
+    }
 
     #[test]
     fn only_an_identical_protected_package_replaces_the_release_launcher() {

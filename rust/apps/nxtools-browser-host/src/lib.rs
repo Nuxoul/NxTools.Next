@@ -87,7 +87,7 @@ impl DesktopStartMode {
 
     const fn command_arguments(self) -> &'static [&'static str] {
         match self {
-            Self::Interactive => &[],
+            Self::Interactive => &["--browser-dialog"],
             Self::Background => &["--background"],
         }
     }
@@ -620,13 +620,22 @@ fn command_browser_dialog_with_retry(
     }
 }
 
-fn desktop_start_command(desktop: &Path, start_mode: DesktopStartMode) -> Command {
+fn desktop_start_command(
+    desktop: &Path,
+    start_mode: DesktopStartMode,
+    correlation_id: Uuid,
+) -> Command {
     let mut command = Command::new(desktop);
     command
         .args(start_mode.command_arguments())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if start_mode == DesktopStartMode::Interactive {
+        command
+            .arg("--browser-correlation-id")
+            .arg(correlation_id.to_string());
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -657,7 +666,7 @@ fn connect_or_start(
         start_mode = start_mode.log_name(),
         "browser native host requested the packaged desktop"
     );
-    let child = desktop_start_command(&desktop, start_mode)
+    let child = desktop_start_command(&desktop, start_mode, correlation_id)
         .spawn()
         .inspect_err(|error| {
             warn!(
@@ -932,14 +941,25 @@ mod tests {
 
     #[test]
     fn browser_request_start_policy_distinguishes_dialog_from_direct_submit() {
+        let correlation_id = Uuid::new_v4();
+        let correlation_id_argument = correlation_id.to_string();
         let interactive = DesktopStartMode::for_browser_request(true);
         let background = DesktopStartMode::for_browser_request(false);
-        let interactive_command = desktop_start_command(Path::new("NxTools.exe"), interactive);
-        let background_command = desktop_start_command(Path::new("NxTools.exe"), background);
+        let interactive_command =
+            desktop_start_command(Path::new("NxTools.exe"), interactive, correlation_id);
+        let background_command =
+            desktop_start_command(Path::new("NxTools.exe"), background, correlation_id);
 
         assert_eq!(interactive, DesktopStartMode::Interactive);
         assert_eq!(interactive_command.get_program(), "NxTools.exe");
-        assert_eq!(interactive_command.get_args().count(), 0);
+        assert_eq!(
+            interactive_command.get_args().collect::<Vec<_>>(),
+            vec![
+                "--browser-dialog",
+                "--browser-correlation-id",
+                correlation_id_argument.as_str(),
+            ]
+        );
         assert_eq!(background, DesktopStartMode::Background);
         assert_eq!(
             background_command.get_args().collect::<Vec<_>>(),

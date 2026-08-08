@@ -73,6 +73,7 @@ internal sealed record PlaceFileDialogSearchWindowCommand(
     int VisibleHeight,
     int BottomOverlap);
 internal sealed record SetWindowOwnerCommand(long WindowHandle, long OwnerWindowHandle);
+internal sealed record SetWindowMinimizedCommand(long WindowHandle);
 internal sealed record SetWindowVisibilityCommand(long WindowHandle, bool Visible);
 internal sealed record SetWindowPositionCommand(long WindowHandle, int X, int Y);
 internal sealed record ActivateWindowCommand(long WindowHandle);
@@ -250,6 +251,12 @@ internal static class PlatformCommandParser
             envelope,
             "set_window_owner",
             "Window-owner command payload was empty.");
+
+    public static SetWindowMinimizedCommand ParseSetWindowMinimized(ProtocolEnvelope envelope) =>
+        Parse<SetWindowMinimizedCommand>(
+            envelope,
+            "set_window_minimized",
+            "Window-minimized command payload was empty.");
 
     public static BeginWindowResizeCommand ParseBeginWindowResize(ProtocolEnvelope envelope) =>
         Parse<BeginWindowResizeCommand>(envelope, "begin_window_resize", "Resize command payload was empty.");

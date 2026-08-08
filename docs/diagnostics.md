@@ -163,11 +163,23 @@ ID but never record the URL, file name, Referrer, headers, Cookie or Authorizati
 
 When the extension requests its legacy confirmation-window behavior and no Desktop pipe exists,
 BrowserHost records `browser_native_host.desktop_start_requested`, starts the protected sibling as
-the normal interactive `NxTools.exe`, and records `browser_native_host.desktop_started` plus
+`NxTools.exe --browser-dialog --browser-correlation-id <id>`, and records
+`browser_native_host.desktop_started` plus
 `browser_native_host.desktop_ready`. Spawn failure uses `browser_native_host.desktop_start_failed`
 with the native error code; pipe timeout uses `browser_native_host.desktop_ready_timeout`. Direct
 submissions, snapshots and task actions use the same bounded events with `start_mode=background`
 and are the only paths allowed to append `--background`.
+
+The browser-dialog startup intent prevents the ordinary main window from claiming focus and keeps
+it hidden until PlatformHost can issue `SW_SHOWMINNOACTIVE` and verify `IsIconic`. Desktop records
+`download.browser_startup.main_window_minimize_requested`, then the observed
+`download.browser_startup.main_window_minimized`,
+`download.browser_startup.main_window_minimize_failed` or
+`download.browser_startup.main_window_minimize_timeout`, including elapsed time and the correlation
+ID forwarded by BrowserHost. PlatformHost records the native observation with the same correlation.
+The add-download surface still completes foreground ownership through the separate
+`download.browser_dialog.foreground_requested` chain; none of these events records URL, file name
+or request context.
 
 The native host records `browser_native_host.dialog_accepted` only after the interactive Desktop
 has attached its private GPUI intake. A pipe can become available slightly before that subscriber;

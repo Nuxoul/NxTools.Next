@@ -60,8 +60,12 @@ Assert-Contains $nativeHostSource 'DownloadCommand::BrowserSubmit' `
     'Native host must submit through the Rust download command boundary.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenDialog' `
     'Native host must distinguish a GPUI confirmation-window request from direct task creation.'
-Assert-Contains $nativeHostSource 'connect_or_start(executable, !open_dialog)' `
+Assert-Contains $nativeHostSource 'DesktopStartMode::for_browser_request(open_dialog)' `
     'A confirmation-window request must not silently start a headless download host.'
+Assert-Contains $nativeHostSource 'Self::Interactive => &["--browser-dialog"]' `
+    'Browser confirmation cold start must carry a dedicated desktop launch intent.'
+Assert-Contains $nativeHostSource '.arg("--browser-correlation-id")' `
+    'Browser confirmation cold start must preserve its correlation ID across the process boundary.'
 Assert-Contains $nativeHostSource 'handoff_id: Some(handoff_id.to_string())' `
     'Native host must echo the accepted handoff ID.'
 if ($nativeHostSource.Contains('error = %error', [StringComparison]::Ordinal)) {
@@ -102,6 +106,25 @@ Assert-Contains $newWindowLifecycle 'PlatformCommand::SetWindowTopmost' `
     'The add-download window must preserve the legacy always-on-top behavior.'
 Assert-Contains $newWindowLifecycle 'PlatformCommand::ActivateWindow' `
     'The browser-created add-download window must explicitly request foreground activation.'
+
+$desktopMain = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs') -Raw
+Assert-Contains $desktopMain 'focus: launch_mode.main_window_focus()' `
+    'A browser confirmation cold start must not let the main window claim focus.'
+Assert-Contains $desktopMain 'show: launch_mode.main_window_show()' `
+    'A browser confirmation cold start must keep the main window hidden until native minimization.'
+$platformEvents = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events.rs') -Raw
+Assert-Contains $platformEvents 'PlatformCommand::SetWindowMinimized' `
+    'Browser startup must cross the typed PlatformHost boundary to show the main window minimized.'
+Assert-Contains $platformEvents 'download.browser_startup.main_window_minimized' `
+    'Browser startup minimization must report the observed native command result.'
+$windowsAdapter = Get-Content -LiteralPath `
+    (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs') -Raw
+Assert-Contains $windowsAdapter 'ShowWindow(window, SwShowMinNoActive)' `
+    'PlatformHost must show the hidden main window minimized without activation.'
+Assert-Contains $windowsAdapter 'IsWindowVisible(window) && IsIconic(window)' `
+    'PlatformHost must verify the native minimized state before reporting success.'
 
 $downloadStorage = Get-Content -LiteralPath `
     (Join-Path $root 'rust\crates\nxtools-download\src\storage.rs') -Raw

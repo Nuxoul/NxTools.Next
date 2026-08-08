@@ -61,6 +61,7 @@ internal static class Program
             ("hotkey recording releases and restores the registered shortcut", HotKeyRecordingReleasesAndRestoresShortcut),
             ("clipboard exclusions match process names safely", ClipboardExclusionsMatchProcessNames),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
+            ("minimized command shows a hidden native window minimized without focus", MinimizedCommandUsesRealNativeWindow),
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
@@ -2486,6 +2487,17 @@ internal static class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyWindow(IntPtr windowHandle);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
     private static readonly WindowProcedure TestWindowProcedure = DefWindowProc;
 
     private static ushort RegisterTestWindowClass(string className, IntPtr instance)
@@ -2630,6 +2642,37 @@ internal static class Program
         var command = PlatformCommandParser.ParseSetWindowVisibility(envelope);
         Assert(command.WindowHandle == 778L);
         Assert(!command.Visible);
+        return Task.CompletedTask;
+    }
+
+    private static Task MinimizedCommandUsesRealNativeWindow()
+    {
+        const uint wsOverlappedWindow = 0x00CF0000;
+        var instance = GetModuleHandle(null);
+        var window = CreateWindowEx(
+            0, "#32770", "NxTools startup test", wsOverlappedWindow,
+            0, 0, 320, 200, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            var envelope = ProtocolEnvelope.Create("platform_command", new
+            {
+                Command = "set_window_minimized",
+                Data = new { WindowHandle = window.ToInt64() }
+            });
+            var command = PlatformCommandParser.ParseSetWindowMinimized(envelope);
+            var foregroundBefore = GetForegroundWindow();
+            var result = WindowsPlatformAdapter.MinimizeNativeWindowForTest(command.WindowHandle);
+
+            Assert(result.Success);
+            Assert(IsWindowVisible(window));
+            Assert(IsIconic(window));
+            Assert(GetForegroundWindow() == foregroundBefore);
+        }
+        finally
+        {
+            _ = DestroyWindow(window);
+        }
         return Task.CompletedTask;
     }
 

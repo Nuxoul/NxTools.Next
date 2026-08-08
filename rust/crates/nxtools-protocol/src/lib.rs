@@ -361,6 +361,7 @@ pub enum PlatformCommand {
     SetTaskbarProgressOverlayVisibility(SetTaskbarProgressOverlayVisibilityCommand),
     PlaceFileDialogSearchWindow(PlaceFileDialogSearchWindowCommand),
     SetWindowOwner(SetWindowOwnerCommand),
+    SetWindowMinimized(SetWindowMinimizedCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
     SetWindowPosition(SetWindowPositionCommand),
     ActivateWindow(ActivateWindowCommand),
@@ -565,6 +566,11 @@ pub struct PlaceFileDialogSearchWindowCommand {
 pub struct SetWindowOwnerCommand {
     pub window_handle: i64,
     pub owner_window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetWindowMinimizedCommand {
+    pub window_handle: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1108,6 +1114,7 @@ mod tests {
                 window_handle: 778,
                 owner_window_handle: 77,
             }),
+            PlatformCommand::SetWindowMinimized(SetWindowMinimizedCommand { window_handle: 778 }),
             PlatformCommand::ActivateWindow(ActivateWindowCommand { window_handle: 778 }),
             PlatformCommand::BeginWindowResize(BeginWindowResizeCommand { window_handle: 779 }),
             PlatformCommand::BeginWindowMove(BeginWindowMoveCommand { window_handle: 780 }),

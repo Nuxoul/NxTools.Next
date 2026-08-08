@@ -23,6 +23,7 @@ internal static class PlatformCapabilities
     public const string TaskbarProgressOverlay = "taskbar_progress_overlay";
     public const string NativeFileDrag = "native_file_drag";
     public const string WindowVisibility = "window_visibility";
+    public const string WindowMinimized = "window_minimized";
     public const string WindowPosition = "window_position";
     public const string ShellIconExtraction = "shell_icon_extraction";
     public const string ShellContextActions = "shell_context_actions";
@@ -55,6 +56,7 @@ internal static class PlatformCapabilities
             TaskbarProgressOverlay,
             NativeFileDrag,
             WindowVisibility,
+            WindowMinimized,
             WindowPosition,
             ShellIconExtraction,
             ShellContextActions,

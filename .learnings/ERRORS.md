@@ -4,6 +4,87 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260808-MISSINGDESKTOPTESTPATH] assumed_desktop_test_directory
+
+**Logged**: 2026-08-08T19:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A read-only search assumed that `rust/apps/nxtools-desktop/tests` existed instead of discovering
+the available test paths first.
+
+### Error
+
+```text
+rg: rust/apps/nxtools-desktop/tests: 系统找不到指定的文件
+```
+
+### Context
+
+- The repository keeps these desktop tests in `src/main.rs` and architecture gates under
+  `tests/architecture`.
+- No files were changed by the failed search.
+
+### Suggested Fix
+
+Use `rg --files` or `Test-Path -LiteralPath` before passing an assumed test directory to `rg`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/main.rs`, `tests/architecture`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T19:10:00+08:00
+- **Notes**: Subsequent discovery checked each candidate path before searching it.
+
+---
+
+## [ERR-20260808-DESKTOPTESTTIMEOUT] desktop_test_first_compile_timeout
+
+**Logged**: 2026-08-08T19:18:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The first desktop red-test invocation used a 120-second outer timeout, which expired during the
+initial native dependency build before Rust emitted the intended compile failure.
+
+### Error
+
+```text
+command timed out after 124041 milliseconds
+```
+
+### Context
+
+- The build already used one Cargo job, disabled incremental compilation and 256 codegen units.
+- No Cargo, rustc or linker process remained afterward, and 6.30 GiB physical memory was free.
+
+### Suggested Fix
+
+Allow up to five minutes for the first desktop test build while retaining the low-memory build
+environment.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/main.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T19:18:00+08:00
+- **Notes**: The repeated command completed in 12 seconds from the warmed build tree and produced
+  the intended missing-type red failure.
+
+---
+
 ## [ERR-20260808-CLIPPYINSPECTERR] browser_host_clippy_manual_inspect
 
 **Logged**: 2026-08-08T17:42:45+08:00
