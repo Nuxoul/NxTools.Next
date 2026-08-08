@@ -125,6 +125,17 @@ configure_clipboard succeeds
   -> FAST_FAIL_FATAL_APP_EXIT (0xc0000409)
 ```
 
+The 2026-08-08 packaged browser-takeover acceptance run exposed the same invariant at a second
+boundary. `paste_native_formats` completed successfully, then `ClipboardApplication` forwarded its
+command result into the still-open panel while the application entity remained leased. The panel
+synchronously called `mark_item_used` through the same application entity, producing
+`cannot update ClipboardApplication while it is already being updated`; the panic crossed the
+Windows callback boundary and terminated the protected desktop with `0xc0000409`. The browser
+handoff arrived roughly two seconds later and was accepted by the independent DownloadHost, so the
+browser extension was not the crash origin. Usage persistence must be deferred to the next
+application turn, and the copy-only list refresh must be deferred once more until that application
+update has released its lease.
+
 Hotkey recording still suspends `RegisterHotKey` through C# before accepting a key. Cancel/focus-out
 restores the existing registration, while a confirmed replacement registers the new binding.
 

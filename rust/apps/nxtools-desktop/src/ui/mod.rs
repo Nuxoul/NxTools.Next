@@ -862,20 +862,21 @@ impl ClipboardPanel {
         self.pending_action = None;
         if result.success {
             info!(%correlation_id, ?action, "clipboard action completed");
-            match self
-                .application
-                .update(cx, |application, _| application.mark_item_used(item_id))
-            {
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => {
-                    warn!(%error, item_id, "clipboard action succeeded but usage could not be recorded");
-                }
-                Err(error) => {
-                    warn!(%error, item_id, "clipboard action succeeded but clipboard history was unavailable");
-                }
-            }
+            let application = self.application.clone();
+            let panel = (action == ClipboardAction::CopyOnly).then(|| cx.entity().downgrade());
+            schedule_entity_update(
+                application,
+                move |application, cx| {
+                    if let Err(error) = application.mark_item_used(item_id) {
+                        warn!(%error, item_id, "clipboard action succeeded but usage could not be recorded");
+                    }
+                    if let Some(panel) = panel {
+                        schedule_entity_update(panel, |panel, cx| panel.refresh_entries(cx), cx);
+                    }
+                },
+                cx,
+            );
             if action == ClipboardAction::CopyOnly {
-                self.refresh_entries(cx);
                 self.status = PanelStatus::Notice("已复制".into());
                 window.activate_window();
                 cx.notify();

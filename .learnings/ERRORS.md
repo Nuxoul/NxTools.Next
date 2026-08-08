@@ -5833,3 +5833,11 @@ then, confirm this failure with the exact test before changing transfer producti
 **Error**: An interpolated PowerShell regex used C-style escaped quotes and failed at parse time.
 **Root cause**: PowerShell double-quoted strings do not use backslash to escape embedded quotes.
 **Prevention**: Avoid nested interpolated regex quoting for fixed generated manifests; extract all 64-character hash literals once and compare them in declared order.
+
+## ERR-20260808-CLIPBOARDCOMPLETIONREENTRY
+
+**Date**: 2026-08-08
+**Context**: First packaged browser-takeover acceptance run
+**Error**: Protected `NxTools.exe` terminated with `0xc0000409` after `ClipboardPanel::handle_command_result` synchronously updated an already leased `ClipboardApplication`.
+**Root cause**: Successful paste usage persistence and copy-only refresh crossed from the panel back into the application during the application's platform-notification callback.
+**Prevention**: Every panel callback reached from an application notification must defer application mutation to the next GPUI turn; any panel refresh depending on that mutation must be deferred for a second turn and protected by an architecture gate.
