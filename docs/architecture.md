@@ -18,11 +18,19 @@ NxTools.Cli.exe
   |-- owns argument parsing and terminal presentation only
   +-- current-user pipe: nxtools-next-download-v1
         -> the Rust desktop/background download host remains the sole transfer and database owner
+
+Browser extension
+  +---- NxTools.BrowserHost.exe (Rust Native Messaging adapter)
+          -> browser-owned lifetime; exits when the native stdio channel closes
+          -> opens normal NxTools.exe for confirmation-window requests
+          -> opens NxTools.exe --background only for non-interactive download commands
 ```
 
 The desktop process is the source of truth. Adapter processes may reconnect and be restarted
 without reconstructing product state. Messages use newline-delimited JSON during development;
 the envelope is versioned so payload encoding can change without blurring process ownership.
+The LocalSystem indexer intentionally remains available across GUI restarts, while BrowserHost
+follows the browser extension connection rather than the GUI lifetime.
 
 ## Rust owns
 

@@ -161,9 +161,20 @@ The native host records `browser_native_host.started`, one bounded request outco
 `download.browser_handoff.duplicate_accepted`. Both keep the handoff ID, task ID and correlation
 ID but never record the URL, file name, Referrer, headers, Cookie or Authorization value.
 
-When the extension requests its legacy confirmation-window behavior, the native host records
-`browser_native_host.dialog_accepted` only after the interactive Desktop has attached its private
-GPUI intake. Rust records `download.browser_dialog.accepted` (or
+When the extension requests its legacy confirmation-window behavior and no Desktop pipe exists,
+BrowserHost records `browser_native_host.desktop_start_requested`, starts the protected sibling as
+the normal interactive `NxTools.exe`, and records `browser_native_host.desktop_started` plus
+`browser_native_host.desktop_ready`. Spawn failure uses `browser_native_host.desktop_start_failed`
+with the native error code; pipe timeout uses `browser_native_host.desktop_ready_timeout`. Direct
+submissions, snapshots and task actions use the same bounded events with `start_mode=background`
+and are the only paths allowed to append `--background`.
+
+The native host records `browser_native_host.dialog_accepted` only after the interactive Desktop
+has attached its private GPUI intake. A pipe can become available slightly before that subscriber;
+`browser_native_host.dialog_consumer_waiting` records this bounded startup state, followed by
+`browser_native_host.dialog_consumer_ready` or `browser_native_host.dialog_consumer_timeout`.
+Only retryable `Unavailable` results are retried; malformed or non-retryable requests return
+immediately. Rust records `download.browser_dialog.accepted` (or
 `download.browser_dialog.duplicate_accepted`), and GPUI completes the correlated chain with
 `download.browser_dialog.opened` or `download.browser_dialog.open_failed`. A headless host rejects
 the request with `download.browser_dialog.unavailable`, so the browser keeps its original download.

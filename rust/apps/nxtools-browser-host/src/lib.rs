@@ -8,8 +8,9 @@ use anyhow::{Context, Result, bail};
 use nxtools_core::{AppConfig, AppPaths};
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy, DownloadCommand,
-    DownloadCommandOutcome, DownloadQuery, DownloadRequest, DownloadRequestHeader,
-    DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, RequestOrigin,
+    DownloadCommandOutcome, DownloadCommandResult, DownloadFaultCode, DownloadQuery,
+    DownloadRequest, DownloadRequestHeader, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId,
+    RequestOrigin,
 };
 use nxtools_download_ipc::{DOWNLOAD_PIPE_NAME, DownloadIpcClient};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,7 @@ const MAX_REQUEST_KIND_BYTES: usize = 32;
 const MAX_EXTENSION_VERSION_BYTES: usize = 32;
 const MAX_TASK_ACTION_BYTES: usize = 16;
 const MAX_EXTENSION_LOG_EVENT_BYTES: usize = 96;
+const INTERACTIVE_DESKTOP_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "bilibili_tracks_incomplete",
     "bilibili_tracks_selected",
@@ -67,6 +69,36 @@ const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "youtube_captured_selected",
     "youtube_progressive_selected",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesktopStartMode {
+    Interactive,
+    Background,
+}
+
+impl DesktopStartMode {
+    const fn for_browser_request(open_dialog: bool) -> Self {
+        if open_dialog {
+            Self::Interactive
+        } else {
+            Self::Background
+        }
+    }
+
+    const fn command_arguments(self) -> &'static [&'static str] {
+        match self {
+            Self::Interactive => &[],
+            Self::Background => &["--background"],
+        }
+    }
+
+    const fn log_name(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::Background => "background",
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -331,8 +363,12 @@ fn submit_download(
         DownloadSubmitMode::QueueOnly
     };
     let command_request_id = correlation_id(&request_id)?;
-    let mut client = connect_or_start(executable, !open_dialog)?;
-    let result = client.command(nxtools_download::DownloadCommandEnvelope {
+    let mut client = connect_or_start(
+        executable,
+        DesktopStartMode::for_browser_request(open_dialog),
+        command_request_id,
+    )?;
+    let command = nxtools_download::DownloadCommandEnvelope {
         protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
         request_id: command_request_id,
         origin: RequestOrigin::Browser,
@@ -348,7 +384,12 @@ fn submit_download(
                 mode,
             }
         },
-    })?;
+    };
+    let result = if open_dialog {
+        command_browser_dialog_when_ready(&mut client, command)?
+    } else {
+        client.command(command)?
+    };
     match result.outcome {
         DownloadCommandOutcome::BrowserAccepted { task_id, duplicate } => {
             info!(
@@ -395,9 +436,11 @@ fn submit_download(
 }
 
 fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
-    let mut client = connect_or_start(executable, true)?;
+    let command_request_id = correlation_id(&request_id)?;
+    let mut client =
+        connect_or_start(executable, DesktopStartMode::Background, command_request_id)?;
     let result = client.command(command_envelope(
-        correlation_id(&request_id)?,
+        command_request_id,
         DownloadCommand::Snapshot {
             query: DownloadQuery {
                 statuses: Vec::new(),
@@ -445,9 +488,11 @@ fn task_action(
         "cancel" => DownloadTaskAction::Cancel,
         _ => bail!("unsupported task action '{action}'"),
     };
-    let mut client = connect_or_start(executable, true)?;
+    let command_request_id = correlation_id(&request_id)?;
+    let mut client =
+        connect_or_start(executable, DesktopStartMode::Background, command_request_id)?;
     let result = client.command(command_envelope(
-        correlation_id(&request_id)?,
+        command_request_id,
         DownloadCommand::Task { task_id, action },
         RequestOrigin::Browser,
     ))?;
@@ -501,12 +546,67 @@ fn command_envelope(
     }
 }
 
-fn connect_or_start(executable: &Path, allow_background_start: bool) -> Result<DownloadIpcClient> {
+fn browser_dialog_waiting_for_interactive_consumer(result: &DownloadCommandResult) -> bool {
+    matches!(
+        &result.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == DownloadFaultCode::Unavailable && fault.retryable
+    )
+}
+
+fn command_browser_dialog_when_ready(
+    client: &mut DownloadIpcClient,
+    command: nxtools_download::DownloadCommandEnvelope,
+) -> Result<DownloadCommandResult> {
+    let correlation_id = command.request_id;
+    let started = Instant::now();
+    let deadline = started + INTERACTIVE_DESKTOP_READY_TIMEOUT;
+    let mut attempts = 0_u16;
+    let mut retry_delay = Duration::from_millis(100);
+    loop {
+        attempts = attempts.saturating_add(1);
+        let result = client.command(command.clone())?;
+        if !browser_dialog_waiting_for_interactive_consumer(&result) {
+            if attempts > 1 {
+                info!(
+                    event = "browser_native_host.dialog_consumer_ready",
+                    %correlation_id,
+                    attempts,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "interactive desktop accepted the browser confirmation-window request"
+                );
+            }
+            return Ok(result);
+        }
+        if Instant::now() >= deadline {
+            warn!(
+                event = "browser_native_host.dialog_consumer_timeout",
+                %correlation_id,
+                attempts,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "interactive desktop did not attach the browser dialog consumer before the deadline"
+            );
+            return Ok(result);
+        }
+        if attempts == 1 {
+            info!(
+                event = "browser_native_host.dialog_consumer_waiting",
+                %correlation_id,
+                "download pipe is ready while the interactive dialog consumer is still starting"
+            );
+        }
+        std::thread::sleep(retry_delay);
+        retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
+    }
+}
+
+fn connect_or_start(
+    executable: &Path,
+    start_mode: DesktopStartMode,
+    correlation_id: Uuid,
+) -> Result<DownloadIpcClient> {
     if let Ok(client) = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150)) {
         return Ok(client);
-    }
-    if !allow_background_start {
-        bail!("the interactive NxTools desktop is not running")
     }
     let desktop = executable
         .parent()
@@ -515,9 +615,16 @@ fn connect_or_start(executable: &Path, allow_background_start: bool) -> Result<D
     if !desktop.is_file() {
         bail!("packaged desktop host was not found")
     }
+    let started = Instant::now();
+    info!(
+        event = "browser_native_host.desktop_start_requested",
+        %correlation_id,
+        start_mode = start_mode.log_name(),
+        "browser native host requested the packaged desktop"
+    );
     let mut command = Command::new(&desktop);
     command
-        .arg("--background")
+        .args(start_mode.command_arguments())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -526,18 +633,50 @@ fn connect_or_start(executable: &Path, allow_background_start: bool) -> Result<D
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000);
     }
-    command
+    let child = command
         .spawn()
+        .inspect_err(|error| {
+            warn!(
+                event = "browser_native_host.desktop_start_failed",
+                %correlation_id,
+                start_mode = start_mode.log_name(),
+                native_error_code = error.raw_os_error().unwrap_or_default(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "browser native host could not start the packaged desktop"
+            );
+        })
         .context("failed to start the desktop download host")?;
+    info!(
+        event = "browser_native_host.desktop_started",
+        %correlation_id,
+        start_mode = start_mode.log_name(),
+        process_id = child.id(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "browser native host started the packaged desktop"
+    );
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         if let Ok(client) =
             DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(250))
         {
+            info!(
+                event = "browser_native_host.desktop_ready",
+                %correlation_id,
+                start_mode = start_mode.log_name(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "packaged desktop download pipe became available"
+            );
             return Ok(client);
         }
         std::thread::sleep(Duration::from_millis(75));
     }
+    warn!(
+        event = "browser_native_host.desktop_ready_timeout",
+        %correlation_id,
+        start_mode = start_mode.log_name(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "packaged desktop did not expose the download pipe before the deadline"
+    );
     bail!("desktop download host did not become available")
 }
 
@@ -765,5 +904,46 @@ mod tests {
                 .and_then(|data| data["queued"].as_bool()),
             Some(false)
         );
+    }
+
+    #[test]
+    fn browser_request_start_policy_distinguishes_dialog_from_direct_submit() {
+        let interactive = DesktopStartMode::for_browser_request(true);
+        let background = DesktopStartMode::for_browser_request(false);
+
+        assert_eq!(interactive, DesktopStartMode::Interactive);
+        assert_eq!(interactive.command_arguments(), &[] as &[&str]);
+        assert_eq!(background, DesktopStartMode::Background);
+        assert_eq!(background.command_arguments(), &["--background"]);
+    }
+
+    #[test]
+    fn browser_dialog_retries_only_while_the_interactive_consumer_is_unavailable() {
+        let request_id = Uuid::new_v4();
+        let unavailable = nxtools_download::DownloadCommandResult {
+            request_id,
+            outcome: DownloadCommandOutcome::Rejected {
+                fault: nxtools_download::DownloadFault {
+                    code: nxtools_download::DownloadFaultCode::Unavailable,
+                    message: "interactive consumer is starting".into(),
+                    retryable: true,
+                },
+            },
+        };
+        let invalid = nxtools_download::DownloadCommandResult {
+            request_id,
+            outcome: DownloadCommandOutcome::Rejected {
+                fault: nxtools_download::DownloadFault {
+                    code: nxtools_download::DownloadFaultCode::InvalidRequest,
+                    message: "invalid request".into(),
+                    retryable: false,
+                },
+            },
+        };
+
+        assert!(browser_dialog_waiting_for_interactive_consumer(
+            &unavailable
+        ));
+        assert!(!browser_dialog_waiting_for_interactive_consumer(&invalid));
     }
 }

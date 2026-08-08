@@ -4,6 +4,46 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260808-CLIPPYINSPECTERR] browser_host_clippy_manual_inspect
+
+**Logged**: 2026-08-08T17:42:45+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+BrowserHost Clippy rejected `map_err` used only to log an unchanged process-spawn error.
+
+### Error
+
+```text
+error: using `map_err` over `inspect_err`
+```
+
+### Context
+
+- The desktop launch boundary logs the Windows native error code before adding `anyhow` context.
+- The closure returned the original error unchanged, triggering `clippy::manual_inspect` under
+  `-D warnings`.
+
+### Suggested Fix
+
+Use `Result::inspect_err` for logging-only side effects, then attach context without transforming
+the original error.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-browser-host/src/lib.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:42:45+08:00
+- **Notes**: Replaced the logging-only `map_err` with `inspect_err` and reran Clippy.
+
+---
+
 ## [ERR-20260808-HEADLESSSCREENSHOTRACE] screenshot_visible_after_process_return
 
 **Logged**: 2026-08-08T17:29:00+08:00
@@ -6061,5 +6101,46 @@ process log extraction separate so one locked file cannot obscure the other evid
 - **Resolved**: 2026-08-08T16:43:00+08:00
 - **Notes**: The required timing evidence came from the independently readable Desktop and
   PlatformHost logs; future active-log reads will use shared access.
+
+---
+
+## [ERR-20260808-DOCSPATCHCONTEXT] apply_patch_context_mismatch
+
+**Logged**: 2026-08-08T17:44:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+
+A combined documentation patch was rejected because its download-plan context did not match the
+file's actual line wrapping.
+
+### Error
+
+```text
+apply_patch verification failed: Failed to find expected lines in docs/download-plan.md
+```
+
+### Context
+
+- One patch attempted four independent documentation updates.
+- The final plan hunk used remembered wrapping instead of the exact nearby lines.
+- `apply_patch` rejected the operation without partially changing the files.
+
+### Suggested Fix
+
+Read the exact local context first and apply independent small patches when updating unrelated
+document sections.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `docs/download-plan.md`, `docs/diagnostics.md`, `docs/architecture.md`, `docs/reference-code/download.md`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:44:00+08:00
+- **Notes**: Reapplied the four updates with exact, file-specific contexts.
 
 ---
