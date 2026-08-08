@@ -111,6 +111,7 @@ internal static class IndexerServiceInstaller
                 ?? throw new InvalidOperationException("Cannot locate NxTools.PlatformHost.exe.");
             indexerPath = ValidatePackagedIndexerPath(hostPath, indexerPath);
             var desktopPath = ValidatePackagedSibling(hostPath, "NxTools.exe");
+            var browserHostPath = ValidatePackagedSibling(hostPath, "NxTools.BrowserHost.exe");
             PinCurrentProcessImage();
             string trustedPlatformHostHash;
             lock (ProcessImageGate)
@@ -128,6 +129,9 @@ internal static class IndexerServiceInstaller
             using var desktopSource = TrustedBinary.Open(
                 desktopPath,
                 ReleaseBinaryManifest.DesktopSha256);
+            using var browserHostSource = TrustedBinary.Open(
+                browserHostPath,
+                ReleaseBinaryManifest.BrowserHostSha256);
 
             var serviceExists = ServiceExists();
             if (serviceExists)
@@ -140,8 +144,10 @@ internal static class IndexerServiceInstaller
                 Path.Combine(protectedDirectory, "NxTools.PlatformHost.exe");
             var protectedDesktopPath =
                 Path.Combine(protectedDirectory, "NxTools.exe");
+            var protectedBrowserHostPath =
+                Path.Combine(protectedDirectory, "NxTools.BrowserHost.exe");
             StopProtectedProcesses(
-                [protectedDesktopPath, protectedPlatformHostPath],
+                [protectedDesktopPath, protectedPlatformHostPath, protectedBrowserHostPath],
                 Environment.ProcessId,
                 log);
             using var protectedDirectories =
@@ -158,6 +164,10 @@ internal static class IndexerServiceInstaller
                 desktopSource,
                 protectedDirectory,
                 "NxTools.exe");
+            protectedBrowserHostPath = DeployProtectedBinary(
+                browserHostSource,
+                protectedDirectory,
+                "NxTools.BrowserHost.exe");
             protectedDirectories.Validate();
             ValidateDeployedBinary(
                 protectedIndexerPath,
@@ -168,6 +178,9 @@ internal static class IndexerServiceInstaller
             ValidateDeployedBinary(
                 protectedDesktopPath,
                 desktopSource.Sha256);
+            ValidateDeployedBinary(
+                protectedBrowserHostPath,
+                browserHostSource.Sha256);
             RunSc([
                 RegistrationVerb(serviceExists), ServiceName,
                 "binPath=", $"\"{protectedIndexerPath}\" --service",

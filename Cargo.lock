@@ -4001,6 +4001,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nxtools-browser-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nxtools-core",
+ "nxtools-download",
+ "nxtools-download-ipc",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "nxtools-cli"
 version = "0.1.0"
 dependencies = [

@@ -4,6 +4,46 @@ Capabilities requested by the user.
 
 ---
 
+## [FEAT-20260808-BUILD-MEMORY-RECOVERY] safe_release_commit_recovery
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Requested Capability
+
+Automatically reclaim genuinely unused memory before a Release package instead of repeatedly
+requiring the user to close applications, using Mem Reduct as a behavioral reference.
+
+### User Context
+
+Previous Release builds exhausted Windows commit memory and could make the editor or compiler exit.
+
+### Complexity Estimate
+
+medium
+
+### Suggested Implementation
+
+Distinguish physical working-set pressure from committed-memory headroom. Reclaim commit only from
+exact package-path processes already authorized for replacement, then re-sample and refuse before
+Cargo if the system is still unsafe. Do not purge unrelated working sets or standby lists.
+
+### Metadata
+
+- Frequency: recurring
+- Related Features: windows_release_packaging
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Added exact-path recovery and a guarded retry; documented the GPL-3.0 Mem Reduct
+  reference boundary and why its global working-set/page-list cleanup does not release live private
+  commit.
+
+---
+
 ## [FEAT-20260718-001] clipboard-native-paste-actions
 
 **Logged**: 2026-07-18T10:05:00+08:00

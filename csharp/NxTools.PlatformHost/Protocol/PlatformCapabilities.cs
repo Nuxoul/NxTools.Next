@@ -30,6 +30,7 @@ internal static class PlatformCapabilities
     public const string FileDialogSearch = "file_dialog_search";
     public const string WindowActivation = "window_activation";
     public const string IndexerServiceManagement = "indexer_service_management";
+    public const string BrowserNativeMessaging = "browser_native_messaging";
 
     public static string[] Create(bool clipboardHotKeyAvailable, bool quickLaunchHotKeyAvailable = false)
     {
@@ -60,7 +61,8 @@ internal static class PlatformCapabilities
             DirectoryNavigation,
             FileDialogSearch,
             WindowActivation,
-            IndexerServiceManagement
+            IndexerServiceManagement,
+            BrowserNativeMessaging
         };
         if (clipboardHotKeyAvailable)
         {

@@ -175,11 +175,13 @@ packaged C# helper in the requesting desktop session. For that privileged comman
 derives the real client PID and session from the connected pipe handle, accepts only the desktop
 path and bytes approved by the elevated installer, and never accepts an executable path from the
 request. The installer takes ownership of the ProgramData product root, rejects reparse points,
-replaces its DACL, and deploys the indexer, broker PlatformHost and authorized desktop under
+replaces its DACL, and deploys the indexer, broker PlatformHost, browser Native Messaging host and
+authorized desktop under
 `%ProgramData%\NxTools\NxTools.Next\Service`. Only SYSTEM/Administrators retain write access;
 SCM, the broker and privileged requests never execute or trust the user-writable Release directory.
 The UAC-authorized PlatformHost pins its own process image at startup and embeds build-generated
-SHA-256 values for the Rust desktop and indexer; the elevated installer accepts only source handles
+SHA-256 values for the Rust desktop, browser host and indexer; the elevated installer accepts only
+source handles
 matching that compiled manifest before it publishes protected copies.
 When an already protected desktop repairs ACL, registry or SCM state, identical source and
 destination paths skip binary replacement while all security descriptors and hashes are still

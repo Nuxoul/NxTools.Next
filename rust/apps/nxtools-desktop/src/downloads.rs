@@ -34,10 +34,11 @@ use nxtools_download::{
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
-    ActivateWindowCommand, BeginFileDragCommand, OpenShellTargetCommand, PickDirectoryCommand,
-    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
-    SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
-    TaskbarOverlayAnchor, TaskbarProgressState,
+    ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
+    OpenShellTargetCommand, PickDirectoryCommand, PlaceTaskbarProgressOverlayCommand,
+    PlatformCommand, PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
+    SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction, TaskbarOverlayAnchor,
+    TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -2122,6 +2123,29 @@ impl DownloadApplication {
     ) {
         if matches!(&notification, PlatformNotification::Connected) {
             let correlation_id = uuid::Uuid::new_v4();
+            match self.platform.send_command_correlated(
+                PlatformCommand::EnsureBrowserNativeMessaging(
+                    EnsureBrowserNativeMessagingCommand {
+                        enabled: true,
+                        chromium_extension_id: "haohhnpjfggpdadhcbjakjpkmkljkpif".into(),
+                        firefox_extension_id: "nxtools-download-interceptor@nxtools.local".into(),
+                    },
+                ),
+                correlation_id,
+            ) {
+                Ok(command_id) => info!(
+                    event = "download.browser_native_messaging.registration_requested",
+                    %correlation_id,
+                    %command_id,
+                    "browser native messaging registration queued after PlatformHost connected"
+                ),
+                Err(error) => warn!(
+                    event = "download.browser_native_messaging.registration_request_failed",
+                    %correlation_id,
+                    %error,
+                    "browser native messaging registration could not be queued"
+                ),
+            }
             match self.apply_taskbar_overlay_placement(correlation_id) {
                 Ok(command_id) => info!(
                     event = "download.taskbar_overlay.reconnect_restore_accepted",
@@ -6241,6 +6265,7 @@ mod tests {
                     referrer: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                 },
@@ -6551,6 +6576,7 @@ mod tests {
             referrer: None,
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
         };
@@ -7403,6 +7429,7 @@ mod tests {
             referrer: None,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
         };

@@ -1274,6 +1274,10 @@ pub enum HttpDownloadError {
 }
 
 impl HttpDownloadError {
+    pub(crate) fn allows_fresh_segmented_restart_after_resume(&self) -> bool {
+        matches!(self, Self::RangeNotHonored { status: 200 })
+    }
+
     pub(crate) fn allows_clean_single_stream_fallback(&self) -> bool {
         matches!(
             self,

@@ -3,6 +3,223 @@
 Command failures and integration errors.
 
 ---
+
+## [ERR-20260808-RUSTFMTEDITION] rustfmt_wrong_edition
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+Direct `rustfmt` verification was first invoked with edition 2021 even though this workspace uses
+Rust 2024 syntax.
+
+### Error
+
+```text
+error: let chains are only allowed in Rust 2024 or later
+```
+
+### Suggested Fix
+
+Read the workspace package edition before invoking standalone `rustfmt`; pass `--edition 2024` for
+this repository.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Re-ran the same formatter with edition 2024 successfully. No build or package command
+  was involved.
+
+---
+
+## [ERR-20260808-PSVARIABLECOLON] powershell_variable_followed_by_colon
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+A one-off PowerShell validation command embedded `$script:` in an interpolated string, which the
+parser treated as an invalid scoped variable reference.
+
+### Suggested Fix
+
+Delimit PowerShell variables followed immediately by punctuation, for example `${script}:`.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Corrected the validation command; the static diff and PowerShell parser checks then
+  passed.
+
+---
+## [ERR-20260808-EMPTYPROCESSMATCH] powershell_empty_process_id
+
+**Logged**: 2026-08-08T14:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+An empty process match was wrapped as an array containing `$null`, which caused `Get-Process` to
+interpret the requested ID as PID 0.
+
+### Error
+
+```text
+Cannot stop process "Idle (0)" because access is denied.
+```
+
+### Context
+
+- The command attempted to stop only Cargo/rustc processes for one exact regression-test command.
+- The matching processes had already exited, so the property projection produced a null element.
+- No system or user process was stopped.
+
+### Suggested Fix
+
+Filter projected IDs with `Where-Object { $_ -gt 0 }` and test the resulting non-null array before
+calling `Get-Process` or `Stop-Process`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `.learnings/ERRORS.md`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T14:03:00+08:00
+- **Notes**: Verified that no Cargo or rustc process remained; subsequent process checks are read-only.
+
+---
+
+## [ERR-20260808-PSLASTEXITCODE] powershell_script_last_exit_code_null
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A combined verification command checked `$LASTEXITCODE` after invoking a PowerShell script, causing
+the command to exit successfully before later native checks ran because the value was null.
+
+### Error
+
+```text
+Only "Package memory policy gate passed." was printed; later checks were skipped.
+```
+
+### Context
+
+- PowerShell scripts communicate failure through terminating errors/`$?`, not reliably through the
+  native-process `$LASTEXITCODE` variable.
+- The skipped checks were rerun immediately as separate statements with the correct semantics.
+
+### Suggested Fix
+
+Let terminating PowerShell errors propagate or test `$?`; reserve `$LASTEXITCODE` for native
+executables such as Git and Cargo.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/architecture/package-memory-policy.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Final verification was rerun without reading `$LASTEXITCODE` after the `.ps1` gate.
+
+---
+
+## [ERR-20260808-PACKAGETIMEOUT] package_wrapper_outer_timeout
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+The first controlled Release package attempt was terminated by the command runner's short outer
+timeout before Cargo could return output.
+
+### Error
+
+```text
+command timed out after 14035 milliseconds (exit code 124)
+```
+
+### Context
+
+- The package command used the repository's low-memory wrapper with 13.56 GiB commit headroom.
+- No `cargo`, `rustc`, `link`, or `lld-link` process survived and packaged artifacts were unchanged.
+- This is an orchestration timeout, not a compiler or source failure.
+
+### Suggested Fix
+
+Run long build/package commands with a long command timeout and use the yielded cell to poll output.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `scripts/package.ps1`
+- See Also: `ERR-20260728-PACKAGETIMEOUT`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: The retry uses a long outer timeout while preserving frequent progress polling.
+
+---
+
+## [ERR-20260808-PROCESSPROBE] optional_process_probe_exit_code
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+A read-only memory/process probe returned exit code 1 when one or more optional named processes did
+not exist, although the committed-memory counters were valid.
+
+### Error
+
+```text
+Exit code: 1; commit headroom output remained available.
+```
+
+### Context
+
+- The probe passed several optional names to `Get-Process` during an active Release build.
+- It did not affect the package process or modify system state.
+
+### Suggested Fix
+
+Enumerate optional process names individually into a variable before formatting, or use a filtered
+all-process snapshot so an absent name is not treated as a command failure.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `scripts/package.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Subsequent probes enumerate each optional name separately before formatting.
+
+---
 ## [ERR-20260730-PSRANGES] powershell_nested_range_array_type_mismatch
 
 **Logged**: 2026-07-30T16:48:00+08:00
@@ -114,12 +331,18 @@ Use `rg "struct PlatformBridge" rust` before opening an assumed module path.
 ### Metadata
 
 - Reproducible: yes
-- Related Files: `rust/crates/nxtools-ipc/src/lib.rs`
+- Related Files: `rust/crates/nxtools-ipc/src/lib.rs`, `csharp/NxTools.PlatformHost/Protocol`
+- Pattern-Key: tooling.discover_path_before_read
+- Recurrence-Count: 2
+- First-Seen: 2026-07-30
+- Last-Seen: 2026-08-08
 
 ### Resolution
 
 - **Resolved**: 2026-07-30T11:21:00+08:00
-- **Notes**: Located and reviewed the shared bridge by symbol.
+- **Notes**: Located and reviewed the shared bridge by symbol. The pattern recurred during Phase 4
+  when two guessed C# protocol filenames interrupted a parallel read; the follow-up enumerates the
+  protocol directory before opening exact files.
 
 ---
 
@@ -1526,6 +1749,14 @@ Pass the containing directory and use `-g` globs for file filtering.
 
 - Reproducible: yes
 - Related Files: none
+- Pattern-Key: powershell.rg_windows_wildcard_path
+- Recurrence-Count: 2
+- First-Seen: 2026-07-24
+- Last-Seen: 2026-08-08
+
+The pattern recurred while locating the old browser-extension packaging call chain: the exact
+results were valid, but a trailing `*.csproj` path made the read-only command exit nonzero. Future
+searches must pass the repository directory and select project files with `-g '*.csproj'`.
 
 ---
 
@@ -3135,13 +3366,17 @@ Clone the item only for the reuse closure, preserving the original for the creat
 ## [ERR-20260718-009] powershell-reserved-host-variable
 
 **Logged**: 2026-07-18T13:20:00+08:00
+**Last-Seen**: 2026-08-08
+**Pattern-Key**: tooling.powershell_reserved_automatic_variable
+**Recurrence-Count**: 2
 **Priority**: low
 **Status**: resolved
 **Area**: tooling
 
 ### Summary
 
-A log-inspection command assigned to PowerShell's reserved, read-only `$Host` automatic variable.
+A log-inspection command, and later a browser architecture gate, assigned to PowerShell's reserved,
+read-only `$Host` automatic variable.
 
 ### Resolution
 
@@ -4111,10 +4346,14 @@ verifying packaged binary hashes.
 
 - Reproducible: yes
 - Pattern-Key: powershell.foreach_pipeline_parser
-- Recurrence-Count: 5
+- Recurrence-Count: 6
 - First-Seen: 2026-07-22
-- Last-Seen: 2026-07-28
+- Last-Seen: 2026-08-08
 - Promoted: AGENTS.md
+
+The pattern recurred during the Phase 4 browser-extension reference inventory despite already being
+promoted to `AGENTS.md`; no source was changed by the failed read-only command. The corrected command
+again assigns the loop output to `$rows` before formatting.
 
 ---
 

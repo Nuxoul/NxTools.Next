@@ -139,3 +139,17 @@ Disconnects use the existing bounded `download.segment_retry.scheduled` events. 
 produces one terminal `download.task.failed`; reconnecting and explicitly resuming creates a new
 correlated attempt. Server validator changes remain protocol failures and never discard the last
 durable segment checkpoint or incomplete artifact.
+
+## Browser download handoff
+
+`download.browser_native_messaging.registration_requested` begins registration after PlatformHost
+connects. C# completes it with `browser_native_messaging.registration_completed` or
+`browser_native_messaging.registration_failed`; an explicit disable ends with
+`browser_native_messaging.registration_removed`. These events include only browser count, elapsed
+time, exception type and native error code.
+
+The native host records `browser_native_host.started`, one bounded request outcome, and
+`browser_native_host.stopped`. A successful new submission ends with
+`download.browser_handoff.accepted`; an idempotent retry ends with
+`download.browser_handoff.duplicate_accepted`. Both keep the handoff ID, task ID and correlation
+ID but never record the URL, file name, Referrer, headers, Cookie or Authorization value.

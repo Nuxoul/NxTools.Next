@@ -533,6 +533,11 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         CancellationToken cancellationToken) =>
         IndexerServiceInstaller.EnsureAsync(_log, cancellationToken);
 
+    public WindowsCommandResult EnsureBrowserNativeMessaging(
+        EnsureBrowserNativeMessagingCommand command,
+        Guid correlationId) =>
+        BrowserNativeMessagingRegistrar.Ensure(command, _log, correlationId);
+
     internal static bool IsQuickLaunchContextRequestCurrent(
         long requestedAtUnixMs,
         long nowUnixMs) =>

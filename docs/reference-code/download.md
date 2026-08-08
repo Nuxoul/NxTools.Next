@@ -39,8 +39,11 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
   segment is a range-capability inconsistency rather than a transient transfer error, so a fresh task
   may discard only the current temporary segmented artifact and restart as one full stream. The safety
   boundary is whether a durable resume checkpoint existed before the attempt (`If-Range`), not whether
-  another concurrent segment reported in-flight progress. Existing durable resume progress is never
-  discarded automatically.
+  another concurrent segment reported in-flight progress. Durable bytes must never be combined with
+  an unconditioned full response. If a probe still validates the saved resource identity but every
+  conditional segment request is answered with a full `200`, the compatible recovery is to explicitly
+  discard the old segmented artifact and plan, then retry from byte zero with fresh ordinary Range
+  requests. If those fresh requests are also ignored, the existing clean single-stream fallback applies.
 - ABDM's `HttpDownloadJob.fetchDownloadInfoAndValidate` validates the resource-level length and ETag
   before creating/resuming parts, while `HttpPartDownloader.connectAndVerify` validates each active
   part by its response length and `Content-Range` start rather than requiring every CDN replica to
@@ -51,6 +54,12 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
 - The taskbar overlay GPUI window can be created before PlatformHost finishes its handshake. Initial
   native placement is therefore best-effort; `PlatformNotification::Connected` must replay the saved
   anchor, offsets and size before later visibility changes are relied upon.
+- The taskbar overlay has no legacy implementation to copy, but old NxTools
+  `WindowAnimationService.Attach` establishes the product motion language: short opacity plus slight
+  vertical-offset transitions on open and close. NxTools.Next notification surfaces use the same
+  compact shape with roughly `150 ms` enter and `120 ms` exit timing. The overlay must keep its last
+  visible GPUI model and native HWND visible until exit completes, show the native HWND before enter,
+  and invalidate a pending hide when activity returns so a stale timer cannot hide a new transfer.
 
 ## Old NxTools behavioral source
 
@@ -327,6 +336,66 @@ browser extension
   -> correlated acceptance/failure response
 ```
 
+### Phase 4 legacy browser-extension findings
+
+Reverified on 2026-08-08 before starting browser takeover, using the old NxTools extension as the
+product compatibility baseline rather than designing a replacement from memory:
+
+- `browser_extension/nxtools-interceptor/manifest.json` is a Manifest V3 extension at version
+  `0.4.0`. One source tree targets Chrome and Edge directly and is rewritten at export time for
+  Firefox. It requests download, cookie, request-observation, content-script, storage, tab and
+  navigation permissions and has a fixed Firefox add-on ID.
+- `Services/BrowserExtensionPackageService.cs` packages the same source tree as signed CRX3 for
+  Chromium browsers and XPI for Firefox. `ViewModels/MainWindowViewModel.cs` and the settings window
+  expose open-folder plus Chrome/Edge and Firefox export actions; `NxTools.csproj` also copies and
+  packages the extension during publish. NxTools.Next must preserve the existing extension identity,
+  stored settings and one-source/multi-browser behavior wherever the browser installation model
+  permits it, rather than shipping an unrelated extension with a blank profile.
+- `background.js::{ensureDesktopConnection,sendDesktopRequest,sendDownloadPayload}` currently uses
+  a configurable unauthenticated loopback WebSocket. `LocalApiService` accepts broad loopback HTTP,
+  WebSocket and CORS callers, permits messages up to 64 MiB and stages Blob payloads from base64.
+  It also logs URLs from extension diagnostics. These are legacy behaviors to replace, not security
+  or diagnostics patterns to reproduce in NxTools.Next.
+- The extension already has valuable product behavior to retain and simplify: per-site takeover,
+  download/link/page context actions, request Header/Cookie/Referrer capture, a task/resource popup,
+  page/content hooks, media resource discovery, a media-adjacent download affordance and a drop
+  target. Capability negotiation must keep unsupported media/merge actions honest until phases 4/5
+  actually provide their backend rather than displaying a future success message.
+- Chromium `interceptBrowserDownload` cancels the browser item before desktop acceptance and only
+  attempts a new URL-only browser download when handoff fails. Firefox
+  `handlePreemptiveBrowserDownload` cancels at response-header time before the asynchronous handoff;
+  its failure path explicitly says the browser download was already cancelled. Both flows can lose
+  filename, request context or the original download and therefore violate the required fallback
+  invariant.
+- The first NxTools.Next slice must reverse that ownership boundary: generate a stable handoff ID,
+  send the ordinary HTTP(S) request through a correlated native channel, wait for a positive Rust
+  acceptance containing the same ID, and only then cancel/erase the browser item. Missing host,
+  timeout, rejection or malformed response leaves the browser download untouched. Rust keeps a
+  bounded idempotency window so reconnect/resend returns the existing task instead of creating a
+  duplicate.
+- Native Messaging is the primary control plane. The extension service worker uses
+  `runtime.connectNative`; C# installs/removes the current-user Chrome, Edge and Firefox host
+  manifests/registry entries with exact allowed extension IDs; the launched bounded host forwards
+  framed messages to the Rust intake adapter, which validates limits, origin, schema, capabilities
+  and deduplication before calling the existing download command interface. C# does not create a
+  task or own browser policy.
+- Official Chrome and Edge Native Messaging documentation requires the `nativeMessaging`
+  permission, an exact `allowed_origins` list and length-prefixed UTF-8 JSON over stdio. Chrome caps
+  a host-to-browser message at 1 MiB. Firefox uses the same extension API but its host manifest uses
+  exact `allowed_extensions`. NxTools.Next therefore applies a smaller product-level bound to all
+  control messages and never sends Blob bytes through that channel.
+- Large Blob transfer remains a later Phase 4 slice: Native Messaging carries only metadata and an
+  ephemeral capability; a separate current-user-only bounded stream stages bytes without base64
+  amplification. The ordinary-download slice does not expose a generic unauthenticated loopback
+  HTTP/WebSocket API while waiting for Blob support.
+- Official primary sources checked: Chrome
+  `https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging`, Microsoft Edge
+  `https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/native-messaging`,
+  and Mozilla
+  `https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging` plus
+  `Native_manifests`. Chrome's messaging guidance also treats content-script messages as untrusted;
+  every page-derived field must be validated again in the privileged extension worker and Rust.
+
 ### Windows actions
 
 ```text
@@ -523,7 +592,12 @@ been explicitly discarded.
   are written.
 - A persisted plan with durable bytes uses `If-Range` when recreating its connections. If the
   server returns the full representation or changes validators, those old bytes are not combined
-  with the response.
+  with the response. Reverified from the 2026-08-08 user reproduction and correlated desktop log:
+  some CDN nodes return `200` to all conditional ranges even though the immediately preceding probe
+  reports the same length, Range capability and ETag, while fresh unconditioned ranges return exact
+  `206` responses. In that narrow case the engine may explicitly reset the durable plan and retry as
+  a fresh segmented transfer; it must log the discarded durable byte count and must never reuse the
+  old artifact in the unconditioned attempt.
 - Checkpoints describe bytes already written and durably flushed. Diagnostic events are emitted for
   state transitions and bounded milestones, never for every received chunk.
 

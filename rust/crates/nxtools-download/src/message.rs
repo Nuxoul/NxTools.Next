@@ -31,6 +31,12 @@ pub enum DownloadCommand {
         #[serde(default)]
         mode: DownloadSubmitMode,
     },
+    BrowserSubmit {
+        handoff_id: Uuid,
+        request: DownloadRequest,
+        #[serde(default)]
+        mode: DownloadSubmitMode,
+    },
     Task {
         task_id: DownloadTaskId,
         action: DownloadTaskAction,
@@ -131,6 +137,10 @@ pub struct DownloadCommandResult {
 pub enum DownloadCommandOutcome {
     Accepted {
         task_id: Option<DownloadTaskId>,
+    },
+    BrowserAccepted {
+        task_id: DownloadTaskId,
+        duplicate: bool,
     },
     Batch {
         results: Vec<DownloadBatchItemResult>,

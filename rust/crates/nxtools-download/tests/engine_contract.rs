@@ -25,6 +25,7 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         referrer: None,
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
+        expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
     }
@@ -173,6 +174,72 @@ fn daily_schedule_window_handles_normal_and_cross_midnight_selected_days() {
             weekday: DownloadWeekday::Saturday,
             minute_of_day: 3 * 60,
         }
+    ));
+}
+
+#[test]
+fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database = directory.path().join("downloads.db");
+    let handoff_id = uuid::Uuid::new_v4();
+    let first_task_id = {
+        let engine = DownloadEngine::open(&database).expect("open first engine");
+        let first = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::BrowserSubmit {
+                handoff_id,
+                request: request(&server, directory.path().join("artifacts")),
+                mode: DownloadSubmitMode::QueueOnly,
+            },
+        });
+        let DownloadCommandOutcome::BrowserAccepted {
+            task_id,
+            duplicate: false,
+        } = first.outcome
+        else {
+            panic!("first browser handoff was not accepted");
+        };
+
+        let duplicate = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::BrowserSubmit {
+                handoff_id,
+                request: request(&server, directory.path().join("ignored")),
+                mode: DownloadSubmitMode::QueueOnly,
+            },
+        });
+        assert!(matches!(
+            duplicate.outcome,
+            DownloadCommandOutcome::BrowserAccepted {
+                task_id: duplicate_task_id,
+                duplicate: true,
+            } if duplicate_task_id == task_id
+        ));
+        task_id
+    };
+
+    let reopened = DownloadEngine::open(&database).expect("reopen engine");
+    let after_restart = reopened.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserSubmit {
+            handoff_id,
+            request: request(&server, directory.path().join("ignored-after-restart")),
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        after_restart.outcome,
+        DownloadCommandOutcome::BrowserAccepted {
+            task_id,
+            duplicate: true,
+        } if task_id == first_task_id
     ));
 }
 
@@ -641,6 +708,7 @@ fn crash_helper_process() {
                 referrer: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             },
@@ -1149,6 +1217,62 @@ async fn fresh_multi_connection_download_avoids_if_range_incompatible_cdn_fallba
 }
 
 #[tokio::test]
+async fn persisted_resume_restarts_safely_when_if_range_is_incompatible_with_cdn() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let database_path = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database_path).expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!(
+        "http://{}/range-concurrent-if-range-incompatible",
+        server.address()
+    );
+    request.connection_limit = Some(4);
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit conditional-incompatible task");
+    wait_for_progress(&engine, task_id).await;
+    engine
+        .pause(task_id)
+        .expect("pause conditional-incompatible task");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(4))
+        .await
+        .expect("wait for conditional-incompatible pause");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    assert!(paused.downloaded_bytes > 0);
+    assert!(paused.downloaded_bytes < concurrent_fixture_bytes().len() as u64);
+    drop(engine);
+
+    let reopened = DownloadEngine::open(&database_path).expect("reopen download engine");
+    reopened
+        .resume(task_id)
+        .expect("resume conditional-incompatible task");
+    let completed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(6))
+        .await
+        .expect("wait for conditional-incompatible resume");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "conditional-incompatible resume failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin"))
+            .expect("read conditional-incompatible resumed artifact"),
+        concurrent_fixture_bytes()
+    );
+    assert!(
+        server.max_concurrent_range_transfers() >= 2,
+        "safe restart should return to fresh overlapping Range requests"
+    );
+}
+
+#[tokio::test]
 async fn one_task_speed_limit_is_shared_by_all_of_its_range_workers() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");
@@ -1331,6 +1455,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 referrer: None,
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             },

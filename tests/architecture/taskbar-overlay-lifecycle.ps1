@@ -16,6 +16,13 @@ $observer = $source.Substring($observerStart, $boundsObserverStart - $observerSt
 if (-not $observer.Contains('cx.defer(')) {
     throw "Taskbar overlay model refresh must be deferred past the observed application lease."
 }
+if (-not $source.Contains('TASKBAR_OVERLAY_ENTER_DURATION') -or
+    -not $source.Contains('TASKBAR_OVERLAY_EXIT_DURATION')) {
+    throw "Taskbar overlay visibility must define bounded enter and exit motion durations."
+}
+if (-not $source.Contains('complete_visibility_exit')) {
+    throw "Taskbar overlay native hide must be delayed until the GPUI exit transition completes."
+}
 $deferStart = $observer.IndexOf('cx.defer(')
 $beforeDefer = $observer.Substring(0, $deferStart)
 if ($beforeDefer.Contains('application.read(cx)') -or

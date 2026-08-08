@@ -8,7 +8,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $targetDirectory = Join-Path $root "target\$Profile"
 $indexer = Join-Path $targetDirectory 'nxtools-indexer.exe'
 $desktop = Join-Path $targetDirectory 'nxtools-desktop.exe'
-foreach ($path in @($indexer, $desktop)) {
+$browserHost = Join-Path $targetDirectory 'NxTools.BrowserHost.exe'
+foreach ($path in @($indexer, $desktop, $browserHost)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Trusted release binary is missing: $path"
     }
@@ -16,6 +17,7 @@ foreach ($path in @($indexer, $desktop)) {
 
 $indexerHash = (Get-FileHash -LiteralPath $indexer -Algorithm SHA256).Hash
 $desktopHash = (Get-FileHash -LiteralPath $desktop -Algorithm SHA256).Hash
+$browserHostHash = (Get-FileHash -LiteralPath $browserHost -Algorithm SHA256).Hash
 $content = @"
 namespace NxTools.PlatformHost.Generated;
 
@@ -25,6 +27,8 @@ internal static class ReleaseBinaryManifest
         "$indexerHash";
     public const string DesktopSha256 =
         "$desktopHash";
+    public const string BrowserHostSha256 =
+        "$browserHostHash";
 }
 "@
 

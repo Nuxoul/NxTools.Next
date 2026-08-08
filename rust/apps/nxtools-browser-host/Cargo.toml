@@ -1,0 +1,22 @@
+[package]
+name = "nxtools-browser-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "NxTools.BrowserHost"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+nxtools-core = { path = "../../crates/nxtools-core" }
+nxtools-download = { path = "../../crates/nxtools-download" }
+nxtools-download-ipc = { path = "../../crates/nxtools-download-ipc" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

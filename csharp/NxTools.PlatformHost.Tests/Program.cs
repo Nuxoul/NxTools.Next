@@ -122,6 +122,7 @@ internal static class Program
             ("native file drag does not block later platform commands", FileDragDoesNotBlockLaterCommands),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
             ("indexer service command carries no caller-controlled path", IndexerServiceCommandHasNoPath),
+            ("browser native messaging command preserves fixed extension identities", BrowserNativeMessagingCommandPreservesIdentities),
             ("indexer service installer only accepts packaged sibling", IndexerServiceInstallerAcceptsOnlyPackagedSibling),
             ("protected indexer service root stays under ProgramData", ProtectedIndexerServiceRootStaysUnderProgramData),
             ("indexer service update stops only exact protected executable paths", IndexerServiceUpdateStopsOnlyExactProtectedPaths),
@@ -570,6 +571,25 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task BrowserNativeMessagingCommandPreservesIdentities()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "ensure_browser_native_messaging",
+            Data = new
+            {
+                Enabled = true,
+                ChromiumExtensionId = "haohhnpjfggpdadhcbjakjpkmkljkpif",
+                FirefoxExtensionId = "nxtools-download-interceptor@nxtools.local"
+            }
+        });
+        var command = PlatformCommandParser.ParseEnsureBrowserNativeMessaging(envelope);
+        Assert(command.Enabled);
+        Assert(command.ChromiumExtensionId == "haohhnpjfggpdadhcbjakjpkmkljkpif");
+        Assert(command.FirefoxExtensionId == "nxtools-download-interceptor@nxtools.local");
+        return Task.CompletedTask;
+    }
+
     private static Task IndexerServiceInstallerAcceptsOnlyPackagedSibling()
     {
         var package = Path.Combine(Path.GetTempPath(), $"nxtools-service-test-{Guid.NewGuid():N}");
@@ -579,13 +599,18 @@ internal static class Program
             var host = Path.Combine(package, "NxTools.PlatformHost.exe");
             var indexer = Path.Combine(package, "NxTools.Indexer.exe");
             var desktop = Path.Combine(package, "NxTools.exe");
+            var browserHost = Path.Combine(package, "NxTools.BrowserHost.exe");
             File.WriteAllBytes(host, []);
             File.WriteAllBytes(indexer, []);
             File.WriteAllBytes(desktop, []);
+            File.WriteAllBytes(browserHost, []);
             Assert(IndexerServiceInstaller.ValidatePackagedIndexerPath(host, indexer) == indexer);
             Assert(IndexerServiceInstaller.ValidatePackagedSibling(
                 host,
                 "NxTools.exe") == desktop);
+            Assert(IndexerServiceInstaller.ValidatePackagedSibling(
+                host,
+                "NxTools.BrowserHost.exe") == browserHost);
 
             var outside = Path.Combine(Path.GetTempPath(), "NxTools.Indexer.exe");
             try

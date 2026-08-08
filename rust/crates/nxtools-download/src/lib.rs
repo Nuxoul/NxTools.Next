@@ -105,6 +105,8 @@ pub struct DownloadRequest {
     pub connection_limit: Option<u16>,
     #[serde(default)]
     pub speed_limit_bytes_per_second: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_total_bytes: Option<u64>,
     pub scheduled_at_unix_ms: Option<i64>,
     #[serde(default)]
     pub adaptive_segment_policy: Option<DownloadAdaptiveSegmentPolicy>,

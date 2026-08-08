@@ -5,6 +5,92 @@ Corrections, insights, and knowledge gaps captured during development.
 **Categories**: correction | insight | knowledge_gap | best_practice
 
 ---
+## [LRN-20260808-NOBUILDMEANSNOCOMPILE] correction
+
+**Logged**: 2026-08-08T14:02:00+08:00
+**Priority**: high
+**Status**: promoted
+**Area**: tests
+
+### Summary
+
+When a user declines packaging because of memory pressure, do not assume a large Rust test compile
+is acceptable merely because it does not emit the packaged EXE.
+
+### Details
+
+The requested code fixes explicitly said not to package. A targeted Cargo regression test was
+started with low-memory flags, but it still triggered a dependency rebuild and noticeable commit
+pressure. The user's actual constraint was to avoid heavyweight compilation during this turn, not
+only to avoid the packaging script.
+
+### Suggested Action
+
+Confirm the resource boundary from context: under active memory concerns, restrict verification to
+source/static gates unless the user explicitly authorizes Cargo compilation or packaging. Clearly
+distinguish code editing, static checks, test compilation, and packaging in progress updates.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `AGENTS.md`, `docs/building.md`
+- Tags: cargo, packaging, memory, verification, user-scope
+- Pattern-Key: verification.no_heavy_compile_under_memory_constraint
+- Recurrence-Count: 1
+- First-Seen: 2026-08-08
+- Last-Seen: 2026-08-08
+
+### Resolution
+
+- **Resolved**: 2026-08-08T14:10:00+08:00
+- **Notes**: Promoted the explicit no-Cargo-under-active-memory-constraint rule to `AGENTS.md`.
+
+---
+
+## [LRN-20260808-PACKAGE-MEMORY] correction
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+Release 打包的低内存策略必须由仓库包装器执行，不能把关闭高内存用户程序作为常规前置条件。
+
+### Details
+
+当前 `build.ps1` 和 `package.ps1` 依赖调用者手工继承 Cargo 单任务、关闭增量和低峰值代码生成
+环境。遗漏一次就可能并发构建 Release 测试目标并耗尽 Windows commit，导致 `rustc`、编辑器或
+其他进程以 OS 1455、LNK1102 或 `0xc0000409` 退出。用户明确要求修复打包配置本身。
+
+### Suggested Action
+
+让共享构建工具初始化并验证低峰值 Cargo 环境；打包前检查可用 commit，在危险区间内安全拒绝，
+同时避免为发布包优化并链接整个 workspace 的 Release 测试目标。用架构门禁保护包装器入口。
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `scripts/build.ps1`, `scripts/package.ps1`, `scripts/windows-build-tools.ps1`
+- Tags: packaging, windows, rustc, commit-memory
+- Pattern-Key: infra.package_wrapper_owns_memory_policy
+- Recurrence-Count: 1
+- First-Seen: 2026-08-08
+- Last-Seen: 2026-08-08
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Windows build/package wrappers now initialize the low-peak Cargo environment, avoid
+  optimized workspace test linking, require 6 GiB commit headroom before Release Cargo work and
+  exclude build-output trees from Zed scanning. Under 2.9 GiB headroom both wrappers refused before
+  starting Cargo/rustc. After Zed released its accumulated private commit, a clean controlled
+  package completed in 19m41s without OS 1455, LNK1102 or process crashes; commit headroom remained
+  above 9 GiB. The package-memory and existing lifecycle gates passed, and the wrapper now retries
+  after stopping only exact package-path processes that it must replace.
+
+---
 
 ## [LRN-20260727-001] correction
 

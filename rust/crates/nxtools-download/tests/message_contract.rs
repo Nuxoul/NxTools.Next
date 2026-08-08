@@ -24,6 +24,7 @@ fn request() -> DownloadRequest {
         referrer: Some("https://example.test/".to_owned()),
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
+        expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
     }

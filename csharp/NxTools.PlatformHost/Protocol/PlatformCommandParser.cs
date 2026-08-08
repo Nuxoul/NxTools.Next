@@ -111,6 +111,10 @@ internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirect
 internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title);
 internal sealed record PickProgramCommand(string CurrentPath);
 internal sealed record EnsureIndexerServiceCommand;
+internal sealed record EnsureBrowserNativeMessagingCommand(
+    bool Enabled,
+    string ChromiumExtensionId,
+    string FirefoxExtensionId);
 
 internal static class PlatformCommandParser
 {
@@ -336,6 +340,13 @@ internal static class PlatformCommandParser
         }
         return new EnsureIndexerServiceCommand();
     }
+
+    public static EnsureBrowserNativeMessagingCommand ParseEnsureBrowserNativeMessaging(
+        ProtocolEnvelope envelope) =>
+        Parse<EnsureBrowserNativeMessagingCommand>(
+            envelope,
+            "ensure_browser_native_messaging",
+            "Browser native messaging registration payload was empty.");
 
     public static string GetCommandName(ProtocolEnvelope envelope)
     {

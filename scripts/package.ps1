@@ -2,12 +2,15 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$OutputPath = '',
-    [switch]$SkipVerification
+    [switch]$SkipVerification,
+    [ValidateRange(0.0, 1024.0)]
+    [double]$MinimumCommitHeadroomGiB = 6.0
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-build-tools.ps1')
+Initialize-LowMemoryRustBuildEnvironment
 $profile = if ($Configuration -eq 'Release') { 'release' } else { 'debug' }
 if (-not $OutputPath) {
     $OutputPath = if ($Configuration -eq 'Release') {
@@ -40,6 +43,7 @@ function Stop-ExactPackagedProcess(
     [string]$ProcessName,
     [string]$ExpectedPath) {
     $fullExpectedPath = [System.IO.Path]::GetFullPath($ExpectedPath)
+    $stoppedAny = $false
     $processes = Get-CimInstance Win32_Process -Filter "Name='$ProcessName'" `
         -ErrorAction SilentlyContinue
     foreach ($process in $processes) {
@@ -51,26 +55,67 @@ function Stop-ExactPackagedProcess(
             continue
         }
         Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+        Wait-Process -Id $process.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+        $stoppedAny = $true
         Write-Host "Stopped packaged process $ProcessName (PID $($process.ProcessId))."
     }
+    return $stoppedAny
+}
+
+function Recover-ExactPackageCommitHeadroom(
+    [double]$MinimumGiB,
+    [string]$PackageDestination) {
+    $beforeGiB = Get-ReleaseBuildCommitHeadroomGiB
+    if ($beforeGiB -ge $MinimumGiB) {
+        return $false
+    }
+
+    Write-Host ('Release commit headroom is below the safe threshold; stopping only exact ' +
+        'package-path processes before the final preflight.')
+    $stoppedAny = $false
+    foreach ($entry in @(
+            @{ Name = 'NxTools.exe'; File = 'NxTools.exe' },
+            @{ Name = 'NxTools.Cli.exe'; File = 'NxTools.Cli.exe' },
+            @{ Name = 'NxTools.BrowserHost.exe'; File = 'NxTools.BrowserHost.exe' },
+            @{ Name = 'NxTools.PlatformHost.exe'; File = 'NxTools.PlatformHost.exe' })) {
+        if (Stop-ExactPackagedProcess $entry.Name (Join-Path $PackageDestination $entry.File)) {
+            $stoppedAny = $true
+        }
+    }
+
+    if ($stoppedAny) {
+        Start-Sleep -Milliseconds 500
+        $afterGiB = Get-ReleaseBuildCommitHeadroomGiB
+        Write-Host ('Release commit headroom after exact-package recovery: {0:N2} GiB ' +
+            '(before: {1:N2} GiB).' -f $afterGiB, $beforeGiB)
+    }
+    return $stoppedAny
 }
 
 Push-Location $root
 try {
     if ($Configuration -eq 'Release') {
         Initialize-GpuiReleaseEnvironment
+        $null = Recover-ExactPackageCommitHeadroom `
+            -MinimumGiB $MinimumCommitHeadroomGiB `
+            -PackageDestination $destination
+        Assert-ReleaseBuildCommitHeadroom -MinimumGiB $MinimumCommitHeadroomGiB
     }
     if (-not $SkipVerification) {
-        & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
-    }
-    if ($Configuration -eq 'Release') {
-        cargo build --release -p nxtools-desktop -p nxtools-indexer -p nxtools-cli
+        & (Join-Path $PSScriptRoot 'build.ps1') `
+            -Configuration $Configuration `
+            -MinimumCommitHeadroomGiB $MinimumCommitHeadroomGiB
     }
     else {
-        cargo build -p nxtools-desktop -p nxtools-indexer -p nxtools-cli
-    }
-    if ($LASTEXITCODE -ne 0) {
-        throw "cargo build failed with exit code $LASTEXITCODE"
+        if ($Configuration -eq 'Release') {
+            cargo build --release --jobs 1 -p nxtools-desktop -p nxtools-indexer -p nxtools-cli -p nxtools-browser-host
+        }
+        else {
+            cargo build --jobs 1 -p nxtools-desktop -p nxtools-indexer -p nxtools-cli -p nxtools-browser-host
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed with exit code $LASTEXITCODE"
+        }
     }
     & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
         -Profile $profile
@@ -83,9 +128,12 @@ try {
         throw "dotnet publish failed with exit code $LASTEXITCODE"
     }
 
-    Stop-ExactPackagedProcess 'NxTools.exe' (Join-Path $destination 'NxTools.exe')
-    Stop-ExactPackagedProcess 'NxTools.Cli.exe' (Join-Path $destination 'NxTools.Cli.exe')
-    Stop-ExactPackagedProcess `
+    $null = Stop-ExactPackagedProcess 'NxTools.exe' (Join-Path $destination 'NxTools.exe')
+    $null = Stop-ExactPackagedProcess 'NxTools.Cli.exe' (Join-Path $destination 'NxTools.Cli.exe')
+    $null = Stop-ExactPackagedProcess `
+        'NxTools.BrowserHost.exe' `
+        (Join-Path $destination 'NxTools.BrowserHost.exe')
+    $null = Stop-ExactPackagedProcess `
         'NxTools.PlatformHost.exe' `
         (Join-Path $destination 'NxTools.PlatformHost.exe')
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
@@ -112,7 +160,14 @@ try {
     Copy-PackageFile ".\target\$profile\nxtools-desktop.exe" (Join-Path $destination 'NxTools.exe')
     Copy-PackageFile ".\target\$profile\nxtools-indexer.exe" (Join-Path $destination 'NxTools.Indexer.exe')
     Copy-PackageFile ".\target\$profile\nxtools-cli.exe" (Join-Path $destination 'NxTools.Cli.exe')
+    Copy-PackageFile ".\target\$profile\NxTools.BrowserHost.exe" (Join-Path $destination 'NxTools.BrowserHost.exe')
     Copy-PackageFile ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" (Join-Path $destination 'NxTools.PlatformHost.exe')
+    $packagedBrowserExtensionRoot = Join-Path $destination 'browser_extension'
+    New-Item -ItemType Directory -Force -Path $packagedBrowserExtensionRoot | Out-Null
+    Copy-Item '.\browser_extension\nxtools-interceptor' `
+        $packagedBrowserExtensionRoot `
+        -Recurse `
+        -Force
     Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE', '.\THIRD_PARTY_NOTICES.md' $destination
     $packageCompleted = $true
 }

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "rust/apps/nxtools-browser-host",
     "rust/apps/nxtools-cli",
     "rust/apps/nxtools-desktop",
     "rust/apps/nxtools-indexer",

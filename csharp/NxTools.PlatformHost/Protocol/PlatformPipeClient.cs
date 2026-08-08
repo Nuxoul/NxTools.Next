@@ -257,6 +257,9 @@ internal sealed class PlatformPipeClient(
                         "ensure_indexer_service" => await platformAdapter.EnsureIndexerServiceAsync(
                             PlatformCommandParser.ParseEnsureIndexerService(envelope),
                             cancellationToken),
+                        "ensure_browser_native_messaging" => platformAdapter.EnsureBrowserNativeMessaging(
+                            PlatformCommandParser.ParseEnsureBrowserNativeMessaging(envelope),
+                            diagnosticCorrelationId),
                         var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
                     };
                     await outgoing.WriteAsync(
@@ -277,14 +280,14 @@ internal sealed class PlatformPipeClient(
                             {
                                 ["command"] = commandName,
                                 ["success"] = result.Success,
-                                ["error"] = result.Error,
+                                ["error_present"] = !string.IsNullOrEmpty(result.Error),
                                 ["has_data"] = !string.IsNullOrEmpty(result.Data),
                                 ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
                             });
                     }
                     if (!result.Success && logCommandLifecycle)
                     {
-                        Console.Error.WriteLine($"Platform command '{commandName}' failed: {result.Error}");
+                        Console.Error.WriteLine($"Platform command '{commandName}' failed.");
                     }
                 });
             }

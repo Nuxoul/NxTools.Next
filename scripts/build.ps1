@@ -1,11 +1,14 @@
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Debug'
+    [string]$Configuration = 'Debug',
+    [ValidateRange(0.0, 1024.0)]
+    [double]$MinimumCommitHeadroomGiB = 6.0
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-build-tools.ps1')
+Initialize-LowMemoryRustBuildEnvironment
 
 function Assert-NativeSuccess([string]$Step) {
     if ($LASTEXITCODE -ne 0) {
@@ -15,6 +18,7 @@ function Assert-NativeSuccess([string]$Step) {
 
 if ($Configuration -eq 'Release') {
     Initialize-GpuiReleaseEnvironment
+    Assert-ReleaseBuildCommitHeadroom -MinimumGiB $MinimumCommitHeadroomGiB
 }
 
 Push-Location $root
@@ -25,30 +29,20 @@ try {
     cargo fmt --all --check
     Assert-NativeSuccess 'cargo fmt'
 
-    if ($Configuration -eq 'Release') {
-        cargo clippy --workspace --all-targets --release -- -D warnings
-    }
-    else {
-        cargo clippy --workspace --all-targets -- -D warnings
-    }
+    cargo clippy --workspace --all-targets --jobs 1 -- -D warnings
     Assert-NativeSuccess 'cargo clippy'
 
-    if ($Configuration -eq 'Release') {
-        cargo test --workspace --release
-    }
-    else {
-        cargo test --workspace
-    }
+    cargo test --workspace --jobs 1
     Assert-NativeSuccess 'cargo test'
 
     if ($Configuration -eq 'Release') {
-        cargo build --release -p nxtools-desktop -p nxtools-indexer
+        cargo build --release --jobs 1 -p nxtools-desktop -p nxtools-indexer -p nxtools-cli -p nxtools-browser-host
         Assert-NativeSuccess 'cargo release binaries'
         & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
             -Profile 'release'
     }
     else {
-        cargo build -p nxtools-desktop -p nxtools-indexer
+        cargo build --jobs 1 -p nxtools-desktop -p nxtools-indexer -p nxtools-cli -p nxtools-browser-host
         Assert-NativeSuccess 'cargo debug binaries'
         & (Join-Path $PSScriptRoot 'write-release-binary-manifest.ps1') `
             -Profile 'debug'

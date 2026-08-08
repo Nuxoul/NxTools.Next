@@ -380,6 +380,7 @@ pub enum PlatformCommand {
     PickDirectory(PickDirectoryCommand),
     PickProgram(PickProgramCommand),
     EnsureIndexerService,
+    EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -400,6 +401,14 @@ pub struct ConfigureQuickLaunchCommand {
     pub hotkey_modifiers: Vec<String>,
     pub hotkey_key: String,
     pub hotkey_display: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnsureBrowserNativeMessagingCommand {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub chromium_extension_id: String,
+    pub firefox_extension_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -756,6 +765,22 @@ mod tests {
         assert!(encoded.contains("\"command\":\"ensure_indexer_service\""));
         assert!(!encoded.contains("indexer_path"));
         assert!(!encoded.contains("mft"));
+    }
+
+    #[test]
+    fn browser_native_messaging_registration_preserves_exact_extension_ids() {
+        let envelope = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand {
+                enabled: true,
+                chromium_extension_id: "haohhnpjfggpdadhcbjakjpkmkljkpif".into(),
+                firefox_extension_id: "nxtools-download-interceptor@nxtools.local".into(),
+            }),
+        ));
+        let encoded = envelope.encode_line().expect("encode browser command");
+
+        assert!(encoded.contains("\"command\":\"ensure_browser_native_messaging\""));
+        assert!(encoded.contains("haohhnpjfggpdadhcbjakjpkmkljkpif"));
+        assert!(encoded.contains("nxtools-download-interceptor@nxtools.local"));
     }
 
     #[test]

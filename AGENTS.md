@@ -68,11 +68,18 @@ When formatting PowerShell diagnostic output, assign the output of a statement-l
 loop to a variable before piping it to `Format-Table` or another cmdlet; direct `foreach { ... } |
 ...` composition is rejected by the PowerShell parser.
 
+Do not use PowerShell automatic or preference variable names for script-local state. In particular,
+avoid `$Host`, `$PID`, `$Error`, `$HOME` and case-only variants; use task-specific descriptive names.
+
 On this workstation, every Rust verification and Release-package wrapper (including a background
-PowerShell process) must inherit `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and
-`RUSTFLAGS=-C codegen-units=256`. Setting these only for an earlier direct Cargo command is not
+PowerShell process) must use `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and
+`RUSTFLAGS=-C codegen-units=256`. The checked-in Windows wrappers initialize these values themselves;
+direct Cargo commands must still inherit them. Release packaging must pass the committed-memory
+headroom preflight before starting Cargo. Setting the variables only for an earlier command is not
 enough; default package concurrency can exhaust Windows commit memory and make unrelated `rustc`
-targets exit with `0xc0000409`.
+targets exit with `0xc0000409`. When the user declines packaging or building because of current
+memory pressure, do not start Cargo verification either unless the user separately authorizes it;
+use source/static gates and report the deferred compiled verification explicitly.
 
 ## Indexer release gate
 

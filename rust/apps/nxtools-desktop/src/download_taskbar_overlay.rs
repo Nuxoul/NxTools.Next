@@ -1,6 +1,6 @@
 use gpui::{
     Animation, AnimationExt, Context, Entity, IntoElement, Render, Subscription, Window, div,
-    prelude::*, px, transparent_black,
+    ease_in_out, prelude::*, px, transparent_black,
 };
 use gpui_component::PixelsExt;
 use nxtools_core::{DownloadTaskbarProgressMode, DownloadTaskbarProgressOverlaySettings};
@@ -18,6 +18,53 @@ use crate::theme::Theme;
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
 const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
+const TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(150);
+const TASKBAR_OVERLAY_EXIT_DURATION: Duration = Duration::from_millis(120);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TaskbarOverlayVisibilityTransition {
+    generation: u64,
+    exiting: bool,
+}
+
+impl TaskbarOverlayVisibilityTransition {
+    fn new(initially_visible: bool) -> Self {
+        Self {
+            generation: u64::from(initially_visible),
+            exiting: false,
+        }
+    }
+
+    fn begin_enter(&mut self) {
+        self.generation = self.generation.wrapping_add(1).max(1);
+        self.exiting = false;
+    }
+
+    fn begin_exit(&mut self) -> Option<u64> {
+        if self.exiting {
+            return None;
+        }
+        self.generation = self.generation.wrapping_add(1).max(1);
+        self.exiting = true;
+        Some(self.generation)
+    }
+
+    fn complete_exit(&mut self, generation: u64) -> bool {
+        if !self.exiting || self.generation != generation {
+            return false;
+        }
+        self.exiting = false;
+        true
+    }
+}
+
+fn taskbar_overlay_visibility_motion(delta: f32, exiting: bool) -> (f32, f32) {
+    if exiting {
+        (1.0 - delta, 2.0 * delta)
+    } else {
+        (delta, 3.0 * (1.0 - delta))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTaskbarOverlaySample {
@@ -269,6 +316,7 @@ pub(crate) struct DownloadTaskbarOverlayView {
     _bounds_subscription: Subscription,
     edit_reference: Option<TaskbarEditGeometryReference>,
     edit_gesture_active: bool,
+    visibility: TaskbarOverlayVisibilityTransition,
 }
 
 #[derive(Clone, Copy)]
@@ -288,13 +336,11 @@ impl DownloadTaskbarOverlayView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let platform_for_subscription = Rc::clone(&platform);
         let observed_application = application.clone();
         let observed_view = cx.entity();
         let subscription = cx.observe(&application, move |_, _, cx| {
             let application = observed_application.clone();
             let view = observed_view.clone();
-            let platform = Rc::clone(&platform_for_subscription);
             cx.defer(move |cx| {
                 let (next, correlation_id) = {
                     let application = application.read(cx);
@@ -304,38 +350,7 @@ impl DownloadTaskbarOverlayView {
                     )
                 };
                 view.update(cx, |this, cx| {
-                    if this.model == next {
-                        return;
-                    }
-                    let visibility_changed = this.model.is_visible() != next.is_visible();
-                    let next_visible = next.is_visible();
-                    this.model = next;
-                    cx.notify();
-                    if !visibility_changed || this.native_window_handle == 0 {
-                        return;
-                    }
-                    match platform.send_command_correlated(
-                        PlatformCommand::SetTaskbarProgressOverlayVisibility(
-                            SetTaskbarProgressOverlayVisibilityCommand {
-                                window_handle: this.native_window_handle,
-                                visible: next_visible,
-                            },
-                        ),
-                        correlation_id,
-                    ) {
-                        Ok(_) => info!(
-                            event = "download.taskbar_overlay.visibility_accepted",
-                            %correlation_id,
-                            visible = next_visible,
-                            "taskbar overlay visibility change accepted"
-                        ),
-                        Err(error) => warn!(
-                            event = "download.taskbar_overlay.visibility_accept_failed",
-                            %error,
-                            visible = next_visible,
-                            "taskbar overlay visibility change could not be queued"
-                        ),
-                    }
+                    this.apply_model(next, correlation_id, cx);
                 });
             });
         });
@@ -414,6 +429,7 @@ impl DownloadTaskbarOverlayView {
                 });
             });
         });
+        let visibility = TaskbarOverlayVisibilityTransition::new(initial_model.is_visible());
         Self {
             theme: Theme::zed_dark(),
             model: initial_model,
@@ -424,6 +440,98 @@ impl DownloadTaskbarOverlayView {
             _bounds_subscription: bounds_subscription,
             edit_reference: None,
             edit_gesture_active: false,
+            visibility,
+        }
+    }
+
+    fn apply_model(
+        &mut self,
+        next: DownloadTaskbarOverlayModel,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        if self.model == next && !(next.is_visible() && self.visibility.exiting) {
+            return;
+        }
+        match (self.model.is_visible(), next.is_visible()) {
+            (false, false) => self.model = next,
+            (false, true) => {
+                self.send_native_visibility(true, correlation_id);
+                self.model = next;
+                self.visibility.begin_enter();
+                cx.notify();
+            }
+            (true, true) => {
+                self.model = next;
+                if self.visibility.exiting {
+                    self.visibility.begin_enter();
+                }
+                cx.notify();
+            }
+            (true, false) => {
+                let Some(generation) = self.visibility.begin_exit() else {
+                    return;
+                };
+                info!(
+                    event = "download.taskbar_overlay.visibility_exit_started",
+                    %correlation_id,
+                    generation,
+                    "taskbar overlay exit transition started"
+                );
+                cx.notify();
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(TASKBAR_OVERLAY_EXIT_DURATION)
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.complete_visibility_exit(generation, correlation_id, cx);
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    fn complete_visibility_exit(
+        &mut self,
+        generation: u64,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.visibility.complete_exit(generation) {
+            return;
+        }
+        self.model = DownloadTaskbarOverlayModel::Hidden;
+        cx.notify();
+        self.send_native_visibility(false, correlation_id);
+    }
+
+    fn send_native_visibility(&self, visible: bool, correlation_id: uuid::Uuid) {
+        if self.native_window_handle == 0 {
+            return;
+        }
+        match self.platform.send_command_correlated(
+            PlatformCommand::SetTaskbarProgressOverlayVisibility(
+                SetTaskbarProgressOverlayVisibilityCommand {
+                    window_handle: self.native_window_handle,
+                    visible,
+                },
+            ),
+            correlation_id,
+        ) {
+            Ok(_) => info!(
+                event = "download.taskbar_overlay.visibility_accepted",
+                %correlation_id,
+                visible,
+                "taskbar overlay visibility change accepted"
+            ),
+            Err(error) => warn!(
+                event = "download.taskbar_overlay.visibility_accept_failed",
+                %correlation_id,
+                %error,
+                visible,
+                "taskbar overlay visibility change could not be queued"
+            ),
         }
     }
 
@@ -464,6 +572,8 @@ impl DownloadTaskbarOverlayView {
 impl Render for DownloadTaskbarOverlayView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
+        let visibility_generation = self.visibility.generation;
+        let visibility_exiting = self.visibility.exiting;
         let mut root = div()
             .size_full()
             .relative()
@@ -637,7 +747,22 @@ impl Render for DownloadTaskbarOverlayView {
                             ),
                     );
                 }
-                root
+                root.with_animation(
+                    gpui::SharedString::from(format!(
+                        "download-taskbar-visibility-{visibility_generation}-{visibility_exiting}"
+                    )),
+                    Animation::new(if visibility_exiting {
+                        TASKBAR_OVERLAY_EXIT_DURATION
+                    } else {
+                        TASKBAR_OVERLAY_ENTER_DURATION
+                    })
+                    .with_easing(ease_in_out),
+                    move |root, delta| {
+                        let (opacity, vertical_offset) =
+                            taskbar_overlay_visibility_motion(delta, visibility_exiting);
+                        root.opacity(opacity).relative().top(px(vertical_offset))
+                    },
+                )
             }
         }
     }
@@ -1054,5 +1179,34 @@ mod tests {
         assert_eq!(metrics.downloaded_bytes, 60);
         assert_eq!(metrics.total_bytes, Some(300));
         assert_eq!(metrics.bytes_per_second, 2_048);
+    }
+
+    #[test]
+    fn visibility_motion_has_distinct_enter_and_exit_endpoints() {
+        assert_eq!(taskbar_overlay_visibility_motion(0.0, false), (0.0, 3.0));
+        assert_eq!(taskbar_overlay_visibility_motion(1.0, false), (1.0, 0.0));
+        assert_eq!(taskbar_overlay_visibility_motion(0.0, true), (1.0, 0.0));
+        assert_eq!(taskbar_overlay_visibility_motion(1.0, true), (0.0, 2.0));
+    }
+
+    #[test]
+    fn a_new_enter_invalidates_a_pending_native_hide() {
+        let mut visibility = TaskbarOverlayVisibilityTransition::new(true);
+        let exit_generation = visibility.begin_exit().expect("begin exit");
+
+        visibility.begin_enter();
+
+        assert!(!visibility.complete_exit(exit_generation));
+        assert!(!visibility.exiting);
+    }
+
+    #[test]
+    fn native_hide_becomes_eligible_only_after_the_matching_exit() {
+        let mut visibility = TaskbarOverlayVisibilityTransition::new(true);
+        let exit_generation = visibility.begin_exit().expect("begin exit");
+
+        assert!(visibility.complete_exit(exit_generation));
+        assert!(!visibility.exiting);
+        assert!(!visibility.complete_exit(exit_generation));
     }
 }

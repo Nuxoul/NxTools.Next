@@ -544,6 +544,18 @@ impl DownloadEngine {
                 .map(|task_id| DownloadCommandOutcome::Accepted {
                     task_id: Some(task_id),
                 }),
+            DownloadCommand::BrowserSubmit {
+                handoff_id,
+                request,
+                mode,
+            } => self
+                .submit_browser_correlated(handoff_id, request, mode, request_id)
+                .map(
+                    |(task_id, duplicate)| DownloadCommandOutcome::BrowserAccepted {
+                        task_id,
+                        duplicate,
+                    },
+                ),
             DownloadCommand::Task { task_id, action } => self
                 .run_task_action(task_id, action, request_id)
                 .map(|()| DownloadCommandOutcome::Accepted {
@@ -1311,6 +1323,82 @@ impl DownloadEngine {
             );
         }
         Ok(task_id)
+    }
+
+    fn submit_browser_correlated(
+        &self,
+        handoff_id: uuid::Uuid,
+        request: DownloadRequest,
+        mode: DownloadSubmitMode,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        request.validate()?;
+        let now = now_unix_ms();
+        let task = DownloadTask::new(request, RequestOrigin::Browser, now);
+        let transfer = StoredTransferState::default();
+        let delayed_until_due = task
+            .request()
+            .scheduled_at_unix_ms
+            .is_some_and(|scheduled_at| scheduled_at > now);
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let saved = self.inner.store.save_browser_task_with_transfer_and_queue(
+            handoff_id,
+            &task,
+            &transfer,
+            "default",
+            mode == DownloadSubmitMode::StartNow && !delayed_until_due,
+        )?;
+        let task_id = match saved {
+            crate::storage::BrowserHandoffSave::Inserted(task_id) => task_id,
+            crate::storage::BrowserHandoffSave::Duplicate(task_id) => {
+                info!(
+                    event = "download.browser_handoff.duplicate_accepted",
+                    %correlation_id,
+                    %handoff_id,
+                    ?task_id,
+                    "duplicate browser handoff resolved to the existing task"
+                );
+                return Ok((task_id, true));
+            }
+        };
+
+        self.inner.lock_tasks()?.insert(
+            task_id,
+            EngineTaskState {
+                task,
+                transfer,
+                control: None,
+                last_progress_event: None,
+                transfer_rate: None,
+            },
+        );
+        self.inner.emit_task(task_id);
+        if delayed_until_due {
+            self.refresh_delayed_schedule_wake()?;
+        } else if mode == DownloadSubmitMode::StartNow
+            && let Err(error) = self.schedule_queue_locked("default", correlation_id)
+        {
+            warn!(
+                event = "download.browser_handoff.admission_deferred",
+                %correlation_id,
+                %handoff_id,
+                ?task_id,
+                error = %error,
+                "accepted browser task remains eligible for a later queue refill"
+            );
+        }
+        info!(
+            event = "download.browser_handoff.accepted",
+            %correlation_id,
+            %handoff_id,
+            ?task_id,
+            "browser handoff accepted"
+        );
+        Ok((task_id, false))
     }
 
     /// Releases delayed submissions whose absolute schedule has elapsed.
@@ -2873,6 +2961,39 @@ async fn run_segmented_task(
         return Ok(());
     }
     if let Some(error) = first_error {
+        if use_if_range && error.allows_fresh_segmented_restart_after_resume() {
+            warn!(
+                event = "download.segment_resume.fresh_restart",
+                %correlation_id,
+                ?task_id,
+                reason = error.kind(),
+                segment_count = final_plan.segments().len(),
+                discarded_durable_bytes = durable_downloaded_bytes,
+                discarded_observed_bytes = observed_downloaded_bytes,
+                "conditional Range resume was rejected; discarding the old segmented artifact and retrying with fresh Range requests"
+            );
+            inner.store.clear_transfer_plan(task_id)?;
+            remove_path_if_exists(&temporary_path)?;
+            {
+                let mut tasks = inner.lock_tasks()?;
+                let state = tasks
+                    .get_mut(&task_id)
+                    .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+                state.transfer.downloaded_bytes = 0;
+                inner.persist(state)?;
+            }
+            return Box::pin(run_segmented_task(
+                inner,
+                task_id,
+                correlation_id,
+                request,
+                probe,
+                control,
+                temporary_path,
+                final_path,
+            ))
+            .await;
+        }
         if !use_if_range && error.allows_clean_single_stream_fallback() {
             warn!(
                 event = "download.segment_transfer.fallback",
@@ -3200,7 +3321,8 @@ fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask {
             .transfer
             .probe
             .as_ref()
-            .and_then(|probe| probe.total_bytes),
+            .and_then(|probe| probe.total_bytes)
+            .or(state.task.request().expected_total_bytes),
         error: state.transfer.error.clone(),
         final_path: state
             .transfer
@@ -3597,6 +3719,35 @@ mod tests {
     }
 
     #[test]
+    fn browser_reported_size_is_visible_before_the_http_probe() {
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/browser-size.bin".into(),
+                    save_directory: std::env::temp_dir(),
+                    file_name: Some("browser-size.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: Some(12_345),
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                },
+                RequestOrigin::Browser,
+            )
+            .expect("enqueue browser task");
+
+        let task = engine
+            .task(task_id)
+            .expect("read browser task")
+            .expect("browser task exists");
+        assert_eq!(task.total_bytes, Some(12_345));
+    }
+
+    #[test]
     fn task_detail_command_returns_only_the_selected_tasks_segments_and_bounded_timeline() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let task_id = engine
@@ -3613,6 +3764,7 @@ mod tests {
                     referrer: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                 },
@@ -3679,6 +3831,7 @@ mod tests {
                     referrer: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                 },
@@ -3728,6 +3881,7 @@ mod tests {
                     referrer: None,
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                 },
@@ -3897,6 +4051,7 @@ mod tests {
                 referrer: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             };
@@ -3939,6 +4094,7 @@ mod tests {
             referrer: None,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
         };
@@ -3974,6 +4130,7 @@ mod tests {
                 referrer: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             },

@@ -20,6 +20,7 @@ fn task(at: i64) -> DownloadTask {
             referrer: Some("https://example.test/downloads".to_owned()),
             connection_limit: Some(8),
             speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
             scheduled_at_unix_ms: Some(5_000),
             adaptive_segment_policy: None,
         },

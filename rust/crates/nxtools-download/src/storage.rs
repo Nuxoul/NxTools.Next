@@ -15,8 +15,10 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 4;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 5;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
+const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+const MAX_BROWSER_HANDOFFS: i64 = 4_096;
 
 pub struct SqliteDownloadStore {
     connection: Mutex<Connection>,
@@ -56,6 +58,9 @@ impl SqliteDownloadStore {
         }
         if current < 4 {
             connection.execute_batch(SCHEMA_V4)?;
+        }
+        if current < 5 {
+            connection.execute_batch(SCHEMA_V5)?;
         }
 
         Ok(Self {
@@ -723,6 +728,67 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    pub(crate) fn save_browser_task_with_transfer_and_queue(
+        &self,
+        handoff_id: Uuid,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        is_eligible: bool,
+    ) -> Result<BrowserHandoffSave, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let accepted_at_unix_ms = now_unix_ms();
+        transaction.execute(
+            "DELETE FROM download_browser_handoffs WHERE accepted_at_unix_ms < ?1",
+            [accepted_at_unix_ms.saturating_sub(BROWSER_HANDOFF_RETENTION_MS)],
+        )?;
+        let existing = transaction
+            .query_row(
+                "SELECT task_id FROM download_browser_handoffs WHERE handoff_id = ?1",
+                [handoff_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(task_id) = existing {
+            let task_id = Uuid::parse_str(&task_id)
+                .map(DownloadTaskId::from_uuid)
+                .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))?;
+            return Ok(BrowserHandoffSave::Duplicate(task_id));
+        }
+
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.execute(
+            r#"
+            INSERT INTO download_browser_handoffs(handoff_id, task_id, accepted_at_unix_ms)
+            VALUES (?1, ?2, ?3)
+            "#,
+            params![
+                handoff_id.to_string(),
+                task.id().as_uuid().to_string(),
+                accepted_at_unix_ms,
+            ],
+        )?;
+        transaction.execute(
+            r#"
+            DELETE FROM download_browser_handoffs
+            WHERE handoff_id <> ?1
+              AND handoff_id IN (
+                SELECT handoff_id
+                FROM download_browser_handoffs
+                WHERE handoff_id <> ?1
+                ORDER BY accepted_at_unix_ms DESC, handoff_id DESC
+                LIMIT -1 OFFSET ?2
+            )
+            "#,
+            params![handoff_id.to_string(), MAX_BROWSER_HANDOFFS - 1],
+        )?;
+        transaction.commit()?;
+        Ok(BrowserHandoffSave::Inserted(task.id()))
+    }
+
     pub(crate) fn save_task_with_transfer_and_eligibility(
         &self,
         task: &DownloadTask,
@@ -947,6 +1013,12 @@ pub(crate) struct StoredTransferState {
     pub temporary_path: Option<PathBuf>,
     pub final_path: Option<PathBuf>,
     pub final_committed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrowserHandoffSave {
+    Inserted(DownloadTaskId),
+    Duplicate(DownloadTaskId),
 }
 
 fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), DownloadStorageError> {
@@ -1482,6 +1554,22 @@ PRAGMA user_version = 4;
 COMMIT;
 "#;
 
+const SCHEMA_V5: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_browser_handoffs (
+    handoff_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL UNIQUE REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    accepted_at_unix_ms INTEGER NOT NULL
+);
+
+CREATE INDEX download_browser_handoffs_accepted_idx
+    ON download_browser_handoffs(accepted_at_unix_ms DESC);
+
+PRAGMA user_version = 5;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1519,7 +1607,7 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 4);
+            assert_eq!(store.schema_version().expect("schema version"), 5);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -1575,7 +1663,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 4);
+        assert_eq!(store.schema_version().expect("schema version"), 5);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -1619,6 +1707,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn browser_handoff_id_is_persistently_idempotent() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let handoff_id = Uuid::new_v4();
+        let first = sample_task("first-browser.bin");
+        let duplicate_candidate = sample_task("duplicate-browser.bin");
+        let transfer = StoredTransferState::default();
+
+        assert_eq!(
+            store
+                .save_browser_task_with_transfer_and_queue(
+                    handoff_id, &first, &transfer, "default", true,
+                )
+                .expect("save first handoff"),
+            BrowserHandoffSave::Inserted(first.id())
+        );
+        assert_eq!(
+            store
+                .save_browser_task_with_transfer_and_queue(
+                    handoff_id,
+                    &duplicate_candidate,
+                    &transfer,
+                    "default",
+                    true,
+                )
+                .expect("resolve duplicate handoff"),
+            BrowserHandoffSave::Duplicate(first.id())
+        );
+        assert!(
+            store
+                .load_task(duplicate_candidate.id())
+                .expect("load duplicate candidate")
+                .is_none(),
+            "duplicate handoff must not leave a second task"
+        );
+    }
+
     fn sample_task(file_name: &str) -> DownloadTask {
         let directory = std::env::temp_dir();
         DownloadTask::new(
@@ -1631,6 +1756,7 @@ mod tests {
                 referrer: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             },
@@ -1653,6 +1779,7 @@ mod tests {
                 referrer: None,
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
             },

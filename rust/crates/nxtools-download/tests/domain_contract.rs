@@ -19,6 +19,7 @@ fn request() -> DownloadRequest {
         referrer: None,
         connection_limit: Some(8),
         speed_limit_bytes_per_second: None,
+        expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
     }
