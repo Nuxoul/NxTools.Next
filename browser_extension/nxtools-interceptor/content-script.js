@@ -11,6 +11,7 @@
   let detectedCount = 0;
   let overlayHost = null;
   let overlayEnabled = true;
+  let captureResourcesEnabled = false;
   let dropTargetHost = null;
   let dropTargetVisible = false;
   let dropTargetRect = null;
@@ -829,6 +830,10 @@
     detectedCount += 1;
     scheduleOverlayUpdate();
 
+    if (!captureResourcesEnabled) {
+      return;
+    }
+
     safeRuntimeSendMessage({
       type: "content_media_resource",
       payload: {
@@ -1019,7 +1024,7 @@
     });
   }
 
-  function scanCssBackgroundResources(limit = 360) {
+  function scanCssBackgroundResources(limit = 240) {
     const urlPattern = /url\((['"]?)(.*?)\1\)/gi;
     for (const element of [...document.querySelectorAll("*")].slice(0, limit)) {
       let background = "";
@@ -1066,11 +1071,16 @@
     }
   }
 
-  function scanPage() {
+  function scanPage(deep = false) {
+    if (!captureResourcesEnabled && !overlayEnabled) {
+      return;
+    }
     document.querySelectorAll(MEDIA_SELECTOR).forEach(scanElement);
     scanMediaElementSources();
-    scanCssBackgroundResources();
     scanPerformanceResources();
+    if (deep && captureResourcesEnabled) {
+      scanCssBackgroundResources();
+    }
   }
 
   function mediaHasPlayableSource(media) {
@@ -2302,6 +2312,9 @@
   if (typeof PerformanceObserver !== "undefined") {
     try {
       const performanceObserver = new PerformanceObserver((list) => {
+        if (!captureResourcesEnabled && !overlayEnabled) {
+          return;
+        }
         for (const entry of list.getEntries()) {
           const url = entry.name || "";
           if (isInterestingUrl(url)) {
@@ -2328,7 +2341,7 @@
     }
 
     if (message?.type === "content_scan_now") {
-      scanPage();
+      scanPage(true);
       sendResponse({ ok: true, count: detectedCount });
       return true;
     }
@@ -2368,6 +2381,7 @@
 
   chrome.storage.local.get({
     interceptDownloads: true,
+    captureResources: true,
     mediaOverlayEnabled: true,
     dropTargetEnabled: true,
     dropTargetPosition: "right-bottom",
@@ -2375,8 +2389,13 @@
     dropTargetHeight: 86
   }, (settings) => {
     interceptDownloadsEnabled = settings.interceptDownloads !== false;
+    captureResourcesEnabled = settings.captureResources !== false;
     overlayEnabled = settings.mediaOverlayEnabled !== false;
     dropTargetSettings = normalizeDropTargetSettings(settings);
+    if (captureResourcesEnabled) {
+      sent.clear();
+      scanPage(false);
+    }
     scheduleOverlayUpdate();
   });
 
@@ -2392,6 +2411,14 @@
 
     if (changes.interceptDownloads) {
       interceptDownloadsEnabled = changes.interceptDownloads.newValue !== false;
+    }
+
+    if (changes.captureResources) {
+      captureResourcesEnabled = changes.captureResources.newValue !== false;
+      if (captureResourcesEnabled) {
+        sent.clear();
+        scanPage(true);
+      }
     }
 
     if (changes.dropTargetEnabled || changes.dropTargetPosition || changes.dropTargetWidth || changes.dropTargetHeight) {
@@ -2414,14 +2441,18 @@
     document.addEventListener("DOMContentLoaded", installPageHook, { once: true });
   }
   ensurePageContext();
-  scanPage();
+  scanPage(false);
   observer.observe(document.documentElement || document, {
     childList: true,
     subtree: true,
     attributes: true,
     attributeFilter: ["src", "href"]
   });
-  setInterval(scanPage, 3500);
+  setInterval(() => {
+    if (document.visibilityState === "visible") {
+      scanPage(false);
+    }
+  }, 7000);
   setInterval(() => ensurePageContext(), 1000);
   setInterval(scheduleOverlayUpdate, 1000);
 })();

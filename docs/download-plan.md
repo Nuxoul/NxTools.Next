@@ -711,6 +711,19 @@ Indexer、BrowserHost 三个受保护二进制哈希；`NxTools.exe` 时间为 `
 低内存 Release 重打包已成功，受保护 Desktop/Indexer/BrowserHost 哈希全部匹配生成清单；
 本轮 `NxTools.exe` 时间为 `2026-08-08 16:44:26`。
 
+2026-08-08 浏览器扩展质量收口：扩展升级为 `0.6.0`，Popup 从旧版 520 px 卡片布局改为
+456 px 的 NxTools.Next 石墨色紧凑控制台，以连接/最近捕获信号轨、当前标签页动作、网站接管、
+任务与资源计数形成稳定层级；设置中的 `openDialog` 文案恢复为真实的“弹出下载确认窗口”，
+尚未接入的音视频合并明确标记为后续能力。捕获热路径改用 service worker 内存设置快照，避免
+每个请求/响应读取浏览器存储；Mutation/Performance/网络事件保持主路径，周期扫描降为可见页
+7 秒浅扫，计算样式背景图只在显式深扫时执行。新增独立资源合并策略，保证
+Content-Disposition 文件名、响应 MIME/大小和非空页面上下文不被后到的弱观察覆盖；Popup
+只接收不含 Header/Cookie/Referrer 的展示投影。BrowserHost 现在只记录有界的扩展事件身份和
+Native Messaging request ID，不写扩展消息、URL 或请求上下文。捕获策略、Popup DOM/CSS
+契约、安全交接、Native Messaging 架构门禁、BrowserHost 5 项测试和定向 Clippy 均通过；
+无界面 Chromium 已完成 456 px 实际 CSS 渲染检查。仍需用户在真实浏览器验证复杂页面捕获、
+网站开关、确认窗预填和 Popup 各页交互，因此阶段 4 checklist 保持未勾选。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。

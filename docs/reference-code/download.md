@@ -405,6 +405,22 @@ product compatibility baseline rather than designing a replacement from memory:
   `https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging` plus
   `Native_manifests`. Chrome's messaging guidance also treats content-script messages as untrusted;
   every page-derived field must be validated again in the privileged extension worker and Rust.
+- Reverified the old and migrated popup/capture implementation before the Phase 4 extension-quality
+  pass. The old popup CSS is byte-identical to the migrated popup CSS: a fixed 520 px, card-heavy
+  four-tab surface with no capture-health summary. This is a compatibility baseline for available
+  actions, not a visual constraint; the user explicitly requested a denser NxTools.Next treatment.
+- The migrated content bridge retains the old 3.5-second full-page scan in addition to its
+  `MutationObserver` and `PerformanceObserver`; each full scan also calls `getComputedStyle` on up
+  to 360 elements for background images. Background request/response capture separately calls
+  `chrome.storage.local.get` on every candidate. The quality pass must cache settings in the
+  service worker, keep event-driven capture authoritative, and reserve the expensive background
+  image scan for an explicit/deferred deep scan while preserving dynamic media discovery.
+- Captured resource snapshots arrive from request, response, DOM, page-hook and Performance
+  boundaries with different authority. A later weak DOM/Performance name or empty page context
+  must not erase a Content-Disposition filename, response MIME/size, Referrer or useful request
+  headers. Popup state needs only a bounded presentation projection; Header/Cookie/Referrer remain
+  in the privileged worker for the eventual handoff and must not be serialized through each popup
+  refresh.
 
 ### Windows actions
 

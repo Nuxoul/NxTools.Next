@@ -29,13 +29,20 @@ const elements = {
   mergeResourcesButton: document.getElementById("mergeResourcesButton"),
   statusText: document.getElementById("statusText"),
   statusDot: document.getElementById("statusDot"),
+  signalRail: document.getElementById("signalRail"),
+  captureSummaryText: document.getElementById("captureSummaryText"),
+  captureAgeText: document.getElementById("captureAgeText"),
+  taskTabCount: document.getElementById("taskTabCount"),
+  resourceTabCount: document.getElementById("resourceTabCount"),
   activeTabTitle: document.getElementById("activeTabTitle"),
+  activeTabDomain: document.getElementById("activeTabDomain"),
   siteEnabledToggle: document.getElementById("siteEnabledToggle"),
   siteToggleHint: document.getElementById("siteToggleHint"),
   siteToggleRow: document.getElementById("siteToggleRow"),
   taskCountText: document.getElementById("taskCountText"),
   taskList: document.getElementById("taskList"),
   currentResourceList: document.getElementById("currentResourceList"),
+  currentResourceCountText: document.getElementById("currentResourceCountText"),
   otherResourceList: document.getElementById("otherResourceList"),
   mediaStateText: document.getElementById("mediaStateText"),
   mediaSelect: document.getElementById("mediaSelect"),
@@ -155,6 +162,19 @@ function formatBytes(value) {
     index += 1;
   }
   return `${size.toFixed(size >= 100 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function relativeCaptureAge(value) {
+  const timestamp = Number(value || 0);
+  if (!timestamp) {
+    return "等待资源";
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 8) return "刚刚";
+  if (seconds < 60) return `${seconds}s 前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m 前`;
+  return `${Math.floor(minutes / 60)}h 前`;
 }
 
 function statusLabel(status) {
@@ -341,8 +361,10 @@ function expandedResourcePreviewMarkup(resource) {
 }
 
 function updateMergeButton() {
-  elements.mergeResourcesButton.disabled = selectedResourceIds.size !== 2;
-  elements.mergeResourcesButton.textContent = selectedResourceIds.size > 0 ? `合并 ${selectedResourceIds.size}` : "合并";
+  elements.mergeResourcesButton.disabled = true;
+  elements.mergeResourcesButton.textContent = selectedResourceIds.size > 0
+    ? `合并 ${selectedResourceIds.size}/2 · 后续`
+    : "合并 · 后续";
 }
 
 function formatTime(value) {
@@ -401,6 +423,7 @@ function emptyList(target, text) {
 
 function renderTasks(tasks) {
   elements.taskCountText.textContent = String(tasks.length);
+  elements.taskTabCount.textContent = String(Math.min(tasks.length, 99));
   if (tasks.length === 0) {
     emptyList(elements.taskList, "桌面端暂无任务");
     return;
@@ -566,6 +589,28 @@ function renderResources(target, resources, emptyText) {
   updateMergeButton();
 }
 
+function renderCaptureSummary(state) {
+  const summary = state.captureSummary || {};
+  const currentCount = Number(summary.currentCount || 0);
+  const totalCount = Number(summary.totalCount || 0);
+  const recentCount = Number(summary.recentCount || 0);
+  const connected = Boolean(state.status?.ok);
+  const enabled = state.settings?.captureResources !== false && state.siteControl?.enabled !== false;
+
+  elements.resourceTabCount.textContent = String(Math.min(currentCount, 99));
+  elements.currentResourceCountText.textContent = `${currentCount} 个资源`;
+  elements.captureSummaryText.textContent = enabled
+    ? `${currentCount} 当前 · ${totalCount} 总计`
+    : "当前网站捕获已暂停";
+  elements.captureAgeText.textContent = enabled
+    ? (recentCount > 0 ? `${recentCount} 新 · ${relativeCaptureAge(summary.latestCapturedAt)}` : relativeCaptureAge(summary.latestCapturedAt))
+    : "PAUSED";
+  elements.signalRail.classList.toggle("online", connected && enabled && recentCount === 0);
+  elements.signalRail.classList.toggle("capturing", connected && enabled && recentCount > 0);
+  elements.signalRail.classList.toggle("offline", !connected);
+  elements.signalRail.classList.toggle("paused", connected && !enabled);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -658,15 +703,17 @@ function render(state) {
   elements.includeCookies.checked = Boolean(settings.includeCookies);
 
   const status = state.status || {};
-  elements.statusText.textContent = status.message || "未连接";
+  elements.statusText.textContent = status.ok ? "桌面在线" : (status.message || "桌面离线");
   elements.statusDot.classList.toggle("ok", Boolean(status.ok));
   elements.statusDot.classList.toggle("bad", !status.ok);
 
   const activeTab = state.activeTab || {};
   elements.activeTabTitle.textContent = activeTab.title || activeTab.url || "-";
+  elements.activeTabDomain.textContent = activeTab.domain || "未检测到网页";
   elements.sendTabButton.disabled = !/^https?:\/\//i.test(activeTab.url || "");
 
   renderSiteToggle(state.siteControl || {});
+  renderCaptureSummary(state);
 
   renderTasks(Array.isArray(state.tasks) ? state.tasks : []);
   if (!previewResourceId || !findResourceById(previewResourceId, state)) {
@@ -680,7 +727,9 @@ function render(state) {
 function setView(view) {
   currentView = view;
   document.querySelectorAll(".tab").forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === view);
+    const active = button.dataset.view === view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
   });
   document.querySelectorAll(".view").forEach((section) => {
     section.classList.toggle("active", section.id === `${view}View`);
@@ -722,7 +771,7 @@ function startRefreshLoop() {
     if (currentView !== "settings" && busyActionCount === 0) {
       refresh().catch(() => {});
     }
-  }, 1200);
+  }, 1500);
 }
 
 document.querySelectorAll(".tab").forEach((button) => {

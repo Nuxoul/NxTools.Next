@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("handoff-policy.js");
+importScripts("handoff-policy.js", "capture-policy.js");
 
 const NATIVE_HOST_NAME = "com.nxtools.next.browser";
 const BROWSER_PROTOCOL_VERSION = 1;
@@ -187,6 +187,8 @@ const selectedMediaIndexByTab = new Map();
 const lastFrameScanByTab = new Map();
 const disabledSites = new Set();
 let cachedSettings = { ...DEFAULT_SETTINGS };
+let settingsLoaded = false;
+let settingsLoadPromise = null;
 
 const LIKELY_MEDIA_URL_PATTERN = /(?:bilivideo|hdslb|upos-|mcdn|googlevideo|videoplayback|douyinvod|bytecdn|weibocdn|akamaized|cloudfront|dash|hls|segment|fragment|frag|chunk|playurl|play_url|playback|stream|manifest|playlist|media-video|media-audio|mime=video|mime=audio|mime_type=video|mime_type=audio|video_mp4|audio_mp4)/i;
 const BINARY_DOWNLOAD_EXTENSIONS = new Set([
@@ -893,12 +895,22 @@ function actionApi() {
 }
 
 async function getSettings() {
-  const stored = await storageGet(DEFAULT_SETTINGS);
-  cachedSettings = {
-    ...DEFAULT_SETTINGS,
-    ...stored
-  };
-  return cachedSettings;
+  if (settingsLoaded) {
+    return cachedSettings;
+  }
+  if (!settingsLoadPromise) {
+    settingsLoadPromise = storageGet(DEFAULT_SETTINGS).then((stored) => {
+      cachedSettings = {
+        ...DEFAULT_SETTINGS,
+        ...stored
+      };
+      settingsLoaded = true;
+      return cachedSettings;
+    }).finally(() => {
+      settingsLoadPromise = null;
+    });
+  }
+  return settingsLoadPromise;
 }
 
 function setBadge(text, color) {
@@ -1761,6 +1773,7 @@ function cacheResource(resource) {
     pageTitle: boundedCapturedText(resource.pageTitle),
     pageUrl: boundedCapturedUrl(resource.pageUrl),
     filename: boundedCapturedText(resource.filename),
+    filenameSource: boundedCapturedText(resource.filenameSource, 64),
     mime: boundedCapturedText(resource.mime, 256).toLowerCase(),
     referer: boundedCapturedUrl(resource.referer),
     source: boundedCapturedText(resource.source, 128),
@@ -1777,23 +1790,7 @@ function cacheResource(resource) {
   const bucket = bucketForTab(resource.tabId);
   const existing = bucket.get(resource.id);
   const wasNew = !existing;
-  const merged = {
-    ...existing,
-    ...resource,
-    filename: resource.filename || existing?.filename || getFileNameFromUrl(resource.url) || "",
-    mime: resource.mime || existing?.mime || "",
-    size: resource.size > 0 ? resource.size : existing?.size || 0,
-    mediaHint: resource.mediaHint || resource.assetHint || existing?.mediaHint || existing?.assetHint || null,
-    assetHint: resource.assetHint || existing?.assetHint || null,
-    width: Number(resource.width || 0) > 0 ? Number(resource.width || 0) : Number(existing?.width || 0),
-    height: Number(resource.height || 0) > 0 ? Number(resource.height || 0) : Number(existing?.height || 0),
-    supportsRange: Boolean(resource.supportsRange || existing?.supportsRange),
-    requestHeaders: {
-      ...(existing?.requestHeaders || {}),
-      ...(resource.requestHeaders || {})
-    },
-    capturedAt: Math.max(resource.capturedAt || Date.now(), existing?.capturedAt || 0)
-  };
+  const merged = NxToolsCapturePolicy.mergeCapturedResource(existing, resource);
 
   bucket.set(merged.id, merged);
   resourcesById.set(merged.id, merged);
@@ -2411,6 +2408,7 @@ async function captureNetworkResource(details) {
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : redirectHint?.initiator || tab?.url || "",
     filename,
+    filenameSource: meta.filename ? "content-disposition" : "url",
     mime: meta.mime,
     size: meta.size,
     mediaHint: meta.assetHint || null,
@@ -2487,6 +2485,7 @@ async function captureRequestResource(details) {
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : tab?.url || "",
     filename,
+    filenameSource: "url",
     mime,
     size: 0,
     supportsRange: Boolean(headerSnapshot?.supportsRange),
@@ -2545,6 +2544,7 @@ async function capturePageResource(sender, payload) {
     pageTitle: tab?.title || "",
     pageUrl: payload.href || tab?.url || "",
     filename,
+    filenameSource: cleanFileName(payload.filename) ? "page" : (getFileNameFromUrl(primaryUrl) ? "url" : "inferred"),
     mime: payloadMime,
     size: Number(payload.size || 0),
     width: Number(payload.width || 0),
@@ -2568,6 +2568,7 @@ async function capturePageResource(sender, payload) {
       pageTitle: tab?.title || "",
       pageUrl: payload.href || tab?.url || "",
       filename: ensureFileNameForUrl(filename || getFileNameFromUrl(sourceUrl), sourceUrl, sourceMime || payloadMime),
+      filenameSource: cleanFileName(payload.filename) ? "page" : (getFileNameFromUrl(sourceUrl) ? "url" : "inferred"),
       mime: sourceMime || payloadMime,
       size: Number(payload.sourceSize || payload.size || 0),
       width: Number(payload.width || 0),
@@ -3730,7 +3731,9 @@ async function checkApiStatus() {
 
 function resourcesForPopup(activeTabId) {
   pruneResources();
-  const current = activeTabId ? [...(resourcesByTab.get(activeTabId)?.values() || [])] : [];
+  const current = activeTabId
+    ? NxToolsCapturePolicy.uniqueCapturedResources([...(resourcesByTab.get(activeTabId)?.values() || [])])
+    : [];
   const other = [];
   for (const [tabId, bucket] of resourcesByTab) {
     if (tabId === activeTabId) {
@@ -3740,7 +3743,7 @@ function resourcesForPopup(activeTabId) {
   }
 
   const enrich = (resource) => ({
-    ...resource,
+    ...NxToolsCapturePolicy.projectResourceForPopup(resource),
     domain: domainFromUrl(resource.url),
     description: describeResource(resource)
   });
@@ -3754,9 +3757,23 @@ function resourcesForPopup(activeTabId) {
     return Number(right.capturedAt || 0) - Number(left.capturedAt || 0);
   };
 
+  const uniqueOther = NxToolsCapturePolicy.uniqueCapturedResources(other);
+  const currentResources = current.sort(bySizeThenTime).map(enrich);
+  const otherResources = uniqueOther.sort(bySizeThenTime).map(enrich);
+  const allResources = [...currentResources, ...otherResources];
+  const latestCapturedAt = allResources.reduce(
+    (latest, resource) => Math.max(latest, Number(resource.capturedAt || 0)),
+    0);
   return {
-    currentResources: current.sort(bySizeThenTime).map(enrich),
-    otherResources: other.sort(bySizeThenTime).map(enrich)
+    currentResources,
+    otherResources,
+    captureSummary: {
+      currentCount: currentResources.length,
+      otherCount: otherResources.length,
+      totalCount: allResources.length,
+      recentCount: allResources.filter((resource) => Date.now() - Number(resource.capturedAt || 0) <= 60_000).length,
+      latestCapturedAt
+    }
   };
 }
 
@@ -3915,6 +3932,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 registerHeaderCapture();
+void getSettings();
 void loadPersistentResources();
 void ensureDesktopConnection();
 void activeTab().then((tab) => {
@@ -3946,6 +3964,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") {
     return;
+  }
+
+  for (const settingName of Object.keys(DEFAULT_SETTINGS)) {
+    if (changes[settingName]) {
+      cachedSettings[settingName] = changes[settingName].newValue ?? DEFAULT_SETTINGS[settingName];
+      settingsLoaded = true;
+    }
   }
 
   if (changes[STORAGE_DISABLED_SITES_KEY]) {
@@ -4048,6 +4073,7 @@ async function toggleFeature(feature, tabId) {
   const settings = await getSettings();
   if (feature === "mediaOverlay") {
     const enabled = settings.mediaOverlayEnabled === false;
+    cachedSettings.mediaOverlayEnabled = enabled;
     await chrome.storage.local.set({ mediaOverlayEnabled: enabled });
     const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
@@ -4064,6 +4090,7 @@ async function toggleFeature(feature, tabId) {
 
   if (feature === "deepSearch") {
     const enabled = settings.captureResources === false;
+    cachedSettings.captureResources = enabled;
     await chrome.storage.local.set({ captureResources: enabled });
     if (enabled && tabId > 0) {
       await scanTabForResources(tabId, true);
@@ -4319,6 +4346,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ...DEFAULT_SETTINGS,
       ...(message.settings || {})
     };
+    cachedSettings = next;
+    settingsLoaded = true;
     void chrome.storage.local.set(next).then(async () => {
       sendResponse(await buildPopupState(null, String(message.currentView || "settings")));
     });

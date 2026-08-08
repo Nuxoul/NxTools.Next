@@ -29,6 +29,8 @@ const MAX_REQUEST_ID_BYTES: usize = 64;
 const MAX_REQUEST_KIND_BYTES: usize = 32;
 const MAX_EXTENSION_VERSION_BYTES: usize = 32;
 const MAX_TASK_ACTION_BYTES: usize = 16;
+const MAX_EXTENSION_LOG_EVENT_BYTES: usize = 96;
+const MAX_EXTENSION_LOG_LEVEL_BYTES: usize = 16;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +71,36 @@ struct BrowserDownloadPayload {
     start_immediately: bool,
     #[serde(default)]
     open_dialog: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserExtensionLogPayload {
+    #[serde(default)]
+    level: String,
+    event: String,
+}
+
+fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Result<()> {
+    bounded(
+        "extensionLog.level",
+        &payload.level,
+        MAX_EXTENSION_LOG_LEVEL_BYTES,
+    )?;
+    bounded(
+        "extensionLog.event",
+        &payload.event,
+        MAX_EXTENSION_LOG_EVENT_BYTES,
+    )?;
+    if payload.event.is_empty()
+        || !payload
+            .event
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+    {
+        bail!("browser extension log event is invalid");
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -198,9 +230,15 @@ fn handle_request(
         "get_snapshot" => snapshot(request_id, executable),
         "task_action" => task_action(request_id, request.task_id, request.action, executable),
         "extension_log" => {
+            let payload: BrowserExtensionLogPayload = serde_json::from_value(request.payload)
+                .context("browser extension log has an invalid shape")?;
+            validate_extension_log_payload(&payload)?;
             info!(
                 event = "browser_extension.event",
-                request_id, "bounded browser extension event received"
+                request_id,
+                extension_event = %payload.event,
+                extension_level = %payload.level,
+                "bounded browser extension event received"
             );
             Ok(BrowserResponse::ok(request_id, None))
         }
@@ -662,6 +700,21 @@ mod tests {
             )])
             .is_err()
         );
+    }
+
+    #[test]
+    fn extension_log_keeps_only_bounded_event_identity() {
+        let accepted = BrowserExtensionLogPayload {
+            level: "info".into(),
+            event: "resource_cached".into(),
+        };
+        validate_extension_log_payload(&accepted).expect("bounded extension event should pass");
+
+        let invalid = BrowserExtensionLogPayload {
+            level: "info".into(),
+            event: "resource cached / secret".into(),
+        };
+        assert!(validate_extension_log_payload(&invalid).is_err());
     }
 
     #[test]

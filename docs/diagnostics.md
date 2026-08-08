@@ -177,3 +177,9 @@ The private in-process message is not a serializable `DownloadEvent` because it 
 Cookie and Referrer values. Direct task state delivery is observable by task ID and event sequence
 through `download.desktop.task_event_applied`; snapshot failures use
 `download.desktop.snapshot_refresh_failed`.
+
+Page resource discovery uses the rate-limited `browser_extension.event` host event. It retains the
+Native Messaging request ID plus a bounded extension event identity such as `resource_cached`; the
+untrusted extension message, URL, page title, file name, Header, Cookie and Referrer are not written
+to the host log. Repeated capture events remain throttled in the extension and are never emitted per
+network chunk or scan candidate.
