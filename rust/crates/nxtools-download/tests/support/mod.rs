@@ -20,6 +20,8 @@ pub struct DeterministicHttpServer {
     max_active_range_transfers: Arc<AtomicU64>,
     transient_range_failures_remaining: Arc<AtomicU64>,
     transient_range_attempts: Arc<AtomicU64>,
+    fallback_stream_failures_remaining: Arc<AtomicU64>,
+    fallback_stream_attempts: Arc<AtomicU64>,
     validator_range_failures_remaining: Arc<AtomicU64>,
     validator_range_attempts: Arc<AtomicU64>,
     varying_validator_full_stream_attempts: Arc<AtomicU64>,
@@ -50,6 +52,8 @@ impl DeterministicHttpServer {
         let max_active_range_transfers = Arc::new(AtomicU64::new(0));
         let transient_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let transient_range_attempts = Arc::new(AtomicU64::new(0));
+        let fallback_stream_failures_remaining = Arc::new(AtomicU64::new(1));
+        let fallback_stream_attempts = Arc::new(AtomicU64::new(0));
         let validator_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let validator_range_attempts = Arc::new(AtomicU64::new(0));
         let varying_validator_full_stream_attempts = Arc::new(AtomicU64::new(0));
@@ -63,6 +67,9 @@ impl DeterministicHttpServer {
         let listener_transient_range_failures_remaining =
             Arc::clone(&transient_range_failures_remaining);
         let listener_transient_range_attempts = Arc::clone(&transient_range_attempts);
+        let listener_fallback_stream_failures_remaining =
+            Arc::clone(&fallback_stream_failures_remaining);
+        let listener_fallback_stream_attempts = Arc::clone(&fallback_stream_attempts);
         let listener_validator_range_failures_remaining =
             Arc::clone(&validator_range_failures_remaining);
         let listener_validator_range_attempts = Arc::clone(&validator_range_attempts);
@@ -88,6 +95,10 @@ impl DeterministicHttpServer {
                             Arc::clone(&listener_transient_range_failures_remaining);
                         let transient_range_attempts =
                             Arc::clone(&listener_transient_range_attempts);
+                        let fallback_stream_failures_remaining =
+                            Arc::clone(&listener_fallback_stream_failures_remaining);
+                        let fallback_stream_attempts =
+                            Arc::clone(&listener_fallback_stream_attempts);
                         let validator_range_failures_remaining =
                             Arc::clone(&listener_validator_range_failures_remaining);
                         let validator_range_attempts =
@@ -105,6 +116,8 @@ impl DeterministicHttpServer {
                                 &max_active_range_transfers,
                                 &transient_range_failures_remaining,
                                 &transient_range_attempts,
+                                &fallback_stream_failures_remaining,
+                                &fallback_stream_attempts,
                                 &validator_range_failures_remaining,
                                 &validator_range_attempts,
                                 &varying_validator_full_stream_attempts,
@@ -134,6 +147,8 @@ impl DeterministicHttpServer {
             max_active_range_transfers,
             transient_range_failures_remaining,
             transient_range_attempts,
+            fallback_stream_failures_remaining,
+            fallback_stream_attempts,
             validator_range_failures_remaining,
             validator_range_attempts,
             varying_validator_full_stream_attempts,
@@ -158,6 +173,15 @@ impl DeterministicHttpServer {
 
     pub fn transient_range_attempts(&self) -> u64 {
         self.transient_range_attempts.load(Ordering::Acquire)
+    }
+
+    pub fn set_fallback_stream_failures(&self, failures: u64) {
+        self.fallback_stream_failures_remaining
+            .store(failures, Ordering::Release);
+    }
+
+    pub fn fallback_stream_attempts(&self) -> u64 {
+        self.fallback_stream_attempts.load(Ordering::Acquire)
     }
 
     pub fn validator_range_attempts(&self) -> u64 {
@@ -262,6 +286,8 @@ fn serve_connection(
     max_active_range_transfers: &AtomicU64,
     transient_range_failures_remaining: &AtomicU64,
     transient_range_attempts: &AtomicU64,
+    fallback_stream_failures_remaining: &AtomicU64,
+    fallback_stream_attempts: &AtomicU64,
     validator_range_failures_remaining: &AtomicU64,
     validator_range_attempts: &AtomicU64,
     varying_validator_full_stream_attempts: &AtomicU64,
@@ -313,7 +339,22 @@ fn serve_connection(
             headers.get("if-range"),
             resume_transfer_started,
         ),
-        "/range-probe-only" => serve_probe_only_range(&mut stream, method, headers.get("range")),
+        "/range-probe-only" => serve_probe_only_range(
+            &mut stream,
+            method,
+            headers.get("range"),
+            fallback_stream_failures_remaining,
+            fallback_stream_attempts,
+            false,
+        ),
+        "/range-probe-only-unavailable" => serve_probe_only_range(
+            &mut stream,
+            method,
+            headers.get("range"),
+            fallback_stream_failures_remaining,
+            fallback_stream_attempts,
+            true,
+        ),
         "/range-mutable" => {
             serve_mutable_range(&mut stream, method, headers.get("range"), revision)
         }
@@ -658,7 +699,14 @@ fn serve_resume_required(
     }
 }
 
-fn serve_probe_only_range(stream: &mut TcpStream, method: &str, range: Option<&String>) {
+fn serve_probe_only_range(
+    stream: &mut TcpStream,
+    method: &str,
+    range: Option<&String>,
+    fallback_failures_remaining: &AtomicU64,
+    fallback_attempts: &AtomicU64,
+    respond_unavailable: bool,
+) {
     let common = [
         ("Accept-Ranges", "bytes"),
         ("ETag", "\"probe-only\""),
@@ -680,6 +728,22 @@ fn serve_probe_only_range(stream: &mut TcpStream, method: &str, range: Option<&S
             Some(1),
         );
         return;
+    }
+    if range.is_none() {
+        fallback_attempts.fetch_add(1, Ordering::AcqRel);
+        if fallback_failures_remaining
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            if respond_unavailable {
+                write_response(stream, 503, "Service Unavailable", &common, b"", Some(0));
+            } else {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+            return;
+        }
     }
     write_response(stream, 200, "OK", &common, BODY, Some(BODY.len()));
 }

@@ -427,8 +427,25 @@ impl HttpDownloadClient {
     where
         F: FnMut(DownloadTransferProgress),
     {
+        let mut directives = control.subscribe();
+        let initial_directive = *directives.borrow_and_update();
         request.validate()?;
         let (temporary_path, final_path) = Self::artifact_paths(request, probe, task_id)?;
+        match initial_directive {
+            TransferDirective::Running => {}
+            TransferDirective::Pause => {
+                return Ok(PreparedDownloadOutcome::Paused {
+                    temporary_path,
+                    downloaded_bytes: 0,
+                });
+            }
+            TransferDirective::Cancel => {
+                remove_file_if_exists(&temporary_path).await?;
+                return Ok(PreparedDownloadOutcome::Cancelled {
+                    downloaded_bytes: 0,
+                });
+            }
+        }
         #[cfg(test)]
         if let Some(fault) = self.injected_artifact_fault {
             return Err(HttpDownloadError::Artifact(SegmentedArtifactError::Io(
@@ -447,7 +464,24 @@ impl HttpDownloadClient {
             .open(&temporary_path)
             .await?;
 
-        let mut directives = control.subscribe();
+        let prepared_directive = *directives.borrow_and_update();
+        match prepared_directive {
+            TransferDirective::Running => {}
+            TransferDirective::Pause => {
+                sync_output(&mut output).await?;
+                return Ok(PreparedDownloadOutcome::Paused {
+                    temporary_path,
+                    downloaded_bytes: 0,
+                });
+            }
+            TransferDirective::Cancel => {
+                drop(output);
+                remove_file_if_exists(&temporary_path).await?;
+                return Ok(PreparedDownloadOutcome::Cancelled {
+                    downloaded_bytes: 0,
+                });
+            }
+        }
         let response_request = self.send(Method::GET, request, false);
         tokio::pin!(response_request);
         let mut response = tokio::select! {
@@ -802,15 +836,24 @@ impl DownloadTransferControl {
         );
     }
 
-    pub(crate) async fn wait_for_stop_or_timeout(&self, duration: std::time::Duration) -> bool {
+    pub(crate) async fn wait_for_stop_or_timeout(
+        &self,
+        duration: std::time::Duration,
+    ) -> Option<TransferDirective> {
         let mut directives = self.subscribe();
-        if *directives.borrow() != TransferDirective::Running {
-            return true;
+        let current = *directives.borrow();
+        if current != TransferDirective::Running {
+            return Some(current);
         }
         tokio::select! {
-            _ = tokio::time::sleep(duration) => false,
+            _ = tokio::time::sleep(duration) => None,
             changed = directives.changed() => {
-                changed.is_ok() && *directives.borrow() != TransferDirective::Running
+                if changed.is_ok() {
+                    let directive = *directives.borrow();
+                    (directive != TransferDirective::Running).then_some(directive)
+                } else {
+                    None
+                }
             }
         }
     }
@@ -823,7 +866,7 @@ impl Default for DownloadTransferControl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransferDirective {
+pub(crate) enum TransferDirective {
     Running,
     Pause,
     Cancel,

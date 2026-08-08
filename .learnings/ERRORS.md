@@ -4,6 +4,101 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260808-DOWNLOADFIXTURETIMING] download_engine_fixture_parallel_timing
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Default-parallel download-engine integration runs failed at different timing-sensitive assertions:
+CDN attempt count, Range fallback connection setup, and pausing before a small transfer completed.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Exact reruns separated fixture timing from one real product gap: retryable single-stream
+  failures had no bounded retry. A deterministic disconnect regression now covers that gap and
+  passes 20/20; the complete download suite passes with `--test-threads=1` under the required
+  low-memory policy. Default-parallel fixture timing remains recorded rather than misreported as a
+  clean pass.
+
+---
+
+## [ERR-20260808-AMBIGUOUSASSERTPATCH] ambiguous_repeated_assert_patch
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+A patch intended to add context to one repeated `assert_eq!(completed.task.status(), ...)` matched
+an earlier test with the same line.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Diff inspection caught it before testing or commit; the earlier assertion was restored
+  and the target patch was anchored to the exact test function. Future patches to repeated test
+  assertions must include the function context.
+
+---
+
+## [ERR-20260808-BROWSERHOSTTARGET] cargo_binary_target_product_filename
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: build
+
+### Summary
+
+The browser native host used the final Windows product filename as its Cargo binary target name;
+Cargo rejects `.` in crate target identifiers.
+
+### Error
+
+```text
+error: invalid character '.' in crate name: `NxTools.BrowserHost`
+```
+
+### Suggested Fix
+
+Keep the Cargo target as `nxtools-browser-host` and rename it to `NxTools.BrowserHost.exe` only at
+the package boundary.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Added an architecture regression gate, corrected the target/packaging paths, and
+  verified all three native-host tests pass under the low-memory Cargo policy.
+
+---
+
+## [ERR-20260808-BROWSERHOSTCLIPPY] browser_host_test_unwrap
+
+**Logged**: 2026-08-08T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The first BrowserHost Clippy pass found a bare `unwrap()` in the Native Messaging round-trip test,
+which violates the workspace `unwrap_used` lint.
+
+### Resolution
+
+- **Resolved**: 2026-08-08T00:00:00+08:00
+- **Notes**: Replaced it with a contextual `expect()` and reran Clippy for BrowserHost and the
+  download core with `-D warnings`; the retry passed.
+
+---
+
 ## [ERR-20260808-RUSTFMTEDITION] rustfmt_wrong_edition
 
 **Logged**: 2026-08-08T00:00:00+08:00
@@ -5705,3 +5800,10 @@ then, confirm this failure with the exact test before changing transfer producti
 - **Notes**: Exact Release test passed on the immediate rerun; no product change was needed.
 
 ---
+## ERR-20260808-INTEGRATIONTESTPATH
+
+**Date**: 2026-08-08
+**Context**: Resuming the download/browser validation work after context compaction
+**Error**: A repository search assumed integration tests lived under `src/tests*`; they actually live under the crate-level `tests/` directory.
+**Root cause**: I relied on a summarized path instead of resolving the files with `rg --files` first.
+**Prevention**: Resolve uncertain test paths with `rg --files <crate> | rg 'tests|support'` before a multi-file search.

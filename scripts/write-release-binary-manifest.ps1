@@ -8,7 +8,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $targetDirectory = Join-Path $root "target\$Profile"
 $indexer = Join-Path $targetDirectory 'nxtools-indexer.exe'
 $desktop = Join-Path $targetDirectory 'nxtools-desktop.exe'
-$browserHost = Join-Path $targetDirectory 'NxTools.BrowserHost.exe'
+$browserHost = Join-Path $targetDirectory 'nxtools-browser-host.exe'
 foreach ($path in @($indexer, $desktop, $browserHost)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Trusted release binary is missing: $path"

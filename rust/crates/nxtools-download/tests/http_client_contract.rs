@@ -29,6 +29,95 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
     }
 }
 
+fn single_stream_probe(request: &DownloadRequest) -> DownloadProbe {
+    DownloadProbe {
+        final_url: request.source_url.clone(),
+        file_name: request.file_name.clone(),
+        total_bytes: Some(16),
+        supports_ranges: false,
+        content_type: None,
+        validator: ResourceValidator::default(),
+    }
+}
+
+#[tokio::test]
+async fn pause_before_single_stream_preparation_creates_no_files() {
+    let directory = tempfile::tempdir().expect("create test root");
+    let save_directory = directory.path().join("not-created");
+    let request = DownloadRequest {
+        source_url: "http://127.0.0.1:9/never-requested".into(),
+        save_directory: save_directory.clone(),
+        file_name: Some("fixture.bin".into()),
+        headers: Vec::new(),
+        cookie: None,
+        referrer: None,
+        connection_limit: Some(1),
+        speed_limit_bytes_per_second: None,
+        expected_total_bytes: Some(16),
+        scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
+    };
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+    let control = DownloadTransferControl::new();
+    control.pause();
+
+    let outcome = client
+        .download(
+            &request,
+            &single_stream_probe(&request),
+            DownloadTaskId::new(),
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("honor pause before preparation");
+
+    assert!(matches!(outcome, DownloadTransferOutcome::Paused { .. }));
+    assert!(
+        !save_directory.exists(),
+        "an already-paused transfer must not prepare the destination"
+    );
+}
+
+#[tokio::test]
+async fn cancel_before_single_stream_preparation_creates_no_files() {
+    let directory = tempfile::tempdir().expect("create test root");
+    let save_directory = directory.path().join("not-created");
+    let request = DownloadRequest {
+        source_url: "http://127.0.0.1:9/never-requested".into(),
+        save_directory: save_directory.clone(),
+        file_name: Some("fixture.bin".into()),
+        headers: Vec::new(),
+        cookie: None,
+        referrer: None,
+        connection_limit: Some(1),
+        speed_limit_bytes_per_second: None,
+        expected_total_bytes: Some(16),
+        scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
+    };
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+    let control = DownloadTransferControl::new();
+    control.cancel();
+
+    let outcome = client
+        .download(
+            &request,
+            &single_stream_probe(&request),
+            DownloadTaskId::new(),
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("honor cancel before preparation");
+
+    assert!(matches!(outcome, DownloadTransferOutcome::Cancelled { .. }));
+    assert!(
+        !save_directory.exists(),
+        "an already-cancelled transfer must not prepare the destination"
+    );
+}
+
 #[tokio::test]
 async fn download_streams_into_a_task_temporary_file_before_publishing_the_final_path() {
     let _contract = HTTP_CONTRACT_GATE.lock().await;

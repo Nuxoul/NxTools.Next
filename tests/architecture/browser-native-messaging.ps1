@@ -62,6 +62,14 @@ if ($nativeHostSource.Contains('error = %error', [StringComparison]::Ordinal)) {
     throw 'Native host lifecycle diagnostics must not log raw error payloads or paths.'
 }
 
+$nativeHostCargo = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-browser-host\Cargo.toml') -Raw
+Assert-Contains $nativeHostCargo 'name = "nxtools-browser-host"' `
+    'Cargo target names must use a legal crate identifier; product renaming belongs to packaging.'
+if ($nativeHostCargo.Contains('name = "NxTools.BrowserHost"', [StringComparison]::Ordinal)) {
+    throw 'Cargo binary target names cannot contain product filename punctuation.'
+}
+
 $downloadModel = Get-Content -LiteralPath `
     (Join-Path $root 'rust\crates\nxtools-download\src\lib.rs') -Raw
 Assert-Contains $downloadModel 'pub expected_total_bytes: Option<u64>' `
@@ -97,6 +105,8 @@ Assert-Contains $package '-p nxtools-browser-host' `
     'Packaging must build the browser native host.'
 Assert-Contains $package 'NxTools.BrowserHost.exe' `
     'Packaging must copy the browser native host.'
+Assert-Contains $package 'target\$profile\nxtools-browser-host.exe' `
+    'Packaging must rename the legal Cargo target to the product BrowserHost filename.'
 Assert-Contains $package 'browser_extension\nxtools-interceptor' `
     'Packaging must include the preserved browser extension.'
 

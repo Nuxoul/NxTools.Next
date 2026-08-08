@@ -579,7 +579,7 @@ mod tests {
             .expect("read frame")
             .expect("frame exists");
         assert_eq!(
-            serde_json::from_slice::<Value>(&decoded).unwrap(),
+            serde_json::from_slice::<Value>(&decoded).expect("decode response JSON"),
             json!({ "type": "hello" })
         );
     }

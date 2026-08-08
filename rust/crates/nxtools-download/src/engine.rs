@@ -10,7 +10,8 @@ use tracing::{info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
-    PreparedDownload, PreparedDownloadOutcome, is_disk_full_error, is_file_in_use_error,
+    PreparedDownload, PreparedDownloadOutcome, TransferDirective, is_disk_full_error,
+    is_file_in_use_error,
 };
 use crate::storage::StoredTransferState;
 use crate::{
@@ -1874,8 +1875,9 @@ fn spawn_download_worker(
     correlation_id: uuid::Uuid,
 ) -> Result<(), DownloadEngineError> {
     download_runtime()?.spawn(async move {
+        let started_at = Instant::now();
         if let Err(error) = run_task(Arc::clone(&inner), task_id, correlation_id).await {
-            record_failure(&inner, task_id, correlation_id, error);
+            record_failure(&inner, task_id, correlation_id, started_at.elapsed(), error);
         }
         let engine = DownloadEngine {
             inner: Arc::clone(&inner),
@@ -2114,6 +2116,7 @@ async fn run_single_stream_task(
     control: &DownloadTransferControl,
     reason: &'static str,
 ) -> Result<(), DownloadEngineError> {
+    let started_at = Instant::now();
     info!(
         event = "download.single_stream.started",
         %correlation_id,
@@ -2122,21 +2125,71 @@ async fn run_single_stream_task(
         expected_bytes = probe.total_bytes.unwrap_or_default(),
         "single-stream transfer started"
     );
-    let progress_inner = Arc::clone(inner);
-    let outcome = inner
-        .http
-        .prepare_download(request, probe, task_id, control, move |progress| {
-            publish_transfer_progress(
-                &progress_inner,
-                task_id,
-                progress.downloaded_bytes,
-                progress.total_bytes,
-                1,
-                None,
-                None,
-            );
-        })
-        .await?;
+    let mut attempt = 1_u32;
+    let outcome = loop {
+        let progress_inner = Arc::clone(inner);
+        let outcome = inner
+            .http
+            .prepare_download(request, probe, task_id, control, move |progress| {
+                publish_transfer_progress(
+                    &progress_inner,
+                    task_id,
+                    progress.downloaded_bytes,
+                    progress.total_bytes,
+                    1,
+                    None,
+                    None,
+                );
+            })
+            .await;
+        match outcome {
+            Err(error) if should_retry_transfer(attempt, &error) => {
+                let delay = transfer_retry_delay(attempt);
+                warn!(
+                    event = "download.single_stream_retry.scheduled",
+                    %correlation_id,
+                    ?task_id,
+                    reason,
+                    failed_attempt = attempt,
+                    next_attempt = attempt + 1,
+                    delay_ms = delay.as_millis(),
+                    error_kind = error.kind(),
+                    "transient single-stream failure scheduled for retry"
+                );
+                attempt += 1;
+                if let Some(directive) = control.wait_for_stop_or_timeout(delay).await {
+                    let (downloaded_bytes, temporary_path) = {
+                        let tasks = inner.lock_tasks()?;
+                        let state = tasks
+                            .get(&task_id)
+                            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+                        (
+                            state.transfer.downloaded_bytes,
+                            state
+                                .transfer
+                                .temporary_path
+                                .clone()
+                                .ok_or(DownloadEngineError::MissingTemporaryPath(task_id))?,
+                        )
+                    };
+                    break match directive {
+                        TransferDirective::Pause => Ok(PreparedDownloadOutcome::Paused {
+                            temporary_path,
+                            downloaded_bytes,
+                        }),
+                        TransferDirective::Cancel => {
+                            remove_path_if_exists(&temporary_path)?;
+                            Ok(PreparedDownloadOutcome::Cancelled { downloaded_bytes })
+                        }
+                        TransferDirective::Running => {
+                            unreachable!("wait_for_stop_or_timeout only returns stop directives")
+                        }
+                    };
+                }
+            }
+            terminal => break terminal,
+        }
+    }?;
 
     match outcome {
         PreparedDownloadOutcome::Ready(ready) => {
@@ -2163,6 +2216,7 @@ async fn run_single_stream_task(
                 ?task_id,
                 reason,
                 downloaded_bytes,
+                elapsed_ms = started_at.elapsed().as_millis(),
                 "single-stream transfer completed"
             );
         }
@@ -2188,6 +2242,7 @@ async fn run_single_stream_task(
                 ?task_id,
                 reason,
                 downloaded_bytes,
+                elapsed_ms = started_at.elapsed().as_millis(),
                 "single-stream transfer paused"
             );
         }
@@ -2211,6 +2266,7 @@ async fn run_single_stream_task(
                 ?task_id,
                 reason,
                 downloaded_bytes,
+                elapsed_ms = started_at.elapsed().as_millis(),
                 "single-stream transfer cancelled"
             );
         }
@@ -2294,9 +2350,7 @@ fn spawn_segment_transfer(
                 })
                 .await;
             match outcome {
-                Err(error)
-                    if attempt < MAX_SEGMENT_TRANSFER_ATTEMPTS && error.is_retryable_transfer() =>
-                {
+                Err(error) if should_retry_transfer(attempt, &error) => {
                     retry_observed.store(true, Ordering::Release);
                     let aggregate = progress_by_segment
                         .lock()
@@ -2314,7 +2368,7 @@ fn spawn_segment_transfer(
                         Some(progress_by_segment.as_ref()),
                         Some(segment_lengths.as_ref()),
                     );
-                    let delay = segment_retry_delay(attempt);
+                    let delay = transfer_retry_delay(attempt);
                     warn!(
                         event = "download.segment_retry.scheduled",
                         %correlation_id,
@@ -2327,7 +2381,7 @@ fn spawn_segment_transfer(
                         "transient segment failure scheduled for retry"
                     );
                     attempt += 1;
-                    let _stopped = task_control.wait_for_stop_or_timeout(delay).await;
+                    let _stop_directive = task_control.wait_for_stop_or_timeout(delay).await;
                 }
                 terminal => break terminal,
             }
@@ -3078,11 +3132,15 @@ async fn run_segmented_task(
 
 const MIN_INITIAL_SEGMENT_BYTES: u64 = 64 * 1024;
 const MIN_DYNAMIC_SEGMENT_BYTES: u64 = 32 * 1024;
-const MAX_SEGMENT_TRANSFER_ATTEMPTS: u32 = 3;
-const SEGMENT_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+const MAX_TRANSFER_ATTEMPTS: u32 = 3;
+const TRANSFER_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
 
-fn segment_retry_delay(failed_attempt: u32) -> Duration {
-    SEGMENT_RETRY_BASE_DELAY.saturating_mul(1 << failed_attempt.saturating_sub(1).min(6))
+fn transfer_retry_delay(failed_attempt: u32) -> Duration {
+    TRANSFER_RETRY_BASE_DELAY.saturating_mul(1 << failed_attempt.saturating_sub(1).min(6))
+}
+
+fn should_retry_transfer(failed_attempt: u32, error: &HttpDownloadError) -> bool {
+    failed_attempt < MAX_TRANSFER_ATTEMPTS && error.is_retryable_transfer()
 }
 
 fn create_initial_segments(
@@ -3272,6 +3330,7 @@ fn record_failure(
     inner: &DownloadEngineInner,
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
+    elapsed: Duration,
     error: DownloadEngineError,
 ) {
     let Ok(mut tasks) = inner.tasks.lock() else {
@@ -3288,6 +3347,7 @@ fn record_failure(
         fault_code = ?fault.code,
         retryable = fault.retryable,
         native_error = error.native_os_error().unwrap_or_default(),
+        elapsed_ms = elapsed.as_millis(),
         "download task reached a terminal failure"
     );
     state.transfer.error = Some(fault);
@@ -3526,6 +3586,8 @@ pub enum DownloadEngineError {
     TaskNotFound(DownloadTaskId),
     #[error("download task has no active transfer control: {0:?}")]
     MissingTransferControl(DownloadTaskId),
+    #[error("download task has no temporary artifact path: {0:?}")]
+    MissingTemporaryPath(DownloadTaskId),
     #[error("download task has no known length for segmented transfer: {0:?}")]
     MissingSegmentedLength(DownloadTaskId),
     #[error("download task has an empty persisted segment plan: {0:?}")]
@@ -3583,6 +3645,7 @@ impl DownloadEngineError {
             | Self::Schedule(_)
             | Self::TaskNotFound(_)
             | Self::MissingTransferControl(_)
+            | Self::MissingTemporaryPath(_)
             | Self::MissingSegmentedLength(_)
             | Self::EmptySegmentLayout(_)
             | Self::IncompleteSegmentLayout(_)
@@ -4321,4 +4384,15 @@ fn transfer_rate_sampler_smooths_short_lived_network_jitter() {
         sampler.sample(6_291_456, started_at + Duration::from_millis(1_000)),
         8_388_608
     );
+}
+
+#[cfg(test)]
+#[test]
+fn transfer_retry_policy_never_schedules_a_fourth_attempt() {
+    let transient = HttpDownloadError::Status(503);
+
+    assert!(should_retry_transfer(1, &transient));
+    assert!(should_retry_transfer(2, &transient));
+    assert!(!should_retry_transfer(3, &transient));
+    assert!(!should_retry_transfer(1, &HttpDownloadError::Status(404)));
 }

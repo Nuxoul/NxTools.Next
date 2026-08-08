@@ -85,6 +85,13 @@ index, failed/next attempt, bounded error kind and delay. A pause or cancel duri
 not emit another network attempt. Validation details, URLs, response bodies and credentials remain
 excluded.
 
+Transient ordinary or range-fallback single-stream failures use the equivalent bounded
+`download.single_stream_retry.scheduled` event. It contains the transfer reason, failed/next
+attempt, bounded error kind and delay under the same task/correlation ID, and never records URL,
+path, file name, headers or credentials. The resulting single-stream completed, paused or cancelled
+event includes total elapsed milliseconds; terminal `download.task.failed` records the worker's
+elapsed milliseconds under the same correlation ID.
+
 A no-progress connection terminates with error kind `stalled`; the message includes only the
 configured timeout in milliseconds. It is eligible for the same bounded retry lifecycle and never
 logs the URL or response body. Pause/cancel winning the wait produces the normal segment terminal

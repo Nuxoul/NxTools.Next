@@ -857,7 +857,7 @@ async fn ranged_task_resumes_persisted_bytes_after_the_engine_is_reopened() {
 
 #[tokio::test]
 async fn range_ignored_after_probe_restarts_cleanly_as_a_single_stream() {
-    let server = DeterministicHttpServer::start();
+    let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open_in_memory().expect("open download engine");
@@ -872,11 +872,132 @@ async fn range_ignored_after_probe_restarts_cleanly_as_a_single_stream() {
         .await
         .expect("wait for fallback task");
 
-    assert_eq!(completed.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "range fallback failed after {} durable bytes: {:?}",
+        completed.downloaded_bytes,
+        completed.error
+    );
     assert_eq!(completed.downloaded_bytes, 16);
+    assert_eq!(
+        server.fallback_stream_attempts(),
+        2,
+        "one transient fallback failure must schedule exactly one retry"
+    );
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("read fallback artifact"),
         b"0123456789abcdef"
+    );
+}
+
+#[tokio::test]
+async fn single_stream_retry_budget_stops_after_three_attempts() {
+    let server = DeterministicHttpServer::start_concurrent();
+    server.set_fallback_stream_failures(u64::MAX);
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination);
+    request.source_url = format!("http://{}/range-probe-only-unavailable", server.address());
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit task");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for exhausted fallback task");
+
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(
+        failed.error.as_ref().is_some_and(|fault| fault.retryable),
+        "exhausted transient failure must remain retryable: {:?}",
+        failed.error
+    );
+    assert!(
+        (2..=3).contains(&server.fallback_stream_attempts()),
+        "the closed-connection fixture must observe retry traffic without a fourth request: {}",
+        server.fallback_stream_attempts()
+    );
+}
+
+#[tokio::test]
+async fn pause_during_single_stream_retry_backoff_prevents_another_attempt() {
+    let server = DeterministicHttpServer::start_concurrent();
+    server.set_fallback_stream_failures(u64::MAX);
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination);
+    request.source_url = format!("http://{}/range-probe-only-unavailable", server.address());
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit task");
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while server.fallback_stream_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first fallback stream attempt did not arrive"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    engine.pause(task_id).expect("pause during retry backoff");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(1))
+        .await
+        .expect("wait for fallback pause");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    assert_eq!(
+        server.fallback_stream_attempts(),
+        1,
+        "pause must win the retry backoff without opening another stream"
+    );
+}
+
+#[tokio::test]
+async fn cancel_during_single_stream_retry_backoff_prevents_another_attempt() {
+    let server = DeterministicHttpServer::start_concurrent();
+    server.set_fallback_stream_failures(u64::MAX);
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut request = request(&server, destination.clone());
+    request.source_url = format!("http://{}/range-probe-only-unavailable", server.address());
+
+    let task_id = engine
+        .submit(request, RequestOrigin::Ui)
+        .expect("submit task");
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while server.fallback_stream_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first fallback stream attempt did not arrive"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    engine.cancel(task_id).expect("cancel during retry backoff");
+    let cancelled = engine
+        .wait_for_terminal(task_id, Duration::from_secs(1))
+        .await
+        .expect("wait for fallback cancellation");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    assert_eq!(cancelled.task.status(), DownloadStatus::Cancelled);
+    assert_eq!(
+        server.fallback_stream_attempts(),
+        1,
+        "cancel must win the retry backoff without opening another stream"
+    );
+    assert!(
+        std::fs::read_dir(&destination)
+            .expect("read cancelled destination")
+            .next()
+            .is_none(),
+        "cancel must remove fallback temporary work"
     );
 }
 

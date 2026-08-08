@@ -160,7 +160,7 @@ try {
     Copy-PackageFile ".\target\$profile\nxtools-desktop.exe" (Join-Path $destination 'NxTools.exe')
     Copy-PackageFile ".\target\$profile\nxtools-indexer.exe" (Join-Path $destination 'NxTools.Indexer.exe')
     Copy-PackageFile ".\target\$profile\nxtools-cli.exe" (Join-Path $destination 'NxTools.Cli.exe')
-    Copy-PackageFile ".\target\$profile\NxTools.BrowserHost.exe" (Join-Path $destination 'NxTools.BrowserHost.exe')
+    Copy-PackageFile ".\target\$profile\nxtools-browser-host.exe" (Join-Path $destination 'NxTools.BrowserHost.exe')
     Copy-PackageFile ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" (Join-Path $destination 'NxTools.PlatformHost.exe')
     $packagedBrowserExtensionRoot = Join-Path $destination 'browser_extension'
     New-Item -ItemType Directory -Force -Path $packagedBrowserExtensionRoot | Out-Null
