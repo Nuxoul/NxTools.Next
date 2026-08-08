@@ -712,6 +712,13 @@ BrowserHost 正常收到默认 `openDialog=true` 请求，但原实现把“禁�
 真实引擎消费者和建窗失败门禁均先红后绿，BrowserHost 8 项测试、下载引擎契约与定向 Clippy
 已通过；未启动 GUI、未打包，仍待新包真实浏览器验证自动拉起和确认窗前台行为。
 
+随后在 Windows commit headroom 恢复到 6.88 GiB 后，以单作业、关闭增量和 256
+codegen-units 生成完整 Release 原子包；包装脚本复核时仍有 6.75 GiB，并成功重建 Desktop、
+BrowserHost、CLI 与 PlatformHost。`artifacts/win-x64/NxTools.exe` 时间为
+`2026-08-08 18:01:38`，BrowserHost 时间为 `18:00:39`；Desktop、CLI、Indexer 与 BrowserHost
+均与 `target/release` SHA-256 一致，生成清单内 Desktop/Indexer/BrowserHost 哈希与产物吻合，
+扩展仍为 `0.6.0`。打包过程没有启动 GUI，真实浏览器验收仍由用户执行。
+
 2026-08-08 确认窗口首次成功弹出后实测发现它没有抢到浏览器前台；日志证明 GPUI 已建窗，
 但链路中不存在置顶或激活命令。修复后建窗闭包解析真实 HWND，沿既有 PlatformHost 边界依次
 请求 always-on-top 与前台激活，并在同一 browser correlation/handoff 下记录命令接受或失败。

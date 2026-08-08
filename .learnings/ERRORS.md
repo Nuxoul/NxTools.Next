@@ -5973,6 +5973,11 @@ then, confirm this failure with the exact test before changing transfer producti
 **Error**: A statement-level PowerShell `foreach` was piped directly to `Format-Table`, causing `An empty pipe element is not allowed`.
 **Root cause**: The command ignored the explicit repository diagnostic rule in `AGENTS.md`.
 **Prevention**: Always assign statement-level `foreach` output to a task-specific variable before piping it to formatting cmdlets.
+**Recurrence**: Repeated during the 18:02 final hash report even though the rule had already been
+promoted to `AGENTS.md`; the package itself was unaffected.
+**Recurrence count**: 2 for this entry; see also `ERR-20260723-071`.
+**Latest resolution**: Re-ran the report by assigning all rows to `$artifactHashRows` before
+`Format-Table`.
 
 ## [ERR-20260808-GPUITESTTIMEOUT] desktop_gpui_test_timeout_left_child_builds_running
 
@@ -6221,5 +6226,47 @@ Read the public completion type at the boundary and send a short synthetic strin
 
 - **Resolved**: 2026-08-08T17:55:00+08:00
 - **Notes**: Sent `Err("window creation failed".into())`; the test then failed for the intended retryability reason before the implementation changed.
+
+---
+
+## [ERR-20260808-PACKAGETOOLTIMEOUT] release_wrapper_outer_timeout
+
+**Logged**: 2026-08-08T18:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+The first safe Release packaging attempt was terminated by an accidental one-second outer command
+timeout before the wrapper could begin meaningful work.
+
+### Error
+
+```text
+command timed out after 1030 milliseconds
+```
+
+### Context
+
+- Commit headroom was healthy at 6.88 GiB and the package wrapper had the required low-memory Rust
+  environment.
+- The tool timeout was set to one second while intending only to yield progress early.
+- No Cargo, rustc or linker process remained after termination.
+
+### Suggested Fix
+
+Give the shell command its real bounded build timeout and rely on the orchestration cell's yield
+mechanism for progress updates.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `scripts/package.ps1`, `scripts/windows-build-tools.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T18:00:00+08:00
+- **Notes**: Verified no compiler processes remained and restarted packaging with a proper build timeout.
 
 ---
