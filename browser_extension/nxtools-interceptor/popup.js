@@ -730,6 +730,7 @@ function setView(view) {
     const active = button.dataset.view === view;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   document.querySelectorAll(".view").forEach((section) => {
     const active = section.id === `${view}View`;
@@ -779,6 +780,21 @@ function startRefreshLoop() {
 document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => {
     setView(button.dataset.view);
+    refresh({ force: true }).catch(() => {});
+  });
+  button.addEventListener("keydown", (event) => {
+    const tabs = [...document.querySelectorAll(".tab")];
+    const currentIndex = tabs.indexOf(button);
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === currentIndex) return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    setView(nextTab.dataset.view);
+    nextTab.focus();
     refresh({ force: true }).catch(() => {});
   });
 });

@@ -425,7 +425,8 @@ product compatibility baseline rather than designing a replacement from memory:
   context. Browser `webRequest` snapshots outrank page observations; page-supplied Header objects
   are ignored rather than merely length-checked. The same merge policy is used for direct cache
   updates and same-URL reconciliation. Persistent resource snapshots omit Header, Referrer, page
-  URL and page title, and startup rewrites legacy stored snapshots through that projection.
+  URL, page title and URL-derived page key, and startup rewrites legacy stored snapshots through
+  that projection.
 
 ### Windows actions
 

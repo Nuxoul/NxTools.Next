@@ -30,14 +30,14 @@
     </div>
 
     <nav class="tabs" role="tablist" aria-label="扩展功能">
-      <button id="tasksTab" class="tab active" role="tab" data-view="tasks" aria-controls="tasksView" aria-selected="true">
+      <button id="tasksTab" class="tab active" role="tab" data-view="tasks" aria-controls="tasksView" aria-selected="true" tabindex="0">
         <span>任务</span><small id="taskTabCount" class="tab-count">0</small>
       </button>
-      <button id="resourcesTab" class="tab" role="tab" data-view="resources" aria-controls="resourcesView" aria-selected="false">
+      <button id="resourcesTab" class="tab" role="tab" data-view="resources" aria-controls="resourcesView" aria-selected="false" tabindex="-1">
         <span>捕获</span><small id="resourceTabCount" class="tab-count">0</small>
       </button>
-      <button id="advancedTab" class="tab" role="tab" data-view="advanced" aria-controls="advancedView" aria-selected="false"><span>工具</span></button>
-      <button id="settingsTab" class="tab" role="tab" data-view="settings" aria-controls="settingsView" aria-selected="false"><span>设置</span></button>
+      <button id="advancedTab" class="tab" role="tab" data-view="advanced" aria-controls="advancedView" aria-selected="false" tabindex="-1"><span>工具</span></button>
+      <button id="settingsTab" class="tab" role="tab" data-view="settings" aria-controls="settingsView" aria-selected="false" tabindex="-1"><span>设置</span></button>
     </nav>
 
     <main id="mainContent" class="workspace">

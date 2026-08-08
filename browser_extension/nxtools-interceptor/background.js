@@ -1775,7 +1775,8 @@ function cacheResource(resource) {
     filename: boundedCapturedText(resource.filename),
     filenameSource: boundedCapturedText(resource.filenameSource, 64),
     metadataSource: boundedCapturedText(resource.metadataSource, 64),
-    requestContextSource: boundedCapturedText(resource.requestContextSource, 64),
+    headerSource: boundedCapturedText(resource.headerSource || resource.requestContextSource, 64),
+    referrerSource: boundedCapturedText(resource.referrerSource || resource.requestContextSource, 64),
     mime: boundedCapturedText(resource.mime, 256).toLowerCase(),
     referer: boundedCapturedUrl(resource.referer),
     source: boundedCapturedText(resource.source, 128),
@@ -2408,7 +2409,8 @@ async function captureNetworkResource(details) {
       ? NxToolsCapturePolicy.Sources.filename.contentDisposition
       : NxToolsCapturePolicy.Sources.filename.url,
     metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
-    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
+    headerSource: NxToolsCapturePolicy.Sources.header.browser,
+    referrerSource: NxToolsCapturePolicy.Sources.referrer.browser,
     mime: meta.mime,
     size: meta.size,
     mediaHint: meta.assetHint || null,
@@ -2487,7 +2489,8 @@ async function captureRequestResource(details) {
     filename,
     filenameSource: NxToolsCapturePolicy.Sources.filename.url,
     metadataSource: NxToolsCapturePolicy.Sources.metadata.request,
-    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
+    headerSource: NxToolsCapturePolicy.Sources.header.browser,
+    referrerSource: NxToolsCapturePolicy.Sources.referrer.browser,
     mime,
     size: 0,
     supportsRange: Boolean(headerSnapshot?.supportsRange),
@@ -2515,11 +2518,10 @@ async function capturePageResource(sender, payload) {
 
   const tab = await tabInfo(tabId);
   const headerSnapshot = isHttpUrl(payloadUrl) ? resolveHeaderSnapshot(payloadUrl) : null;
-  const headers = sanitizeCapturedHeaderObject(headerSnapshot?.headers || {});
-  const referer = boundedCapturedUrl(headers.referer || payload.href || tab?.url || "");
-  if (referer) {
-    headers.referer = referer;
-  }
+  const pageContext = NxToolsCapturePolicy.buildPageCaptureContext(
+    sanitizeCapturedHeaderObject(headerSnapshot?.headers || {}),
+    boundedCapturedUrl(tab?.url),
+    boundedCapturedUrl(payload.href));
 
   const extension = String(payload.ext || "").replace(/^\./, "").toLowerCase();
   const elementKindMime = wildcardMimeForElementKind(payload.elementKind);
@@ -2541,7 +2543,7 @@ async function capturePageResource(sender, payload) {
     url: payloadUrl,
     pageKey: String(payload.pageKey || ""),
     pageTitle: tab?.title || "",
-    pageUrl: payload.href || tab?.url || "",
+    pageUrl: pageContext.pageUrl,
     filename,
     filenameSource: cleanFileName(payload.filename)
       ? NxToolsCapturePolicy.Sources.filename.page
@@ -2549,31 +2551,34 @@ async function capturePageResource(sender, payload) {
         ? NxToolsCapturePolicy.Sources.filename.url
         : NxToolsCapturePolicy.Sources.filename.inferred),
     metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
-    requestContextSource: Object.keys(headers).length > 0
-      ? NxToolsCapturePolicy.Sources.requestContext.browser
-      : NxToolsCapturePolicy.Sources.requestContext.page,
+    headerSource: pageContext.headerSource,
+    referrerSource: pageContext.referrerSource,
     mime: payloadMime,
     size: Number(payload.size || 0),
     width: Number(payload.width || 0),
     height: Number(payload.height || 0),
     supportsRange: Boolean(headerSnapshot?.supportsRange),
-    referer,
-    requestHeaders: headers,
+    referer: pageContext.referer,
+    requestHeaders: pageContext.headers,
     source: String(payload.source || "content"),
     capturedAt: Date.now()
   });
 
   if (sourceUrl && isHttpUrl(sourceUrl)) {
     const sourceHeaderSnapshot = resolveHeaderSnapshot(sourceUrl);
+    const sourcePageContext = NxToolsCapturePolicy.buildPageCaptureContext(
+      sanitizeCapturedHeaderObject(sourceHeaderSnapshot?.headers || {}),
+      boundedCapturedUrl(tab?.url),
+      boundedCapturedUrl(payload.href));
     cacheResource({
       id: `${tabId}:${normalizeResourceUrlKey(sourceUrl)}`,
       tabId,
       frameId,
       url: sourceUrl,
       pageKey: String(payload.pageKey || ""),
-    blobUrl: payloadUrl,
+      blobUrl: payloadUrl,
       pageTitle: tab?.title || "",
-      pageUrl: payload.href || tab?.url || "",
+      pageUrl: sourcePageContext.pageUrl,
       filename: ensureFileNameForUrl(filename || getFileNameFromUrl(sourceUrl), sourceUrl, sourceMime || payloadMime),
       filenameSource: cleanFileName(payload.filename)
         ? NxToolsCapturePolicy.Sources.filename.page
@@ -2581,16 +2586,15 @@ async function capturePageResource(sender, payload) {
           ? NxToolsCapturePolicy.Sources.filename.url
           : NxToolsCapturePolicy.Sources.filename.inferred),
       metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
-      requestContextSource: Object.keys(sourceHeaderSnapshot?.headers || {}).length > 0
-        ? NxToolsCapturePolicy.Sources.requestContext.browser
-        : NxToolsCapturePolicy.Sources.requestContext.page,
+      headerSource: sourcePageContext.headerSource,
+      referrerSource: sourcePageContext.referrerSource,
       mime: sourceMime || payloadMime,
       size: Number(payload.sourceSize || payload.size || 0),
       width: Number(payload.width || 0),
       height: Number(payload.height || 0),
       supportsRange: Boolean(sourceHeaderSnapshot?.supportsRange),
-      referer,
-      requestHeaders: sanitizeCapturedHeaderObject(sourceHeaderSnapshot?.headers || {}),
+      referer: sourcePageContext.referer,
+      requestHeaders: sourcePageContext.headers,
       source: `${String(payload.source || "content")}-source-url`,
       capturedAt: Date.now()
     });
@@ -2762,7 +2766,8 @@ async function sendPreemptedBrowserDownload(details, meta) {
       ? NxToolsCapturePolicy.Sources.filename.contentDisposition
       : NxToolsCapturePolicy.Sources.filename.url,
     metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
-    requestContextSource: NxToolsCapturePolicy.Sources.requestContext.browser,
+    headerSource: NxToolsCapturePolicy.Sources.header.browser,
+    referrerSource: NxToolsCapturePolicy.Sources.referrer.browser,
     mime: meta.mime,
     size: meta.size,
     supportsRange: Boolean(meta.supportsRange || headerSnapshot?.supportsRange),

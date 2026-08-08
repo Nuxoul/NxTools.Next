@@ -726,7 +726,8 @@ Native Messaging request ID，不写扩展消息、URL 或请求上下文。捕�
 
 同轮两轴审查补强了来源权威边界：响应 MIME/大小、浏览器 Referrer/Header 不再被 DOM 或
 Performance 观察覆盖，页面提供的 Header 对象直接忽略，同 URL 补全统一调用相同策略；持久
-资源缓存会移除 Header、Referrer、页面 URL/标题，并在启动时清洗旧快照。BrowserHost 只接受
+资源缓存会移除 Header、Referrer、页面 URL/标题及 URL 派生分组键，并在启动时清洗旧快照。
+BrowserHost 只接受
 固定白名单中的扩展事件名且不记录扩展提供的 level/message。Popup 补齐 tablist/tab/tabpanel
 语义与 600 px 内的高度约束；相应定向测试、架构门禁、BrowserHost 测试和 Clippy 再次通过。
 

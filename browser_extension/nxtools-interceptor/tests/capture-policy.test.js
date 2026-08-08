@@ -100,6 +100,33 @@ test("later weak page observations cannot erase authoritative metadata", () => {
   assert.equal(merged.capturedAt, 300);
 });
 
+test("weak page MIME cannot reinterpret a generic response", () => {
+  const merged = policy.mergeCapturedResource({
+    mime: "application/octet-stream",
+    metadataSource: policy.Sources.metadata.response,
+    capturedAt: 100
+  }, {
+    mime: "video/mp4",
+    metadataSource: policy.Sources.metadata.page,
+    capturedAt: 200
+  });
+  assert.equal(merged.mime, "application/octet-stream");
+});
+
+test("page referrer never inherits browser authority from an empty snapshot", () => {
+  const merged = policy.mergeCapturedResource({
+    referer: "",
+    referrerSource: policy.Sources.referrer.browser,
+    capturedAt: 100
+  }, {
+    referer: "https://page.example.test/watch",
+    referrerSource: policy.Sources.referrer.page,
+    capturedAt: 200
+  });
+  assert.equal(merged.referer, "https://page.example.test/watch");
+  assert.equal(merged.referrerSource, policy.Sources.referrer.page);
+});
+
 test("popup projection omits privileged request context", () => {
   const projected = policy.projectResourceForPopup({
     id: "resource-1",
@@ -128,6 +155,7 @@ test("storage projection never persists page or request context", () => {
     id: "resource-1",
     url: "https://cdn.example.test/archive.zip",
     pageTitle: "Private account",
+    pageKey: "https://private.example.test/account?token=secret",
     pageUrl: "https://private.example.test/account",
     referer: "https://private.example.test/account",
     requestHeaders: { cookie: "session=secret" },
@@ -135,7 +163,7 @@ test("storage projection never persists page or request context", () => {
   });
 
   assert.equal(projected.filename, "archive.zip");
-  for (const field of ["pageTitle", "pageUrl", "referer", "requestHeaders"]) {
+  for (const field of ["pageTitle", "pageKey", "pageUrl", "referer", "requestHeaders"]) {
     assert.equal(field in projected, false, `${field} must remain worker-only`);
   }
 });
@@ -153,8 +181,25 @@ test("popup resources are deduplicated by stable id", () => {
 });
 
 test("worker capture never trusts page-supplied request headers or persists context", () => {
+  const pageOnly = policy.buildPageCaptureContext(
+    {},
+    "",
+    "https://page.example.test/watch?private=1");
+  assert.deepEqual(pageOnly.headers, {});
+  assert.equal(pageOnly.referrerSource, policy.Sources.referrer.page);
+
+  const browserOwned = policy.buildPageCaptureContext(
+    { referer: "https://browser.example.test/", authorization: "browser value" },
+    "https://tab.example.test/",
+    "https://page.example.test/spoofed");
+  assert.equal(browserOwned.referer, "https://browser.example.test/");
+  assert.equal(browserOwned.headerSource, policy.Sources.header.browser);
+  assert.equal(browserOwned.referrerSource, policy.Sources.referrer.browser);
+  assert.equal(browserOwned.headers.authorization, "browser value");
+
   const background = fs.readFileSync(path.resolve(__dirname, "..", "background.js"), "utf8");
   assert.doesNotMatch(background, /payload\.requestHeaders/);
+  assert.match(background, /buildPageCaptureContext\(/);
   assert.match(background, /projectResourceForStorage\(resource\)/);
   assert.match(background, /mergeCapturedResource\(cached, merged\)/);
 });

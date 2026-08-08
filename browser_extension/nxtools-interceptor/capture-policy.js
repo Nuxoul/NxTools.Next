@@ -49,7 +49,12 @@
       request: "request",
       inferred: "inferred"
     }),
-    requestContext: Object.freeze({
+    header: Object.freeze({
+      browser: "browser",
+      page: "page",
+      inferred: "inferred"
+    }),
+    referrer: Object.freeze({
       browser: "browser",
       page: "page",
       inferred: "inferred"
@@ -101,8 +106,9 @@
     };
   }
 
-  function sourceRank(resource, field, ranks) {
-    return ranks[String(resource?.[field] || "inferred").toLowerCase()] || ranks.inferred;
+  function sourceRank(resource, field, ranks, legacyField = "") {
+    const source = resource?.[field] || (legacyField ? resource?.[legacyField] : "") || "inferred";
+    return ranks[String(source).toLowerCase()] || ranks.inferred;
   }
 
   function chooseMime(existingResource, incomingResource) {
@@ -113,7 +119,13 @@
     }
     const existingRank = sourceRank(existingResource, "metadataSource", METADATA_SOURCE_RANK);
     const incomingRank = sourceRank(incomingResource, "metadataSource", METADATA_SOURCE_RANK);
-    if ((!GENERIC_MIME_TYPES.has(incoming) && incomingRank >= existingRank) || GENERIC_MIME_TYPES.has(existing)) {
+    if (!existing) {
+      return incoming;
+    }
+    if (incomingRank < existingRank) {
+      return existing;
+    }
+    if (!GENERIC_MIME_TYPES.has(incoming) || GENERIC_MIME_TYPES.has(existing)) {
       return incoming;
     }
     return existing;
@@ -136,30 +148,35 @@
     return incomingRank === existingRank ? Math.max(existing, incoming) : existing;
   }
 
-  function chooseRequestContextSource(existingResource, incomingResource) {
-    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
-    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+  function chooseHeaderSource(existingResource, incomingResource) {
+    const field = "headerSource";
+    const existingRank = sourceRank(existingResource, field, REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
+    const incomingRank = sourceRank(incomingResource, field, REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
     return incomingRank >= existingRank
-      ? incomingResource?.requestContextSource || Sources.requestContext.inferred
-      : existingResource?.requestContextSource || Sources.requestContext.inferred;
+      ? incomingResource?.[field] || incomingResource?.requestContextSource || Sources.referrer.inferred
+      : existingResource?.[field] || existingResource?.requestContextSource || Sources.referrer.inferred;
   }
 
-  function chooseContextText(existingResource, incomingResource, field) {
+  function chooseContextField(existingResource, incomingResource, field) {
     const existing = existingResource?.[field] || "";
     const incoming = incomingResource?.[field] || "";
+    const existingSource = existingResource?.referrerSource || existingResource?.requestContextSource || Sources.referrer.inferred;
+    const incomingSource = incomingResource?.referrerSource || incomingResource?.requestContextSource || Sources.referrer.inferred;
     if (!nonEmpty(incoming)) {
-      return existing;
+      return { value: existing, source: existingSource };
     }
-    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
-    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
-    return !nonEmpty(existing) || incomingRank >= existingRank ? incoming : existing;
+    const existingRank = sourceRank(existingResource, "referrerSource", REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
+    const incomingRank = sourceRank(incomingResource, "referrerSource", REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
+    return !nonEmpty(existing) || incomingRank >= existingRank
+      ? { value: incoming, source: incomingSource }
+      : { value: existing, source: existingSource };
   }
 
   function mergeRequestHeaders(existingResource, incomingResource) {
     const existingHeaders = existingResource?.requestHeaders || {};
     const incomingHeaders = incomingResource?.requestHeaders || {};
-    const existingRank = sourceRank(existingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
-    const incomingRank = sourceRank(incomingResource, "requestContextSource", REQUEST_CONTEXT_SOURCE_RANK);
+    const existingRank = sourceRank(existingResource, "headerSource", REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
+    const incomingRank = sourceRank(incomingResource, "headerSource", REQUEST_CONTEXT_SOURCE_RANK, "requestContextSource");
     return incomingRank >= existingRank
       ? { ...existingHeaders, ...incomingHeaders }
       : { ...existingHeaders };
@@ -177,6 +194,8 @@
     const incomingCapturedAt = Number(incoming.capturedAt || 0);
     const existingMetadataRank = sourceRank(existing, "metadataSource", METADATA_SOURCE_RANK);
     const incomingMetadataRank = sourceRank(incoming, "metadataSource", METADATA_SOURCE_RANK);
+    const pageUrl = chooseContextField(existing, incoming, "pageUrl");
+    const referer = chooseContextField(existing, incoming, "referer");
 
     return {
       ...existing,
@@ -186,14 +205,15 @@
       blobUrl: preferText(incoming.blobUrl, existing.blobUrl),
       pageKey: preferText(incoming.pageKey, existing.pageKey),
       pageTitle: preferText(incoming.pageTitle, existing.pageTitle),
-      pageUrl: chooseContextText(existing, incoming, "pageUrl"),
-      referer: chooseContextText(existing, incoming, "referer"),
+      pageUrl: pageUrl.value,
+      referer: referer.value,
       filename: filename.filename,
       filenameSource: filename.filenameSource,
       metadataSource: incomingMetadataRank >= existingMetadataRank
         ? incoming.metadataSource || Sources.metadata.inferred
         : existing.metadataSource || Sources.metadata.inferred,
-      requestContextSource: chooseRequestContextSource(existing, incoming),
+      headerSource: chooseHeaderSource(existing, incoming),
+      referrerSource: referer.value ? referer.source : pageUrl.source,
       mime: chooseMime(existing, incoming),
       size: chooseSize(existing, incoming),
       width: Math.max(Number(existing.width || 0), Number(incoming.width || 0)),
@@ -227,6 +247,7 @@
       referer: _referer,
       pageUrl: _pageUrl,
       pageTitle: _pageTitle,
+      pageKey: _pageKey,
       ...persistent
     } = resource || {};
     return persistent;
@@ -244,8 +265,27 @@
     return [...unique.values()];
   }
 
+  function buildPageCaptureContext(browserHeaders, tabUrl, payloadHref) {
+    const headers = { ...(browserHeaders || {}) };
+    const browserReferrer = String(headers.referer || tabUrl || "").trim();
+    const pageReferrer = String(payloadHref || "").trim();
+    const referer = browserReferrer || pageReferrer;
+    return {
+      headers,
+      referer,
+      pageUrl: referer,
+      headerSource: Object.keys(headers).length > 0
+        ? Sources.header.browser
+        : Sources.header.inferred,
+      referrerSource: browserReferrer
+        ? Sources.referrer.browser
+        : (pageReferrer ? Sources.referrer.page : Sources.referrer.inferred)
+    };
+  }
+
   return {
     Sources,
+    buildPageCaptureContext,
     mergeCapturedResource,
     projectResourceForPopup,
     projectResourceForStorage,

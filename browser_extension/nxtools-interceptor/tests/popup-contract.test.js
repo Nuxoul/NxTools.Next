@@ -30,6 +30,8 @@ test("popup uses semantic landmarks and an honest browser handoff label", () => 
   assert.match(html, /role="tablist"/);
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
   assert.equal((html.match(/role="tabpanel"/g) || []).length, 4);
+  assert.match(script, /event\.key === "ArrowRight"/);
+  assert.match(script, /event\.key === "Home"/);
 });
 
 test("every popup script element id exists exactly once", () => {
