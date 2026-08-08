@@ -50,6 +50,18 @@ struct DownloadEngineInner {
     event_receiver: Mutex<Option<async_channel::Receiver<DownloadEventEnvelope>>>,
     event_subscribers: Mutex<Vec<async_channel::Sender<DownloadEventEnvelope>>>,
     event_sequencer: DownloadEventSequencer,
+    browser_dialog_sender: async_channel::Sender<BrowserDownloadDialogRequest>,
+    browser_dialog_receiver: Mutex<Option<async_channel::Receiver<BrowserDownloadDialogRequest>>>,
+    browser_dialog_handoffs: Mutex<VecDeque<uuid::Uuid>>,
+    browser_dialog_available: AtomicBool,
+}
+
+#[derive(Debug)]
+pub struct BrowserDownloadDialogRequest {
+    pub correlation_id: uuid::Uuid,
+    pub handoff_id: uuid::Uuid,
+    pub request: DownloadRequest,
+    pub completion: std::sync::mpsc::SyncSender<Result<(), String>>,
 }
 
 #[derive(Clone)]
@@ -368,6 +380,7 @@ impl DownloadEngine {
             );
         }
         let (event_sender, event_receiver) = async_channel::bounded(256);
+        let (browser_dialog_sender, browser_dialog_receiver) = async_channel::bounded(16);
         let engine = Self {
             inner: Arc::new(DownloadEngineInner {
                 http,
@@ -382,6 +395,10 @@ impl DownloadEngine {
                 event_receiver: Mutex::new(Some(event_receiver)),
                 event_subscribers: Mutex::new(Vec::new()),
                 event_sequencer: DownloadEventSequencer::new(0),
+                browser_dialog_sender,
+                browser_dialog_receiver: Mutex::new(Some(browser_dialog_receiver)),
+                browser_dialog_handoffs: Mutex::new(VecDeque::new()),
+                browser_dialog_available: AtomicBool::new(false),
             }),
         };
         if let Err(error) = engine.process_due_schedules_at(now_unix_ms()) {
@@ -437,6 +454,25 @@ impl DownloadEngine {
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?
             .push(sender);
+        Ok(receiver)
+    }
+
+    /// Attaches the one in-process GPUI consumer for browser confirmation-window requests.
+    /// This channel is intentionally separate from serializable download events because the
+    /// request can contain credentials and request headers.
+    pub fn take_browser_dialog_receiver(
+        &self,
+    ) -> Result<async_channel::Receiver<BrowserDownloadDialogRequest>, DownloadEngineError> {
+        let receiver = self
+            .inner
+            .browser_dialog_receiver
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?
+            .take()
+            .ok_or(DownloadEngineError::BrowserDialogSubscriberAlreadyTaken)?;
+        self.inner
+            .browser_dialog_available
+            .store(true, Ordering::Release);
         Ok(receiver)
     }
 
@@ -557,6 +593,15 @@ impl DownloadEngine {
                         duplicate,
                     },
                 ),
+            DownloadCommand::BrowserOpenDialog {
+                handoff_id,
+                request,
+            } => self
+                .open_browser_dialog_correlated(handoff_id, request, request_id)
+                .map(|duplicate| DownloadCommandOutcome::BrowserDialogAccepted {
+                    handoff_id,
+                    duplicate,
+                }),
             DownloadCommand::Task { task_id, action } => self
                 .run_task_action(task_id, action, request_id)
                 .map(|()| DownloadCommandOutcome::Accepted {
@@ -1400,6 +1445,74 @@ impl DownloadEngine {
             "browser handoff accepted"
         );
         Ok((task_id, false))
+    }
+
+    fn open_browser_dialog_correlated(
+        &self,
+        handoff_id: uuid::Uuid,
+        request: DownloadRequest,
+        correlation_id: uuid::Uuid,
+    ) -> Result<bool, DownloadEngineError> {
+        request.validate()?;
+        if !self.inner.browser_dialog_available.load(Ordering::Acquire) {
+            warn!(
+                event = "download.browser_dialog.unavailable",
+                %correlation_id,
+                %handoff_id,
+                "browser confirmation window rejected because no GPUI consumer is attached"
+            );
+            return Err(DownloadEngineError::BrowserDialogUnavailable);
+        }
+
+        let mut handoffs = self
+            .inner
+            .browser_dialog_handoffs
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if handoffs.contains(&handoff_id) {
+            info!(
+                event = "download.browser_dialog.duplicate_accepted",
+                %correlation_id,
+                %handoff_id,
+                "duplicate browser confirmation-window request was suppressed"
+            );
+            return Ok(true);
+        }
+        let (completion, completed) = std::sync::mpsc::sync_channel(1);
+        self.inner
+            .browser_dialog_sender
+            .try_send(BrowserDownloadDialogRequest {
+                correlation_id,
+                handoff_id,
+                request,
+                completion,
+            })
+            .map_err(|_| DownloadEngineError::BrowserDialogUnavailable)?;
+        match completed.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(())) => {}
+            Ok(Err(_))
+            | Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                warn!(
+                    event = "download.browser_dialog.open_unconfirmed",
+                    %correlation_id,
+                    %handoff_id,
+                    "browser confirmation window was not confirmed by GPUI"
+                );
+                return Err(DownloadEngineError::BrowserDialogUnavailable);
+            }
+        }
+        handoffs.push_back(handoff_id);
+        while handoffs.len() > 4096 {
+            handoffs.pop_front();
+        }
+        info!(
+            event = "download.browser_dialog.accepted",
+            %correlation_id,
+            %handoff_id,
+            "browser confirmation-window request queued for GPUI"
+        );
+        Ok(false)
     }
 
     /// Releases delayed submissions whose absolute schedule has elapsed.
@@ -3610,6 +3723,10 @@ pub enum DownloadEngineError {
     LockPoisoned,
     #[error("the download engine event subscriber is already attached")]
     EventSubscriberAlreadyTaken,
+    #[error("the browser confirmation-window subscriber is already attached")]
+    BrowserDialogSubscriberAlreadyTaken,
+    #[error("the browser confirmation window is unavailable")]
+    BrowserDialogUnavailable,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("download runtime could not start: {0}")]
@@ -3656,7 +3773,10 @@ impl DownloadEngineError {
             Self::Storage(_) | Self::LockPoisoned | Self::Io(_) => {
                 (DownloadFaultCode::Storage, true)
             }
-            Self::EventSubscriberAlreadyTaken => (DownloadFaultCode::InvalidState, false),
+            Self::EventSubscriberAlreadyTaken | Self::BrowserDialogSubscriberAlreadyTaken => {
+                (DownloadFaultCode::InvalidState, false)
+            }
+            Self::BrowserDialogUnavailable => (DownloadFaultCode::Unavailable, true),
             Self::Http(HttpDownloadError::InsufficientDiskSpace { .. }) => {
                 (DownloadFaultCode::DiskFull, false)
             }

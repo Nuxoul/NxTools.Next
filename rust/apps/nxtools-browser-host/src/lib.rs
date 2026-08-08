@@ -67,6 +67,8 @@ struct BrowserDownloadPayload {
     size: u64,
     #[serde(default)]
     start_immediately: bool,
+    #[serde(default)]
+    open_dialog: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -261,21 +263,29 @@ fn submit_download(
         }),
     };
     request.validate()?;
+    let open_dialog = payload.open_dialog;
     let mode = if payload.start_immediately {
         DownloadSubmitMode::StartNow
     } else {
         DownloadSubmitMode::QueueOnly
     };
     let command_request_id = correlation_id(&request_id)?;
-    let mut client = connect_or_start(executable)?;
+    let mut client = connect_or_start(executable, !open_dialog)?;
     let result = client.command(nxtools_download::DownloadCommandEnvelope {
         protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
         request_id: command_request_id,
         origin: RequestOrigin::Browser,
-        command: DownloadCommand::BrowserSubmit {
-            handoff_id,
-            request,
-            mode,
+        command: if open_dialog {
+            DownloadCommand::BrowserOpenDialog {
+                handoff_id,
+                request,
+            }
+        } else {
+            DownloadCommand::BrowserSubmit {
+                handoff_id,
+                request,
+                mode,
+            }
         },
     })?;
     match result.outcome {
@@ -296,6 +306,24 @@ fn submit_download(
                 mode == DownloadSubmitMode::QueueOnly,
             ))
         }
+        DownloadCommandOutcome::BrowserDialogAccepted {
+            handoff_id: accepted_handoff_id,
+            duplicate,
+        } => {
+            if accepted_handoff_id != handoff_id {
+                bail!("download engine returned a mismatched browser dialog handoff ID");
+            }
+            info!(
+                event = "browser_native_host.dialog_accepted",
+                correlation_id = %command_request_id,
+                %handoff_id,
+                duplicate,
+                "browser confirmation-window request accepted by the desktop"
+            );
+            Ok(BrowserResponse::dialog_accepted(
+                request_id, handoff_id, duplicate,
+            ))
+        }
         DownloadCommandOutcome::Rejected { fault } => Ok(BrowserResponse::failed(
             request_id,
             "download_rejected",
@@ -306,7 +334,7 @@ fn submit_download(
 }
 
 fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
-    let mut client = connect_or_start(executable)?;
+    let mut client = connect_or_start(executable, true)?;
     let result = client.command(command_envelope(
         correlation_id(&request_id)?,
         DownloadCommand::Snapshot {
@@ -356,7 +384,7 @@ fn task_action(
         "cancel" => DownloadTaskAction::Cancel,
         _ => bail!("unsupported task action '{action}'"),
     };
-    let mut client = connect_or_start(executable)?;
+    let mut client = connect_or_start(executable, true)?;
     let result = client.command(command_envelope(
         correlation_id(&request_id)?,
         DownloadCommand::Task { task_id, action },
@@ -412,9 +440,12 @@ fn command_envelope(
     }
 }
 
-fn connect_or_start(executable: &Path) -> Result<DownloadIpcClient> {
+fn connect_or_start(executable: &Path, allow_background_start: bool) -> Result<DownloadIpcClient> {
     if let Ok(client) = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150)) {
         return Ok(client);
+    }
+    if !allow_background_start {
+        bail!("the interactive NxTools desktop is not running")
     }
     let desktop = executable
         .parent()
@@ -551,6 +582,29 @@ impl BrowserResponse {
         }
     }
 
+    fn dialog_accepted(request_id: String, handoff_id: Uuid, duplicate: bool) -> Self {
+        Self {
+            protocol_version: BROWSER_PROTOCOL_VERSION,
+            request_id,
+            ok: true,
+            accepted: true,
+            duplicate,
+            handoff_id: Some(handoff_id.to_string()),
+            task_id: None,
+            message: Some(if duplicate {
+                "重复交接已由现有确认窗口处理".into()
+            } else {
+                "下载确认窗口已打开".into()
+            }),
+            error: None,
+            data: Some(json!({
+                "openDialog": true,
+                "duplicate": duplicate,
+                "queued": false
+            })),
+        }
+    }
+
     fn failed(request_id: String, code: &str, message: String) -> Self {
         Self {
             protocol_version: BROWSER_PROTOCOL_VERSION,
@@ -607,6 +661,35 @@ mod tests {
                 "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
             )])
             .is_err()
+        );
+    }
+
+    #[test]
+    fn dialog_acceptance_echoes_handoff_without_claiming_a_task() {
+        let handoff_id = Uuid::new_v4();
+        let response = BrowserResponse::dialog_accepted("request-1".into(), handoff_id, false);
+        let expected_handoff_id = handoff_id.to_string();
+
+        assert!(response.ok);
+        assert!(response.accepted);
+        assert_eq!(
+            response.handoff_id.as_deref(),
+            Some(expected_handoff_id.as_str())
+        );
+        assert!(response.task_id.is_none());
+        assert_eq!(
+            response
+                .data
+                .as_ref()
+                .and_then(|data| data["openDialog"].as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .data
+                .as_ref()
+                .and_then(|data| data["queued"].as_bool()),
+            Some(false)
         );
     }
 }

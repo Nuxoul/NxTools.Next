@@ -388,6 +388,16 @@ product compatibility baseline rather than designing a replacement from memory:
   ephemeral capability; a separate current-user-only bounded stream stages bytes without base64
   amplification. The ordinary-download slice does not expose a generic unauthenticated loopback
   HTTP/WebSocket API while waiting for Blob support.
+- Reverified against old `MainWindowViewModel::ConfigureLocalApi` and
+  `OpenDownloadDialogFromLocalApi` after the first packaged browser test: `openDialog=true` means
+  “prefill and open the add-download confirmation window, then parse”, not “persist a `created`
+  task without starting it”. NxTools.Next therefore separates `BrowserOpenDialog` from direct
+  `BrowserSubmit`. The former is accepted only while GPUI has attached a bounded private in-process
+  receiver and confirms successful window creation within five seconds; a headless DownloadHost,
+  timeout or window-creation failure rejects it, and BrowserHost does not launch a headless host for
+  a window request. URL/request context reaches `NewDownloadView` without entering the serializable
+  event stream, preserving Header/Cookie/Referrer confidentiality. Direct submissions remain
+  persistently idempotent and continue to refresh the desktop list through ordinary task events.
 - Official primary sources checked: Chrome
   `https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging`, Microsoft Edge
   `https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/native-messaging`,

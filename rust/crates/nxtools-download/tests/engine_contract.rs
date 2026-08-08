@@ -243,6 +243,86 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
     ));
 }
 
+#[test]
+fn browser_dialog_requires_an_attached_gpui_consumer_and_suppresses_duplicates() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let handoff_id = uuid::Uuid::new_v4();
+    let request_id = uuid::Uuid::new_v4();
+    let download_request = request(&server, directory.path().join("artifacts"));
+
+    let unavailable = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id,
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserOpenDialog {
+            handoff_id,
+            request: download_request.clone(),
+        },
+    });
+    assert!(matches!(
+        unavailable.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::Unavailable
+    ));
+    assert!(engine.tasks().expect("read tasks").is_empty());
+
+    let dialogs = engine
+        .take_browser_dialog_receiver()
+        .expect("attach GPUI browser-dialog consumer");
+    let command_engine = engine.clone();
+    let command_request = download_request.clone();
+    let accepted = std::thread::spawn(move || {
+        command_engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id,
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::BrowserOpenDialog {
+                handoff_id,
+                request: command_request,
+            },
+        })
+    });
+    let dialog = dialogs
+        .recv_blocking()
+        .expect("receive browser dialog request");
+    assert_eq!(dialog.correlation_id, request_id);
+    assert_eq!(dialog.handoff_id, handoff_id);
+    assert_eq!(dialog.request, download_request);
+    dialog
+        .completion
+        .send(Ok(()))
+        .expect("confirm GPUI window creation");
+    let accepted = accepted.join().expect("browser dialog command completed");
+    assert!(matches!(
+        accepted.outcome,
+        DownloadCommandOutcome::BrowserDialogAccepted {
+            handoff_id: accepted_handoff_id,
+            duplicate: false,
+        } if accepted_handoff_id == handoff_id
+    ));
+    assert!(engine.tasks().expect("read tasks").is_empty());
+
+    let duplicate = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserOpenDialog {
+            handoff_id,
+            request: download_request,
+        },
+    });
+    assert!(matches!(
+        duplicate.outcome,
+        DownloadCommandOutcome::BrowserDialogAccepted {
+            handoff_id: accepted_handoff_id,
+            duplicate: true,
+        } if accepted_handoff_id == handoff_id
+    ));
+    assert!(dialogs.try_recv().is_err());
+}
+
 #[tokio::test]
 async fn daily_queue_window_releases_queue_only_tasks_and_stops_after_the_window() {
     let server = DeterministicHttpServer::start();

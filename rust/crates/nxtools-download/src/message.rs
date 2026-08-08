@@ -37,6 +37,10 @@ pub enum DownloadCommand {
         #[serde(default)]
         mode: DownloadSubmitMode,
     },
+    BrowserOpenDialog {
+        handoff_id: Uuid,
+        request: DownloadRequest,
+    },
     Task {
         task_id: DownloadTaskId,
         action: DownloadTaskAction,
@@ -140,6 +144,10 @@ pub enum DownloadCommandOutcome {
     },
     BrowserAccepted {
         task_id: DownloadTaskId,
+        duplicate: bool,
+    },
+    BrowserDialogAccepted {
+        handoff_id: Uuid,
         duplicate: bool,
     },
     Batch {

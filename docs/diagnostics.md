@@ -160,3 +160,16 @@ The native host records `browser_native_host.started`, one bounded request outco
 `download.browser_handoff.accepted`; an idempotent retry ends with
 `download.browser_handoff.duplicate_accepted`. Both keep the handoff ID, task ID and correlation
 ID but never record the URL, file name, Referrer, headers, Cookie or Authorization value.
+
+When the extension requests its legacy confirmation-window behavior, the native host records
+`browser_native_host.dialog_accepted` only after the interactive Desktop has attached its private
+GPUI intake. Rust records `download.browser_dialog.accepted` (or
+`download.browser_dialog.duplicate_accepted`), and GPUI completes the correlated chain with
+`download.browser_dialog.opened` or `download.browser_dialog.open_failed`. A headless host rejects
+the request with `download.browser_dialog.unavailable`, so the browser keeps its original download.
+Rust returns acceptance only after a bounded GPUI completion acknowledgement; a timeout or dropped
+acknowledgement records `download.browser_dialog.open_unconfirmed` and is rejected.
+The private in-process message is not a serializable `DownloadEvent` because it can carry Header,
+Cookie and Referrer values. Direct task state delivery is observable by task ID and event sequence
+through `download.desktop.task_event_applied`; snapshot failures use
+`download.desktop.snapshot_refresh_failed`.

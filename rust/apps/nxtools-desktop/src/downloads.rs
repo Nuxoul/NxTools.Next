@@ -24,13 +24,13 @@ use nxtools_core::{
     DownloadTaskbarProgressOverlaySettings,
 };
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
-    DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
-    DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
-    RequestOrigin,
+    BrowserDownloadDialogRequest, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction,
+    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
+    DownloadEngine, DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe,
+    DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
+    DownloadRequest, DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot,
+    DownloadStatus, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId,
+    DownloadWeekday, RequestOrigin,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -242,6 +242,7 @@ pub(crate) struct DownloadApplication {
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
     last_event_sequence: u64,
     _event_task: Task<()>,
+    _browser_dialog_task: Task<()>,
 }
 
 impl EventEmitter<DownloadApplicationEvent> for DownloadApplication {}
@@ -321,6 +322,28 @@ impl DownloadApplication {
                 }
             }
         });
+        let browser_dialog_receiver =
+            engine
+                .take_browser_dialog_receiver()
+                .unwrap_or_else(|error| {
+                    warn!(%error, "could not attach the desktop browser-dialog subscriber");
+                    async_channel::bounded(1).1
+                });
+        let browser_dialog_task = cx.spawn(async move |this, cx| {
+            while let Ok(request) = browser_dialog_receiver.recv().await {
+                let Some(this) = this.upgrade() else {
+                    return;
+                };
+                if this
+                    .update(cx, |application, cx| {
+                        application.open_browser_download_dialog(request, cx);
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
         Self {
             engine,
             platform,
@@ -361,6 +384,7 @@ impl DownloadApplication {
             notified_terminal_states,
             last_event_sequence: 0,
             _event_task: event_task,
+            _browser_dialog_task: browser_dialog_task,
         }
     }
 
@@ -974,15 +998,43 @@ impl DownloadApplication {
     }
 
     pub(crate) fn open_new_download_window(&mut self, cx: &mut Context<Self>) {
+        let _ = self.open_new_download_window_with_request(None, None, cx);
+    }
+
+    fn open_browser_download_dialog(
+        &mut self,
+        dialog: BrowserDownloadDialogRequest,
+        cx: &mut Context<Self>,
+    ) {
+        let correlation_id = dialog.correlation_id;
+        let handoff_id = dialog.handoff_id;
+        let result = self.open_new_download_window_with_request(
+            Some(dialog.request),
+            Some((correlation_id, handoff_id)),
+            cx,
+        );
+        let _ = dialog.completion.send(result);
+    }
+
+    fn open_new_download_window_with_request(
+        &mut self,
+        initial_request: Option<DownloadRequest>,
+        browser_context: Option<(uuid::Uuid, uuid::Uuid)>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
         if let Some(window) = self.new_download_window {
-            if window
+            if initial_request.is_some() {
+                if window.update(cx, |_, _, _| {}).is_ok() {
+                    return Err("已有添加下载窗口，请先完成或关闭后重试".into());
+                }
+            } else if window
                 .update(cx, |_, window, _| {
                     window.activate_window();
                     window.refresh();
                 })
                 .is_ok()
             {
-                return;
+                return Ok(());
             }
             self.new_download_window = None;
         }
@@ -990,6 +1042,7 @@ impl DownloadApplication {
         let default_directory = self.default_directory.clone();
         let default_connection_limit = self.default_connection_limit();
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
+        let auto_probe = initial_request.is_some();
         let window_size = new_download_window_size(false);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -1016,16 +1069,47 @@ impl DownloadApplication {
                         default_directory,
                         default_connection_limit,
                         default_adaptive_segment_policy,
+                        initial_request,
                         window,
                         cx,
                     )
                 });
+                if auto_probe {
+                    let view = view.clone();
+                    let source_window = window.window_handle();
+                    cx.defer(move |cx| {
+                        let _ = source_window.update(cx, |_, window, cx| {
+                            view.update(cx, |view, cx| view.begin_probe(window, cx));
+                        });
+                    });
+                }
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
         match opened {
-            Ok(window) => self.new_download_window = Some(window.into()),
+            Ok(window) => {
+                self.new_download_window = Some(window.into());
+                if let Some((correlation_id, handoff_id)) = browser_context {
+                    info!(
+                        event = "download.browser_dialog.opened",
+                        %correlation_id,
+                        %handoff_id,
+                        "browser confirmation window opened"
+                    );
+                }
+                Ok(())
+            }
             Err(error) => {
+                let message = error.to_string();
+                if let Some((correlation_id, handoff_id)) = browser_context {
+                    warn!(
+                        event = "download.browser_dialog.open_failed",
+                        %correlation_id,
+                        %handoff_id,
+                        error = %error,
+                        "browser confirmation window could not be opened"
+                    );
+                }
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         "download-new-window",
@@ -1034,6 +1118,7 @@ impl DownloadApplication {
                         cx,
                     );
                 });
+                Err(message)
             }
         }
     }
@@ -2293,8 +2378,16 @@ impl DownloadApplication {
     }
 
     fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
-        let Ok(snapshot) = load_download_snapshot(&self.engine) else {
-            return;
+        let snapshot = match load_download_snapshot(&self.engine) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                warn!(
+                    event = "download.desktop.snapshot_refresh_failed",
+                    %error,
+                    "desktop download snapshot refresh failed"
+                );
+                return;
+            }
         };
         let tasks = snapshot.task_details;
         self.publish_terminal_notifications(&tasks, cx);
@@ -2356,6 +2449,10 @@ impl DownloadApplication {
             );
         }
         self.last_event_sequence = sequence;
+        let task_event_diagnostic = match &envelope.event {
+            DownloadEvent::TaskChanged { task } => Some((task.id(), task.origin(), task.status())),
+            _ => None,
+        };
         let admitted_progress_task = match &envelope.event {
             DownloadEvent::TaskChanged { task } => {
                 let known_to_desktop = self
@@ -2400,6 +2497,17 @@ impl DownloadApplication {
             DownloadEvent::CommandRejected { .. } | DownloadEvent::SnapshotRequired { .. } => {}
         }
         self.refresh_snapshot(!is_progress_event, cx);
+        if let Some((task_id, origin, status)) = task_event_diagnostic {
+            info!(
+                event = "download.desktop.task_event_applied",
+                sequence,
+                task_id = %task_id.as_uuid(),
+                ?origin,
+                ?status,
+                task_count = self.tasks.len(),
+                "download task state applied to the desktop snapshot"
+            );
+        }
         if let Some(task_id) = admitted_progress_task {
             let still_active = self.task(task_id).is_some_and(|task| {
                 matches!(
@@ -4396,6 +4504,7 @@ struct NewDownloadView {
     committed_schedule: Option<DelayedStartSelection>,
     default_connection_limit: u16,
     default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
+    external_request: Option<DownloadRequest>,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     probing: bool,
@@ -4411,18 +4520,36 @@ impl NewDownloadView {
         default_directory: PathBuf,
         default_connection_limit: u16,
         default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
+        initial_request: Option<DownloadRequest>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let url =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/file.zip"));
+        let initial_url = initial_request
+            .as_ref()
+            .map_or_else(String::new, |request| request.source_url.clone());
+        let initial_directory = initial_request.as_ref().map_or_else(
+            || default_directory.to_string_lossy().into_owned(),
+            |request| request.save_directory.to_string_lossy().into_owned(),
+        );
+        let initial_file_name = initial_request
+            .as_ref()
+            .and_then(|request| request.file_name.clone())
+            .unwrap_or_default();
+        let url = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial_url)
+                .placeholder("https://example.com/file.zip")
+        });
         let directory = cx.new(|cx| {
             InputState::new(window, cx)
-                .default_value(default_directory.to_string_lossy().into_owned())
+                .default_value(initial_directory)
                 .placeholder("保存目录")
         });
-        let file_name =
-            cx.new(|cx| InputState::new(window, cx).placeholder("可选；留空时使用服务器文件名"));
+        let file_name = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial_file_name)
+                .placeholder("可选；留空时使用服务器文件名")
+        });
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
         let scheduled_date = default_scheduled_at.date_naive();
         let scheduled_month = calendar_month_start(scheduled_date);
@@ -4473,6 +4600,7 @@ impl NewDownloadView {
             committed_schedule: None,
             default_connection_limit,
             default_adaptive_segment_policy,
+            external_request: initial_request,
             confirmed_request: None,
             probe: None,
             probing: false,
@@ -4492,19 +4620,25 @@ impl NewDownloadView {
         }
         let scheduled_at_unix_ms =
             resolve_scheduled_start(self.committed_schedule, Local::now().timestamp_millis())?;
-        let request = DownloadRequest {
-            source_url: url,
-            save_directory: PathBuf::from(directory),
-            file_name: (!file_name.is_empty()).then_some(file_name),
+        let mut request = self.external_request.clone().unwrap_or(DownloadRequest {
+            source_url: String::new(),
+            save_directory: PathBuf::new(),
+            file_name: None,
             headers: Vec::new(),
             cookie: None,
             referrer: None,
             connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
-            scheduled_at_unix_ms,
+            scheduled_at_unix_ms: None,
             adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
-        };
+        });
+        request.source_url = url;
+        request.save_directory = PathBuf::from(directory);
+        request.file_name = (!file_name.is_empty()).then_some(file_name);
+        request.connection_limit = Some(self.default_connection_limit);
+        request.adaptive_segment_policy = Some(self.default_adaptive_segment_policy);
+        request.scheduled_at_unix_ms = scheduled_at_unix_ms;
         request.validate().map_err(|error| error.to_string())?;
         Ok(request)
     }
@@ -6554,6 +6688,7 @@ mod tests {
                     default_directory,
                     default_connection_limit,
                     default_adaptive_segment_policy,
+                    None,
                     window,
                     cx,
                 )
@@ -6721,6 +6856,72 @@ mod tests {
                     .expect("committed schedule remains in the future")
             ),
             "submission must continue to use the last confirmed schedule"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn browser_prefilled_download_window_preserves_private_request_context(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "browser-prefilled-download");
+        let application_for_window = application.clone();
+        let initial = DownloadRequest {
+            source_url: "https://example.test/private.bin".into(),
+            save_directory: directory.clone(),
+            file_name: Some("private.bin".into()),
+            headers: vec![nxtools_download::DownloadRequestHeader {
+                name: "Authorization".into(),
+                value: "Bearer secret".into(),
+            }],
+            cookie: Some("session=secret".into()),
+            referrer: Some("https://example.test/page".into()),
+            connection_limit: Some(4),
+            speed_limit_bytes_per_second: Some(512_000),
+            expected_total_bytes: Some(8_192),
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+        let expected = initial.clone();
+        let default_directory = directory.clone();
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let (_root, _window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    application_for_window,
+                    default_directory,
+                    4,
+                    nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
+                    Some(initial),
+                    window,
+                    cx,
+                )
+            });
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = view_slot
+            .borrow()
+            .clone()
+            .expect("browser-prefilled view mounted");
+        let reconstructed = cx.read(|cx| view.read(cx).request(cx).expect("rebuild request"));
+
+        assert_eq!(reconstructed.source_url, expected.source_url);
+        assert_eq!(reconstructed.save_directory, expected.save_directory);
+        assert_eq!(reconstructed.file_name, expected.file_name);
+        assert_eq!(reconstructed.headers, expected.headers);
+        assert_eq!(reconstructed.cookie, expected.cookie);
+        assert_eq!(reconstructed.referrer, expected.referrer);
+        assert_eq!(
+            reconstructed.expected_total_bytes,
+            expected.expected_total_bytes
+        );
+        assert_eq!(
+            reconstructed.speed_limit_bytes_per_second,
+            expected.speed_limit_bytes_per_second
         );
         let _ = std::fs::remove_dir_all(directory);
     }

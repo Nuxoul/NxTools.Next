@@ -924,7 +924,7 @@ Run package verification with `--offline` when no dependency resolution is requi
 
 ### Metadata
 
-- Reproducible: unknown
+- Reproducible: yes
 - Related Files: `Cargo.lock`
 
 ### Resolution
@@ -5850,3 +5850,91 @@ then, confirm this failure with the exact test before changing transfer producti
 **Error**: A statement-level PowerShell `foreach` was piped directly to `Format-Table`, causing `An empty pipe element is not allowed`.
 **Root cause**: The command ignored the explicit repository diagnostic rule in `AGENTS.md`.
 **Prevention**: Always assign statement-level `foreach` output to a task-specific variable before piping it to formatting cmdlets.
+
+## [ERR-20260808-GPUITESTTIMEOUT] desktop_gpui_test_timeout_left_child_builds_running
+
+**Logged**: 2026-08-08T16:17:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A targeted Desktop GPUI test exceeded the 120-second tool timeout while compiling `aws-lc-sys`,
+and the timeout wrapper left its Cargo/build-script process tree running.
+
+### Error
+
+```text
+command timed out after 124032 milliseconds
+```
+
+### Context
+
+- Command: single-job, non-incremental `cargo test -p nxtools-desktop <exact-test>`.
+- No Rust compiler diagnostic was emitted before the timeout.
+- Two Cargo processes and one `aws-lc-sys` build script remained after the wrapper returned.
+
+### Suggested Fix
+
+Allow the repository's documented long timeout for a first Desktop test build. After every tool
+timeout, inspect the exact Cargo process tree and stop only the verified command descendants before
+continuing, so an abandoned build cannot consume commit memory in the background.
+
+### Metadata
+
+- Reproducible: unknown
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`, `AGENTS.md`
+- See Also: `ERR-20260808-DESKTOPCHECKTIMEOUT`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T16:18:00+08:00
+- **Notes**: Verified and stopped only PIDs 15720, 21956 and 16036 from the timed-out test tree;
+  subsequent verification reported no remaining targeted process. A second run with a ten-minute
+  timeout also produced no compiler diagnostic or test binary; this time the wrapper left no child
+  build process. Do not repeat the same Desktop test-target build in this session; use the passing
+  Desktop check plus architecture/engine/host gates and leave the GPUI test executable gate noted.
+
+---
+
+## [ERR-20260808-RELEASEMANIFESTPATH] assumed_generated_manifest_directory
+
+**Logged**: 2026-08-08T16:34:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Post-package hash verification assumed the generated release manifest lived under `Windows/`;
+the package script writes it under `Generated/`.
+
+### Error
+
+```text
+Cannot find path 'csharp/NxTools.PlatformHost/Windows/ReleaseBinaryManifest.g.cs'
+```
+
+### Context
+
+- The Release package itself completed successfully.
+- Only the follow-up read-only hash verification command failed.
+
+### Suggested Fix
+
+Resolve generated artifact locations with `rg --files` before reading them instead of relying on
+memory from a previous package pass.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `csharp/NxTools.PlatformHost/Generated/ReleaseBinaryManifest.g.cs`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T16:34:00+08:00
+- **Notes**: Located the actual generated manifest with `rg --files`; hash verification resumed
+  against that exact path.
+
+---

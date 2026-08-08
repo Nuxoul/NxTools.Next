@@ -36,6 +36,8 @@ Assert-Contains $background 'const { response, handoffId } = await sendDownloadI
     'Browser download must wait for the desktop response.'
 Assert-Contains $background 'expectedHandoffId: handoffId' `
     'Safe handoff policy must bind acceptance to the submitted handoff ID.'
+Assert-Contains $background 'openDialog: settings.openDialog' `
+    'Browser confirmation-window preference must cross the Native Messaging boundary.'
 Assert-Contains $background 'sanitizeCapturedHeaderObject(resource.requestHeaders)' `
     'Page-derived resource headers must be bounded and allowlisted at the cache boundary.'
 if ($background.Contains('return { cancel: true };', [StringComparison]::Ordinal)) {
@@ -56,6 +58,10 @@ Assert-Contains $nativeHostSource 'MAX_NATIVE_MESSAGE_BYTES: usize = 256 * 1024'
     'Native Messaging input must use the product-level bounded frame limit.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserSubmit' `
     'Native host must submit through the Rust download command boundary.'
+Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenDialog' `
+    'Native host must distinguish a GPUI confirmation-window request from direct task creation.'
+Assert-Contains $nativeHostSource 'connect_or_start(executable, !open_dialog)' `
+    'A confirmation-window request must not silently start a headless download host.'
 Assert-Contains $nativeHostSource 'handoff_id: Some(handoff_id.to_string())' `
     'Native host must echo the accepted handoff ID.'
 if ($nativeHostSource.Contains('error = %error', [StringComparison]::Ordinal)) {
@@ -74,6 +80,13 @@ $downloadModel = Get-Content -LiteralPath `
     (Join-Path $root 'rust\crates\nxtools-download\src\lib.rs') -Raw
 Assert-Contains $downloadModel 'pub expected_total_bytes: Option<u64>' `
     'Browser-reported total size must reach the Rust download request.'
+
+$downloadEngine = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\crates\nxtools-download\src\engine.rs') -Raw
+Assert-Contains $downloadEngine 'take_browser_dialog_receiver' `
+    'Sensitive browser dialog requests must use the in-process GPUI channel.'
+Assert-Contains $downloadEngine 'browser_dialog_available' `
+    'Headless download hosts must reject confirmation-window requests.'
 
 $downloadStorage = Get-Content -LiteralPath `
     (Join-Path $root 'rust\crates\nxtools-download\src\storage.rs') -Raw

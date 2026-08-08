@@ -16,8 +16,8 @@ mod storage;
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
 pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
 pub use engine::{
-    DownloadEngine, DownloadEngineError, DownloadEngineTask, DownloadScheduleMoment,
-    daily_schedule_window_contains,
+    BrowserDownloadDialogRequest, DownloadEngine, DownloadEngineError, DownloadEngineTask,
+    DownloadScheduleMoment, daily_schedule_window_contains,
 };
 pub use http::{
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
