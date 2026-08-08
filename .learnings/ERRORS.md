@@ -5826,3 +5826,10 @@ then, confirm this failure with the exact test before changing transfer producti
 **Prevention**: Before declaring a cross-surface slice package-ready, run a single-job `cargo check -p nxtools-desktop --bin nxtools-desktop`; normalize conditional GPUI render branches to `AnyElement` and update all request constructors when the domain request changes.
 
 **Resolution**: Converted both taskbar overlay render arms to `AnyElement`, supplied `expected_total_bytes: None` for manual desktop requests, and passed the targeted Desktop check.
+## ERR-20260808-MANIFESTREGEXESCAPE
+
+**Date**: 2026-08-08
+**Context**: Read-only verification of packaged Rust hashes against the generated C# manifest
+**Error**: An interpolated PowerShell regex used C-style escaped quotes and failed at parse time.
+**Root cause**: PowerShell double-quoted strings do not use backslash to escape embedded quotes.
+**Prevention**: Avoid nested interpolated regex quoting for fixed generated manifests; extract all 64-character hash literals once and compare them in declared order.
