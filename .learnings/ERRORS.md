@@ -4,6 +4,48 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260808-BGPACKAGE] start_process_package_timeout
+
+**Logged**: 2026-08-08T17:15:42+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+Launching the Release package through `Start-Process` did not return within the command wrapper's
+10-second limit, and no durable package process or log remained.
+
+### Error
+
+```text
+command timed out after 10016 milliseconds
+```
+
+### Context
+
+- The attempted command started a hidden child PowerShell and redirected its output to temporary logs.
+- The command runner tracks the spawned process tree, so `Start-Process` was not a reliable detach
+  boundary in this environment.
+- Read-only checks confirmed there was no package process before retrying.
+
+### Suggested Fix
+
+Run `package.ps1` directly through a yielded tool cell, then resume that same cell with the wait
+mechanism. This preserves one process tree, streams completion, and avoids duplicate builds.
+
+### Metadata
+
+- Reproducible: unknown
+- Related Files: `scripts/package.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:15:42+08:00
+- **Notes**: Switched the pending package run to a direct yielded command with the required low-memory environment.
+
+---
+
 ## [ERR-20260808-DOWNLOADFIXTURETIMING] download_engine_fixture_parallel_timing
 
 **Logged**: 2026-08-08T00:00:00+08:00

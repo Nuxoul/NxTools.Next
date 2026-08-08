@@ -731,6 +731,13 @@ BrowserHost 只接受
 固定白名单中的扩展事件名且不记录扩展提供的 level/message。Popup 补齐 tablist/tab/tabpanel
 语义与 600 px 内的高度约束；相应定向测试、架构门禁、BrowserHost 测试和 Clippy 再次通过。
 
+最终原子 Release 重打包在 Cargo 前被 6 GiB commit headroom 门禁安全拒绝，当时只有 4.12 GiB；
+没有降低门槛、清理其他程序内存或启动 Rust 编译，现有 `NxTools.exe` 仍为 16:44:26 的上一版。
+为允许独立扩展验收，仅把 `artifacts/win-x64/browser_extension/nxtools-interceptor` 刷新为
+0.6.0，并逐文件核对 background/capture policy/content/popup/manifest 与源码哈希一致；受保护
+Desktop、Indexer、BrowserHost 和 PlatformHost 二进制均未替换。完整原子包仍需 commit
+headroom 恢复到至少 6 GiB 后通过标准包装脚本生成。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。
