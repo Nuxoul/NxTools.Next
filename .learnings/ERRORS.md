@@ -5841,3 +5841,12 @@ then, confirm this failure with the exact test before changing transfer producti
 **Error**: Protected `NxTools.exe` terminated with `0xc0000409` after `ClipboardPanel::handle_command_result` synchronously updated an already leased `ClipboardApplication`.
 **Root cause**: Successful paste usage persistence and copy-only refresh crossed from the panel back into the application during the application's platform-notification callback.
 **Prevention**: Every panel callback reached from an application notification must defer application mutation to the next GPUI turn; any panel refresh depending on that mutation must be deferred for a second turn and protected by an architecture gate.
+
+**Resolution**: Deferred usage persistence and copy-only refresh across separate GPUI turns, added `clipboard-lifecycle.ps1`, passed Desktop check/Clippy and BrowserHost gates, and produced a new hash-verified atomic package.
+## ERR-20260808-FOREACHPIPE
+
+**Date**: 2026-08-08
+**Context**: Read-only verification of the repackaged protected binary hashes
+**Error**: A statement-level PowerShell `foreach` was piped directly to `Format-Table`, causing `An empty pipe element is not allowed`.
+**Root cause**: The command ignored the explicit repository diagnostic rule in `AGENTS.md`.
+**Prevention**: Always assign statement-level `foreach` output to a task-specific variable before piping it to formatting cmdlets.
