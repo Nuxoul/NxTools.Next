@@ -20,6 +20,12 @@ if (-not $source.Contains('TASKBAR_OVERLAY_ENTER_DURATION') -or
     -not $source.Contains('TASKBAR_OVERLAY_EXIT_DURATION')) {
     throw "Taskbar overlay visibility must define bounded enter and exit motion durations."
 }
+if (-not $source.Contains('TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(90)')) {
+    throw "Taskbar overlay enter motion must reach its visible state within 90 ms."
+}
+if (-not $source.Contains('(0.45 + 0.55 * delta, 1.5 * (1.0 - delta))')) {
+    throw "Taskbar overlay enter motion must be perceptible from its first rendered frame."
+}
 if (-not $source.Contains('complete_visibility_exit')) {
     throw "Taskbar overlay native hide must be delayed until the GPUI exit transition completes."
 }

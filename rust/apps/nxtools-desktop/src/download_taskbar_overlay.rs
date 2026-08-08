@@ -18,7 +18,7 @@ use crate::theme::Theme;
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
 const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
-const TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(150);
+const TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(90);
 const TASKBAR_OVERLAY_EXIT_DURATION: Duration = Duration::from_millis(120);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,7 +62,7 @@ fn taskbar_overlay_visibility_motion(delta: f32, exiting: bool) -> (f32, f32) {
     if exiting {
         (1.0 - delta, 2.0 * delta)
     } else {
-        (delta, 3.0 * (1.0 - delta))
+        (0.45 + 0.55 * delta, 1.5 * (1.0 - delta))
     }
 }
 
@@ -1184,7 +1184,7 @@ mod tests {
 
     #[test]
     fn visibility_motion_has_distinct_enter_and_exit_endpoints() {
-        assert_eq!(taskbar_overlay_visibility_motion(0.0, false), (0.0, 3.0));
+        assert_eq!(taskbar_overlay_visibility_motion(0.0, false), (0.45, 1.5));
         assert_eq!(taskbar_overlay_visibility_motion(1.0, false), (1.0, 0.0));
         assert_eq!(taskbar_overlay_visibility_motion(0.0, true), (1.0, 0.0));
         assert_eq!(taskbar_overlay_visibility_motion(1.0, true), (0.0, 2.0));

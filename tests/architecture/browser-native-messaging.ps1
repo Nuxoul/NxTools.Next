@@ -88,6 +88,21 @@ Assert-Contains $downloadEngine 'take_browser_dialog_receiver' `
 Assert-Contains $downloadEngine 'browser_dialog_available' `
     'Headless download hosts must reject confirmation-window requests.'
 
+$desktopDownloads = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads.rs') -Raw
+$newWindowStart = $desktopDownloads.IndexOf('fn open_new_download_window_with_request')
+$newWindowEnd = $desktopDownloads.IndexOf('pub(crate) fn open_schedule_window', $newWindowStart)
+if ($newWindowStart -lt 0 -or $newWindowEnd -le $newWindowStart) {
+    throw 'Could not isolate the add-download window lifecycle.'
+}
+$newWindowLifecycle = $desktopDownloads.Substring($newWindowStart, $newWindowEnd - $newWindowStart)
+Assert-Contains $newWindowLifecycle 'native_window_handle(window)' `
+    'Browser add-download handoff must resolve the real GPUI HWND.'
+Assert-Contains $newWindowLifecycle 'PlatformCommand::SetWindowTopmost' `
+    'The add-download window must preserve the legacy always-on-top behavior.'
+Assert-Contains $newWindowLifecycle 'PlatformCommand::ActivateWindow' `
+    'The browser-created add-download window must explicitly request foreground activation.'
+
 $downloadStorage = Get-Content -LiteralPath `
     (Join-Path $root 'rust\crates\nxtools-download\src\storage.rs') -Raw
 Assert-Contains $downloadStorage 'MAX_BROWSER_HANDOFFS: i64 = 4_096' `

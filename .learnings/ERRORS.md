@@ -5938,3 +5938,45 @@ memory from a previous package pass.
   against that exact path.
 
 ---
+
+## [ERR-20260808-ACTIVELOGSHARE] direct_readlines_on_active_log
+
+**Logged**: 2026-08-08T16:43:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+`File.ReadLines` could not open the active BrowserHost log while that process held the file.
+
+### Error
+
+```text
+The process cannot access browser-host.log.2026-08-08 because it is being used by another process.
+```
+
+### Context
+
+- A combined diagnostic command read Desktop, BrowserHost and PlatformHost logs.
+- Desktop and PlatformHost evidence was returned, but the active BrowserHost file used a sharing
+  mode incompatible with `File.ReadLines`.
+
+### Suggested Fix
+
+For an actively written log, open a `FileStream` with `FileShare.ReadWrite` and read through a
+`StreamReader`, or make a bounded snapshot through that sharing mode before filtering. Keep each
+process log extraction separate so one locked file cannot obscure the other evidence.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `docs/diagnostics.md`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T16:43:00+08:00
+- **Notes**: The required timing evidence came from the independently readable Desktop and
+  PlatformHost logs; future active-log reads will use shared access.
+
+---

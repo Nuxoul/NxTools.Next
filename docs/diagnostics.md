@@ -169,6 +169,10 @@ GPUI intake. Rust records `download.browser_dialog.accepted` (or
 the request with `download.browser_dialog.unavailable`, so the browser keeps its original download.
 Rust returns acceptance only after a bounded GPUI completion acknowledgement; a timeout or dropped
 acknowledgement records `download.browser_dialog.open_unconfirmed` and is rejected.
+After GPUI resolves the real HWND, it records `download.browser_dialog.foreground_requested` with
+the same handoff/correlation IDs and the bounded topmost/activation command IDs. If either command
+cannot be queued, it records `download.browser_dialog.foreground_request_failed`; it never records
+the URL or request context.
 The private in-process message is not a serializable `DownloadEvent` because it can carry Header,
 Cookie and Referrer values. Direct task state delivery is observable by task ID and event sequence
 through `download.desktop.task_event_applied`; snapshot failures use

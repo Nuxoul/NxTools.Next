@@ -868,6 +868,11 @@ Reverified on 2026-07-27 after the first packaged interaction pass:
 - NxTools.Next keeps the old product's explicit probe/confirm behavior while adopting ABDM's compact
   hierarchy: URL is the dominant row; destination and file name align; probe metadata is a narrow
   summary instead of a full-width empty card; primary/secondary actions remain in a stable footer.
+- A browser-created add window cannot rely on GPUI `focus: true`: the browser owns the Windows
+  foreground lock when Native Messaging completes. Resolve the real GPUI HWND, request legacy
+  always-on-top first, then use the existing PlatformHost `ActivateWindow` path. This is the same
+  typed Windows boundary already proven by keyed progress-window activation; GPUI remains the
+  window owner and C# only performs the native topmost/foreground adaptation.
 - The initial window is a compact URL/probe stage. Destination, editable file name and remote
   metadata appear only after a successful probe; the probe result must hydrate the visible file-name
   input immediately. Destination and file-name edits do not invalidate remote metadata, while a URL
@@ -1235,6 +1240,10 @@ Reverified on 2026-07-31 before extending the overlay editor and adaptive connec
   temporarily remove click-through so the user can drag and resize a deterministic preview even
   when no task is active. Finishing persists the draft; cancelling restores the last saved
   placement. Leaving edit mode restores passive styles.
+- Visibility diagnostics on 2026-08-08 measured about 20 ms from queue admission to Rust show and
+  54 ms to the native visible result, so the reported delay was perceptual rather than IPC latency.
+  The enter motion now completes in 90 ms and starts at 45% opacity with only 1.5 px translation;
+  exit remains 120 ms so native hide still waits for the complete fade without abrupt removal.
 - Overlay dimensions and offsets are bounded and clamped to the primary taskbar. Pointer movement
   is not logged. Diagnostics cover edit begin, committed/cancelled, native placement accepted and
   terminal placement failure under one correlation ID.

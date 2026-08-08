@@ -1043,6 +1043,8 @@ impl DownloadApplication {
         let default_connection_limit = self.default_connection_limit();
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
         let auto_probe = initial_request.is_some();
+        let native_slot = Rc::new(RefCell::new(0_i64));
+        let opened_native_slot = Rc::clone(&native_slot);
         let window_size = new_download_window_size(false);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -1063,6 +1065,7 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
                 let view = cx.new(|cx| {
                     NewDownloadView::new(
                         application,
@@ -1088,14 +1091,53 @@ impl DownloadApplication {
         );
         match opened {
             Ok(window) => {
+                let native_window_handle = *native_slot.borrow();
+                let _ = window.update(cx, |_, window, _| window.activate_window());
+                let correlation_id = browser_context
+                    .map(|(correlation_id, _)| correlation_id)
+                    .unwrap_or_else(uuid::Uuid::new_v4);
+                let topmost_result = self.platform.send_command_correlated(
+                    PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
+                        window_handle: native_window_handle,
+                        enabled: true,
+                    }),
+                    correlation_id,
+                );
+                let activation_result = self.platform.send_command_correlated(
+                    PlatformCommand::ActivateWindow(ActivateWindowCommand {
+                        window_handle: native_window_handle,
+                    }),
+                    correlation_id,
+                );
                 self.new_download_window = Some(window.into());
                 if let Some((correlation_id, handoff_id)) = browser_context {
-                    info!(
-                        event = "download.browser_dialog.opened",
-                        %correlation_id,
-                        %handoff_id,
-                        "browser confirmation window opened"
-                    );
+                    match (topmost_result, activation_result) {
+                        (Ok(topmost_command_id), Ok(activation_command_id)) => info!(
+                            event = "download.browser_dialog.foreground_requested",
+                            %correlation_id,
+                            %handoff_id,
+                            %topmost_command_id,
+                            %activation_command_id,
+                            window_handle = native_window_handle,
+                            "browser confirmation window opened and foreground commands queued"
+                        ),
+                        (topmost, activation) => warn!(
+                            event = "download.browser_dialog.foreground_request_failed",
+                            %correlation_id,
+                            %handoff_id,
+                            window_handle = native_window_handle,
+                            topmost_accepted = topmost.is_ok(),
+                            activation_accepted = activation.is_ok(),
+                            "browser confirmation window opened but foreground commands were not fully queued"
+                        ),
+                    }
+                } else {
+                    if let Err(error) = topmost_result {
+                        warn!(%error, window_handle = native_window_handle, "add-download window topmost request was not queued");
+                    }
+                    if let Err(error) = activation_result {
+                        warn!(%error, window_handle = native_window_handle, "add-download window activation request was not queued");
+                    }
                 }
                 Ok(())
             }

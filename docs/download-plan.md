@@ -701,6 +701,16 @@ Indexer、BrowserHost 三个受保护二进制哈希；`NxTools.exe` 时间为 `
 未勾选。修复前生成的三条 `created/browser` 诊断任务仍在用户数据库“全部任务/等待”中，未被
 开发流程擅自删除。
 
+2026-08-08 确认窗口首次成功弹出后实测发现它没有抢到浏览器前台；日志证明 GPUI 已建窗，
+但链路中不存在置顶或激活命令。修复后建窗闭包解析真实 HWND，沿既有 PlatformHost 边界依次
+请求 always-on-top 与前台激活，并在同一 browser correlation/handoff 下记录命令接受或失败。
+同轮任务栏覆盖条日志量出队列准入到 Rust 显示约 20 ms、到 Windows 可见约 54 ms，排除 IPC
+慢；感知延迟来自 150 ms 且首帧全透明的进入动画。进入现缩短为 90 ms，并从 45% 透明度、
+1.5 px 位移开始；120 ms 退出和延迟原生隐藏不变。两个生命周期门禁均先稳定变红、修复后
+转绿，Desktop check 与 Clippy 通过；仍待新包浏览器实机确认，因此阶段项保持未勾选。
+低内存 Release 重打包已成功，受保护 Desktop/Indexer/BrowserHost 哈希全部匹配生成清单；
+本轮 `NxTools.exe` 时间为 `2026-08-08 16:44:26`。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。
