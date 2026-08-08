@@ -27,12 +27,13 @@
 }
 
 html {
+  width: 456px;
   background: var(--bg);
 }
 
 body {
-  width: min(456px, 100vw);
-  min-width: min(360px, 100vw);
+  width: 456px;
+  min-width: 456px;
   min-height: 540px;
   margin: 0;
   overflow: hidden;
@@ -329,8 +330,8 @@ p {
 }
 
 .workspace {
-  min-height: min(420px, calc(100vh - 154px));
-  max-height: min(445px, calc(100vh - 154px));
+  min-height: 420px;
+  max-height: 445px;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: #364049 transparent;

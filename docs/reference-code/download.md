@@ -427,6 +427,11 @@ product compatibility baseline rather than designing a replacement from memory:
   updates and same-URL reconciliation. Persistent resource snapshots omit Header, Referrer, page
   URL, page title and URL-derived page key, and startup rewrites legacy stored snapshots through
   that projection.
+- Chromium extension popups need deterministic intrinsic root dimensions. A responsive webpage
+  pattern such as `width: min(456px, 100vw)` can participate in the browser's initial Popup viewport
+  calculation and collapse the surface to a narrow strip. Keep `html/body` at the intended fixed
+  Popup width and constrain the internal scrolling workspace with fixed bounds; test viewport-unit
+  absence at that root boundary separately from ordinary responsive-page rules.
 
 ### Windows actions
 

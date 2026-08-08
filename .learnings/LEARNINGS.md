@@ -5,6 +5,48 @@ Corrections, insights, and knowledge gaps captured during development.
 **Categories**: correction | insight | knowledge_gap | best_practice
 
 ---
+## [LRN-20260808-POPUPINTRINSIC] correction
+
+**Logged**: 2026-08-08T17:29:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+Do not apply viewport-relative root widths from ordinary responsive pages to a browser extension
+Popup whose viewport is itself derived from the document's intrinsic size.
+
+### Details
+
+The Popup was changed from a fixed width to `min(456px, 100vw)` with a viewport-relative minimum.
+In the real Chromium extension boundary, the initial narrow viewport fed back into those rules and
+collapsed the UI to an approximately 27 px vertical strip. Static file rendering at an already
+correct 456 px viewport did not exercise that sizing loop.
+
+### Suggested Action
+
+Give extension Popup `html/body` deterministic pixel dimensions and make only internal content
+responsive. Maintain a contract test that rejects `vw/vh` at the intrinsic root and scrolling
+workspace boundary, then require one real extension reload before calling Popup layout accepted.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `browser_extension/nxtools-interceptor/popup.css`, `browser_extension/nxtools-interceptor/tests/popup-contract.test.js`
+- Tags: browser-extension, popup, chromium, intrinsic-sizing, css
+- Pattern-Key: browser_popup.viewport_intrinsic_cycle
+- Recurrence-Count: 1
+- First-Seen: 2026-08-08
+- Last-Seen: 2026-08-08
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:29:00+08:00
+- **Notes**: Restored a fixed 456 px root width, fixed workspace height bounds, and added a
+  red-capable CSS boundary regression.
+
+---
 ## [LRN-20260808-NOBUILDMEANSNOCOMPILE] correction
 
 **Logged**: 2026-08-08T14:02:00+08:00

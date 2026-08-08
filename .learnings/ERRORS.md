@@ -4,6 +4,47 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260808-HEADLESSSCREENSHOTRACE] screenshot_visible_after_process_return
+
+**Logged**: 2026-08-08T17:29:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The headless Chromium wrapper returned before PowerShell observed the screenshot file, although
+Chromium wrote it moments later.
+
+### Error
+
+```text
+Cannot find path '...\\target\\popup-width-check\\popup.png' because it does not exist.
+47668 bytes written to file ...\\popup.png
+```
+
+### Context
+
+- The render command and immediate `Get-Item` were in the same PowerShell invocation.
+- The browser's output confirmed the screenshot write after the filesystem check had already run.
+
+### Suggested Fix
+
+Run screenshot generation and artifact inspection as separate bounded commands, or poll briefly for
+the exact expected file before reading it.
+
+### Metadata
+
+- Reproducible: unknown
+- Related Files: `target/popup-width-check/popup.png`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:29:00+08:00
+- **Notes**: Verified the exact file in a follow-up command and inspected the 456×600 render.
+
+---
+
 ## [ERR-20260808-BGPACKAGE] start_process_package_timeout
 
 **Logged**: 2026-08-08T17:15:42+08:00

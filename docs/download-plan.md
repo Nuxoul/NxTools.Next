@@ -738,6 +738,13 @@ BrowserHost 只接受
 Desktop、Indexer、BrowserHost 和 PlatformHost 二进制均未替换。完整原子包仍需 commit
 headroom 恢复到至少 6 GiB 后通过标准包装脚本生成。
 
+真实浏览器首次打开 `0.6.0` Popup 时暴露了扩展内在尺寸边界：根容器使用
+`width: min(456px, 100vw)` 和 `min-width: min(360px, 100vw)`，Chromium 在计算 Popup 初始
+viewport 时形成循环收缩，最终只剩约 27 px 宽的竖条。现已把 `html/body` 固定为 456 px，
+工作区固定为 420–445 px 高，不再让 Popup 根尺寸依赖 `vw/vh`；尺寸契约已先对旧 CSS 变红，
+修复后与捕获策略门禁一并转绿，无界面 Chromium 456×600 渲染正常。扩展产物可独立刷新，
+仍待用户重载后完成真实 Popup 复验，阶段 4 checklist 继续保持未勾选。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。
