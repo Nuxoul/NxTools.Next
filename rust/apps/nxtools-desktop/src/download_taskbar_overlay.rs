@@ -580,7 +580,7 @@ impl Render for DownloadTaskbarOverlayView {
             .bg(transparent_black())
             .overflow_hidden();
         match &self.model {
-            DownloadTaskbarOverlayModel::Hidden => root,
+            DownloadTaskbarOverlayModel::Hidden => root.into_any_element(),
             DownloadTaskbarOverlayModel::Visible {
                 lanes,
                 metrics,
@@ -763,6 +763,7 @@ impl Render for DownloadTaskbarOverlayView {
                         root.opacity(opacity).relative().top(px(vertical_offset))
                     },
                 )
+                .into_any_element()
             }
         }
     }

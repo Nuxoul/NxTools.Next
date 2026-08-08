@@ -5807,3 +5807,22 @@ then, confirm this failure with the exact test before changing transfer producti
 **Error**: A repository search assumed integration tests lived under `src/tests*`; they actually live under the crate-level `tests/` directory.
 **Root cause**: I relied on a summarized path instead of resolving the files with `rg --files` first.
 **Prevention**: Resolve uncertain test paths with `rg --files <crate> | rg 'tests|support'` before a multi-file search.
+## ERR-20260808-DESKTOPCHECKTIMEOUT
+
+**Date**: 2026-08-08
+**Context**: Verifying the two Desktop compile fixes exposed by Release packaging
+**Error**: The first single-job `cargo check -p nxtools-desktop --bin nxtools-desktop` exceeded the 240-second tool timeout without reporting a compiler error.
+**Root cause**: The feedback-loop timeout did not account for the first full GPUI/Desktop dependency check with incremental compilation disabled.
+**Prevention**: Keep the required single-job/zero-incremental settings, but allow at least ten minutes for the first Desktop check; confirm no Cargo or rustc process survives a tool timeout before retrying.
+
+**Resolution**: Re-ran the same check with a ten-minute timeout; it completed successfully in 89 seconds after the first attempt had populated part of the dependency cache.
+
+## ERR-20260808-DESKTOPRELEASECOMPILE
+
+**Date**: 2026-08-08
+**Context**: First atomic Release package after adding browser takeover and taskbar visibility motion
+**Error**: Desktop Release compilation found incompatible `Div`/`AnimationElement<Div>` render arms and one `DownloadRequest` initializer missing `expected_total_bytes`.
+**Root cause**: Earlier targeted checks covered BrowserHost and the download core but did not compile the Desktop binary that integrates both changes.
+**Prevention**: Before declaring a cross-surface slice package-ready, run a single-job `cargo check -p nxtools-desktop --bin nxtools-desktop`; normalize conditional GPUI render branches to `AnyElement` and update all request constructors when the domain request changes.
+
+**Resolution**: Converted both taskbar overlay render arms to `AnyElement`, supplied `expected_total_bytes: None` for manual desktop requests, and passed the targeted Desktop check.

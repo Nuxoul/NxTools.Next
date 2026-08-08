@@ -4501,6 +4501,7 @@ impl NewDownloadView {
             referrer: None,
             connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
             scheduled_at_unix_ms,
             adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
         };
