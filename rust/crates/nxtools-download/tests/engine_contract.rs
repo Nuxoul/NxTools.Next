@@ -264,7 +264,7 @@ fn browser_dialog_requires_an_attached_gpui_consumer_and_suppresses_duplicates()
     assert!(matches!(
         unavailable.outcome,
         DownloadCommandOutcome::Rejected { fault }
-            if fault.code == nxtools_download::DownloadFaultCode::Unavailable
+            if fault.code == nxtools_download::DownloadFaultCode::Unavailable && fault.retryable
     ));
     assert!(engine.tasks().expect("read tasks").is_empty());
 
@@ -321,6 +321,40 @@ fn browser_dialog_requires_an_attached_gpui_consumer_and_suppresses_duplicates()
         } if accepted_handoff_id == handoff_id
     ));
     assert!(dialogs.try_recv().is_err());
+}
+
+#[test]
+fn browser_dialog_window_creation_failure_is_terminal() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let dialogs = engine
+        .take_browser_dialog_receiver()
+        .expect("attach GPUI browser-dialog consumer");
+    let command_engine = engine.clone();
+    let command = DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserOpenDialog {
+            handoff_id: uuid::Uuid::new_v4(),
+            request: request(&server, directory.path().join("artifacts")),
+        },
+    };
+    let result = std::thread::spawn(move || command_engine.handle_command(command));
+    dialogs
+        .recv_blocking()
+        .expect("receive browser dialog request")
+        .completion
+        .send(Err("window creation failed".into()))
+        .expect("reject GPUI window creation");
+    let result = result.join().expect("browser dialog command completed");
+
+    assert!(matches!(
+        result.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::Unavailable && !fault.retryable
+    ));
 }
 
 #[tokio::test]

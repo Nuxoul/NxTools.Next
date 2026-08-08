@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
@@ -1455,13 +1455,13 @@ impl DownloadEngine {
     ) -> Result<bool, DownloadEngineError> {
         request.validate()?;
         if !self.inner.browser_dialog_available.load(Ordering::Acquire) {
-            warn!(
-                event = "download.browser_dialog.unavailable",
+            debug!(
+                event = "download.browser_dialog.consumer_not_ready",
                 %correlation_id,
                 %handoff_id,
-                "browser confirmation window rejected because no GPUI consumer is attached"
+                "browser confirmation window is waiting for the GPUI consumer"
             );
-            return Err(DownloadEngineError::BrowserDialogUnavailable);
+            return Err(DownloadEngineError::BrowserDialogConsumerUnavailable);
         }
 
         let mut handoffs = self
@@ -3725,6 +3725,8 @@ pub enum DownloadEngineError {
     EventSubscriberAlreadyTaken,
     #[error("the browser confirmation-window subscriber is already attached")]
     BrowserDialogSubscriberAlreadyTaken,
+    #[error("the browser confirmation-window consumer is not attached yet")]
+    BrowserDialogConsumerUnavailable,
     #[error("the browser confirmation window is unavailable")]
     BrowserDialogUnavailable,
     #[error(transparent)]
@@ -3776,7 +3778,8 @@ impl DownloadEngineError {
             Self::EventSubscriberAlreadyTaken | Self::BrowserDialogSubscriberAlreadyTaken => {
                 (DownloadFaultCode::InvalidState, false)
             }
-            Self::BrowserDialogUnavailable => (DownloadFaultCode::Unavailable, true),
+            Self::BrowserDialogConsumerUnavailable => (DownloadFaultCode::Unavailable, true),
+            Self::BrowserDialogUnavailable => (DownloadFaultCode::Unavailable, false),
             Self::Http(HttpDownloadError::InsufficientDiskSpace { .. }) => {
                 (DownloadFaultCode::DiskFull, false)
             }

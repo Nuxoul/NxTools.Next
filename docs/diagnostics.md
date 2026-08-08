@@ -173,15 +173,17 @@ The native host records `browser_native_host.dialog_accepted` only after the int
 has attached its private GPUI intake. A pipe can become available slightly before that subscriber;
 `browser_native_host.dialog_consumer_waiting` records this bounded startup state, followed by
 `browser_native_host.dialog_consumer_ready` or `browser_native_host.dialog_consumer_timeout`.
-Only retryable `Unavailable` results are retried; malformed or non-retryable requests return
-immediately. The consumer-ready retry is capped at three seconds so the five-second pipe startup,
+Only the engine's “interactive consumer not attached yet” result is retryable; queue delivery,
+window creation, malformed and other terminal failures return immediately. The consumer-ready retry
+is capped at three seconds so the five-second pipe startup,
 three-second subscriber wait and five-second GPUI acknowledgement remain within the extension's
 15-second create-task timeout. Rust records `download.browser_dialog.accepted` (or
 `download.browser_dialog.duplicate_accepted`), and GPUI completes the correlated chain with
-`download.browser_dialog.opened` or `download.browser_dialog.open_failed`. A headless host rejects
-the request with `download.browser_dialog.unavailable`, so the browser keeps its original download.
-Rust returns acceptance only after a bounded GPUI completion acknowledgement; a timeout or dropped
-acknowledgement records `download.browser_dialog.open_unconfirmed` and is rejected.
+`download.browser_dialog.opened` or `download.browser_dialog.open_failed`. A headless host returns a
+retryable unavailable result; BrowserHost coalesces the wait into one start and one terminal event,
+so the browser keeps its original download without repeated production warnings. Rust returns
+acceptance only after a bounded GPUI completion acknowledgement; a timeout or dropped
+acknowledgement records `download.browser_dialog.open_unconfirmed` and is rejected without retry.
 After GPUI resolves the real HWND, it records `download.browser_dialog.foreground_requested` with
 the same handoff/correlation IDs and the bounded topmost/activation command IDs. If either command
 cannot be queued, it records `download.browser_dialog.foreground_request_failed`; it never records

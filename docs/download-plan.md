@@ -705,10 +705,12 @@ Indexer、BrowserHost 三个受保护二进制哈希；`NxTools.exe` 时间为 `
 BrowserHost 正常收到默认 `openDialog=true` 请求，但原实现把“禁止用无头 Host 接确认窗”错误
 实现成“完全禁止启动 Desktop”，在 150 ms 管道探测后直接拒绝。现改为类型化启动策略：确认窗
 请求在无管道时启动受保护的正常 `NxTools.exe`，直接提交/快照/任务动作才允许
-`NxTools.exe --background`；管道先于 GPUI 订阅者就绪时，仅对可重试 `Unavailable` 做三秒内
-指数退避重试。启动请求、模式、PID、就绪、超时和原生错误码贯穿同一 correlation ID，且不记
-URL 或请求上下文。两条生命周期门禁均先红后绿，BrowserHost 7 项测试与定向 Clippy 已通过；
-未启动 GUI、未打包，仍待新包真实浏览器验证自动拉起和确认窗前台行为。
+`NxTools.exe --background`；管道先于 GPUI 订阅者就绪时，仅对明确标记为“消费者尚未挂接”
+的可重试 `Unavailable` 做三秒内
+指数退避重试；队列投递、建窗失败或确认超时均为不可重试终态。启动请求、模式、PID、就绪、
+超时和原生错误码贯穿同一 correlation ID，且不记 URL 或请求上下文。命令构造、严格重试预算、
+真实引擎消费者和建窗失败门禁均先红后绿，BrowserHost 8 项测试、下载引擎契约与定向 Clippy
+已通过；未启动 GUI、未打包，仍待新包真实浏览器验证自动拉起和确认窗前台行为。
 
 2026-08-08 确认窗口首次成功弹出后实测发现它没有抢到浏览器前台；日志证明 GPUI 已建窗，
 但链路中不存在置顶或激活命令。修复后建窗闭包解析真实 HWND，沿既有 PlatformHost 边界依次

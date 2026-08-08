@@ -6184,3 +6184,42 @@ alternation.
 - **Notes**: Re-ran the query with a single-quoted regex and verified the 15-second create-task timeout.
 
 ---
+
+## [ERR-20260808-DIALOGCOMPLETIONTYPE] browser_dialog_test_completion_type
+
+**Logged**: 2026-08-08T17:55:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The first window-failure regression used `Err(())` while the real GPUI completion channel carries
+a bounded error string.
+
+### Error
+
+```text
+expected `String`, found `()`
+```
+
+### Context
+
+- The test intentionally exercises the real `BrowserDownloadDialogRequest::completion` boundary.
+- The incorrect payload shape failed compilation before reaching the intended red assertion.
+
+### Suggested Fix
+
+Read the public completion type at the boundary and send a short synthetic string error.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:55:00+08:00
+- **Notes**: Sent `Err("window creation failed".into())`; the test then failed for the intended retryability reason before the implementation changed.
+
+---

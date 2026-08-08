@@ -396,8 +396,9 @@ product compatibility baseline rather than designing a replacement from memory:
   receiver and confirms successful window creation within five seconds; a headless DownloadHost,
   timeout or window-creation failure rejects it. If no pipe exists, BrowserHost launches the
   protected normal `NxTools.exe` for a window request, waits for the pipe and retries only the
-  retryable `Unavailable` startup interval while GPUI attaches its receiver; it never substitutes a
-  headless host for this path. URL/request context reaches `NewDownloadView` without entering the
+  typed, retryable consumer-not-attached startup result while GPUI attaches its receiver. Queue
+  delivery and GPUI window-creation failures are non-retryable; it never substitutes a headless host
+  for this path. URL/request context reaches `NewDownloadView` without entering the
   serializable event stream, preserving Header/Cookie/Referrer confidentiality. Direct submissions
   remain persistently idempotent and start `NxTools.exe --background` when no engine is available.
 - Official primary sources checked: Chrome
