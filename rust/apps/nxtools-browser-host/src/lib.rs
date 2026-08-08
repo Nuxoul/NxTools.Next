@@ -31,7 +31,7 @@ const MAX_REQUEST_KIND_BYTES: usize = 32;
 const MAX_EXTENSION_VERSION_BYTES: usize = 32;
 const MAX_TASK_ACTION_BYTES: usize = 16;
 const MAX_EXTENSION_LOG_EVENT_BYTES: usize = 96;
-const INTERACTIVE_DESKTOP_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const INTERACTIVE_DESKTOP_READY_TIMEOUT: Duration = Duration::from_secs(3);
 const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "bilibili_tracks_incomplete",
     "bilibili_tracks_selected",

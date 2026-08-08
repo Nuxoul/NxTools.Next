@@ -705,7 +705,7 @@ Indexer、BrowserHost 三个受保护二进制哈希；`NxTools.exe` 时间为 `
 BrowserHost 正常收到默认 `openDialog=true` 请求，但原实现把“禁止用无头 Host 接确认窗”错误
 实现成“完全禁止启动 Desktop”，在 150 ms 管道探测后直接拒绝。现改为类型化启动策略：确认窗
 请求在无管道时启动受保护的正常 `NxTools.exe`，直接提交/快照/任务动作才允许
-`NxTools.exe --background`；管道先于 GPUI 订阅者就绪时，仅对可重试 `Unavailable` 做五秒内
+`NxTools.exe --background`；管道先于 GPUI 订阅者就绪时，仅对可重试 `Unavailable` 做三秒内
 指数退避重试。启动请求、模式、PID、就绪、超时和原生错误码贯穿同一 correlation ID，且不记
 URL 或请求上下文。两条生命周期门禁均先红后绿，BrowserHost 7 项测试与定向 Clippy 已通过；
 未启动 GUI、未打包，仍待新包真实浏览器验证自动拉起和确认窗前台行为。

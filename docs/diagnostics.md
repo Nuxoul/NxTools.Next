@@ -174,7 +174,9 @@ has attached its private GPUI intake. A pipe can become available slightly befor
 `browser_native_host.dialog_consumer_waiting` records this bounded startup state, followed by
 `browser_native_host.dialog_consumer_ready` or `browser_native_host.dialog_consumer_timeout`.
 Only retryable `Unavailable` results are retried; malformed or non-retryable requests return
-immediately. Rust records `download.browser_dialog.accepted` (or
+immediately. The consumer-ready retry is capped at three seconds so the five-second pipe startup,
+three-second subscriber wait and five-second GPUI acknowledgement remain within the extension's
+15-second create-task timeout. Rust records `download.browser_dialog.accepted` (or
 `download.browser_dialog.duplicate_accepted`), and GPUI completes the correlated chain with
 `download.browser_dialog.opened` or `download.browser_dialog.open_failed`. A headless host rejects
 the request with `download.browser_dialog.unavailable`, so the browser keeps its original download.

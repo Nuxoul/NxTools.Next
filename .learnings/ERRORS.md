@@ -6144,3 +6144,43 @@ document sections.
 - **Notes**: Reapplied the four updates with exact, file-specific contexts.
 
 ---
+
+## [ERR-20260808-POWERSHELLREGEXQUOTE] powershell_rg_double_quote_parse
+
+**Logged**: 2026-08-08T17:47:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A PowerShell source-search command parsed a double-quoted `rg` regex as shell syntax.
+
+### Error
+
+```text
+ParserError: Expressions are only allowed as the first element of a pipeline.
+```
+
+### Context
+
+- The regex contained an escaped double quote and alternation inside a double-quoted PowerShell
+  string.
+- The search was read-only and made no filesystem changes.
+
+### Suggested Fix
+
+Use a single-quoted PowerShell string for literal `rg` regular expressions that contain quotes or
+alternation.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `browser_extension/nxtools-interceptor/background.js`
+
+### Resolution
+
+- **Resolved**: 2026-08-08T17:47:00+08:00
+- **Notes**: Re-ran the query with a single-quoted regex and verified the 15-second create-task timeout.
+
+---
