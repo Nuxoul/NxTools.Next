@@ -24,13 +24,14 @@ use nxtools_core::{
     DownloadTaskbarProgressOverlaySettings,
 };
 use nxtools_download::{
-    BrowserDownloadDialogRequest, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction,
-    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
-    DownloadEngine, DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe,
-    DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
-    DownloadRequest, DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot,
-    DownloadStatus, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId,
-    DownloadWeekday, RequestOrigin,
+    BrowserBlob, BrowserDownloadDialogRequest, BrowserDownloadDialogSource,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
+    DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
+    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
+    DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
+    DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
+    RequestOrigin,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -586,6 +587,63 @@ impl DownloadApplication {
         Ok(task_id)
     }
 
+    fn import_browser_blob(
+        &mut self,
+        context: BrowserBlobDialogContext,
+        save_directory: PathBuf,
+        file_name: String,
+        cx: &mut Context<Self>,
+    ) -> Result<DownloadTaskId, String> {
+        let outcome = self.execute_correlated(
+            DownloadCommand::BrowserImportBlob {
+                handoff_id: context.handoff_id,
+                blob: context.blob,
+                save_directory,
+                file_name,
+            },
+            context.correlation_id,
+        );
+        let task_id = match outcome {
+            DownloadCommandOutcome::BrowserAccepted { task_id, .. } => task_id,
+            DownloadCommandOutcome::Rejected { fault } => return Err(fault.message),
+            _ => return Err("下载引擎返回了无效的 Blob 导入结果".into()),
+        };
+        self.refresh(cx);
+        Ok(task_id)
+    }
+
+    fn discard_browser_blob(&self, context: &BrowserBlobDialogContext) {
+        let started_at = Instant::now();
+        let outcome = self.execute_correlated(
+            DownloadCommand::BrowserDiscardBlob {
+                handoff_id: context.handoff_id,
+                blob_id: context.blob.id,
+            },
+            context.correlation_id,
+        );
+        match outcome {
+            DownloadCommandOutcome::Accepted { .. } => {}
+            DownloadCommandOutcome::Rejected { fault } => warn!(
+                event = "download.browser_blob.cleanup_request_failed",
+                correlation_id = %context.correlation_id,
+                handoff_id = %context.handoff_id,
+                blob_id = %context.blob.id,
+                fault_code = ?fault.code,
+                retryable = fault.retryable,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "GPUI could not complete browser Blob staging cleanup"
+            ),
+            _ => warn!(
+                event = "download.browser_blob.cleanup_request_failed",
+                correlation_id = %context.correlation_id,
+                handoff_id = %context.handoff_id,
+                blob_id = %context.blob.id,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "GPUI received an unexpected browser Blob cleanup outcome"
+            ),
+        }
+    }
+
     pub(crate) fn pause(
         &mut self,
         task_id: DownloadTaskId,
@@ -1008,8 +1066,22 @@ impl DownloadApplication {
     ) {
         let correlation_id = dialog.correlation_id;
         let handoff_id = dialog.handoff_id;
+        let source = match dialog.source {
+            BrowserDownloadDialogSource::Download(request) => {
+                NewDownloadInitialSource::Download(request)
+            }
+            BrowserDownloadDialogSource::Blob {
+                blob,
+                save_directory,
+            } => NewDownloadInitialSource::Blob(BrowserBlobDialogContext {
+                correlation_id,
+                handoff_id,
+                blob,
+                save_directory,
+            }),
+        };
         let result = self.open_new_download_window_with_request(
-            Some(dialog.request),
+            Some(source),
             Some((correlation_id, handoff_id)),
             cx,
         );
@@ -1018,12 +1090,12 @@ impl DownloadApplication {
 
     fn open_new_download_window_with_request(
         &mut self,
-        initial_request: Option<DownloadRequest>,
+        initial_source: Option<NewDownloadInitialSource>,
         browser_context: Option<(uuid::Uuid, uuid::Uuid)>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         if let Some(window) = self.new_download_window {
-            if initial_request.is_some() {
+            if initial_source.is_some() {
                 if window.update(cx, |_, _, _| {}).is_ok() {
                     return Err("已有添加下载窗口，请先完成或关闭后重试".into());
                 }
@@ -1042,10 +1114,11 @@ impl DownloadApplication {
         let default_directory = self.default_directory.clone();
         let default_connection_limit = self.default_connection_limit();
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
-        let auto_probe = initial_request.is_some();
+        let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
+        let blob_source = matches!(initial_source, Some(NewDownloadInitialSource::Blob(_)));
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
-        let window_size = new_download_window_size(false);
+        let window_size = new_download_window_size(blob_source);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -1065,6 +1138,19 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                let blob_cleanup = match initial_source.as_ref() {
+                    Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
+                    _ => None,
+                };
+                if let Some(blob_context) = blob_cleanup {
+                    let cleanup_application = application.clone();
+                    window.on_window_should_close(cx, move |_, cx| {
+                        cleanup_application
+                            .read(cx)
+                            .discard_browser_blob(&blob_context);
+                        true
+                    });
+                }
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
                 let view = cx.new(|cx| {
                     NewDownloadView::new(
@@ -1072,7 +1158,7 @@ impl DownloadApplication {
                         default_directory,
                         default_connection_limit,
                         default_adaptive_segment_policy,
-                        initial_request,
+                        initial_source,
                         window,
                         cx,
                     )
@@ -4532,6 +4618,20 @@ fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -
         .into_any_element()
 }
 
+#[derive(Clone)]
+enum NewDownloadInitialSource {
+    Download(DownloadRequest),
+    Blob(BrowserBlobDialogContext),
+}
+
+#[derive(Clone)]
+struct BrowserBlobDialogContext {
+    correlation_id: uuid::Uuid,
+    handoff_id: uuid::Uuid,
+    blob: BrowserBlob,
+    save_directory: PathBuf,
+}
+
 struct NewDownloadView {
     theme: Theme,
     application: Entity<DownloadApplication>,
@@ -4547,6 +4647,7 @@ struct NewDownloadView {
     default_connection_limit: u16,
     default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
     external_request: Option<DownloadRequest>,
+    external_blob: Option<BrowserBlobDialogContext>,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     probing: bool,
@@ -4562,20 +4663,43 @@ impl NewDownloadView {
         default_directory: PathBuf,
         default_connection_limit: u16,
         default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
-        initial_request: Option<DownloadRequest>,
+        initial_source: Option<NewDownloadInitialSource>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let initial_url = initial_request
-            .as_ref()
-            .map_or_else(String::new, |request| request.source_url.clone());
-        let initial_directory = initial_request.as_ref().map_or_else(
-            || default_directory.to_string_lossy().into_owned(),
+        let external_request = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Download(request)) => Some(request.clone()),
+            _ => None,
+        };
+        let external_blob = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
+            _ => None,
+        };
+        let initial_url = external_request.as_ref().map_or_else(
+            || {
+                external_blob.as_ref().map_or_else(String::new, |context| {
+                    format!("Blob · 已安全接收 · {} 字节", context.blob.size)
+                })
+            },
+            |request| request.source_url.clone(),
+        );
+        let initial_directory = external_request.as_ref().map_or_else(
+            || {
+                external_blob.as_ref().map_or_else(
+                    || default_directory.to_string_lossy().into_owned(),
+                    |context| context.save_directory.to_string_lossy().into_owned(),
+                )
+            },
             |request| request.save_directory.to_string_lossy().into_owned(),
         );
-        let initial_file_name = initial_request
+        let initial_file_name = external_request
             .as_ref()
             .and_then(|request| request.file_name.clone())
+            .or_else(|| {
+                external_blob
+                    .as_ref()
+                    .map(|context| context.blob.file_name.clone())
+            })
             .unwrap_or_default();
         let url = cx.new(|cx| {
             InputState::new(window, cx)
@@ -4642,9 +4766,17 @@ impl NewDownloadView {
             committed_schedule: None,
             default_connection_limit,
             default_adaptive_segment_policy,
-            external_request: initial_request,
+            external_request,
+            external_blob: external_blob.clone(),
             confirmed_request: None,
-            probe: None,
+            probe: external_blob.as_ref().map(|context| DownloadProbe {
+                final_url: "browser-blob://staged".into(),
+                file_name: Some(context.blob.file_name.clone()),
+                total_bytes: Some(context.blob.size),
+                supports_ranges: false,
+                content_type: context.blob.media_type.clone(),
+                validator: nxtools_download::ResourceValidator::default(),
+            }),
             probing: false,
             submitting: false,
             probe_generation: 0,
@@ -4711,6 +4843,9 @@ impl NewDownloadView {
     }
 
     fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.external_blob.is_some() {
+            return;
+        }
         let request = match self.request(cx) {
             Ok(request) => request,
             Err(error) => {
@@ -4807,6 +4942,50 @@ impl NewDownloadView {
 
     fn submit(&mut self, mode: DownloadSubmitMode, window: &mut Window, cx: &mut Context<Self>) {
         if self.submitting {
+            return;
+        }
+        if let Some(blob) = self.external_blob.clone() {
+            let directory = self.directory.read(cx).value().trim().to_owned();
+            let file_name = self.file_name.read(cx).value().trim().to_owned();
+            if directory.is_empty() || file_name.is_empty() {
+                self.error = Some("保存目录和文件名不能为空".into());
+                cx.notify();
+                return;
+            }
+            let destination = PathBuf::from(&directory).join(&file_name);
+            if destination.exists() {
+                self.error = Some(format!("目标文件已存在：{}", destination.display()));
+                cx.notify();
+                return;
+            }
+            self.submitting = true;
+            self.error = None;
+            cx.notify();
+            let application = self.application.clone();
+            let source_window = window.window_handle();
+            let view = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                match application.update(cx, |application, cx| {
+                    application.import_browser_blob(blob, PathBuf::from(directory), file_name, cx)
+                }) {
+                    Ok(task_id) => {
+                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                        let application = application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.request_task_window(task_id, cx);
+                            });
+                        });
+                    }
+                    Err(message) => {
+                        let _ = view.update(cx, |view, cx| {
+                            view.submitting = false;
+                            view.error = Some(message);
+                            cx.notify();
+                        });
+                    }
+                }
+            });
             return;
         }
         let current = match self.request(cx) {
@@ -5131,6 +5310,7 @@ impl Render for NewDownloadView {
                 .into_any_element()
         });
         let body = if let Some(probe) = probe {
+            let is_blob = self.external_blob.is_some();
             let size = probe
                 .total_bytes
                 .map(format_download_size)
@@ -5219,7 +5399,11 @@ impl Render for NewDownloadView {
                                                 .text_size(px(9.5))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.success)
-                                                .child("链接可用"),
+                                                .child(if is_blob {
+                                                    "Blob 已接收"
+                                                } else {
+                                                    "链接可用"
+                                                }),
                                         ),
                                 )
                                 .child(
@@ -5231,15 +5415,20 @@ impl Render for NewDownloadView {
                                 .child(
                                     div()
                                         .text_size(px(9.0))
-                                        .text_color(if probe.supports_ranges {
+                                        .text_color(if is_blob || probe.supports_ranges {
                                             theme.success
                                         } else {
                                             theme.text_muted
                                         })
-                                        .child(if probe.supports_ranges {
-                                            "支持断点续传"
+                                        .child(if is_blob {
+                                            probe
+                                                .content_type
+                                                .clone()
+                                                .unwrap_or_else(|| "类型未知".into())
+                                        } else if probe.supports_ranges {
+                                            "支持断点续传".into()
                                         } else {
-                                            "单连接传输"
+                                            "单连接传输".into()
                                         }),
                                 ),
                         ),
@@ -6937,7 +7126,7 @@ mod tests {
                     default_directory,
                     4,
                     nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
-                    Some(initial),
+                    Some(NewDownloadInitialSource::Download(initial)),
                     window,
                     cx,
                 )
@@ -6965,6 +7154,63 @@ mod tests {
             reconstructed.speed_limit_bytes_per_second,
             expected.speed_limit_bytes_per_second
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn browser_blob_window_is_prefilled_from_staged_metadata_without_network_probe(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "browser-prefilled-blob");
+        let application_for_window = application.clone();
+        let default_directory = directory.clone();
+        let blob_id = uuid::Uuid::new_v4();
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let (_root, _window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    application_for_window,
+                    default_directory.clone(),
+                    4,
+                    nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
+                    Some(NewDownloadInitialSource::Blob(BrowserBlobDialogContext {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        handoff_id: uuid::Uuid::new_v4(),
+                        blob: BrowserBlob {
+                            id: blob_id,
+                            file_name: "captured.webm".into(),
+                            media_type: Some("video/webm".into()),
+                            size: 4096,
+                        },
+                        save_directory: default_directory,
+                    })),
+                    window,
+                    cx,
+                )
+            });
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = view_slot.borrow().clone().expect("Blob view mounted");
+        cx.read(|cx| {
+            let view = view.read(cx);
+            assert_eq!(
+                view.external_blob.as_ref().map(|value| value.blob.id),
+                Some(blob_id)
+            );
+            assert_eq!(view.file_name.read(cx).value(), "captured.webm");
+            assert_eq!(
+                view.directory.read(cx).value(),
+                directory.to_string_lossy().as_ref()
+            );
+            let probe = view.probe.as_ref().expect("Blob metadata is confirmed");
+            assert_eq!(probe.total_bytes, Some(4096));
+            assert_eq!(probe.content_type.as_deref(), Some("video/webm"));
+            assert!(!view.probing);
+        });
         let _ = std::fs::remove_dir_all(directory);
     }
 

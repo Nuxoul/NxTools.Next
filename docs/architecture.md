@@ -26,6 +26,10 @@ Browser extension
              GPUI creates the main window hidden, then PlatformHost shows it minimized/no-activate
              while the add-download window claims foreground
           -> opens NxTools.exe --background only for non-interactive download commands
+          -> Blob metadata/capability stays on Native Messaging; Blob bytes use a random-loopback,
+             one-time, current-user capability stream with 1 MiB chunks and a 2 GiB total bound
+          -> only a complete staging ID crosses download command protocol v2; the engine owns
+             confirmation, final artifact import, task persistence and cancellation cleanup
 ```
 
 The desktop process is the source of truth. Adapter processes may reconnect and be restarted

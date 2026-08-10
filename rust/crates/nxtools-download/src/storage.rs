@@ -789,6 +789,27 @@ impl SqliteDownloadStore {
         Ok(BrowserHandoffSave::Inserted(task.id()))
     }
 
+    pub(crate) fn browser_handoff_task(
+        &self,
+        handoff_id: Uuid,
+    ) -> Result<Option<DownloadTaskId>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let task_id = connection
+            .query_row(
+                "SELECT task_id FROM download_browser_handoffs WHERE handoff_id = ?1",
+                [handoff_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        task_id
+            .map(|task_id| {
+                Uuid::parse_str(&task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))
+            })
+            .transpose()
+    }
+
     pub(crate) fn save_task_with_transfer_and_eligibility(
         &self,
         task: &DownloadTask,
@@ -992,6 +1013,20 @@ impl SqliteDownloadStore {
             BEFORE UPDATE ON download_artifacts
             BEGIN
                 SELECT RAISE(ABORT, 'injected artifact update failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_browser_handoff_insert_failure(&self) -> Result<(), DownloadStorageError> {
+        self.lock()?.execute_batch(
+            r#"
+            CREATE TRIGGER reject_browser_handoff_insert_for_test
+            BEFORE INSERT ON download_browser_handoffs
+            BEGIN
+                SELECT RAISE(ABORT, 'injected browser handoff failure');
             END;
             "#,
         )?;

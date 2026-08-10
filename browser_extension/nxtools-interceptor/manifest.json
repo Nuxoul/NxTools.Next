@@ -33,7 +33,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content-script.js"],
+      "js": ["blob-transfer-policy.js", "content-script.js"],
       "run_at": "document_start",
       "all_frames": true
     }

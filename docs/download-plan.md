@@ -771,6 +771,20 @@ Desktop，而是携带专用 `--browser-dialog` 意图和同一 correlation ID�
 门禁均按先红后绿验证；本轮按用户要求不启动 GUI、不生成 EXE，仍待后续包的真实浏览器验收，
 阶段 4 checklist 保持未勾选。
 
+2026-08-10 完成阶段 4 组合项中的 Blob 纵向切片，批量任务和右键“使用 NxTools 下载”仍未
+开始，因此组合 checklist 保持未勾选。旧版 48 MiB Base64/WebSocket 缓存链已替换为
+Native Messaging 元数据控制面和随机 loopback 数据面：BrowserHost 只发放两分钟、一次性、
+256-bit 能力，扩展 main world 只把原始 Blob 读成不超过 1 MiB 的 transferable 切片，隔离世界
+content script 按单调 offset 上传，能力 URL 不进入页面 realm。Host 对总量 2 GiB、chunk、并发
+连接、活动/待处理数量、精确长度和过期时间做固定上限；失败用 retained Blob 重新触发浏览器
+下载。完整 staging 由 Rust 引擎按专用数据目录重新验证，直接模式导入默认目录；确认模式以私有
+GPUI source 预填文件名、大小、MIME 和目录，不做伪网络探测，确认后通过带失败补偿的
+移动/跨卷复制边界登记为 Completed 浏览器任务；数据库拒绝会恢复 staging，恢复失败会作为
+关联终态显式上报而不会被吞掉。关闭窗口会通过引擎删除未提交 staging，过期部分上传会实时
+释放活动/待处理配额，启动时也清理一小时旧文件。
+下载 IPC 协议随新命令升至 v2。真实 TCP→磁盘、一次性/超限/offset、引擎导入/幂等、私有对话
+框和 GPUI 预填测试均已加入；仍需与浏览器冷启动/前台修复一起打包做真实 Chrome/Edge 验收。
+
 ### 阶段 5：HLS/DASH（6–10 天）
 
 - [ ] M3U8 主列表、变体和清晰度选择。

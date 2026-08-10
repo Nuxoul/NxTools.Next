@@ -73,7 +73,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(1));
+    assert_eq!(value["protocol_version"], json!(2));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));

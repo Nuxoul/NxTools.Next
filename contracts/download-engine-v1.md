@@ -13,6 +13,9 @@ download database or execute protocol transfers.
 The Rust contract types live in `nxtools-download`. JSON uses snake-case tags and
 `protocol_version = 1`.
 
+This document remains the frozen v1 baseline. The active phase-4 additions and current protocol
+number are recorded in `download-engine-v2.md`.
+
 ## Commands
 
 Every command is wrapped in:

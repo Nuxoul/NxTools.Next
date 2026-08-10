@@ -339,9 +339,9 @@
     };
 
     window.dispatchEvent(new CustomEvent("nxtools-blob-download-request", { detail }));
-    // Blob transfer is capability-gated until the bounded stream is implemented. Capture the
-    // resource for the panel, but never suppress the page's native click/download behavior.
-    return false;
+    // The retained Blob is the fallback owner while the bounded capability upload is pending. The
+    // content bridge recreates a pass-through browser download from this same Blob on any failure.
+    return true;
   }
 
   function requestUrl(input) {
@@ -805,7 +805,7 @@
     });
   }
 
-  async function resolveBlobBytes(url) {
+  async function resolveBlobObject(url) {
     const key = String(url || "");
     let blob = objectUrlBlobs.get(key) || null;
     if (!blob) {
@@ -820,6 +820,14 @@
         blob = null;
       }
     }
+    if (!blob) {
+      return null;
+    }
+    return blob;
+  }
+
+  async function resolveBlobBytes(url) {
+    const blob = await resolveBlobObject(url);
     if (!blob) {
       return { ok: false, message: "页面已无法访问这个 Blob（可能已被回收）" };
     }
@@ -848,6 +856,105 @@
         message: result.ok ? "" : (result.message || "Blob 读取失败")
       }, "*");
     });
+  });
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) {
+      return;
+    }
+    const data = event.data;
+    if (!data || typeof data.token !== "string") {
+      return;
+    }
+    if (data.__nxtoolsBlobInfoRequest === true) {
+      resolveBlobObject(data.url).then((blob) => {
+        window.postMessage({
+          __nxtoolsBlobInfoResponse: true,
+          token: data.token,
+          ok: Boolean(blob),
+          mime: blob?.type || "",
+          size: Number(blob?.size || 0),
+          message: blob ? "" : "页面已无法访问这个 Blob（可能已被回收）"
+        }, "*");
+      });
+      return;
+    }
+    if (data.__nxtoolsBlobChunkRequest === true) {
+      const offset = Number(data.offset || 0);
+      const length = Number(data.length || 0);
+      const expectedSize = Number(data.expectedSize || 0);
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length)
+          || offset < 0 || length <= 0 || length > 1024 * 1024
+          || offset + length > expectedSize) {
+        window.postMessage({
+          __nxtoolsBlobChunkResponse: true,
+          token: data.token,
+          ok: false,
+          message: "Blob 分块请求无效"
+        }, "*");
+        return;
+      }
+      resolveBlobObject(data.url).then(async (blob) => {
+        if (!blob || blob.size !== expectedSize) {
+          return { ok: false, message: "Blob 大小与上传能力不一致" };
+        }
+        try {
+          const bytes = await blob.slice(offset, offset + length).arrayBuffer();
+          return bytes.byteLength === length
+            ? { ok: true, bytes }
+            : { ok: false, message: "Blob 分块长度不一致" };
+        } catch (error) {
+          return {
+            ok: false,
+            message: error instanceof Error ? error.message : "Blob 分块读取失败"
+          };
+        }
+      }).then((result) => {
+        const response = {
+          __nxtoolsBlobChunkResponse: true,
+          token: data.token,
+          ok: Boolean(result.ok),
+          bytes: result.ok ? result.bytes : null,
+          message: result.message || ""
+        };
+        window.postMessage(response, "*", result.ok ? [result.bytes] : []);
+      });
+      return;
+    }
+    if (data.__nxtoolsBlobFallbackRequest === true) {
+      resolveBlobObject(data.url).then((blob) => {
+        if (!blob) {
+          return { ok: false, message: "页面已无法访问这个 Blob（可能已被回收）" };
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const anchor = document.createElement("a");
+          anchor.href = objectUrl;
+          anchor.download = String(data.filename || "") || `blob-${Date.now()}`;
+          anchor.rel = "noopener";
+          anchor.setAttribute("data-nxtools-pass-through", "1");
+          anchor.style.display = "none";
+          (document.body || document.documentElement).appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+          return { ok: true, message: "已交还浏览器下载 Blob" };
+        } catch (error) {
+          URL.revokeObjectURL(objectUrl);
+          return {
+            ok: false,
+            message: error instanceof Error ? error.message : "浏览器 Blob 回退失败"
+          };
+        }
+      }).then((result) => {
+        window.postMessage({
+          __nxtoolsBlobFallbackResponse: true,
+          token: data.token,
+          ok: Boolean(result.ok),
+          message: result.message || ""
+        }, "*");
+      });
+    }
   });
 
   if (URL?.createObjectURL) {
@@ -989,7 +1096,10 @@
   document.addEventListener("click", (event) => {
     try {
       const anchor = event.target?.closest?.("a[href]");
-      dispatchBlobDownloadRequest(anchor, "click-event");
+      if (dispatchBlobDownloadRequest(anchor, "click-event")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
     } catch {
       // Click interception is best-effort.
     }

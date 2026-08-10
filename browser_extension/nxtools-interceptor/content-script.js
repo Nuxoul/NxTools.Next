@@ -897,6 +897,138 @@
     });
   }
 
+  function requestBlobPageAction(requestFlag, responseFlag, payload, timeoutMs) {
+    return new Promise((resolve) => {
+      const token = `nxblob-${Date.now()}-${++nxBlobRequestSeq}`;
+      let settled = false;
+      const cleanup = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMessage, true);
+      };
+      const onMessage = (event) => {
+        if (event.source !== window) {
+          return;
+        }
+        const data = event.data;
+        if (!data || data[responseFlag] !== true || data.token !== token) {
+          return;
+        }
+        cleanup();
+        resolve({
+          ok: Boolean(data.ok),
+          message: String(data.message || ""),
+          mime: String(data.mime || ""),
+          size: Number(data.size || 0)
+        });
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve({ ok: false, message: "页面 Blob 操作超时" });
+      }, timeoutMs);
+      window.addEventListener("message", onMessage, true);
+      window.postMessage({ [requestFlag]: true, token, ...payload }, "*");
+    });
+  }
+
+  function blobInfoFromPage(url) {
+    return requestBlobPageAction(
+      "__nxtoolsBlobInfoRequest",
+      "__nxtoolsBlobInfoResponse",
+      { url: String(url || "") },
+      3500
+    );
+  }
+
+  function requestBlobChunkFromPage(url, expectedSize, offset, length, timeoutMs = 10000) {
+    return new Promise((resolve) => {
+      const token = `nxblob-${Date.now()}-${++nxBlobRequestSeq}`;
+      let settled = false;
+      const cleanup = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMessage, true);
+      };
+      const onMessage = (event) => {
+        if (event.source !== window) {
+          return;
+        }
+        const data = event.data;
+        if (!data || data.__nxtoolsBlobChunkResponse !== true || data.token !== token) {
+          return;
+        }
+        cleanup();
+        if (!data.ok || !(data.bytes instanceof ArrayBuffer) || data.bytes.byteLength !== length) {
+          resolve({ ok: false, message: data.message || "Blob 分块读取失败" });
+          return;
+        }
+        resolve({ ok: true, bytes: data.bytes });
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve({ ok: false, message: "页面 Blob 分块读取超时" });
+      }, timeoutMs);
+      window.addEventListener("message", onMessage, true);
+      window.postMessage({
+        __nxtoolsBlobChunkRequest: true,
+        token,
+        url: String(url || ""),
+        expectedSize,
+        offset,
+        length
+      }, "*");
+    });
+  }
+
+  async function uploadBlobFromPage(url, uploadUrl, expectedSize, chunkBytes) {
+    if (!Number.isSafeInteger(expectedSize) || expectedSize <= 0
+        || !Number.isSafeInteger(chunkBytes) || chunkBytes <= 0 || chunkBytes > 1024 * 1024
+        || !/^http:\/\/127\.0\.0\.1:\d+\/nxtools\/blob\/[0-9a-f-]+\/[0-9a-f]{64}$/i.test(uploadUrl)) {
+      return { ok: false, message: "Blob 上传参数无效" };
+    }
+    let offset = 0;
+    while (offset < expectedSize) {
+      const length = Math.min(chunkBytes, expectedSize - offset);
+      const chunk = await requestBlobChunkFromPage(url, expectedSize, offset, length);
+      if (!chunk.ok) {
+        return chunk;
+      }
+      let response;
+      try {
+        response = await fetch(`${uploadUrl}?offset=${offset}`, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=UTF-8" },
+          body: chunk.bytes,
+          cache: "no-store",
+          credentials: "omit",
+          redirect: "error"
+        });
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Blob 分块上传失败" };
+      }
+      if (!response.ok) {
+        return { ok: false, message: `Blob 分块上传失败：HTTP ${response.status}` };
+      }
+      offset += length;
+    }
+    return { ok: true, message: "Blob 已安全上传到 NxTools" };
+  }
+
+  function fallbackBlobDownloadFromPage(url, filename) {
+    return requestBlobPageAction(
+      "__nxtoolsBlobFallbackRequest",
+      "__nxtoolsBlobFallbackResponse",
+      { url: String(url || ""), filename: String(filename || "") },
+      5000
+    );
+  }
+
   async function readBlobInPage(url, filename) {
     if (!String(url || "").startsWith("blob:")) {
       return { ok: false, message: "不是 Blob 链接" };
@@ -957,6 +1089,10 @@
   }
 
   async function downloadBlobInPage(url, filename) {
+    const retainedFallback = await fallbackBlobDownloadFromPage(url, filename);
+    if (retainedFallback.ok) {
+      return retainedFallback;
+    }
     const readResult = await readBlobInPage(url, filename);
     if (!readResult.ok) {
       return readResult;
@@ -2272,13 +2408,11 @@
         source: detail.source || "blob-download-click"
       }
     }, (result, lastError) => {
-      if (!lastError && result?.ok !== false) {
+      if (NxToolsBlobTransferPolicy.handoffAccepted(result, lastError)) {
         return;
       }
 
-      if (result?.fallbackToBrowser) {
-        void downloadBlobInPage(detail.url, detail.filename || document.title || "");
-      }
+      void downloadBlobInPage(detail.url, detail.filename || document.title || "");
     });
   }, true);
 
@@ -2395,6 +2529,32 @@
     if (captureResourcesEnabled) {
       sent.clear();
       scanPage(false);
+    }
+
+    if (message?.type === "content_blob_info") {
+      void blobInfoFromPage(message.url).then((result) => {
+        sendResponse({
+          ...result,
+          filename: message.filename || filenameFromUrl(message.url) || `blob-${Date.now()}`
+        });
+      }, (error) => {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : "Blob 信息读取失败"
+        });
+      });
+      return true;
+    }
+
+    if (message?.type === "content_upload_blob") {
+      void uploadBlobFromPage(message.url, message.uploadUrl, message.expectedSize, message.chunkBytes)
+        .then(sendResponse, (error) => {
+          sendResponse({
+            ok: false,
+            message: error instanceof Error ? error.message : "Blob 上传失败"
+          });
+        });
+      return true;
     }
     scheduleOverlayUpdate();
   });

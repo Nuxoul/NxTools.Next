@@ -4,6 +4,84 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260810-PACKAGETIMEOUT] release_wrapper_killed_by_outer_timeout
+
+**Logged**: 2026-08-10T11:02:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+The first Release packaging attempt used a one-second outer shell timeout, which terminated the
+wrapper before a meaningful build could start.
+
+### Resolution
+
+Confirmed that no Cargo or rustc process remained, then reran the same low-memory wrapper with its
+normal long timeout. Packaging commands must not use a short shell timeout as a substitute for
+incremental tool output.
+
+---
+
+## [ERR-20260810-PSBRACEPATHS] powershell_rg_brace_paths
+
+**Logged**: 2026-08-10T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+A read-only `rg` command used Bash brace-expansion syntax for several Rust paths, which PowerShell
+parsed as an invalid argument list.
+
+### Error
+
+```text
+ParserError: Missing argument in parameter list.
+```
+
+### Context
+
+- The command attempted to search `src/{domain.rs,storage.rs,engine.rs}` in PowerShell.
+- The corrected explicit search still guessed a nonexistent `domain.rs`; the domain types actually
+  live in `src/lib.rs` and should be located with `rg --files` before constructing a multi-file query.
+- A later search repeated the same filename-guess pattern for a nonexistent app directory and a
+  Windows `*.rs` path; both should have searched the owning directory directly.
+- The first Blob boundary-test run also assumed `tempfile.workspace = true`, but the workspace does
+  not declare that shared dependency; the test now uses a unique standard-library temp directory.
+- The first receiver implementation computed `buffer.len()` inside the same expression that
+  mutably sliced `buffer`, triggering `E0502`; compute the read limit before taking the slice.
+- A later JavaScript gate guessed `handoff-policy.test.js`; the checked-in test is
+  `safe-handoff.test.js`. Enumerate the test directory before composing the gate.
+- Refactoring the browser-dialog assertion moved its `DownloadRequest` before the duplicate-path
+  assertion reused it; clone shared test fixtures at the first consuming enum construction.
+- The first chunk-registry implementation held `pending.get_mut()` while reading/updating the
+  sibling `active` field, triggering `E0499/E0502`; use a read-only validation scope followed by
+  short disjoint mutations under the same mutex.
+- The full download suite exposed a date-sensitive scheduler test: on Monday during its 09:00–17:00
+  fixture window, schedule installation started the queue before simulated transitions ran. Pick a
+  fixture weekday that is guaranteed not to equal the real local weekday.
+- No file was changed and the failure was limited to source inspection.
+
+### Suggested Fix
+
+Pass explicit file arguments or build a PowerShell string array; do not use Bash brace expansion in
+PowerShell commands. Discover uncertain filenames with `rg --files` before searching them.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/domain.rs`, `rust/crates/nxtools-download/src/storage.rs`, `rust/crates/nxtools-download/src/engine.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T00:00:00+08:00
+- **Notes**: Replaced the brace-expanded path with explicit file arguments.
+
+---
+
 ## [ERR-20260808-MISSINGDESKTOPTESTPATH] assumed_desktop_test_directory
 
 **Logged**: 2026-08-08T19:10:00+08:00
@@ -4753,12 +4831,16 @@ the field existed; the patch mixed two distant struct anchors in one operation.
 
 - Re-read the focused source range and applied the field/type change with a smaller verified patch.
 - No source mutation occurred from the failed patch.
+- The same pattern recurred on 2026-08-10 when one BrowserHost patch mixed imports, lifecycle,
+  dispatch and function bodies across format-shifted anchors; it was split into focused patches.
 
 ### Metadata
 
 - Reproducible: unknown
 - Related Files: rust/apps/nxtools-desktop/src/quick_launch.rs
 - See Also: ERR-20260722-038
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ---
 
@@ -4779,6 +4861,11 @@ exit successfully.
 
 - Applied `cargo fmt --all`, then ran each remaining release gate as its own checked command.
 - Do not infer all chained native tools passed from the last process exit code.
+
+### Metadata
+
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ---
 

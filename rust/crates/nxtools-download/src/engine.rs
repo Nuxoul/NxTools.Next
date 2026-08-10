@@ -6,16 +6,16 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
     PreparedDownload, PreparedDownloadOutcome, TransferDirective, is_disk_full_error,
     is_file_in_use_error,
 };
-use crate::storage::StoredTransferState;
+use crate::storage::{BrowserHandoffSave, StoredTransferState};
 use crate::{
-    ArtifactAllocation, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
+    ArtifactAllocation, BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
     DownloadBatchAction, DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadCommandResult, DownloadDailySchedule, DownloadEvent,
     DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
@@ -54,14 +54,24 @@ struct DownloadEngineInner {
     browser_dialog_receiver: Mutex<Option<async_channel::Receiver<BrowserDownloadDialogRequest>>>,
     browser_dialog_handoffs: Mutex<VecDeque<uuid::Uuid>>,
     browser_dialog_available: AtomicBool,
+    browser_blob_staging_root: Option<PathBuf>,
 }
 
 #[derive(Debug)]
 pub struct BrowserDownloadDialogRequest {
     pub correlation_id: uuid::Uuid,
     pub handoff_id: uuid::Uuid,
-    pub request: DownloadRequest,
+    pub source: BrowserDownloadDialogSource,
     pub completion: std::sync::mpsc::SyncSender<Result<(), String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowserDownloadDialogSource {
+    Download(DownloadRequest),
+    Blob {
+        blob: BrowserBlob,
+        save_directory: PathBuf,
+    },
 }
 
 #[derive(Clone)]
@@ -300,8 +310,18 @@ pub fn daily_schedule_window_contains(
 
 impl DownloadEngine {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DownloadEngineError> {
+        let path = path.as_ref();
+        let staging_root = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("browser-blob-staging");
         let store = SqliteDownloadStore::open(path)?;
-        Self::from_store(store)
+        Self::from_store_with_http_and_capacity_and_staging_root(
+            store,
+            HttpDownloadClient::new()?,
+            Arc::new(SystemStorageCapacityProbe),
+            Some(staging_root),
+        )
     }
 
     pub fn open_in_memory() -> Result<Self, DownloadEngineError> {
@@ -323,6 +343,15 @@ impl DownloadEngine {
         store: SqliteDownloadStore,
         http: HttpDownloadClient,
         capacity_probe: Arc<dyn StorageCapacityProbe>,
+    ) -> Result<Self, DownloadEngineError> {
+        Self::from_store_with_http_and_capacity_and_staging_root(store, http, capacity_probe, None)
+    }
+
+    fn from_store_with_http_and_capacity_and_staging_root(
+        store: SqliteDownloadStore,
+        http: HttpDownloadClient,
+        capacity_probe: Arc<dyn StorageCapacityProbe>,
+        browser_blob_staging_root: Option<PathBuf>,
     ) -> Result<Self, DownloadEngineError> {
         let persisted_tasks = store.load_tasks()?;
         let reconciliation_id = uuid::Uuid::new_v4();
@@ -399,6 +428,7 @@ impl DownloadEngine {
                 browser_dialog_receiver: Mutex::new(Some(browser_dialog_receiver)),
                 browser_dialog_handoffs: Mutex::new(VecDeque::new()),
                 browser_dialog_available: AtomicBool::new(false),
+                browser_blob_staging_root,
             }),
         };
         if let Err(error) = engine.process_due_schedules_at(now_unix_ms()) {
@@ -602,6 +632,39 @@ impl DownloadEngine {
                     handoff_id,
                     duplicate,
                 }),
+            DownloadCommand::BrowserOpenBlobDialog {
+                handoff_id,
+                blob,
+                save_directory,
+            } => self
+                .open_browser_blob_dialog_correlated(handoff_id, blob, save_directory, request_id)
+                .map(|duplicate| DownloadCommandOutcome::BrowserDialogAccepted {
+                    handoff_id,
+                    duplicate,
+                }),
+            DownloadCommand::BrowserImportBlob {
+                handoff_id,
+                blob,
+                save_directory,
+                file_name,
+            } => {
+                self.import_browser_blob_correlated(
+                    handoff_id,
+                    blob,
+                    save_directory,
+                    file_name,
+                    request_id,
+                )
+                .map(|(task_id, duplicate)| {
+                    DownloadCommandOutcome::BrowserAccepted { task_id, duplicate }
+                })
+            }
+            DownloadCommand::BrowserDiscardBlob {
+                handoff_id,
+                blob_id,
+            } => self
+                .discard_browser_blob(handoff_id, blob_id, request_id)
+                .map(|()| DownloadCommandOutcome::Accepted { task_id: None }),
             DownloadCommand::Task { task_id, action } => self
                 .run_task_action(task_id, action, request_id)
                 .map(|()| DownloadCommandOutcome::Accepted {
@@ -1447,6 +1510,212 @@ impl DownloadEngine {
         Ok((task_id, false))
     }
 
+    fn import_browser_blob_correlated(
+        &self,
+        handoff_id: uuid::Uuid,
+        blob: BrowserBlob,
+        save_directory: PathBuf,
+        file_name: String,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        let started_at = Instant::now();
+        if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
+            info!(
+                event = "download.browser_blob.duplicate_accepted",
+                %correlation_id,
+                %handoff_id,
+                ?task_id,
+                "duplicate browser Blob import resolved to the existing task"
+            );
+            return Ok((task_id, true));
+        }
+        let staging_root = self
+            .inner
+            .browser_blob_staging_root
+            .as_ref()
+            .ok_or_else(|| {
+                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
+            })?;
+        if blob.size == 0 || blob.file_name.trim().is_empty() || file_name.trim().is_empty() {
+            return Err(DownloadRequestError::InvalidFileName.into());
+        }
+        let staged_path = staging_root.join(format!("{}.blob", blob.id));
+        let observed_size = std::fs::metadata(&staged_path)
+            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+            .len();
+        if observed_size != blob.size {
+            return Err(DownloadEngineError::Runtime(
+                "staged browser Blob size does not match its metadata".into(),
+            ));
+        }
+        std::fs::create_dir_all(&save_directory)
+            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
+        let final_path = save_directory.join(&file_name);
+        if final_path.exists() {
+            return Err(DownloadEngineError::Runtime(format!(
+                "target artifact already exists: {}",
+                final_path.display()
+            )));
+        }
+        let source_url = format!("https://browser-blob.invalid/{}", blob.id);
+        let request = DownloadRequest {
+            source_url: source_url.clone(),
+            save_directory,
+            file_name: Some(file_name.clone()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(1),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: Some(blob.size),
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+        request.validate()?;
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
+            return Ok((task_id, true));
+        }
+        import_blob_artifact(&staged_path, &final_path)?;
+        let now = now_unix_ms();
+        let mut task = DownloadTask::new(request, RequestOrigin::Browser, now);
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+            DownloadStatus::Finalizing,
+            DownloadStatus::Completed,
+        ] {
+            task.transition_to(status, now)?;
+        }
+        let transfer = StoredTransferState {
+            probe: Some(DownloadProbe {
+                final_url: source_url,
+                file_name: Some(file_name),
+                total_bytes: Some(blob.size),
+                supports_ranges: false,
+                content_type: blob.media_type,
+                validator: crate::ResourceValidator::default(),
+            }),
+            downloaded_bytes: blob.size,
+            error: None,
+            temporary_path: None,
+            final_path: Some(final_path.clone()),
+            final_committed: true,
+        };
+        let saved = persist_browser_blob_with_compensation(&staged_path, &final_path, || {
+            self.inner.store.save_browser_task_with_transfer_and_queue(
+                handoff_id, &task, &transfer, "default", false,
+            )
+        });
+        if let Err(error) = saved {
+            match error {
+                BrowserBlobPersistenceError::Persistence(error) => {
+                    warn!(
+                        event = "download.browser_blob.persistence_rejected",
+                        %correlation_id,
+                        %handoff_id,
+                        blob_id = %blob.id,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        "browser Blob database save failed and the artifact was restored to staging"
+                    );
+                    return Err(error.into());
+                }
+                BrowserBlobPersistenceError::Rollback {
+                    persistence,
+                    rollback,
+                } => {
+                    error!(
+                        event = "download.browser_blob.rollback_failed",
+                        %correlation_id,
+                        %handoff_id,
+                        blob_id = %blob.id,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        error = %rollback,
+                        "browser Blob database rejection could not restore the staged artifact"
+                    );
+                    return Err(DownloadEngineError::Runtime(format!(
+                        "browser Blob database save failed ({persistence}); artifact rollback also failed ({rollback})"
+                    )));
+                }
+            }
+        }
+        let task_id = task.id();
+        self.inner.lock_tasks()?.insert(
+            task_id,
+            EngineTaskState {
+                task,
+                transfer,
+                control: None,
+                last_progress_event: None,
+                transfer_rate: None,
+            },
+        );
+        self.inner.emit_task(task_id);
+        info!(
+            event = "download.browser_blob.imported",
+            %correlation_id,
+            %handoff_id,
+            ?task_id,
+            size = blob.size,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "browser Blob imported as a completed download artifact"
+        );
+        Ok((task_id, false))
+    }
+
+    fn discard_browser_blob(
+        &self,
+        handoff_id: uuid::Uuid,
+        blob_id: uuid::Uuid,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        let started_at = Instant::now();
+        let staging_root = self
+            .inner
+            .browser_blob_staging_root
+            .as_ref()
+            .ok_or_else(|| {
+                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
+            })?;
+        let staged_path = staging_root.join(format!("{blob_id}.blob"));
+        match std::fs::remove_file(staged_path) {
+            Ok(()) => info!(
+                event = "download.browser_blob.discarded",
+                %correlation_id,
+                %handoff_id,
+                %blob_id,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "uncommitted browser Blob staging was discarded"
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => info!(
+                event = "download.browser_blob.cleanup_completed",
+                %correlation_id,
+                %handoff_id,
+                %blob_id,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "browser Blob staging cleanup completed with no remaining artifact"
+            ),
+            Err(error) => {
+                warn!(
+                    event = "download.browser_blob.discard_failed",
+                    %correlation_id,
+                    %handoff_id,
+                    %blob_id,
+                    native_error_code = error.raw_os_error().unwrap_or_default(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "browser Blob staging cleanup failed"
+                );
+                return Err(DownloadEngineError::Runtime(error.to_string()));
+            }
+        }
+        Ok(())
+    }
+
     fn open_browser_dialog_correlated(
         &self,
         handoff_id: uuid::Uuid,
@@ -1454,6 +1723,70 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<bool, DownloadEngineError> {
         request.validate()?;
+        self.open_browser_dialog_source_correlated(
+            handoff_id,
+            BrowserDownloadDialogSource::Download(request),
+            correlation_id,
+        )
+    }
+
+    fn open_browser_blob_dialog_correlated(
+        &self,
+        handoff_id: uuid::Uuid,
+        blob: BrowserBlob,
+        save_directory: PathBuf,
+        correlation_id: uuid::Uuid,
+    ) -> Result<bool, DownloadEngineError> {
+        if self
+            .inner
+            .browser_dialog_handoffs
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?
+            .contains(&handoff_id)
+        {
+            info!(
+                event = "download.browser_dialog.duplicate_accepted",
+                %correlation_id,
+                %handoff_id,
+                "duplicate browser Blob confirmation-window request was suppressed"
+            );
+            return Ok(true);
+        }
+        let staging_root = self
+            .inner
+            .browser_blob_staging_root
+            .as_ref()
+            .ok_or_else(|| {
+                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
+            })?;
+        let staged_path = staging_root.join(format!("{}.blob", blob.id));
+        if blob.size == 0
+            || blob.file_name.trim().is_empty()
+            || std::fs::metadata(staged_path)
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+                .len()
+                != blob.size
+        {
+            return Err(DownloadEngineError::Runtime(
+                "staged browser Blob is missing or incomplete".into(),
+            ));
+        }
+        self.open_browser_dialog_source_correlated(
+            handoff_id,
+            BrowserDownloadDialogSource::Blob {
+                blob,
+                save_directory,
+            },
+            correlation_id,
+        )
+    }
+
+    fn open_browser_dialog_source_correlated(
+        &self,
+        handoff_id: uuid::Uuid,
+        source: BrowserDownloadDialogSource,
+        correlation_id: uuid::Uuid,
+    ) -> Result<bool, DownloadEngineError> {
         if !self.inner.browser_dialog_available.load(Ordering::Acquire) {
             debug!(
                 event = "download.browser_dialog.consumer_not_ready",
@@ -1484,7 +1817,7 @@ impl DownloadEngine {
             .try_send(BrowserDownloadDialogRequest {
                 correlation_id,
                 handoff_id,
-                request,
+                source,
                 completion,
             })
             .map_err(|_| DownloadEngineError::BrowserDialogUnavailable)?;
@@ -3667,6 +4000,62 @@ fn download_runtime() -> Result<&'static tokio::runtime::Runtime, DownloadEngine
         .map_err(|message| DownloadEngineError::Runtime(message.clone()))
 }
 
+fn import_blob_artifact(source: &Path, destination: &Path) -> Result<(), DownloadEngineError> {
+    match std::fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            let mut source_file = std::fs::File::open(source)
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
+            let mut destination_file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(destination)
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
+            if let Err(error) = std::io::copy(&mut source_file, &mut destination_file)
+                .and_then(|_| destination_file.sync_all())
+            {
+                let _ = std::fs::remove_file(destination);
+                return Err(DownloadEngineError::Runtime(format!(
+                    "could not import browser Blob after rename failed ({rename_error}): {error}"
+                )));
+            }
+            if let Err(error) = std::fs::remove_file(source) {
+                let _ = std::fs::remove_file(destination);
+                return Err(DownloadEngineError::Runtime(format!(
+                    "could not remove staged browser Blob after copy: {error}"
+                )));
+            }
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug)]
+enum BrowserBlobPersistenceError {
+    Persistence(DownloadStorageError),
+    Rollback {
+        persistence: DownloadStorageError,
+        rollback: Box<DownloadEngineError>,
+    },
+}
+
+fn persist_browser_blob_with_compensation(
+    staged_path: &Path,
+    final_path: &Path,
+    persist: impl FnOnce() -> Result<BrowserHandoffSave, DownloadStorageError>,
+) -> Result<BrowserHandoffSave, BrowserBlobPersistenceError> {
+    match persist() {
+        Ok(saved) => Ok(saved),
+        Err(persistence) => match import_blob_artifact(final_path, staged_path) {
+            Ok(()) => Err(BrowserBlobPersistenceError::Persistence(persistence)),
+            Err(rollback) => Err(BrowserBlobPersistenceError::Rollback {
+                persistence,
+                rollback: Box::new(rollback),
+            }),
+        },
+    }
+}
+
 fn now_unix_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3827,6 +4216,88 @@ mod tests {
         fn available_space(&self, _path: &Path) -> Option<u64> {
             Some(self.0)
         }
+    }
+
+    #[test]
+    fn browser_blob_database_failure_restores_the_staged_artifact() {
+        let directory = tempfile::tempdir().expect("create Blob rollback directory");
+        let database = directory.path().join("downloads.sqlite3");
+        let staging = directory.path().join("browser-blob-staging");
+        let destination = directory.path().join("downloads");
+        std::fs::create_dir_all(&staging).expect("create Blob staging root");
+        let blob_id = uuid::Uuid::new_v4();
+        let staged = staging.join(format!("{blob_id}.blob"));
+        std::fs::write(&staged, b"rollback").expect("stage rollback fixture");
+        let engine = DownloadEngine::open(database).expect("open download engine");
+        engine
+            .inner
+            .store
+            .inject_browser_handoff_insert_failure()
+            .expect("inject browser handoff failure");
+
+        let result = engine.import_browser_blob_correlated(
+            uuid::Uuid::new_v4(),
+            BrowserBlob {
+                id: blob_id,
+                file_name: "rollback.bin".into(),
+                media_type: Some("application/octet-stream".into()),
+                size: 8,
+            },
+            destination.clone(),
+            "rollback.bin".into(),
+            uuid::Uuid::new_v4(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read(&staged).expect("read restored staging"),
+            b"rollback"
+        );
+        assert!(!destination.join("rollback.bin").exists());
+        assert!(
+            engine
+                .command_snapshot(DownloadQuery::default())
+                .expect("read rollback snapshot")
+                .tasks
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn browser_blob_rollback_failure_is_a_typed_terminal_error() {
+        let directory = tempfile::tempdir().expect("create rollback failure directory");
+        let staged = directory.path().join("staged.blob");
+        let final_path = directory.path().join("final.bin");
+        std::fs::create_dir(&staged).expect("block the rollback destination with a directory");
+        std::fs::write(&final_path, b"committed").expect("create final artifact fixture");
+
+        let result = persist_browser_blob_with_compensation(&staged, &final_path, || {
+            Err(DownloadStorageError::LockPoisoned)
+        });
+
+        assert!(matches!(
+            result,
+            Err(BrowserBlobPersistenceError::Rollback { .. })
+        ));
+        assert!(final_path.exists());
+    }
+
+    #[test]
+    fn browser_blob_discard_failure_is_returned_from_the_real_file_boundary() {
+        let directory = tempfile::tempdir().expect("create discard failure directory");
+        let database = directory.path().join("downloads.sqlite3");
+        let staging = directory.path().join("browser-blob-staging");
+        std::fs::create_dir_all(&staging).expect("create Blob staging root");
+        let blob_id = uuid::Uuid::new_v4();
+        let blocked = staging.join(format!("{blob_id}.blob"));
+        std::fs::create_dir(&blocked).expect("block file removal with a directory");
+        let engine = DownloadEngine::open(database).expect("open download engine");
+
+        let result =
+            engine.discard_browser_blob(uuid::Uuid::new_v4(), blob_id, uuid::Uuid::new_v4());
+
+        assert!(result.is_err());
+        assert!(blocked.is_dir());
     }
 
     #[test]

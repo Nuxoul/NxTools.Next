@@ -5,13 +5,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use chrono::{Datelike, Local, Weekday};
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy, DownloadBatchAction,
-    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
-    DownloadEngine, DownloadEvent, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState, DownloadStatus,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday, RequestOrigin,
-    SqliteDownloadStore, daily_schedule_window_contains,
+    BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy,
+    DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
+    DownloadDailySchedule, DownloadEngine, DownloadEvent, DownloadQueueAction,
+    DownloadQueuePlacement, DownloadRequest, DownloadSchedule, DownloadScheduleMoment,
+    DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
+    DownloadWeekday, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
 
@@ -29,6 +30,157 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
     }
+}
+
+#[test]
+fn completed_browser_blob_is_imported_once_through_the_engine_artifact_boundary() {
+    let directory = tempfile::tempdir().expect("create Blob import directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let staging = directory.path().join("browser-blob-staging");
+    let destination = directory.path().join("downloads");
+    std::fs::create_dir_all(&staging).expect("create Blob staging root");
+    let blob_id = uuid::Uuid::new_v4();
+    let staged_path = staging.join(format!("{blob_id}.blob"));
+    std::fs::write(&staged_path, b"browser-blob").expect("stage Blob bytes");
+    let handoff_id = uuid::Uuid::new_v4();
+    let engine = DownloadEngine::open(&database).expect("open download engine");
+    let command = DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserImportBlob {
+            handoff_id,
+            blob: BrowserBlob {
+                id: blob_id,
+                file_name: "report.bin".into(),
+                media_type: Some("application/octet-stream".into()),
+                size: 12,
+            },
+            save_directory: destination.clone(),
+            file_name: "report.bin".into(),
+        },
+    };
+
+    let accepted = engine.handle_command(command.clone());
+    let task_id = match accepted.outcome {
+        DownloadCommandOutcome::BrowserAccepted {
+            task_id,
+            duplicate: false,
+        } => task_id,
+        outcome => panic!("unexpected Blob import outcome: {outcome:?}"),
+    };
+    let task = engine
+        .task(task_id)
+        .expect("read imported task")
+        .expect("imported task exists");
+    assert_eq!(task.task.status(), DownloadStatus::Completed);
+    assert_eq!(task.downloaded_bytes, 12);
+    assert_eq!(
+        std::fs::read(destination.join("report.bin")).expect("read imported Blob"),
+        b"browser-blob"
+    );
+    assert!(!staged_path.exists());
+
+    let duplicate = engine.handle_command(command);
+    assert!(matches!(
+        duplicate.outcome,
+        DownloadCommandOutcome::BrowserAccepted {
+            task_id: duplicate_task_id,
+            duplicate: true,
+        } if duplicate_task_id == task_id
+    ));
+}
+
+#[test]
+fn completed_browser_blob_reaches_the_private_dialog_without_a_network_probe() {
+    let directory = tempfile::tempdir().expect("create Blob dialog directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let staging = directory.path().join("browser-blob-staging");
+    std::fs::create_dir_all(&staging).expect("create Blob staging root");
+    let blob_id = uuid::Uuid::new_v4();
+    let handoff_id = uuid::Uuid::new_v4();
+    let staged_path = staging.join(format!("{blob_id}.blob"));
+    std::fs::write(&staged_path, b"dialog-blob").expect("stage dialog Blob");
+    let engine = DownloadEngine::open(database).expect("open download engine");
+    let dialogs = engine
+        .take_browser_dialog_receiver()
+        .expect("attach GPUI dialog consumer");
+    let command_engine = engine.clone();
+    let save_directory = directory.path().join("downloads");
+    let expected_directory = save_directory.clone();
+    let command = std::thread::spawn(move || {
+        command_engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::BrowserOpenBlobDialog {
+                handoff_id,
+                blob: BrowserBlob {
+                    id: blob_id,
+                    file_name: "dialog.bin".into(),
+                    media_type: Some("application/octet-stream".into()),
+                    size: 11,
+                },
+                save_directory,
+            },
+        })
+    });
+    let dialog = dialogs.recv_blocking().expect("receive Blob dialog");
+    match dialog.source {
+        nxtools_download::BrowserDownloadDialogSource::Blob {
+            blob,
+            save_directory,
+        } => {
+            assert_eq!(blob.id, blob_id);
+            assert_eq!(blob.size, 11);
+            assert_eq!(save_directory, expected_directory);
+        }
+        source => panic!("unexpected dialog source: {source:?}"),
+    }
+    dialog.completion.send(Ok(())).expect("confirm dialog open");
+    assert!(matches!(
+        command.join().expect("join Blob dialog command").outcome,
+        DownloadCommandOutcome::BrowserDialogAccepted {
+            duplicate: false,
+            ..
+        }
+    ));
+    let replayed = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserOpenBlobDialog {
+            handoff_id,
+            blob: BrowserBlob {
+                id: uuid::Uuid::new_v4(),
+                file_name: "replayed.bin".into(),
+                media_type: Some("application/octet-stream".into()),
+                size: 1,
+            },
+            save_directory: expected_directory,
+        },
+    });
+    assert!(matches!(
+        replayed.outcome,
+        DownloadCommandOutcome::BrowserDialogAccepted {
+            duplicate: true,
+            ..
+        }
+    ));
+    let discarded = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::BrowserDiscardBlob {
+            handoff_id,
+            blob_id,
+        },
+    });
+    assert!(matches!(
+        discarded.outcome,
+        DownloadCommandOutcome::Accepted { task_id: None }
+    ));
+    assert!(!staged_path.exists());
 }
 
 #[tokio::test]
@@ -289,7 +441,10 @@ fn browser_dialog_requires_an_attached_gpui_consumer_and_suppresses_duplicates()
         .expect("receive browser dialog request");
     assert_eq!(dialog.correlation_id, request_id);
     assert_eq!(dialog.handoff_id, handoff_id);
-    assert_eq!(dialog.request, download_request);
+    assert_eq!(
+        dialog.source,
+        nxtools_download::BrowserDownloadDialogSource::Download(download_request.clone())
+    );
     dialog
         .completion
         .send(Ok(()))
@@ -436,12 +591,18 @@ async fn manual_pause_is_not_overridden_by_the_next_daily_start() {
     let task_id = engine
         .enqueue(queued, RequestOrigin::Ui)
         .expect("queue task");
+    // set_queue_schedule reconciles against the real local clock. Pick a schedule day that cannot
+    // be today so the deterministic moments below own the first start/stop transition.
+    let schedule_day = match Local::now().weekday() {
+        Weekday::Mon => DownloadWeekday::Tuesday,
+        _ => DownloadWeekday::Monday,
+    };
     engine
         .set_queue_schedule(
             "default",
             Some(DownloadSchedule {
                 daily: DownloadDailySchedule {
-                    days: vec![DownloadWeekday::Monday],
+                    days: vec![schedule_day],
                     start_minute: 9 * 60,
                     stop_minute: 17 * 60,
                     enabled_start: true,
@@ -452,13 +613,13 @@ async fn manual_pause_is_not_overridden_by_the_next_daily_start() {
         .expect("save schedule");
     engine
         .process_daily_schedules_at(DownloadScheduleMoment {
-            weekday: DownloadWeekday::Monday,
+            weekday: schedule_day,
             minute_of_day: 18 * 60,
         })
         .expect("close queue");
     engine
         .process_daily_schedules_at(DownloadScheduleMoment {
-            weekday: DownloadWeekday::Monday,
+            weekday: schedule_day,
             minute_of_day: 9 * 60,
         })
         .expect("start queue");
@@ -477,13 +638,13 @@ async fn manual_pause_is_not_overridden_by_the_next_daily_start() {
 
     engine
         .process_daily_schedules_at(DownloadScheduleMoment {
-            weekday: DownloadWeekday::Monday,
+            weekday: schedule_day,
             minute_of_day: 18 * 60,
         })
         .expect("close next window");
     engine
         .process_daily_schedules_at(DownloadScheduleMoment {
-            weekday: DownloadWeekday::Monday,
+            weekday: schedule_day,
             minute_of_day: 9 * 60,
         })
         .expect("open next window");

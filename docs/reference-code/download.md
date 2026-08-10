@@ -384,10 +384,34 @@ product compatibility baseline rather than designing a replacement from memory:
   a host-to-browser message at 1 MiB. Firefox uses the same extension API but its host manifest uses
   exact `allowed_extensions`. NxTools.Next therefore applies a smaller product-level bound to all
   control messages and never sends Blob bytes through that channel.
-- Large Blob transfer remains a later Phase 4 slice: Native Messaging carries only metadata and an
-  ephemeral capability; a separate current-user-only bounded stream stages bytes without base64
-  amplification. The ordinary-download slice does not expose a generic unauthenticated loopback
-  HTTP/WebSocket API while waiting for Blob support.
+- Reverified on 2026-08-10 before the bounded Blob slice: the old page hook retains the `Blob`
+  behind `URL.createObjectURL`, converts up to 48 MiB to a data URL, and sends `blobBase64` through
+  the extension WebSocket. `LocalApiService::PrepareBrowserBlobRequest` decodes the entire payload
+  with `Convert.FromBase64String`, writes a cache file, replaces the request URL with its broad
+  loopback `/api/browser-blobs/...` endpoint, and then lets the existing `openDialog` path prefill
+  the ordinary add-download window. This verifies the product behavior to preserve (revoked Blob
+  URLs remain downloadable and `openDialog=true` still confirms destination/name) while also
+  confirming the legacy memory amplification, 48 MiB ceiling and unauthenticated local-server
+  boundary that NxTools.Next must not reproduce.
+- The NxTools.Next Blob slice keeps Native Messaging as a metadata/control plane. A prepare request
+  creates a short-lived, one-use, high-entropy capability scoped to one declared Blob size; the
+  page-owned `Blob` is read as bounded transferable `ArrayBuffer` slices; the isolated content
+  script, not the untrusted page realm, POSTs those chunks to a random loopback port and streams
+  them directly into the current user's application cache without Base64 or a generic API. The
+  listener accepts only the exact capability path, monotonic offset, bounded chunk/total lengths,
+  one upload, a short rolling deadline and small connection/active-transfer limits. Capability
+  values, page URLs and bytes are never exposed to page scripts or logged. Only a
+  completely received staging file may be committed through the typed Rust download command.
+  Failed prepare/upload/commit, timeout, size mismatch or host loss leaves the page's browser
+  fallback available.
+- The Rust engine, not BrowserHost or C#, owns the committed task and final artifact policy. For
+  `openDialog=true`, the staged Blob reaches GPUI as a private typed dialog source with prefilled
+  name/size and no network probe; confirmation imports it to the selected destination and records a
+  completed browser-origin task through a compensated artifact/database commit. A database failure
+  restores the artifact to staging; rollback failure is an explicit correlated terminal error and
+  is never swallowed. Direct mode imports to the configured default download directory. The engine
+  accepts staging paths only from its dedicated application-data staging root and verifies the exact
+  file size again before the move/copy boundary.
 - Reverified against old `MainWindowViewModel::ConfigureLocalApi` and
   `OpenDownloadDialogFromLocalApi` after the first packaged browser test: `openDialog=true` means
   “prefill and open the add-download confirmation window, then parse”, not “persist a `created`

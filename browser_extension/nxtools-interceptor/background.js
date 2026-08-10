@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("handoff-policy.js", "capture-policy.js");
+importScripts("handoff-policy.js", "capture-policy.js", "blob-transfer-policy.js");
 
 const NATIVE_HOST_NAME = "com.nxtools.next.browser";
 const BROWSER_PROTOCOL_VERSION = 1;
@@ -1074,7 +1074,9 @@ function handleDesktopMessage(message) {
   pendingDesktopRequests.delete(requestId);
 
   if (message.ok === false) {
-    pending.reject(new Error(message.message || "NxTools 返回失败"));
+    const error = new Error(message.message || "NxTools 返回失败");
+    error.nativeRejected = true;
+    pending.reject(error);
     return;
   }
 
@@ -1176,13 +1178,12 @@ async function ensureDesktopConnection(force = false) {
   return desktopConnectPromise;
 }
 
-async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000) {
+async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, requestId = nextRequestId()) {
   const port = await ensureDesktopConnection();
   if (!port) {
     throw new Error("NxTools Native Messaging 未连接");
   }
 
-  const requestId = nextRequestId();
   const message = {
     protocolVersion: BROWSER_PROTOCOL_VERSION,
     type,
@@ -2630,9 +2631,109 @@ async function readBlobResourceViaContentScript(resource) {
 }
 
 async function sendBlobResourceViaContentScript(resource) {
+  const tabId = Number(resource?.tabId || lastActiveTabId || 0);
+  if (!tabId || !String(resource?.url || "").startsWith("blob:")) {
+    return { ok: false, fallbackToBrowser: true, message: "Blob 资源只能在原网页中读取" };
+  }
+  const frameId = Number.isInteger(resource.frameId) ? resource.frameId : undefined;
+  const target = Number.isInteger(frameId) ? { frameId } : {};
+  const infoMessage = {
+    type: "content_blob_info",
+    url: resource.url,
+    filename: buildResourceFileName(resource)
+  };
+  let infoResult = await sendMessageToTab(tabId, infoMessage, target);
+  if (!(infoResult.ok && infoResult.response?.ok) && Number.isInteger(frameId)) {
+    const frameResults = await sendMessageToTabFrames(tabId, infoMessage);
+    infoResult = frameResults.find((item) => item.ok && item.response?.ok) || infoResult;
+  }
+  if (!(infoResult.ok && infoResult.response?.ok)) {
+    return {
+      ok: false,
+      fallbackToBrowser: true,
+      message: infoResult.response?.message || infoResult.message || "页面脚本无法读取这个 Blob"
+    };
+  }
+
+  const size = Number(infoResult.response.size || resource.size || 0);
+  const fileName = cleanFileName(infoResult.response.filename)
+    || buildResourceFileName(resource)
+    || `blob-${Date.now()}.bin`;
+  const mediaType = String(infoResult.response.mime || resource.mime || "application/octet-stream");
+  const metadata = NxToolsBlobTransferPolicy.boundedMetadata(size, fileName, mediaType);
+  if (!metadata) {
+    return { ok: false, fallbackToBrowser: true, message: "Blob 元数据超出 NxTools 有界传输限制" };
+  }
+  const correlationId = nextRequestId();
+  const handoffId = nextRequestId();
+  let prepared;
+  try {
+    prepared = await sendDesktopRequest("prepare_blob_upload", {
+      payload: { ...metadata, handoffId }
+    }, 15000, correlationId);
+  } catch (error) {
+    return {
+      ok: false,
+      fallbackToBrowser: true,
+      message: error instanceof Error ? error.message : "NxTools 未准备 Blob 上传通道"
+    };
+  }
+  const capability = NxToolsBlobTransferPolicy.uploadCapability(prepared, metadata.size);
+  if (!capability) {
+    return { ok: false, fallbackToBrowser: true, message: "NxTools 返回了无效的 Blob 上传能力" };
+  }
+  const { uploadId, uploadUrl, chunkBytes } = capability;
+
+  const uploadMessage = {
+    type: "content_upload_blob",
+    url: resource.url,
+    uploadUrl,
+    expectedSize: metadata.size,
+    chunkBytes
+  };
+  let uploadResult = await sendMessageToTab(tabId, uploadMessage, target);
+  if (!(uploadResult.ok && uploadResult.response?.ok) && Number.isInteger(frameId)) {
+    const frameResults = await sendMessageToTabFrames(tabId, uploadMessage);
+    uploadResult = frameResults.find((item) => item.ok && item.response?.ok) || uploadResult;
+  }
+  if (!(uploadResult.ok && uploadResult.response?.ok)) {
+    return {
+      ok: false,
+      fallbackToBrowser: true,
+      message: uploadResult.response?.message || uploadResult.message || "Blob 上传失败"
+    };
+  }
+
+  const settings = await getSettings();
+  let commitError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const committed = await sendDesktopRequest("commit_blob_upload", {
+        payload: {
+          uploadId,
+          handoffId,
+          fileName: metadata.fileName,
+          mediaType: metadata.mediaType,
+          size: metadata.size,
+          openDialog: settings.openDialog
+        }
+      }, 20000, correlationId);
+      return NxToolsBlobTransferPolicy.browserFallback(
+        committed,
+        handoffId,
+        "NxTools 拒绝接管 Blob 下载"
+      );
+    } catch (error) {
+      commitError = error;
+      if (error?.nativeRejected === true) {
+        break;
+      }
+    }
+  }
   return {
     ok: false,
-    message: "Blob 大对象通道尚未启用；当前版本不会把 Blob/Base64 塞入 Native Messaging"
+    fallbackToBrowser: true,
+    message: commitError instanceof Error ? commitError.message : "NxTools 未接受 Blob 下载"
   };
 }
 

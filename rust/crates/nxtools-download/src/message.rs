@@ -9,7 +9,15 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 1;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserBlob {
+    pub id: Uuid,
+    pub file_name: String,
+    pub media_type: Option<String>,
+    pub size: u64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadCommandEnvelope {
@@ -40,6 +48,21 @@ pub enum DownloadCommand {
     BrowserOpenDialog {
         handoff_id: Uuid,
         request: DownloadRequest,
+    },
+    BrowserOpenBlobDialog {
+        handoff_id: Uuid,
+        blob: BrowserBlob,
+        save_directory: std::path::PathBuf,
+    },
+    BrowserImportBlob {
+        handoff_id: Uuid,
+        blob: BrowserBlob,
+        save_directory: std::path::PathBuf,
+        file_name: String,
+    },
+    BrowserDiscardBlob {
+        handoff_id: Uuid,
+        blob_id: Uuid,
     },
     Task {
         task_id: DownloadTaskId,

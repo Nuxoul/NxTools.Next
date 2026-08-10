@@ -16,8 +16,8 @@ mod storage;
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
 pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
 pub use engine::{
-    BrowserDownloadDialogRequest, DownloadEngine, DownloadEngineError, DownloadEngineTask,
-    DownloadScheduleMoment, daily_schedule_window_contains,
+    BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
+    DownloadEngineTask, DownloadScheduleMoment, daily_schedule_window_contains,
 };
 pub use http::{
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
@@ -26,7 +26,7 @@ pub use http::{
     HttpDownloadError,
 };
 pub use message::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
     DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,

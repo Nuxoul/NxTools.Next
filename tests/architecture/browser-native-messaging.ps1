@@ -49,8 +49,35 @@ Assert-Contains $handoffPolicy 'response.handoffId !== expectedHandoffId' `
     'Desktop acceptance must echo the exact handoff ID before browser cancellation.'
 
 $pageHook = Get-Content -LiteralPath (Join-Path $extension 'page-hook.js') -Raw
-Assert-Contains $pageHook 'never suppress the page''s native click/download behavior' `
-    'Blob capture must preserve the browser download while bounded transfer is unavailable.'
+Assert-Contains $pageHook '__nxtoolsBlobChunkRequest' `
+    'Blob bytes must cross the page boundary only as bounded transferable chunks.'
+Assert-Contains $pageHook '__nxtoolsBlobFallbackRequest' `
+    'Blob interception must retain an explicit browser-download fallback.'
+Assert-Contains $pageHook 'blob.slice(offset, offset + length).arrayBuffer()' `
+    'Blob upload must read bounded slices without Base64 Native Messaging amplification.'
+if ($pageHook.Contains('uploadUrl', [StringComparison]::Ordinal)) {
+    throw 'The one-time local upload capability must remain outside the untrusted page realm.'
+}
+
+$blobPolicy = Get-Content -LiteralPath (Join-Path $extension 'blob-transfer-policy.js') -Raw
+Assert-Contains $blobPolicy 'MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024' `
+    'Browser Blob handoff must enforce the same fixed size ceiling as BrowserHost.'
+Assert-Contains $blobPolicy 'http:\/\/127\.0\.0\.1:' `
+    'The extension must reject Blob capabilities outside the exact loopback upload route.'
+Assert-Contains $blobPolicy 'result?.ok === true' `
+    'Only an explicit positive Blob handoff response may suppress the retained browser fallback.'
+$contentScript = Get-Content -LiteralPath (Join-Path $extension 'content-script.js') -Raw
+Assert-Contains $contentScript 'NxToolsBlobTransferPolicy.handoffAccepted(result, lastError)' `
+    'Runtime disconnects and missing service-worker responses must trigger the retained Blob fallback.'
+$background = Get-Content -LiteralPath (Join-Path $extension 'background.js') -Raw
+Assert-Contains $background '}, 15000, correlationId)' `
+    'Blob prepare must preserve the shared feature correlation ID.'
+Assert-Contains $background '}, 20000, correlationId)' `
+    'Blob commit must preserve the same feature correlation ID.'
+Assert-Contains $background 'for (let attempt = 0; attempt < 2; attempt += 1)' `
+    'An uncertain Blob commit must replay once with the same handoff and correlation before fallback.'
+Assert-Contains $background 'error?.nativeRejected === true' `
+    'A deterministic native rejection must not be retried as a startup uncertainty.'
 
 $nativeHostSource = Get-Content -LiteralPath `
     (Join-Path $root 'rust\apps\nxtools-browser-host\src\lib.rs') -Raw
@@ -60,6 +87,12 @@ Assert-Contains $nativeHostSource 'DownloadCommand::BrowserSubmit' `
     'Native host must submit through the Rust download command boundary.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenDialog' `
     'Native host must distinguish a GPUI confirmation-window request from direct task creation.'
+Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenBlobDialog' `
+    'Completed Blob staging must preserve the GPUI confirmation-window preference.'
+Assert-Contains $nativeHostSource 'DownloadCommand::BrowserImportBlob' `
+    'BrowserHost must commit Blob staging through the Rust artifact boundary.'
+Assert-Contains $nativeHostSource 'browser_native_host.blob_staging_cleanup_failed' `
+    'BrowserHost must report correlated staging cleanup failures instead of swallowing them.'
 Assert-Contains $nativeHostSource 'DesktopStartMode::for_browser_request(open_dialog)' `
     'A confirmation-window request must not silently start a headless download host.'
 Assert-Contains $nativeHostSource 'Self::Interactive => &["--browser-dialog"]' `
@@ -91,6 +124,14 @@ Assert-Contains $downloadEngine 'take_browser_dialog_receiver' `
     'Sensitive browser dialog requests must use the in-process GPUI channel.'
 Assert-Contains $downloadEngine 'browser_dialog_available' `
     'Headless download hosts must reject confirmation-window requests.'
+Assert-Contains $downloadEngine 'browser_blob_staging_root' `
+    'The download engine must derive Blob paths from its dedicated staging root.'
+Assert-Contains $downloadEngine 'import_blob_artifact' `
+    'The download engine must own the final Blob artifact move/copy boundary.'
+Assert-Contains $downloadEngine 'download.browser_blob.discard_failed' `
+    'The engine must report correlated native failures while discarding unconfirmed Blob staging.'
+Assert-Contains $downloadEngine 'download.browser_blob.rollback_failed' `
+    'The engine must report a database/artifact compensation failure as a distinct terminal.'
 
 $desktopDownloads = Get-Content -LiteralPath `
     (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads.rs') -Raw

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use nxtools_core::{AppConfig, AppPaths};
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy, DownloadCommand,
+    BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy, DownloadCommand,
     DownloadCommandOutcome, DownloadCommandResult, DownloadFaultCode, DownloadQuery,
     DownloadRequest, DownloadRequestHeader, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId,
     RequestOrigin,
@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 use uuid::Uuid;
+
+mod blob_upload;
+use blob_upload::{BlobUploadService, MAX_BLOB_CHUNK_BYTES, MAX_BLOB_UPLOAD_BYTES};
 
 pub const BROWSER_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_NATIVE_MESSAGE_BYTES: usize = 256 * 1024;
@@ -147,6 +150,30 @@ struct BrowserExtensionLogPayload {
     event: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserBlobPreparePayload {
+    handoff_id: String,
+    size: u64,
+    #[serde(default)]
+    file_name: String,
+    #[serde(default)]
+    media_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserBlobCommitPayload {
+    upload_id: String,
+    handoff_id: String,
+    file_name: String,
+    #[serde(default)]
+    media_type: String,
+    size: u64,
+    #[serde(default)]
+    open_dialog: bool,
+}
+
 fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Result<()> {
     bounded(
         "extensionLog.event",
@@ -193,13 +220,17 @@ pub fn run() -> Result<()> {
     );
 
     let executable = std::env::current_exe().context("failed to locate browser native host")?;
+    let blob_uploads = BlobUploadService::start(paths.data_dir.join("browser-blob-staging"))?;
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
     while let Some(bytes) = read_native_message(&mut input)? {
         let started = Instant::now();
         let request_id = request_id_from_bytes(&bytes);
         let request_kind = request_kind_from_bytes(&bytes);
-        if matches!(request_kind.as_str(), "create_task" | "task_action") {
+        if matches!(
+            request_kind.as_str(),
+            "create_task" | "task_action" | "prepare_blob_upload" | "commit_blob_upload"
+        ) {
             info!(
                 event = "browser_native_host.request_received",
                 %request_id,
@@ -208,7 +239,7 @@ pub fn run() -> Result<()> {
             );
         }
         let response = match serde_json::from_slice::<BrowserRequest>(&bytes) {
-            Ok(request) => handle_request(request, &paths, &executable),
+            Ok(request) => handle_request(request, &paths, &executable, &blob_uploads),
             Err(error) => Err(anyhow::anyhow!("invalid browser request: {error}")),
         }
         .unwrap_or_else(|error| {
@@ -251,6 +282,7 @@ fn handle_request(
     request: BrowserRequest,
     paths: &AppPaths,
     executable: &Path,
+    blob_uploads: &BlobUploadService,
 ) -> Result<BrowserResponse> {
     let request_id = if request.request_id.is_empty() {
         Uuid::new_v4().to_string()
@@ -279,10 +311,14 @@ fn handle_request(
             Some(json!({
                 "hostVersion": env!("CARGO_PKG_VERSION"),
                 "extensionVersion": request.extension_version,
-                "capabilities": ["ordinary_download", "task_snapshot", "task_action"]
+                "capabilities": ["ordinary_download", "blob_upload_v1", "task_snapshot", "task_action"]
             })),
         )),
         "create_task" => submit_download(request_id, request.payload, paths, executable),
+        "prepare_blob_upload" => prepare_blob_upload(request_id, request.payload, blob_uploads),
+        "commit_blob_upload" => {
+            commit_blob_upload(request_id, request.payload, paths, executable, blob_uploads)
+        }
         "get_snapshot" => snapshot(request_id, executable),
         "task_action" => task_action(request_id, request.task_id, request.action, executable),
         "extension_log" => {
@@ -299,6 +335,281 @@ fn handle_request(
         }
         kind => bail!("unsupported browser request type '{kind}'"),
     }
+}
+
+fn prepare_blob_upload(
+    request_id: String,
+    payload: Value,
+    blob_uploads: &BlobUploadService,
+) -> Result<BrowserResponse> {
+    let started_at = Instant::now();
+    let payload: BrowserBlobPreparePayload = serde_json::from_value(payload)
+        .context("browser Blob prepare payload has an invalid shape")?;
+    validate_blob_metadata(payload.size, &payload.file_name, &payload.media_type)?;
+    let correlation_id = correlation_id(&request_id)?;
+    let handoff_id = Uuid::parse_str(&payload.handoff_id).context("handoffId must be a UUID")?;
+    let capability = blob_uploads.prepare(payload.size, correlation_id, handoff_id)?;
+    info!(
+        event = "browser_native_host.blob_upload_prepared",
+        %correlation_id,
+        %handoff_id,
+        upload_id = %capability.id,
+        size = payload.size,
+        expires_after_ms = capability.expires_after_ms,
+        elapsed_ms = started_at.elapsed().as_millis(),
+        "bounded browser Blob upload capability prepared"
+    );
+    Ok(BrowserResponse::ok(
+        request_id,
+        Some(json!({
+            "uploadId": capability.id,
+            "uploadUrl": format!("http://{}{}", blob_uploads.address(), capability.path),
+            "maxBytes": MAX_BLOB_UPLOAD_BYTES,
+            "chunkBytes": MAX_BLOB_CHUNK_BYTES,
+            "expiresAfterMs": capability.expires_after_ms
+        })),
+    ))
+}
+
+fn commit_blob_upload(
+    request_id: String,
+    payload: Value,
+    paths: &AppPaths,
+    executable: &Path,
+    blob_uploads: &BlobUploadService,
+) -> Result<BrowserResponse> {
+    let started_at = Instant::now();
+    let payload: BrowserBlobCommitPayload = serde_json::from_value(payload)
+        .context("browser Blob commit payload has an invalid shape")?;
+    validate_blob_metadata(payload.size, &payload.file_name, &payload.media_type)?;
+    let upload_id = Uuid::parse_str(&payload.upload_id).context("uploadId must be a UUID")?;
+    let handoff_id = Uuid::parse_str(&payload.handoff_id).context("handoffId must be a UUID")?;
+    let correlation_id = correlation_id(&request_id)?;
+    let config = AppConfig::load_or_create(paths)?;
+    let save_directory = if config.download.default_directory.trim().is_empty() {
+        default_download_directory(paths)
+    } else {
+        PathBuf::from(&config.download.default_directory)
+    };
+    let candidate =
+        blob_uploads.commit_candidate(upload_id, payload.size, correlation_id, handoff_id)?;
+    let mut client = match connect_or_start(
+        executable,
+        DesktopStartMode::for_browser_request(payload.open_dialog),
+        correlation_id,
+    ) {
+        Ok(client) => client,
+        Err(error) => {
+            blob_uploads.forget(upload_id);
+            cleanup_blob_staging(
+                &candidate.path,
+                correlation_id,
+                handoff_id,
+                upload_id,
+                "desktop_connect_failed",
+                started_at,
+            );
+            return Err(error);
+        }
+    };
+    let blob = BrowserBlob {
+        id: upload_id,
+        file_name: payload.file_name.clone(),
+        media_type: non_empty(payload.media_type),
+        size: payload.size,
+    };
+    let command = nxtools_download::DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: correlation_id,
+        origin: RequestOrigin::Browser,
+        command: if payload.open_dialog {
+            DownloadCommand::BrowserOpenBlobDialog {
+                handoff_id,
+                blob,
+                save_directory,
+            }
+        } else {
+            DownloadCommand::BrowserImportBlob {
+                handoff_id,
+                blob,
+                save_directory,
+                file_name: payload.file_name,
+            }
+        },
+    };
+    let result = if payload.open_dialog {
+        command_browser_dialog_when_ready(&mut client, command)
+    } else {
+        client.command(command)
+    };
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            blob_uploads.forget(upload_id);
+            cleanup_blob_staging(
+                &candidate.path,
+                correlation_id,
+                handoff_id,
+                upload_id,
+                "engine_command_failed",
+                started_at,
+            );
+            return Err(error);
+        }
+    };
+    blob_uploads.forget(upload_id);
+    match result.outcome {
+        DownloadCommandOutcome::BrowserAccepted { task_id, duplicate } => {
+            if duplicate && candidate.registered {
+                cleanup_blob_staging(
+                    &candidate.path,
+                    correlation_id,
+                    handoff_id,
+                    upload_id,
+                    "duplicate_import",
+                    started_at,
+                );
+            }
+            info!(
+                event = "browser_native_host.blob_import_accepted",
+                %correlation_id,
+                %handoff_id,
+                %upload_id,
+                ?task_id,
+                duplicate,
+                size = payload.size,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "completed browser Blob accepted by the download engine"
+            );
+            Ok(BrowserResponse::accepted(
+                request_id, handoff_id, task_id, duplicate, false,
+            ))
+        }
+        DownloadCommandOutcome::BrowserDialogAccepted { duplicate, .. } => {
+            if duplicate && candidate.registered {
+                cleanup_blob_staging(
+                    &candidate.path,
+                    correlation_id,
+                    handoff_id,
+                    upload_id,
+                    "duplicate_dialog",
+                    started_at,
+                );
+            }
+            info!(
+                event = "browser_native_host.blob_dialog_accepted",
+                %correlation_id,
+                %handoff_id,
+                %upload_id,
+                duplicate,
+                size = payload.size,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "completed browser Blob confirmation window accepted"
+            );
+            Ok(BrowserResponse::dialog_accepted(
+                request_id, handoff_id, duplicate,
+            ))
+        }
+        DownloadCommandOutcome::Rejected { fault } => {
+            cleanup_blob_staging(
+                &candidate.path,
+                correlation_id,
+                handoff_id,
+                upload_id,
+                "engine_rejected",
+                started_at,
+            );
+            warn!(
+                event = "browser_native_host.blob_import_rejected",
+                %correlation_id,
+                %handoff_id,
+                %upload_id,
+                fault_code = ?fault.code,
+                retryable = fault.retryable,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "completed browser Blob was rejected by the download engine"
+            );
+            Ok(BrowserResponse::failed(
+                request_id,
+                "blob_import_rejected",
+                fault.message,
+            ))
+        }
+        _ => {
+            cleanup_blob_staging(
+                &candidate.path,
+                correlation_id,
+                handoff_id,
+                upload_id,
+                "unexpected_engine_result",
+                started_at,
+            );
+            bail!("download engine returned an unexpected Blob import result")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlobStagingCleanupOutcome {
+    Removed,
+    Missing,
+    Failed(i32),
+}
+
+fn cleanup_blob_staging(
+    path: &Path,
+    correlation_id: Uuid,
+    handoff_id: Uuid,
+    upload_id: Uuid,
+    reason: &'static str,
+    started_at: Instant,
+) -> BlobStagingCleanupOutcome {
+    match std::fs::remove_file(path) {
+        Ok(()) => {
+            info!(
+                event = "browser_native_host.blob_staging_cleanup_completed",
+                %correlation_id,
+                %handoff_id,
+                %upload_id,
+                reason,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "browser Blob staging cleanup completed"
+            );
+            BlobStagingCleanupOutcome::Removed
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            BlobStagingCleanupOutcome::Missing
+        }
+        Err(error) => {
+            let native_error_code = error.raw_os_error().unwrap_or_default();
+            warn!(
+                event = "browser_native_host.blob_staging_cleanup_failed",
+                %correlation_id,
+                %handoff_id,
+                %upload_id,
+                reason,
+                native_error_code,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "browser Blob staging cleanup failed"
+            );
+            BlobStagingCleanupOutcome::Failed(native_error_code)
+        }
+    }
+}
+
+fn validate_blob_metadata(size: u64, file_name: &str, media_type: &str) -> Result<()> {
+    if size == 0 || size > MAX_BLOB_UPLOAD_BYTES {
+        bail!("Blob size is outside the bounded upload limit");
+    }
+    bounded("fileName", file_name, MAX_FILE_NAME_BYTES)?;
+    if file_name.trim().is_empty() {
+        bail!("Blob fileName is required");
+    }
+    bounded("mediaType", media_type, 256)?;
+    if media_type.contains(['\r', '\n']) {
+        bail!("Blob mediaType is invalid");
+    }
+    Ok(())
 }
 
 fn submit_download(
@@ -857,6 +1168,43 @@ impl BrowserResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blob_staging_cleanup_reports_real_remove_success_and_failure() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-browser-host-cleanup-{}-{}",
+            std::process::id(),
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).expect("create cleanup fixture");
+        let file = directory.join("duplicate.blob");
+        std::fs::write(&file, b"duplicate").expect("create duplicate staging");
+        assert_eq!(
+            cleanup_blob_staging(
+                &file,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "duplicate_import",
+                Instant::now(),
+            ),
+            BlobStagingCleanupOutcome::Removed
+        );
+        let blocked = directory.join("blocked.blob");
+        std::fs::create_dir(&blocked).expect("create blocked cleanup target");
+        assert!(matches!(
+            cleanup_blob_staging(
+                &blocked,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "duplicate_import",
+                Instant::now(),
+            ),
+            BlobStagingCleanupOutcome::Failed(_)
+        ));
+        std::fs::remove_dir_all(directory).expect("remove cleanup fixture");
+    }
 
     #[test]
     fn native_message_round_trip_uses_little_endian_length_prefix() {

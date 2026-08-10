@@ -161,6 +161,25 @@ The native host records `browser_native_host.started`, one bounded request outco
 `download.browser_handoff.duplicate_accepted`. Both keep the handoff ID, task ID and correlation
 ID but never record the URL, file name, Referrer, headers, Cookie or Authorization value.
 
+Blob handoff adds `browser_native_host.blob_upload_prepared`, then one
+`browser_native_host.blob_upload_completed`, `browser_native_host.blob_upload_failed` or
+`browser_native_host.blob_upload_expired` data-plane terminal. Commit ends in
+`browser_native_host.blob_import_accepted`, `browser_native_host.blob_dialog_accepted` or
+`browser_native_host.blob_import_rejected`, followed by the engine terminal
+`download.browser_blob.imported`. Cancellation of an unconfirmed dialog uses
+`download.browser_blob.discarded` or the idempotent `download.browser_blob.cleanup_completed`.
+Filesystem cleanup failures use `browser_native_host.blob_staging_cleanup_failed` or
+`download.browser_blob.discard_failed` with the native error code; a database rejection whose
+artifact compensation also fails uses `download.browser_blob.rollback_failed`.
+Startup cleanup without a live request uses `browser_native_host.blob_stale_cleanup_failed` with
+only the bounded artifact kind and native error code. Data-plane write failures additionally carry
+a fixed `failure_kind` such as `staging_open`, `staging_write`, `staging_flush` or `socket_read`.
+Prepare, upload, commit and dialog cleanup preserve one correlation ID and handoff ID. These events
+retain only correlation/handoff/upload/task IDs, bounded byte count, elapsed time and outcome. The
+one-time capability/token, loopback URL, page/blob URL, filename, MIME payload and bytes are never
+logged. Rejected chunks are coalesced into the upload's single bounded failure/expiry terminal rather
+than per-chunk payload diagnostics.
+
 When the extension requests its legacy confirmation-window behavior and no Desktop pipe exists,
 BrowserHost records `browser_native_host.desktop_start_requested`, starts the protected sibling as
 `NxTools.exe --browser-dialog --browser-correlation-id <id>`, and records
