@@ -4,6 +4,128 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260810-PROBESOURCEGATE] probe_source_contract_tuple_shape
+
+**Logged**: 2026-08-10T14:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A source-contract test coupled filename hydration to the old one-line tuple formatting.
+
+### Error
+
+```text
+probe_completion_hydrates_the_visible_file_name_input: resolved server filename must be written
+```
+
+### Context
+
+- The production callback still carries `file_name`, `resolved_file_name` and calls
+  `input.set_value`; adding typed probe geometry formatted the tuple across multiple lines.
+
+### Suggested Fix
+
+Keep the contract focused on the semantic tokens rather than one exact tuple line shape.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T14:35:00+08:00
+- **Notes**: The assertion now checks the carried values and visible input update independently.
+
+---
+
+## [ERR-20260810-BLOBRESET] browser_host_blob_fixture_connection_reset
+
+**Logged**: 2026-08-10T14:30:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The full workspace suite intermittently saw Win32 10054 while reading a loopback Blob fixture
+response after 21 other BrowserHost tests passed.
+
+### Error
+
+```text
+sequential_chunks_require_the_authoritative_offset: read Blob response: Os { code: 10054, kind: ConnectionReset }
+```
+
+### Context
+
+- Command: `cargo test --workspace -j 1 -q`
+- The failure is in the existing BrowserHost TCP fixture and is outside the HLS/window delta.
+
+### Suggested Fix
+
+Rerun the exact BrowserHost target; if repeatable, make the fixture drain or close the accepted
+socket gracefully before changing production Blob behavior.
+
+### Metadata
+
+- Reproducible: unknown
+- Related Files: `rust/apps/nxtools-browser-host/src/blob_upload.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T14:31:00+08:00
+- **Notes**: The immediate complete BrowserHost target rerun passed 22/22; no production Blob
+  change was made.
+
+---
+
+## [ERR-20260810-HLSCLIPPY] hls_nonminimal_boolean
+
+**Logged**: 2026-08-10T14:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+The first Stage 5 workspace Clippy gate rejected a negated `is_some_and` expression.
+
+### Error
+
+```text
+clippy::nonminimal_bool: use is_none_or for the missing/invalid EXTM3U header check
+```
+
+### Context
+
+- Command: `cargo clippy --workspace --all-targets -j 1 -- -D warnings`
+- The warning was isolated to the new bounded HLS parser and did not indicate a behavior failure.
+
+### Suggested Fix
+
+Use the direct `is_none_or` predicate and rerun the full workspace Clippy gate.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/hls.rs`
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
+
+### Resolution
+
+- **Resolved**: 2026-08-10T14:20:00+08:00
+- **Notes**: Replaced the negated predicate with the Clippy-preferred equivalent. The next pass
+  also removed two redundant `String::into()` calls in GPUI debug-selector closures. A later
+  diagnostic-lifecycle refactor made an `error.into()` conversion redundant; the targeted Clippy
+  gate caught it and the direct error value is now returned.
+
+---
+
 ## [ERR-20260810-IPCSOCKET] windows_fixture_inherited_nonblocking_socket
 
 **Logged**: 2026-08-10T12:30:00+08:00
@@ -74,12 +196,16 @@ Use `cargo test --workspace -q` for large verification runs so any actual failur
 
 - Reproducible: no
 - Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
-- Recurrence-Count: 2
+- Recurrence-Count: 3
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-08-10T12:40:00+08:00
 - **Notes**: The full engine target and the exact dynamic-rebalance test passed on focused rerun.
+  A later Stage 5 HLS verification run passed all preceding groups but intermittently missed the
+  bounded split checkpoint in `a_dynamically_split_plan_resumes_after_engine_restart`; the exact
+  test is required to reproduce before changing production scheduling code.
 
 ---
 
@@ -1318,18 +1444,23 @@ command timed out after 5057 milliseconds
 
 ### Suggested Fix
 
-Use the normal 120-second verification timeout while retaining the documented single-job,
-non-incremental, high-codegen-unit environment.
+Use at least a 300-second timeout for full-workspace verification while retaining the documented
+single-job, non-incremental, high-codegen-unit environment.
 
 ### Metadata
 
 - Reproducible: yes
 - Related Files: `AGENTS.md`
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-07-28T14:52:00+08:00
-- **Notes**: Relaunched the same gates with the correct timeout.
+- **Notes**: Relaunched the same gates with the correct timeout. On 2026-08-10 a cold single-job
+  full-workspace test plus Clippy wrapper exceeded 120 seconds and left Cargo finishing briefly in
+  the background; after confirming the process exited, the same gates completed cleanly under a
+  300-second tool budget.
 
 ---
 
@@ -2436,11 +2567,15 @@ Collect `foreach` output into an array first, then pipe that array to `Format-Ta
 
 - Reproducible: yes
 - Related Files: none
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-07-23T18:47:00+08:00
-- **Notes**: Re-ran the report with an explicit `$rows` array.
+- **Notes**: Re-ran the report with an explicit `$rows` array. The same parser error recurred during
+  a read-only AGENTS source inspection on 2026-08-10; the corrected command assigned the numbered
+  `for` output before piping, matching the checked-in AGENTS rule.
 
 ---
 
