@@ -28,7 +28,7 @@ Browser extension
           -> opens NxTools.exe --background only for non-interactive download commands
           -> Blob metadata/capability stays on Native Messaging; Blob bytes use a random-loopback,
              one-time, current-user capability stream with 1 MiB chunks and a 2 GiB total bound
-          -> only a complete staging ID crosses download command protocol v4; the engine owns
+          -> only a complete staging ID crosses download command protocol v5; the engine owns
              confirmation, final artifact import, task persistence and cancellation cleanup
           -> ordinary batch intake is one bounded 1–32 item command with one parent correlation;
              each item has a stable handoff ID and is queue-only to avoid a window storm
@@ -40,13 +40,16 @@ the envelope is versioned so payload encoding can change without blurring proces
 The LocalSystem indexer intentionally remains available across GUI restarts, while BrowserHost
 follows the browser extension connection rather than the GUI lifetime.
 
-Download command protocol v4 adds bounded HLS probe metadata. Rust fetches and parses at most a
+Download command protocol v5 adds bounded HLS probe metadata and a typed selected-media request.
+Rust fetches and parses at most a
 2 MiB manifest and returns at most 32 presentation-only variants. Each resolved playlist URL is
 limited to 8 KiB and each codec/audio/subtitle presentation field to 512 bytes, keeping the maximum
 serialized HLS probe under a separate 512 KiB aggregate budget and therefore below the 1 MiB IPC
 frame even with its result envelope; GPUI renders the quality choice.
-This probe does not authorize the ordinary HTTP adapter to save a manifest as a completed media
-artifact. HLS task selection and transfer remain typed Rust-owned work in Stage 5.
+The selected playlist is persisted with the task; the Rust engine owns its finite media-playlist
+plan, SQLite segment checkpoints, bounded workers and ordered atomic merge. The ordinary HTTP
+adapter cannot save a manifest as a completed media artifact. AES-128, live playlists, byte ranges
+and initialization maps remain typed rejections until their Stage 5 slices.
 
 ## Rust owns
 

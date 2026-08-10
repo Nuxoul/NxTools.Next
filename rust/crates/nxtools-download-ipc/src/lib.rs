@@ -385,6 +385,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         let added = client
             .command(command_envelope(DownloadCommand::Submit {
@@ -447,6 +448,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         actor
             .command(command_envelope(DownloadCommand::Submit {
@@ -536,6 +538,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 mode: DownloadSubmitMode::StartNow,
             }))

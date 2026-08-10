@@ -5,8 +5,8 @@ use nxtools_download::{
     DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
     DownloadProbe, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadRequestHeader, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
-    DownloadTaskId, RequestOrigin, ResourceValidator,
+    DownloadRequestHeader, DownloadRequestMedia, DownloadSnapshot, DownloadSubmitMode,
+    DownloadTaskAction, DownloadTaskId, HlsDownloadRequest, RequestOrigin, ResourceValidator,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -27,7 +27,32 @@ fn request() -> DownloadRequest {
         expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
+        media: None,
     }
+}
+
+#[test]
+fn hls_selection_round_trips_as_typed_download_request_state() {
+    let mut request = request();
+    request.source_url = "https://example.test/master.m3u8".into();
+    request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: "https://cdn.example.test/1080p/index.m3u8".into(),
+    }));
+    let command = DownloadCommand::Submit {
+        request,
+        mode: DownloadSubmitMode::StartNow,
+    };
+
+    let encoded = serde_json::to_value(&command).expect("serialize typed HLS request");
+    let decoded: DownloadCommand =
+        serde_json::from_value(encoded.clone()).expect("deserialize typed HLS request");
+
+    assert_eq!(encoded["data"]["request"]["media"]["kind"], json!("hls"));
+    assert_eq!(
+        encoded["data"]["request"]["media"]["data"]["playlist_url"],
+        json!("https://cdn.example.test/1080p/index.m3u8")
+    );
+    assert_eq!(decoded, command);
 }
 
 #[test]
@@ -73,7 +98,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(4));
+    assert_eq!(value["protocol_version"], json!(5));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));

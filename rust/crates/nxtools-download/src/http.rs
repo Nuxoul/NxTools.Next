@@ -12,8 +12,8 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 
 use crate::hls::{
-    HlsProbeError, MAX_HLS_MANIFEST_BYTES, MAX_HLS_VARIANT_URL_BYTES, parse_hls_probe,
-    validate_hls_probe_size,
+    HlsMediaPlaylist, HlsProbeError, MAX_HLS_MANIFEST_BYTES, MAX_HLS_VARIANT_URL_BYTES,
+    parse_hls_media_playlist, parse_hls_probe, validate_hls_probe_size,
 };
 use crate::{
     DownloadMediaProbe, DownloadProbe, DownloadRateLimitError, DownloadRateLimiter,
@@ -188,6 +188,141 @@ impl HttpDownloadClient {
         }
         let hls = parse_hls_probe(&final_url, &manifest).map_err(map_hls_probe_error)?;
         Ok((final_url, hls))
+    }
+
+    pub(crate) async fn load_hls_media_playlist(
+        &self,
+        request: &DownloadRequest,
+        playlist_url: &str,
+    ) -> Result<HlsMediaPlaylist, HttpDownloadError> {
+        let mut playlist_request = request.clone();
+        playlist_request.source_url = playlist_url.to_owned();
+        playlist_request.media = None;
+        playlist_request.validate()?;
+        let mut response = self.send(Method::GET, &playlist_request, false).await?;
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_HLS_MANIFEST_BYTES as u64)
+        {
+            return Err(HttpDownloadError::HlsManifestTooLarge);
+        }
+        let final_url = response.url().clone();
+        if final_url.as_str().len() > MAX_HLS_VARIANT_URL_BYTES {
+            return Err(HttpDownloadError::HlsMetadataTooLarge);
+        }
+        let mut manifest = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(4096)
+                .min(MAX_HLS_MANIFEST_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| self.client_error(error))?
+        {
+            if manifest.len().saturating_add(chunk.len()) > MAX_HLS_MANIFEST_BYTES {
+                return Err(HttpDownloadError::HlsManifestTooLarge);
+            }
+            manifest.extend_from_slice(&chunk);
+        }
+        parse_hls_media_playlist(&final_url, &manifest).map_err(map_hls_probe_error)
+    }
+
+    pub(crate) async fn download_hls_segment<F>(
+        &self,
+        request: &DownloadRequest,
+        segment_url: &str,
+        staging_path: &PathBuf,
+        control: &DownloadTransferControl,
+        mut on_progress: F,
+    ) -> Result<HlsSegmentDownloadOutcome, HttpDownloadError>
+    where
+        F: FnMut(u64),
+    {
+        let mut segment_request = request.clone();
+        segment_request.source_url = segment_url.to_owned();
+        segment_request.media = None;
+        segment_request.validate()?;
+        remove_file_if_exists(staging_path).await?;
+        let mut directives = control.subscribe();
+        match *directives.borrow() {
+            TransferDirective::Running => {}
+            TransferDirective::Pause => return Ok(HlsSegmentDownloadOutcome::Paused),
+            TransferDirective::Cancel => return Ok(HlsSegmentDownloadOutcome::Cancelled),
+        }
+        let response_request = self.send(Method::GET, &segment_request, false);
+        tokio::pin!(response_request);
+        let mut response = tokio::select! {
+            biased;
+            changed = directives.changed() => {
+                let _ = changed;
+                return Ok(match *directives.borrow() {
+                    TransferDirective::Cancel => HlsSegmentDownloadOutcome::Cancelled,
+                    TransferDirective::Pause | TransferDirective::Running => HlsSegmentDownloadOutcome::Paused,
+                });
+            }
+            result = &mut response_request => result?,
+            _ = tokio::time::sleep(self.stall_timeout) => {
+                return Err(HttpDownloadError::Stalled {
+                    timeout_ms: duration_millis(self.stall_timeout),
+                });
+            }
+        };
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        let mut output = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(staging_path)
+            .await?;
+        let mut downloaded_bytes = 0_u64;
+        loop {
+            let next_chunk = response.chunk();
+            tokio::pin!(next_chunk);
+            let chunk = tokio::select! {
+                biased;
+                changed = directives.changed() => {
+                    let _ = changed;
+                    drop(output);
+                    remove_file_if_exists(staging_path).await?;
+                    return Ok(match *directives.borrow() {
+                        TransferDirective::Cancel => HlsSegmentDownloadOutcome::Cancelled,
+                        TransferDirective::Pause | TransferDirective::Running => HlsSegmentDownloadOutcome::Paused,
+                    });
+                }
+                result = &mut next_chunk => result.map_err(|error| self.client_error(error))?,
+                _ = tokio::time::sleep(self.stall_timeout) => {
+                    drop(output);
+                    remove_file_if_exists(staging_path).await?;
+                    return Err(HttpDownloadError::Stalled {
+                        timeout_ms: duration_millis(self.stall_timeout),
+                    });
+                }
+            };
+            let Some(chunk) = chunk else {
+                break;
+            };
+            let chunk_len =
+                u64::try_from(chunk.len()).map_err(|_| HttpDownloadError::LengthOverflow)?;
+            control.acquire_bandwidth(chunk_len).await;
+            output.write_all(&chunk).await?;
+            downloaded_bytes = downloaded_bytes
+                .checked_add(chunk_len)
+                .ok_or(HttpDownloadError::LengthOverflow)?;
+            on_progress(downloaded_bytes);
+        }
+        if downloaded_bytes == 0 {
+            drop(output);
+            remove_file_if_exists(staging_path).await?;
+            return Err(HttpDownloadError::EmptyHlsSegment);
+        }
+        sync_output(&mut output).await?;
+        Ok(HlsSegmentDownloadOutcome::Completed { downloaded_bytes })
     }
 
     pub async fn download<F>(
@@ -795,6 +930,13 @@ pub(crate) enum PreparedDownloadOutcome {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HlsSegmentDownloadOutcome {
+    Completed { downloaded_bytes: u64 },
+    Paused,
+    Cancelled,
+}
+
 async fn sync_output(output: &mut tokio::fs::File) -> Result<(), std::io::Error> {
     output.flush().await?;
     output.sync_all().await
@@ -1199,6 +1341,10 @@ fn map_hls_probe_error(error: HlsProbeError) -> HttpDownloadError {
         HlsProbeError::InvalidManifest(reason) => HttpDownloadError::InvalidHlsManifest(reason),
         HlsProbeError::TooManyVariants => HttpDownloadError::TooManyHlsVariants,
         HlsProbeError::MetadataTooLarge => HttpDownloadError::HlsMetadataTooLarge,
+        HlsProbeError::TooManyMediaSegments => HttpDownloadError::TooManyHlsMediaSegments,
+        HlsProbeError::UnsupportedFeature(feature) => {
+            HttpDownloadError::UnsupportedHlsFeature(feature)
+        }
     }
 }
 
@@ -1356,6 +1502,12 @@ pub enum HttpDownloadError {
     TooManyHlsVariants,
     #[error("HLS presentation metadata exceeds its bounded field limits")]
     HlsMetadataTooLarge,
+    #[error("HLS media playlist contains too many segments")]
+    TooManyHlsMediaSegments,
+    #[error("HLS feature is not supported in this transfer slice: {0}")]
+    UnsupportedHlsFeature(&'static str),
+    #[error("HLS media segment is empty")]
+    EmptyHlsSegment,
     #[error(
         "download ended after {downloaded_bytes} bytes, expected exactly {expected_bytes} bytes"
     )]
@@ -1444,6 +1596,9 @@ impl HttpDownloadError {
             | Self::InvalidHlsManifest(_)
             | Self::TooManyHlsVariants
             | Self::HlsMetadataTooLarge
+            | Self::TooManyHlsMediaSegments
+            | Self::UnsupportedHlsFeature(_)
+            | Self::EmptyHlsSegment
             | Self::SegmentedTransferNeedsKnownLength
             | Self::MissingContentRange
             | Self::MalformedContentRange(_)
@@ -1471,6 +1626,9 @@ impl HttpDownloadError {
             Self::InvalidHlsManifest(_) => "invalid_hls_manifest",
             Self::TooManyHlsVariants => "too_many_hls_variants",
             Self::HlsMetadataTooLarge => "hls_metadata_too_large",
+            Self::TooManyHlsMediaSegments => "too_many_hls_media_segments",
+            Self::UnsupportedHlsFeature(_) => "unsupported_hls_feature",
+            Self::EmptyHlsSegment => "empty_hls_segment",
             Self::LengthMismatch { .. } => "length_mismatch",
             Self::SegmentedTransferNeedsKnownLength => "unknown_length",
             Self::RangeNotHonored { .. } => "range_not_honored",

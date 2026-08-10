@@ -783,6 +783,7 @@ fn build_browser_download_request(
                 .max(config.download.default_connection_limit),
             min_segment_mib: config.download.adaptive_segment_min_mib,
         }),
+        media: None,
     };
     request.validate()?;
     Ok(request)
@@ -1701,6 +1702,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
             },
         }

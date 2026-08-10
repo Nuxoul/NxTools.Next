@@ -26,6 +26,7 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
         expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
+        media: None,
     }
 }
 
@@ -115,6 +116,7 @@ async fn pause_before_single_stream_preparation_creates_no_files() {
         expected_total_bytes: Some(16),
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
+        media: None,
     };
     let client = HttpDownloadClient::new().expect("create HTTP client");
     let control = DownloadTransferControl::new();
@@ -154,6 +156,7 @@ async fn cancel_before_single_stream_preparation_creates_no_files() {
         expected_total_bytes: Some(16),
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
+        media: None,
     };
     let client = HttpDownloadClient::new().expect("create HTTP client");
     let control = DownloadTransferControl::new();

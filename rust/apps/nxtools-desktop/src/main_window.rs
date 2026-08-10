@@ -5651,6 +5651,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -5669,6 +5670,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -5964,6 +5966,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6259,6 +6262,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6277,6 +6281,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -6416,6 +6421,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )

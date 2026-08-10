@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::hls::{HlsMediaPlaylist, HlsMediaSegment};
 use crate::{
     DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSchedule,
     DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
@@ -15,7 +16,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 5;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 6;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
@@ -61,6 +62,9 @@ impl SqliteDownloadStore {
         }
         if current < 5 {
             connection.execute_batch(SCHEMA_V5)?;
+        }
+        if current < 6 {
+            connection.execute_batch(SCHEMA_V6)?;
         }
 
         Ok(Self {
@@ -681,6 +685,164 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    pub(crate) fn save_hls_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+        playlist: &HlsMediaPlaylist,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let exists = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM download_tasks WHERE task_id = ?1)",
+            [task_id.as_uuid().to_string()],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        transaction.execute(
+            r#"
+            INSERT INTO download_hls_plans(task_id, final_url, media_sequence, updated_at_unix_ms)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(task_id) DO UPDATE SET
+                final_url = excluded.final_url,
+                media_sequence = excluded.media_sequence,
+                updated_at_unix_ms = excluded.updated_at_unix_ms
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                playlist.final_url,
+                i64::try_from(playlist.media_sequence)
+                    .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                now_unix_ms(),
+            ],
+        )?;
+        transaction.execute(
+            "DELETE FROM download_hls_segments WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+        )?;
+        for segment in &playlist.segments {
+            transaction.execute(
+                r#"
+                INSERT INTO download_hls_segments(
+                    task_id, segment_index, sequence_number, url, duration_millis,
+                    downloaded_bytes, state, updated_at_unix_ms
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)
+                "#,
+                params![
+                    task_id.as_uuid().to_string(),
+                    i64::from(segment.index),
+                    i64::try_from(segment.sequence)
+                        .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    segment.url,
+                    i64::try_from(segment.duration_millis)
+                        .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    enum_name(&DownloadSegmentState::Waiting)?,
+                    now_unix_ms(),
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn load_hls_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<Option<StoredHlsTransferPlan>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let Some((final_url, media_sequence)) = connection
+            .query_row(
+                "SELECT final_url, media_sequence FROM download_hls_plans WHERE task_id = ?1",
+                [task_id.as_uuid().to_string()],
+                |row| Ok((row.get::<_, String>(0)?, nonnegative_u64(row.get(1)?, 1)?)),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let mut statement = connection.prepare(
+            r#"
+            SELECT segment_index, sequence_number, url, duration_millis, downloaded_bytes, state
+            FROM download_hls_segments
+            WHERE task_id = ?1
+            ORDER BY segment_index
+            "#,
+        )?;
+        let segments = statement
+            .query_map([task_id.as_uuid().to_string()], |row| {
+                Ok(StoredHlsSegment {
+                    media: HlsMediaSegment {
+                        index: u32::try_from(nonnegative_u64(row.get(0)?, 0)?).map_err(
+                            |error| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    0,
+                                    rusqlite::types::Type::Integer,
+                                    Box::new(error),
+                                )
+                            },
+                        )?,
+                        sequence: nonnegative_u64(row.get(1)?, 1)?,
+                        url: row.get(2)?,
+                        duration_millis: nonnegative_u64(row.get(3)?, 3)?,
+                    },
+                    downloaded_bytes: nonnegative_u64(row.get(4)?, 4)?,
+                    state: enum_from_name(&row.get::<_, String>(5)?, 5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(StoredHlsTransferPlan {
+            final_url,
+            media_sequence,
+            segments,
+        }))
+    }
+
+    pub(crate) fn save_hls_segment_checkpoint(
+        &self,
+        task_id: DownloadTaskId,
+        segment_index: u32,
+        state: DownloadSegmentState,
+        downloaded_bytes: u64,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let updated = connection.execute(
+            r#"
+            UPDATE download_hls_segments
+            SET downloaded_bytes = ?3, state = ?4, updated_at_unix_ms = ?5
+            WHERE task_id = ?1 AND segment_index = ?2
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                i64::from(segment_index),
+                i64::try_from(downloaded_bytes)
+                    .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                enum_name(&state)?,
+                now_unix_ms(),
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DownloadStorageError::SegmentNotFound {
+                task_id,
+                segment_index,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_hls_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        connection.execute(
+            "DELETE FROM download_hls_plans WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn clear_transfer_plan(&self, task_id: DownloadTaskId) -> Result<(), DownloadStorageError> {
         let mut connection = self.lock()?;
         let transaction = connection.transaction()?;
@@ -1049,6 +1211,20 @@ pub(crate) struct StoredTransferState {
     pub temporary_path: Option<PathBuf>,
     pub final_path: Option<PathBuf>,
     pub final_committed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StoredHlsTransferPlan {
+    pub final_url: String,
+    pub media_sequence: u64,
+    pub segments: Vec<StoredHlsSegment>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StoredHlsSegment {
+    pub media: HlsMediaSegment,
+    pub downloaded_bytes: u64,
+    pub state: DownloadSegmentState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1606,9 +1782,39 @@ PRAGMA user_version = 5;
 COMMIT;
 "#;
 
+const SCHEMA_V6: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_hls_plans (
+    task_id TEXT PRIMARY KEY NOT NULL REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    final_url TEXT NOT NULL,
+    media_sequence INTEGER NOT NULL CHECK(media_sequence >= 0),
+    updated_at_unix_ms INTEGER NOT NULL
+);
+
+CREATE TABLE download_hls_segments (
+    task_id TEXT NOT NULL REFERENCES download_hls_plans(task_id) ON DELETE CASCADE,
+    segment_index INTEGER NOT NULL CHECK(segment_index >= 0),
+    sequence_number INTEGER NOT NULL CHECK(sequence_number >= 0),
+    url TEXT NOT NULL,
+    duration_millis INTEGER NOT NULL CHECK(duration_millis >= 0),
+    downloaded_bytes INTEGER NOT NULL DEFAULT 0 CHECK(downloaded_bytes >= 0),
+    state TEXT NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(task_id, segment_index)
+);
+
+CREATE INDEX download_hls_segments_task_state_idx
+    ON download_hls_segments(task_id, state, segment_index);
+
+PRAGMA user_version = 6;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hls::{HlsMediaPlaylist, HlsMediaSegment};
     use crate::{DownloadFault, DownloadProbe, DownloadRequest, DownloadStatus};
 
     #[test]
@@ -1637,13 +1843,61 @@ mod tests {
     }
 
     #[test]
+    fn hls_transfer_plan_and_segment_checkpoint_survive_store_reopen() {
+        let directory = tempfile::tempdir().expect("create HLS database directory");
+        let database = directory.path().join("downloads.db");
+        let task = sample_task("movie.ts");
+        let playlist = HlsMediaPlaylist {
+            final_url: "https://media.example.test/high/index.m3u8".into(),
+            media_sequence: 42,
+            segments: vec![
+                HlsMediaSegment {
+                    index: 0,
+                    sequence: 42,
+                    url: "https://media.example.test/high/42.ts".into(),
+                    duration_millis: 4_000,
+                },
+                HlsMediaSegment {
+                    index: 1,
+                    sequence: 43,
+                    url: "https://media.example.test/high/43.ts".into(),
+                    duration_millis: 2_000,
+                },
+            ],
+        };
+
+        {
+            let store = SqliteDownloadStore::open(&database).expect("open HLS store");
+            store.save_task(&task).expect("save HLS task");
+            store
+                .save_hls_transfer_plan(task.id(), &playlist)
+                .expect("save HLS plan");
+            store
+                .save_hls_segment_checkpoint(task.id(), 0, DownloadSegmentState::Completed, 12)
+                .expect("save HLS segment checkpoint");
+        }
+
+        let reopened = SqliteDownloadStore::open(&database).expect("reopen HLS store");
+        let restored = reopened
+            .load_hls_transfer_plan(task.id())
+            .expect("load HLS plan")
+            .expect("HLS plan exists");
+        assert_eq!(restored.final_url, playlist.final_url);
+        assert_eq!(restored.media_sequence, 42);
+        assert_eq!(restored.segments.len(), 2);
+        assert_eq!(restored.segments[0].state, DownloadSegmentState::Completed);
+        assert_eq!(restored.segments[0].downloaded_bytes, 12);
+        assert_eq!(restored.segments[1].state, DownloadSegmentState::Waiting);
+    }
+
+    #[test]
     fn task_timeline_is_durable_newest_first_and_bounded_to_three_hundred_entries() {
         let directory = tempfile::tempdir().expect("create database directory");
         let database = directory.path().join("downloads.db");
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 5);
+            assert_eq!(store.schema_version().expect("schema version"), 6);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -1699,7 +1953,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 5);
+        assert_eq!(store.schema_version().expect("schema version"), 6);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -1795,6 +2049,7 @@ mod tests {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             },
             RequestOrigin::Cli,
             now_unix_ms(),
@@ -1818,6 +2073,7 @@ mod tests {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             },
             RequestOrigin::Internal,
             1_000,

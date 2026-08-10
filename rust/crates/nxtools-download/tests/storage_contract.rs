@@ -23,6 +23,7 @@ fn task(at: i64) -> DownloadTask {
             expected_total_bytes: None,
             scheduled_at_unix_ms: Some(5_000),
             adaptive_segment_policy: None,
+            media: None,
         },
         RequestOrigin::Browser,
         at,

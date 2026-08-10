@@ -10,10 +10,10 @@ use nxtools_download::{
     BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION,
     DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine, DownloadEvent,
-    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadSchedule,
-    DownloadScheduleMoment, DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask,
-    DownloadTaskAction, DownloadWeekday, RequestOrigin, SqliteDownloadStore,
-    daily_schedule_window_contains,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestMedia,
+    DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState, DownloadStatus,
+    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday, HlsDownloadRequest,
+    RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
 
@@ -30,7 +30,146 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         expected_total_bytes: None,
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
+        media: None,
     }
+}
+
+#[tokio::test]
+async fn selected_hls_vod_downloads_segments_and_commits_them_in_playlist_order() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create HLS engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("movie.ts".into());
+    hls_request.connection_limit = Some(2);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/high/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit selected HLS VOD");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for HLS VOD terminal state");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "HLS VOD failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("movie.ts")).expect("read merged HLS artifact"),
+        b"segment-ten|segment-eleven|segment-twelve"
+    );
+}
+
+#[tokio::test]
+async fn selected_hls_vod_bounds_parallel_segment_transfers_by_connection_limit() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create concurrent HLS engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("concurrent.ts".into());
+    hls_request.connection_limit = Some(3);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit concurrent HLS VOD");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for concurrent HLS VOD terminal state");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "concurrent HLS VOD failed: {:?}",
+        completed.error
+    );
+    let observed = server.max_concurrent_range_transfers();
+    assert!(
+        observed >= 2,
+        "expected HLS segment concurrency, saw {observed}"
+    );
+    assert!(observed <= 3, "HLS exceeded connection limit: {observed}");
+    assert_eq!(
+        std::fs::read(destination.join("concurrent.ts")).expect("read concurrent HLS artifact"),
+        b"segment-a|segment-b|segment-c|segment-d"
+    );
+}
+
+#[tokio::test]
+async fn paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpoint() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create resumable HLS engine directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("resumed.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit resumable HLS VOD");
+    let first_segment = destination
+        .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
+        .join("00000000.segment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !first_segment.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first HLS segment did not reach its durable artifact"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause HLS VOD");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for paused HLS VOD");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    assert!(
+        first_segment.exists(),
+        "pause must preserve completed segments"
+    );
+    drop(engine);
+
+    let reopened = DownloadEngine::open(&database).expect("reopen persistent download engine");
+    let restored = reopened
+        .task(task_id)
+        .expect("read restored HLS task")
+        .expect("restored HLS task exists");
+    assert_eq!(restored.task.status(), DownloadStatus::Paused);
+    reopened.resume(task_id).expect("resume restored HLS VOD");
+    let completed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for resumed HLS VOD");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "resumed HLS VOD failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("resumed.ts")).expect("read resumed HLS artifact"),
+        b"segment-a|segment-b|segment-c|segment-d"
+    );
 }
 
 #[test]
@@ -1061,6 +1200,7 @@ fn crash_helper_process() {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             },
             RequestOrigin::Internal,
         )
@@ -1929,6 +2069,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             },
             RequestOrigin::Ui,
         )

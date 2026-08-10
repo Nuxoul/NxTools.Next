@@ -17,6 +17,34 @@ low/index.m3u8
 high/index.m3u8
 "#;
 const HLS_EMPTY: &[u8] = b"#EXTM3U\n#EXT-X-VERSION:6\n";
+const HLS_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:10
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+segment-10.ts
+#EXTINF:4.0,
+segment-11.ts
+#EXTINF:2.0,
+segment-12.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_SEGMENT_10: &[u8] = b"segment-ten|";
+const HLS_SEGMENT_11: &[u8] = b"segment-eleven|";
+const HLS_SEGMENT_12: &[u8] = b"segment-twelve";
+const HLS_CONCURRENT_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:1
+#EXTINF:1.0,
+segment-a.ts
+#EXTINF:1.0,
+segment-b.ts
+#EXTINF:1.0,
+segment-c.ts
+#EXTINF:1.0,
+segment-d.ts
+#EXT-X-ENDLIST
+"#;
 const CONCURRENT_BODY_LEN: usize = 256 * 1024;
 const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
@@ -357,6 +385,90 @@ fn serve_connection(
             if method == "HEAD" { b"" } else { HLS_EMPTY },
             Some(HLS_EMPTY.len()),
         ),
+        "/hls/high/index.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" { b"" } else { HLS_VOD },
+            Some(HLS_VOD.len()),
+        ),
+        "/hls/high/segment-10.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_SEGMENT_10
+            },
+            Some(HLS_SEGMENT_10.len()),
+        ),
+        "/hls/high/segment-11.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_SEGMENT_11
+            },
+            Some(HLS_SEGMENT_11.len()),
+        ),
+        "/hls/high/segment-12.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_SEGMENT_12
+            },
+            Some(HLS_SEGMENT_12.len()),
+        ),
+        "/hls/concurrent/index.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_CONCURRENT_VOD
+            },
+            Some(HLS_CONCURRENT_VOD.len()),
+        ),
+        "/hls/concurrent/segment-a.ts" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"segment-a|",
+            active_range_transfers,
+            max_active_range_transfers,
+        ),
+        "/hls/concurrent/segment-b.ts" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"segment-b|",
+            active_range_transfers,
+            max_active_range_transfers,
+        ),
+        "/hls/concurrent/segment-c.ts" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"segment-c|",
+            active_range_transfers,
+            max_active_range_transfers,
+        ),
+        "/hls/concurrent/segment-d.ts" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"segment-d",
+            active_range_transfers,
+            max_active_range_transfers,
+        ),
         "/range" => serve_range(&mut stream, method, headers.get("range")),
         "/range-if-range-incompatible" => serve_if_range_incompatible(
             &mut stream,
@@ -638,6 +750,39 @@ fn serve_connection(
 
 fn serve_range(stream: &mut TcpStream, method: &str, range: Option<&String>) {
     serve_range_with_validator(stream, method, range, "\"fixture-static\"");
+}
+
+fn serve_concurrent_hls_segment(
+    stream: &mut TcpStream,
+    method: &str,
+    body: &[u8],
+    active: &AtomicU64,
+    max_active: &AtomicU64,
+) {
+    if method == "HEAD" {
+        write_response(
+            stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            b"",
+            Some(body.len()),
+        );
+        return;
+    }
+
+    let current = active.fetch_add(1, Ordering::AcqRel) + 1;
+    max_active.fetch_max(current, Ordering::AcqRel);
+    thread::sleep(Duration::from_millis(80));
+    write_response(
+        stream,
+        200,
+        "OK",
+        &[("Content-Type", "video/mp2t")],
+        body,
+        Some(body.len()),
+    );
+    active.fetch_sub(1, Ordering::AcqRel);
 }
 
 fn serve_if_range_incompatible(

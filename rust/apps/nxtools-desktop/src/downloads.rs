@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -4793,6 +4793,7 @@ impl NewDownloadView {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
+            media: None,
         });
         request.source_url = url;
         request.save_directory = PathBuf::from(directory);
@@ -4879,9 +4880,16 @@ impl NewDownloadView {
                 let confirmed = match outcome {
                     DownloadCommandOutcome::Probe(probe) => {
                         let mut confirmed = request;
-                        if confirmed.file_name.is_none() {
-                            confirmed.file_name = probe.file_name.clone();
-                            resolved_file_name = probe.file_name.clone();
+                        let probe_file_name = resolved_probe_file_name(&probe);
+                        let replace_manifest_name = probe.media.is_some()
+                            && confirmed.file_name.as_deref().is_some_and(|file_name| {
+                                Path::new(file_name)
+                                    .extension()
+                                    .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
+                            });
+                        if confirmed.file_name.is_none() || replace_manifest_name {
+                            confirmed.file_name = probe_file_name.clone();
+                            resolved_file_name = probe_file_name;
                         }
                         this.selected_hls_variant =
                             probe.media.as_ref().and_then(|media| match media {
@@ -5001,22 +5009,28 @@ impl NewDownloadView {
             cx.notify();
             return;
         };
-        if self
-            .probe
-            .as_ref()
-            .is_some_and(|probe| probe.media.is_some())
-        {
-            self.error = Some("HLS 清晰度已解析；分片传输将在阶段 5 的下一切片接入".into());
-            cx.notify();
-            return;
-        }
-        let Some(request) = merge_confirmed_download_request(confirmed, current) else {
+        let media =
+            match selected_download_request_media(self.probe.as_ref(), self.selected_hls_variant) {
+                Ok(media) => media,
+                Err(error) => {
+                    self.error = Some(error);
+                    cx.notify();
+                    return;
+                }
+            };
+        let Some(mut request) = merge_confirmed_download_request(confirmed, current) else {
             self.confirmed_request = None;
             self.probe = None;
             self.error = Some("下载地址已变更，请重新探测".into());
             cx.notify();
             return;
         };
+        request.media = media;
+        if let Err(error) = request.validate() {
+            self.error = Some(error.to_string());
+            cx.notify();
+            return;
+        }
         if request.save_directory.exists() && !request.save_directory.is_dir() {
             self.error = Some("保存位置不是文件夹，请重新选择".into());
             cx.notify();
@@ -5088,7 +5102,6 @@ impl Render for NewDownloadView {
         let probing = self.probing;
         let submitting = self.submitting;
         let confirmed = probe.is_some();
-        let is_hls = probe.as_ref().is_some_and(|probe| probe.media.is_some());
         let schedule_label = if let Some(selection) = self.committed_schedule {
             format!(
                 "{} {:02}:{:02}",
@@ -5289,33 +5302,39 @@ impl Render for NewDownloadView {
                 .items_center()
                 .gap(px(6.0))
                 .child(
-                    Button::new("download-add-to-queue")
-                        .label(if submitting {
-                            "正在添加…"
-                        } else {
-                            "添加"
-                        })
-                        .small()
-                        .ghost()
-                        .disabled(submitting || is_hls)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.submit(DownloadSubmitMode::QueueOnly, window, cx);
-                        })),
+                    div()
+                        .debug_selector(|| "download-add-to-queue".into())
+                        .child(
+                            Button::new("download-add-to-queue-button")
+                                .label(if submitting {
+                                    "正在添加…"
+                                } else {
+                                    "添加"
+                                })
+                                .small()
+                                .ghost()
+                                .disabled(submitting)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.submit(DownloadSubmitMode::QueueOnly, window, cx);
+                                })),
+                        ),
                 )
                 .child(
-                    Button::new("download-start-now")
-                        .icon(Icon::new(MaterialIcon::Download))
-                        .label(if submitting {
-                            "正在添加…"
-                        } else {
-                            "下载"
-                        })
-                        .small()
-                        .custom(download_primary_button_variant(theme, cx))
-                        .disabled(submitting || is_hls)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.submit(DownloadSubmitMode::StartNow, window, cx);
-                        })),
+                    div().debug_selector(|| "download-start-now".into()).child(
+                        Button::new("download-start-now-button")
+                            .icon(Icon::new(MaterialIcon::Download))
+                            .label(if submitting {
+                                "正在添加…"
+                            } else {
+                                "下载"
+                            })
+                            .small()
+                            .custom(download_primary_button_variant(theme, cx))
+                            .disabled(submitting)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.submit(DownloadSubmitMode::StartNow, window, cx);
+                            })),
+                    ),
                 )
                 .into_any_element()
         });
@@ -5710,7 +5729,7 @@ fn hls_quality_options(
                     div()
                         .text_size(px(8.5))
                         .text_color(theme.text_muted)
-                        .child("分片传输将在下一切片启用"),
+                        .child("支持未加密点播分片传输"),
                 ),
         )
         .child(
@@ -5896,6 +5915,42 @@ fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui:
     } else {
         new_download_window_size(true)
     }
+}
+
+fn selected_download_request_media(
+    probe: Option<&DownloadProbe>,
+    selected_hls_variant: Option<usize>,
+) -> Result<Option<nxtools_download::DownloadRequestMedia>, String> {
+    let Some(nxtools_download::DownloadMediaProbe::Hls(hls)) =
+        probe.and_then(|probe| probe.media.as_ref())
+    else {
+        return Ok(None);
+    };
+    let playlist_url = if hls.is_master {
+        hls.variants
+            .get(selected_hls_variant.ok_or("请选择 HLS 清晰度")?)
+            .map(|variant| variant.playlist_url.clone())
+            .ok_or("所选 HLS 清晰度已失效，请重新探测")?
+    } else {
+        probe
+            .map(|probe| probe.final_url.clone())
+            .ok_or("HLS 探测结果已失效，请重新探测")?
+    };
+    Ok(Some(nxtools_download::DownloadRequestMedia::Hls(
+        nxtools_download::HlsDownloadRequest { playlist_url },
+    )))
+}
+
+fn resolved_probe_file_name(probe: &DownloadProbe) -> Option<String> {
+    let file_name = probe.file_name.as_deref()?;
+    if !matches!(
+        probe.media,
+        Some(nxtools_download::DownloadMediaProbe::Hls(_))
+    ) {
+        return Some(file_name.to_owned());
+    }
+    let stem = Path::new(file_name).file_stem()?.to_string_lossy();
+    (!stem.is_empty()).then(|| format!("{stem}.ts"))
 }
 
 fn initial_new_download_window_size(
@@ -6849,6 +6904,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -7128,6 +7184,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         assert_eq!(
             initial_new_download_window_size(Some(&NewDownloadInitialSource::Download(request))),
@@ -7173,6 +7230,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
 
         cx.update(|cx| {
@@ -7255,6 +7313,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         window.update(|window, cx| {
             let url = view.read(cx).url.clone();
@@ -7402,7 +7461,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn confirmed_hls_master_renders_selectable_quality_rows(cx: &mut TestAppContext) {
+    fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory) =
             download_application_for_window_test(cx, "new-download-hls-quality");
@@ -7445,8 +7504,13 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
-        window.update(|_, cx| {
+        window.update(|window, cx| {
+            let url = view.read(cx).url.clone();
+            url.update(cx, |input, cx| {
+                input.set_value("https://example.test/master.m3u8", window, cx);
+            });
             view.update(cx, |view, cx| {
                 view.confirmed_request = Some(request);
                 view.probe = Some(DownloadProbe {
@@ -7507,6 +7571,29 @@ mod tests {
             window.read(|cx| view.read(cx).selected_hls_variant),
             Some(1)
         );
+        let add_to_queue = window
+            .debug_bounds("download-add-to-queue")
+            .expect("enabled HLS queue button");
+        window.simulate_click(add_to_queue.center(), Modifiers::default());
+        window.run_until_parked();
+        cx.run_until_parked();
+
+        let tasks = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .tasks()
+                .expect("read submitted tasks")
+        });
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].task.request().media,
+            Some(nxtools_download::DownloadRequestMedia::Hls(
+                nxtools_download::HlsDownloadRequest {
+                    playlist_url: "https://example.test/low.m3u8".into(),
+                }
+            ))
+        );
 
         let _ = std::fs::remove_dir_all(directory);
     }
@@ -7534,6 +7621,7 @@ mod tests {
             expected_total_bytes: Some(8_192),
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         let expected = initial.clone();
         let default_directory = directory.clone();
@@ -8342,6 +8430,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         let current = DownloadRequest {
             save_directory: PathBuf::from(r"D:\Archive"),
@@ -8390,6 +8479,29 @@ mod tests {
         assert!(
             begin_probe.contains("input.set_value"),
             "the file-name input must visibly update when probing completes"
+        );
+    }
+
+    #[test]
+    fn hls_probe_resolves_manifest_name_to_transport_stream_artifact() {
+        let probe = DownloadProbe {
+            final_url: "https://example.test/high/index.m3u8".into(),
+            file_name: Some("index.m3u8".into()),
+            total_bytes: None,
+            supports_ranges: false,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            validator: nxtools_download::ResourceValidator::default(),
+            media: Some(nxtools_download::DownloadMediaProbe::Hls(
+                nxtools_download::HlsProbe {
+                    is_master: false,
+                    variants: Vec::new(),
+                },
+            )),
+        };
+
+        assert_eq!(
+            resolved_probe_file_name(&probe).as_deref(),
+            Some("index.ts")
         );
     }
 }

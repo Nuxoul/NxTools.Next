@@ -90,6 +90,17 @@ pub struct DownloadAdaptiveSegmentPolicy {
     pub min_segment_mib: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum DownloadRequestMedia {
+    Hls(HlsDownloadRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HlsDownloadRequest {
+    pub playlist_url: String,
+}
+
 impl Default for DownloadAdaptiveSegmentPolicy {
     fn default() -> Self {
         Self {
@@ -117,6 +128,8 @@ pub struct DownloadRequest {
     pub scheduled_at_unix_ms: Option<i64>,
     #[serde(default)]
     pub adaptive_segment_policy: Option<DownloadAdaptiveSegmentPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<DownloadRequestMedia>,
 }
 
 impl DownloadRequest {
@@ -157,6 +170,18 @@ impl DownloadRequest {
         if self.speed_limit_bytes_per_second == Some(0) {
             return Err(DownloadRequestError::InvalidSpeedLimit);
         }
+        if let Some(DownloadRequestMedia::Hls(hls)) = self.media.as_ref() {
+            let playlist_url = url::Url::parse(&hls.playlist_url)
+                .map_err(|_| DownloadRequestError::InvalidMediaUrl)?;
+            if !matches!(playlist_url.scheme(), "http" | "https") {
+                return Err(DownloadRequestError::UnsupportedMediaScheme(
+                    playlist_url.scheme().to_owned(),
+                ));
+            }
+            if hls.playlist_url.len() > MAX_HLS_VARIANT_URL_BYTES {
+                return Err(DownloadRequestError::MediaUrlTooLong);
+            }
+        }
         if self.headers.iter().any(|header| {
             header.name.is_empty()
                 || header.name.contains([':', '\r', '\n'])
@@ -196,6 +221,12 @@ pub enum DownloadRequestError {
     InvalidAdaptiveMinSegmentMib(u16),
     #[error("download speed limit must be greater than zero; omit it for unlimited")]
     InvalidSpeedLimit,
+    #[error("media playlist URL is invalid")]
+    InvalidMediaUrl,
+    #[error("media playlist URL scheme is not supported: {0}")]
+    UnsupportedMediaScheme(String),
+    #[error("media playlist URL exceeds the bounded field limit")]
+    MediaUrlTooLong,
     #[error("download request contains an invalid header")]
     InvalidHeader,
 }

@@ -4,6 +4,60 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260810-RG-LOOKAHEAD] ripgrep_default_regex_rejects_lookahead
+
+**Logged**: 2026-08-10T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+A read-only constructor audit used a negative look-ahead with ripgrep's default regex engine,
+which does not support look-around.
+
+### Resolution
+
+Use ordinary context output for this audit, or opt into `--pcre2` only when look-around is truly
+needed.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: none
+- First-Seen: 2026-08-10
+- Last-Seen: 2026-08-10
+
+---
+
+## [ERR-20260810-DOWNLOAD-LOOPBACK-SEND] parallel_download_fixture_send_failure
+
+**Logged**: 2026-08-10T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The full `nxtools-download` suite saw one transient loopback request-send failure in the existing
+single-task persistence contract while 56 other engine contracts, including all new HLS contracts,
+passed.
+
+### Resolution
+
+Rerun the exact real-boundary contract before classifying the result. The isolated test passed
+against a fresh deterministic server; the full-suite failure remains recorded and is not treated as
+a product regression unless it recurs.
+
+### Metadata
+
+- Reproducible: no
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+- First-Seen: 2026-08-10
+- Last-Seen: 2026-08-10
+
+---
+
 ## [ERR-20260810-PROBESOURCEGATE] probe_source_contract_tuple_shape
 
 **Logged**: 2026-08-10T14:35:00+08:00
@@ -113,7 +167,7 @@ Use the direct `is_none_or` predicate and rerun the full workspace Clippy gate.
 
 - Reproducible: yes
 - Related Files: `rust/crates/nxtools-download/src/hls.rs`
-- Recurrence-Count: 2
+- Recurrence-Count: 3
 - Last-Seen: 2026-08-10
 
 ### Resolution
@@ -752,7 +806,13 @@ Delimit PowerShell variables followed immediately by punctuation, for example `$
 
 - **Resolved**: 2026-08-08T00:00:00+08:00
 - **Notes**: Corrected the validation command; the static diff and PowerShell parser checks then
-  passed.
+  passed. The same pattern recurred on 2026-08-10 in a read-only constructor audit using
+  `"$file:..."`; `${file}:...` corrected the command.
+
+### Metadata
+
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ---
 ## [ERR-20260808-EMPTYPROCESSMATCH] powershell_empty_process_id
@@ -828,12 +888,16 @@ executables such as Git and Cargo.
 ### Metadata
 
 - Reproducible: yes
-- Related Files: `tests/architecture/package-memory-policy.ps1`
+- Related Files: `tests/architecture/package-memory-policy.ps1`, `tests/architecture/browser-native-messaging.ps1`
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-08-08T00:00:00+08:00
 - **Notes**: Final verification was rerun without reading `$LASTEXITCODE` after the `.ps1` gate.
+  The same mistake recurred after the browser Native Messaging gate on 2026-08-10; the gate itself
+  passed, but the skipped C# commands were rerun separately.
 
 ---
 
@@ -1032,7 +1096,7 @@ Use `rg "struct PlatformBridge" rust` before opening an assumed module path.
 - Pattern-Key: tooling.discover_path_before_read
 - Recurrence-Count: 2
 - First-Seen: 2026-07-30
-- Last-Seen: 2026-08-08
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
@@ -1808,12 +1872,19 @@ Run long Release gates through a yielded execution cell or split them into indep
 
 - Reproducible: environment-dependent
 - Related Files: scripts/build.ps1
+- Recurrence-Count: 3
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-07-27T17:44:00+08:00
 - **Notes**: The lingering Cargo process finished; remaining architecture, warning-free C# build,
-  real-process regression suite and release packaging completed in bounded commands.
+  real-process regression suite and release packaging completed in bounded commands. The same
+  120-second outer timeout was mistakenly used for the 2026-08-10 Debug wrapper; no compiler child
+  remained, so it was restarted with a real ten-minute process timeout and yielded progress polling.
+  The cold workspace rebuild also exceeded ten minutes while rustc remained active; no child
+  survived the outer termination, and the remaining gates were split into individually observable
+  commands with thirty-minute process budgets rather than restarting the wrapper again.
 
 ---
 
@@ -2452,13 +2523,42 @@ Pass the containing directory and use `-g` globs for file filtering.
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: powershell.rg_windows_wildcard_path
-- Recurrence-Count: 2
+- Recurrence-Count: 4
 - First-Seen: 2026-07-24
-- Last-Seen: 2026-08-08
+- Last-Seen: 2026-08-10
 
 The pattern recurred while locating the old browser-extension packaging call chain: the exact
 results were valid, but a trailing `*.csproj` path made the read-only command exit nonzero. Future
 searches must pass the repository directory and select project files with `-g '*.csproj'`.
+The same pattern later recurred with `src/*.rs` while entering the HLS transfer slice; the corrected
+search passed `src` as the directory and relied on ripgrep's recursive traversal.
+The same wildcard-path mistake then recurred while checking a Cargo registry source directory;
+the corrected form passed the concrete registry directory and selected packages with `-g`.
+
+---
+
+## [ERR-20260810-HLS-PATH-IMPORT] hls_filename_helper_missing_path_import
+
+**Logged**: 2026-08-10T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+The HLS output-name helper used `Path::new` while the desktop module imported only `PathBuf`, so
+the first targeted desktop compile failed before running the regression.
+
+### Resolution
+
+Import `std::path::Path` beside `PathBuf` and rerun the exact desktop test.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`
+- First-Seen: 2026-08-10
+- Last-Seen: 2026-08-10
 
 ---
 
@@ -2726,12 +2826,43 @@ Either omit `--exact` for a unique function-name filter or pass the full module-
 ### Metadata
 
 - Reproducible: yes
-- Related Files: rust/apps/nxtools-indexer/src/lib.rs
+- Related Files: rust/apps/nxtools-indexer/src/lib.rs, rust/apps/nxtools-desktop/src/downloads.rs
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-10
 
 ### Resolution
 
 - **Resolved**: 2026-07-23T17:52:00+08:00
-- **Notes**: Re-ran with the unique function-name filter and no `--exact`.
+- **Notes**: Re-ran with the unique function-name filter and no `--exact`. The same mistake
+  recurred for the HLS output-name regression on 2026-08-10; its zero-test result was rejected and
+  the unique filter was rerun without `--exact`.
+
+---
+
+## [ERR-20260810-CARGO-LOW-PEAK-ENV] cargo_command_omitted_required_low_peak_environment
+
+**Logged**: 2026-08-10T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A desktop test-list command was launched without the repository's required one-job,
+non-incremental, high-codegen-unit environment. It was terminated immediately and was not counted
+as verification.
+
+### Resolution
+
+Every direct Cargo command in this repository must set `CARGO_BUILD_JOBS=1`,
+`CARGO_INCREMENTAL=0`, and `RUSTFLAGS=-C codegen-units=256` in the same PowerShell process.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `AGENTS.md`
+- First-Seen: 2026-08-10
+- Last-Seen: 2026-08-10
 
 ---
 

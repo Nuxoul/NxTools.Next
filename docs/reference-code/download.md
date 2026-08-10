@@ -1412,6 +1412,46 @@ Reverified on 2026-08-10 before starting the first Stage 5 slice:
   typed Rust request before HLS transfer is enabled; it must never fall through to the ordinary HTTP
   downloader and falsely complete after saving only the manifest.
 
+Reverified on 2026-08-10 before the first HLS transfer slice:
+
+- AB Download Manager's `HLSDownloadJob.kt::{actualBoot,fetchDownloadInfoAndValidate,updateParts,
+  beginDownloadParts,saveParts}` keeps media parts as durable domain state, limits active part
+  downloaders to the requested connection count, and revalidates every completed part against its
+  artifact before resuming. Part state is flushed before persistence, and a completed part is reused
+  by media-sequence identity only when its duration remains compatible.
+- Old NxTools' `DownloadManagerService.cs::{DownloadHlsAsync,
+  DownloadHlsSegmentsWithBoundedWorkersAsync,DownloadHlsSegmentWithRetryAsync,
+  MergeHlsAndVerifyAsync}` writes each media segment to a deterministic task working directory,
+  skips only nonempty/expected-length artifacts, uses bounded workers, and concatenates in playlist
+  order into a temporary output before the final move. `HlsPlaylistParser.cs::Parse` also tracks
+  `EXT-X-ENDLIST`, media sequence, byte ranges, initialization maps and encryption state.
+- The first Next transfer slice intentionally accepts only finite `EXT-X-ENDLIST`, unencrypted,
+  non-BYTERANGE media playlists without an initialization map. AES-128, fMP4 maps, byte ranges and
+  live-window refresh remain explicit typed rejections until their own red/green slices; they must
+  never silently download incorrect bytes.
+- The selected media-playlist URL becomes typed `DownloadRequest` state and survives SQLite reopen.
+  Parsed media segments are persisted as bounded per-task records. A segment is downloaded to a
+  staging file, flushed and atomically renamed before its completed checkpoint; recovery resets a
+  completed checkpoint when its artifact is missing and adopts a valid completed artifact left by a
+  crash before the database checkpoint. URLs, headers, cookies, keys and local paths are not logged.
+- Finalization concatenates completed segments in media-sequence order into the task temporary
+  artifact, flushes it, and uses the existing atomic final rename. Pause/cancel stops bounded workers;
+  pause preserves completed segment artifacts, while cancellation removes task-owned staging.
+
+Implemented and deterministically verified on 2026-08-10:
+
+- `DownloadRequestMedia::Hls` carries the selected playlist across command protocol v5 and task
+  persistence; GPUI no longer permits the ordinary HTTP adapter to complete a manifest as media.
+- SQLite schema v6 stores one bounded HLS plan plus ordered Segment rows. `Active` returns to
+  `Waiting` after pause/failure, a flushed atomically renamed artifact becomes `Completed`, missing
+  or mismatched completed artifacts are reset, and a nonempty orphan artifact is adopted.
+- The Rust engine uses a bounded `JoinSet` capped by the task connection limit. Aggregate progress
+  includes durable completed bytes plus active-worker bytes, while merge order remains playlist
+  order regardless of completion order.
+- Real loopback HTTP tests cover ordered output, observed parallelism without exceeding the cap,
+  and pause -> close engine -> reopen -> resume. Parser tests pin typed rejection of live,
+  AES-128, `EXT-X-MAP` and `EXT-X-BYTERANGE` inputs for this slice.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

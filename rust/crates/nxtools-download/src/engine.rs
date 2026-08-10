@@ -6,12 +6,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
-    PreparedDownload, PreparedDownloadOutcome, TransferDirective, is_disk_full_error,
-    is_file_in_use_error,
+    HlsSegmentDownloadOutcome, PreparedDownload, PreparedDownloadOutcome, TransferDirective,
+    is_disk_full_error, is_file_in_use_error,
 };
 use crate::storage::{BrowserHandoffSave, StoredTransferState};
 use crate::{
@@ -22,14 +23,14 @@ use crate::{
     DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
     DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
     DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
-    DownloadSchedule, DownloadSegment, DownloadSegmentError, DownloadSegmentProgress,
-    DownloadSegmentState, DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
-    DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError, DownloadStorageError,
-    DownloadStorageRequirement, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
-    DownloadTaskDetail, DownloadTaskError, DownloadTaskId, DownloadTransferContext,
-    DownloadTransferControl, DownloadWeekday, HttpDownloadClient, HttpDownloadError,
-    MAX_BROWSER_BATCH_ITEMS, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
-    TransferPlanError, TransferProtocol,
+    DownloadRequestMedia, DownloadSchedule, DownloadSegment, DownloadSegmentError,
+    DownloadSegmentProgress, DownloadSegmentState, DownloadSegmentTransferControl,
+    DownloadSegmentTransferOutcome, DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError,
+    DownloadStorageError, DownloadStorageRequirement, DownloadSubmitMode, DownloadTask,
+    DownloadTaskAction, DownloadTaskDetail, DownloadTaskError, DownloadTaskId,
+    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, HttpDownloadClient,
+    HttpDownloadError, MAX_BROWSER_BATCH_ITEMS, RequestOrigin, SegmentedArtifact,
+    SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -577,8 +578,9 @@ impl DownloadEngine {
             *state = committed;
             state.task.clone()
         };
-        self.inner
-            .emit(DownloadEvent::TaskChanged { task: changed_task });
+        self.inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(changed_task),
+        });
         info!(
             event = "download.speed_limit.task_changed",
             %correlation_id,
@@ -1255,8 +1257,9 @@ impl DownloadEngine {
                 *state = committed;
                 state.task.clone()
             };
-            self.inner
-                .emit(DownloadEvent::TaskChanged { task: changed_task });
+            self.inner.emit(DownloadEvent::TaskChanged {
+                task: Box::new(changed_task),
+            });
             spawn_download_worker(
                 Arc::clone(&self.inner),
                 queue_id.to_owned(),
@@ -1684,6 +1687,7 @@ impl DownloadEngine {
             expected_total_bytes: Some(blob.size),
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
         request.validate()?;
         let _scheduler = self
@@ -2110,7 +2114,7 @@ impl DownloadEngine {
             )?;
             *state = committed;
             self.inner.emit(DownloadEvent::TaskChanged {
-                task: state.task.clone(),
+                task: Box::new(state.task.clone()),
             });
             drop(tasks);
             drop(_scheduler);
@@ -2403,7 +2407,9 @@ impl DownloadEngineInner {
             .ok()
             .and_then(|tasks| tasks.get(&task_id).map(|state| state.task.clone()));
         if let Some(task) = task {
-            self.emit(DownloadEvent::TaskChanged { task });
+            self.emit(DownloadEvent::TaskChanged {
+                task: Box::new(task),
+            });
         }
     }
 
@@ -2471,6 +2477,16 @@ async fn run_task(
             .request()
             .clone()
     };
+    if let Some(DownloadRequestMedia::Hls(hls)) = request.media.as_ref() {
+        return run_hls_task(
+            Arc::clone(&inner),
+            task_id,
+            correlation_id,
+            &request,
+            &hls.playlist_url,
+        )
+        .await;
+    }
     let probe = inner.http.probe(&request).await?;
     let resume_plan_present = inner.store.load_transfer_plan(task_id)?.is_some();
     let validator_kind = if probe.validator.etag.is_some() {
@@ -2534,7 +2550,7 @@ async fn run_task(
             .ok_or(DownloadEngineError::MissingTransferControl(task_id))?;
         inner.persist(state)?;
         inner.emit(DownloadEvent::TaskChanged {
-            task: state.task.clone(),
+            task: Box::new(state.task.clone()),
         });
         control
     };
@@ -2563,6 +2579,599 @@ async fn run_task(
         "probe_single_stream",
     )
     .await
+}
+
+async fn run_hls_task(
+    inner: Arc<DownloadEngineInner>,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    request: &DownloadRequest,
+    playlist_url: &str,
+) -> Result<(), DownloadEngineError> {
+    let started_at = Instant::now();
+    let stored_plan = inner.store.load_hls_transfer_plan(task_id)?;
+    info!(
+        event = "download.hls_playlist.started",
+        %correlation_id,
+        ?task_id,
+        source = if stored_plan.is_some() { "checkpoint" } else { "network" },
+        "HLS media playlist resolution started"
+    );
+    let playlist = if let Some(plan) = stored_plan.as_ref() {
+        if plan.segments.is_empty() {
+            return Err(DownloadEngineError::Runtime(
+                "persisted HLS transfer plan has no segments".into(),
+            ));
+        }
+        let playlist = crate::hls::HlsMediaPlaylist {
+            final_url: plan.final_url.clone(),
+            media_sequence: plan.media_sequence,
+            segments: plan
+                .segments
+                .iter()
+                .map(|segment| segment.media.clone())
+                .collect(),
+        };
+        info!(
+            event = "download.hls_playlist.completed",
+            %correlation_id,
+            ?task_id,
+            source = "checkpoint",
+            segment_count = playlist.segments.len(),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "persisted HLS media playlist restored"
+        );
+        playlist
+    } else {
+        let playlist = match inner
+            .http
+            .load_hls_media_playlist(request, playlist_url)
+            .await
+        {
+            Ok(playlist) => playlist,
+            Err(error) => {
+                warn!(
+                    event = "download.hls_playlist.failed",
+                    %correlation_id,
+                    ?task_id,
+                    error_kind = error.kind(),
+                    retryable = error.is_retryable_transfer(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "HLS media playlist resolution failed"
+                );
+                return Err(error.into());
+            }
+        };
+        inner.store.save_hls_transfer_plan(task_id, &playlist)?;
+        info!(
+            event = "download.hls_transfer_plan.created",
+            %correlation_id,
+            ?task_id,
+            segment_count = playlist.segments.len(),
+            "HLS media transfer plan persisted"
+        );
+        info!(
+            event = "download.hls_playlist.completed",
+            %correlation_id,
+            ?task_id,
+            source = "network",
+            segment_count = playlist.segments.len(),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "HLS media playlist resolved and persisted"
+        );
+        playlist
+    };
+    let fallback_file_name = url::Url::parse(&playlist.final_url)
+        .ok()
+        .and_then(|url| {
+            Path::new(url.path())
+                .file_stem()
+                .map(|stem| format!("{}.ts", stem.to_string_lossy()))
+        })
+        .unwrap_or_else(|| "video.ts".into());
+    let mut probe = DownloadProbe {
+        final_url: playlist.final_url.clone(),
+        file_name: Some(fallback_file_name),
+        total_bytes: None,
+        supports_ranges: false,
+        content_type: Some("application/vnd.apple.mpegurl".into()),
+        validator: crate::ResourceValidator::default(),
+        media: Some(crate::DownloadMediaProbe::Hls(crate::HlsProbe {
+            is_master: false,
+            variants: Vec::new(),
+        })),
+    };
+    let (temporary_path, final_path) =
+        HttpDownloadClient::artifact_paths(request, &probe, task_id)?;
+    tokio::fs::create_dir_all(&request.save_directory).await?;
+    if tokio::fs::try_exists(&final_path).await? {
+        return Err(HttpDownloadError::DestinationExists(final_path).into());
+    }
+    let working_directory = request
+        .save_directory
+        .join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    tokio::fs::create_dir_all(&working_directory).await?;
+    let control = {
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.probe = Some(probe.clone());
+        state.transfer.temporary_path = Some(temporary_path.clone());
+        state.transfer.final_path = Some(final_path.clone());
+        state.transfer.final_committed = false;
+        if state.task.status() == DownloadStatus::Probing {
+            state
+                .task
+                .transition_to(DownloadStatus::Waiting, now_unix_ms())?;
+        }
+        state
+            .task
+            .transition_to(DownloadStatus::Downloading, now_unix_ms())?;
+        state.last_progress_event = None;
+        state.transfer_rate = Some(TransferRateSampler::new(0, Instant::now()));
+        let control = state
+            .control
+            .clone()
+            .ok_or(DownloadEngineError::MissingTransferControl(task_id))?;
+        inner.persist(state)?;
+        inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(state.task.clone()),
+        });
+        control
+    };
+    info!(
+        event = "download.hls_transfer.started",
+        %correlation_id,
+        ?task_id,
+        segment_count = playlist.segments.len(),
+        requested_connections = request.connection_limit.unwrap_or(1),
+        "HLS media transfer started"
+    );
+
+    let stored_segments = stored_plan
+        .map(|plan| {
+            plan.segments
+                .into_iter()
+                .map(|segment| (segment.media.index, segment))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_else(|| {
+            playlist
+                .segments
+                .iter()
+                .map(|segment| {
+                    (
+                        segment.index,
+                        crate::storage::StoredHlsSegment {
+                            media: segment.clone(),
+                            downloaded_bytes: 0,
+                            state: DownloadSegmentState::Waiting,
+                        },
+                    )
+                })
+                .collect()
+        });
+    let mut completed_bytes = 0_u64;
+    let mut completed_segments = 0_usize;
+    let mut pending_segments = VecDeque::new();
+    for segment in &playlist.segments {
+        let checkpoint = stored_segments.get(&segment.index).ok_or_else(|| {
+            DownloadEngineError::Runtime(format!(
+                "persisted HLS segment {} is missing",
+                segment.index
+            ))
+        })?;
+        let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
+        match tokio::fs::metadata(&completed_path).await {
+            Ok(metadata)
+                if metadata.len() > 0
+                    && (checkpoint.state != DownloadSegmentState::Completed
+                        || checkpoint.downloaded_bytes == metadata.len()) =>
+            {
+                completed_bytes = completed_bytes
+                    .checked_add(metadata.len())
+                    .ok_or(HttpDownloadError::LengthOverflow)?;
+                completed_segments = completed_segments.saturating_add(1);
+                if checkpoint.state != DownloadSegmentState::Completed
+                    || checkpoint.downloaded_bytes != metadata.len()
+                {
+                    inner.store.save_hls_segment_checkpoint(
+                        task_id,
+                        segment.index,
+                        DownloadSegmentState::Completed,
+                        metadata.len(),
+                    )?;
+                    info!(
+                        event = "download.hls_segment_checkpoint.adopted",
+                        %correlation_id,
+                        ?task_id,
+                        segment_index = segment.index,
+                        downloaded_bytes = metadata.len(),
+                        "durable HLS segment artifact adopted into its checkpoint"
+                    );
+                }
+                continue;
+            }
+            Ok(_) => {
+                tokio::fs::remove_file(&completed_path).await?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        inner.store.save_hls_segment_checkpoint(
+            task_id,
+            segment.index,
+            DownloadSegmentState::Waiting,
+            0,
+        )?;
+        pending_segments.push_back(segment.clone());
+    }
+    let durable_completed_bytes = Arc::new(AtomicU64::new(completed_bytes));
+    let active_progress = Arc::new(Mutex::new(HashMap::<u32, u64>::new()));
+    let active_connections = Arc::new(AtomicU16::new(0));
+    let max_connections = usize::from(request.connection_limit.unwrap_or(1).clamp(1, 64));
+    let mut transfers = tokio::task::JoinSet::new();
+    while transfers.len() < max_connections
+        && let Some(segment) = pending_segments.pop_front()
+    {
+        inner.store.save_hls_segment_checkpoint(
+            task_id,
+            segment.index,
+            DownloadSegmentState::Active,
+            0,
+        )?;
+        spawn_hls_segment_transfer(
+            &mut transfers,
+            &inner,
+            task_id,
+            correlation_id,
+            request,
+            &control,
+            &working_directory,
+            &durable_completed_bytes,
+            &active_progress,
+            &active_connections,
+            segment,
+        );
+    }
+    let mut paused = false;
+    let mut cancelled = false;
+    let mut first_error = None;
+    while let Some(joined) = transfers.join_next().await {
+        let (segment, staging_path, completed_path, outcome) =
+            joined.map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
+        active_progress
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?
+            .remove(&segment.index);
+        match outcome {
+            Ok(HlsSegmentDownloadOutcome::Completed { downloaded_bytes }) => {
+                tokio::fs::rename(&staging_path, &completed_path).await?;
+                inner.store.save_hls_segment_checkpoint(
+                    task_id,
+                    segment.index,
+                    DownloadSegmentState::Completed,
+                    downloaded_bytes,
+                )?;
+                completed_bytes = durable_completed_bytes
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                        current.checked_add(downloaded_bytes)
+                    })
+                    .map(|previous| previous + downloaded_bytes)
+                    .map_err(|_| HttpDownloadError::LengthOverflow)?;
+                completed_segments = completed_segments.saturating_add(1);
+                let mut tasks = inner.lock_tasks()?;
+                let state = tasks
+                    .get_mut(&task_id)
+                    .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+                state.transfer.downloaded_bytes = completed_bytes;
+                inner.persist(state)?;
+            }
+            Ok(HlsSegmentDownloadOutcome::Paused) => {
+                inner.store.save_hls_segment_checkpoint(
+                    task_id,
+                    segment.index,
+                    DownloadSegmentState::Waiting,
+                    0,
+                )?;
+                paused = true;
+            }
+            Ok(HlsSegmentDownloadOutcome::Cancelled) => {
+                inner.store.save_hls_segment_checkpoint(
+                    task_id,
+                    segment.index,
+                    DownloadSegmentState::Waiting,
+                    0,
+                )?;
+                cancelled = true;
+            }
+            Err(error) => {
+                inner.store.save_hls_segment_checkpoint(
+                    task_id,
+                    segment.index,
+                    DownloadSegmentState::Waiting,
+                    0,
+                )?;
+                first_error.get_or_insert(error);
+            }
+        }
+        if !paused
+            && !cancelled
+            && first_error.is_none()
+            && let Some(next) = pending_segments.pop_front()
+        {
+            inner.store.save_hls_segment_checkpoint(
+                task_id,
+                next.index,
+                DownloadSegmentState::Active,
+                0,
+            )?;
+            spawn_hls_segment_transfer(
+                &mut transfers,
+                &inner,
+                task_id,
+                correlation_id,
+                request,
+                &control,
+                &working_directory,
+                &durable_completed_bytes,
+                &active_progress,
+                &active_connections,
+                next,
+            );
+        }
+    }
+    completed_bytes = durable_completed_bytes.load(Ordering::Acquire);
+    if let Some(error) = first_error {
+        return Err(error.into());
+    }
+    if paused {
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.downloaded_bytes = completed_bytes;
+        state
+            .task
+            .transition_to(DownloadStatus::Paused, now_unix_ms())?;
+        state.control = None;
+        inner.persist(state)?;
+        inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(state.task.clone()),
+        });
+        info!(
+            event = "download.hls_transfer.paused",
+            %correlation_id,
+            ?task_id,
+            completed_segments,
+            downloaded_bytes = completed_bytes,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "HLS media transfer paused"
+        );
+        return Ok(());
+    }
+    if cancelled {
+        if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                event = "download.hls_cleanup.failed",
+                %correlation_id,
+                ?task_id,
+                reason = "cancelled",
+                native_error_code = error.raw_os_error(),
+                "HLS task staging cleanup failed"
+            );
+        }
+        if let Err(error) = tokio::fs::remove_file(&temporary_path).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                event = "download.hls_cleanup.failed",
+                %correlation_id,
+                ?task_id,
+                reason = "cancelled_merge_artifact",
+                native_error_code = error.raw_os_error(),
+                "HLS merge artifact cleanup failed"
+            );
+        }
+        inner.store.clear_hls_transfer_plan(task_id)?;
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.downloaded_bytes = completed_bytes;
+        state
+            .task
+            .transition_to(DownloadStatus::Cancelled, now_unix_ms())?;
+        state.control = None;
+        inner.persist(state)?;
+        inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(state.task.clone()),
+        });
+        info!(
+            event = "download.hls_transfer.cancelled",
+            %correlation_id,
+            ?task_id,
+            downloaded_bytes = completed_bytes,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "HLS media transfer cancelled"
+        );
+        return Ok(());
+    }
+
+    {
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.downloaded_bytes = completed_bytes;
+        probe.total_bytes = Some(completed_bytes);
+        state.transfer.probe = Some(probe);
+        state
+            .task
+            .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
+        inner.persist(state)?;
+        inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(state.task.clone()),
+        });
+    }
+    let mut output = tokio::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary_path)
+        .await?;
+    for segment in &playlist.segments {
+        let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
+        let mut input = tokio::fs::File::open(completed_path).await?;
+        tokio::io::copy(&mut input, &mut output).await?;
+    }
+    output.flush().await?;
+    output.sync_all().await?;
+    drop(output);
+    inner
+        .http
+        .commit_prepared(PreparedDownload {
+            temporary_path,
+            final_path,
+            downloaded_bytes: completed_bytes,
+        })
+        .await?;
+    commit_completed_state(&inner, task_id)?;
+    if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        warn!(
+            event = "download.hls_cleanup.failed",
+            %correlation_id,
+            ?task_id,
+            reason = "completed",
+            native_error_code = error.raw_os_error(),
+            "HLS task staging cleanup failed"
+        );
+    }
+    info!(
+        event = "download.hls_transfer.completed",
+        %correlation_id,
+        ?task_id,
+        segment_count = playlist.segments.len(),
+        downloaded_bytes = completed_bytes,
+        elapsed_ms = started_at.elapsed().as_millis(),
+        "HLS media transfer completed"
+    );
+    Ok(())
+}
+
+type HlsSegmentTransferResult = (
+    crate::hls::HlsMediaSegment,
+    PathBuf,
+    PathBuf,
+    Result<HlsSegmentDownloadOutcome, HttpDownloadError>,
+);
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_hls_segment_transfer(
+    transfers: &mut tokio::task::JoinSet<HlsSegmentTransferResult>,
+    inner: &Arc<DownloadEngineInner>,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    request: &DownloadRequest,
+    control: &DownloadTransferControl,
+    working_directory: &Path,
+    durable_completed_bytes: &Arc<AtomicU64>,
+    active_progress: &Arc<Mutex<HashMap<u32, u64>>>,
+    active_connections: &Arc<AtomicU16>,
+    segment: crate::hls::HlsMediaSegment,
+) {
+    let http = inner.http.clone();
+    let request = request.clone();
+    let control = control.clone();
+    let progress_inner = Arc::clone(inner);
+    let durable_completed_bytes = Arc::clone(durable_completed_bytes);
+    let active_progress = Arc::clone(active_progress);
+    let active_connections = Arc::clone(active_connections);
+    let staging_path = working_directory.join(format!("{:08}.part", segment.index));
+    let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
+    active_connections.fetch_add(1, Ordering::AcqRel);
+    transfers.spawn(async move {
+        let mut attempt = 1_u32;
+        let outcome = loop {
+            let callback_inner = Arc::clone(&progress_inner);
+            let callback_progress = Arc::clone(&active_progress);
+            let callback_completed = Arc::clone(&durable_completed_bytes);
+            let callback_active = Arc::clone(&active_connections);
+            let outcome = http
+                .download_hls_segment(
+                    &request,
+                    &segment.url,
+                    &staging_path,
+                    &control,
+                    move |segment_bytes| {
+                        let active_bytes = callback_progress
+                            .lock()
+                            .map(|mut values| {
+                                values.insert(segment.index, segment_bytes);
+                                values.values().copied().sum::<u64>()
+                            })
+                            .unwrap_or_default();
+                        publish_transfer_progress(
+                            &callback_inner,
+                            task_id,
+                            callback_completed
+                                .load(Ordering::Acquire)
+                                .saturating_add(active_bytes),
+                            None,
+                            callback_active.load(Ordering::Acquire),
+                            None,
+                            None,
+                        );
+                    },
+                )
+                .await;
+            match outcome {
+                Err(error) if should_retry_transfer(attempt, &error) => {
+                    if let Ok(mut values) = active_progress.lock() {
+                        values.insert(segment.index, 0);
+                    }
+                    let delay = transfer_retry_delay(attempt);
+                    warn!(
+                        event = "download.hls_segment_retry.scheduled",
+                        %correlation_id,
+                        ?task_id,
+                        segment_index = segment.index,
+                        failed_attempt = attempt,
+                        next_attempt = attempt + 1,
+                        delay_ms = delay.as_millis(),
+                        error_kind = error.kind(),
+                        "transient HLS segment failure scheduled for retry"
+                    );
+                    attempt += 1;
+                    let _ = control.wait_for_stop_or_timeout(delay).await;
+                }
+                terminal => {
+                    if terminal.is_err()
+                        && let Err(cleanup_error) = tokio::fs::remove_file(&staging_path).await
+                        && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                    {
+                        warn!(
+                            event = "download.hls_cleanup.failed",
+                            %correlation_id,
+                            ?task_id,
+                            segment_index = segment.index,
+                            reason = "segment_terminal_failure",
+                            native_error_code = cleanup_error.raw_os_error(),
+                            "HLS segment staging cleanup failed"
+                        );
+                    }
+                    break terminal;
+                }
+            }
+        };
+        active_connections.fetch_sub(1, Ordering::AcqRel);
+        (segment, staging_path, completed_path, outcome)
+    });
 }
 
 async fn preflight_storage_capacity(
@@ -2766,7 +3375,7 @@ async fn run_single_stream_task(
                     .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
                 inner.persist(state)?;
                 inner.emit(DownloadEvent::TaskChanged {
-                    task: state.task.clone(),
+                    task: Box::new(state.task.clone()),
                 });
             }
             inner.http.commit_prepared(ready).await?;
@@ -2795,7 +3404,7 @@ async fn run_single_stream_task(
             state.control = None;
             inner.persist(state)?;
             inner.emit(DownloadEvent::TaskChanged {
-                task: state.task.clone(),
+                task: Box::new(state.task.clone()),
             });
             info!(
                 event = "download.single_stream.paused",
@@ -2819,7 +3428,7 @@ async fn run_single_stream_task(
             state.control = None;
             inner.persist(state)?;
             inner.emit(DownloadEvent::TaskChanged {
-                task: state.task.clone(),
+                task: Box::new(state.task.clone()),
             });
             info!(
                 event = "download.single_stream.cancelled",
@@ -3676,7 +4285,7 @@ async fn run_segmented_task(
             .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
         inner.persist(state)?;
         inner.emit(DownloadEvent::TaskChanged {
-            task: state.task.clone(),
+            task: Box::new(state.task.clone()),
         });
     }
     inner
@@ -3788,7 +4397,7 @@ fn transition_transfer_to_terminal(
     state.control = None;
     inner.persist(state)?;
     inner.emit(DownloadEvent::TaskChanged {
-        task: state.task.clone(),
+        task: Box::new(state.task.clone()),
     });
     Ok(())
 }
@@ -3882,7 +4491,7 @@ fn commit_completed_state(
     inner.persist(&committed)?;
     *state = committed;
     inner.emit(DownloadEvent::TaskChanged {
-        task: state.task.clone(),
+        task: Box::new(state.task.clone()),
     });
     Ok(())
 }
@@ -3922,7 +4531,7 @@ fn record_failure(
     state.control = None;
     let _ = inner.persist(state);
     inner.emit(DownloadEvent::TaskChanged {
-        task: state.task.clone(),
+        task: Box::new(state.task.clone()),
     });
 }
 
@@ -4522,6 +5131,7 @@ mod tests {
                     expected_total_bytes: Some(12_345),
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Browser,
             )
@@ -4554,6 +5164,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -4621,6 +5232,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -4671,6 +5283,7 @@ mod tests {
                     expected_total_bytes: None,
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
+                    media: None,
                 },
                 RequestOrigin::Internal,
             )
@@ -4841,6 +5454,7 @@ mod tests {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             };
 
             let task_id = engine
@@ -4884,6 +5498,7 @@ mod tests {
             expected_total_bytes: None,
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
+            media: None,
         };
 
         let task_id = engine
@@ -4920,6 +5535,7 @@ mod tests {
                 expected_total_bytes: None,
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
+                media: None,
             },
             RequestOrigin::Internal,
             1_000,

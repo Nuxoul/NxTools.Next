@@ -245,7 +245,7 @@ Referrer are not written
 to the host log. Repeated capture events remain throttled in the extension and are never emitted per
 network chunk or scan candidate.
 
-## HLS probing
+## HLS probing and transfer
 
 The versioned download command boundary records `download.probe.started` followed by exactly one
 `download.probe.completed` or `download.probe.failed` under the command request/correlation ID.
@@ -253,7 +253,17 @@ The success terminal carries only the fixed media kind, bounded variant count an
 Failure carries a fixed error kind, optional native error code and elapsed time. Manifest text,
 playlist or variant URLs, file names, request headers, cookies and referrers are never logged.
 
-The GPUI quality choice is local presentation state and does not create per-click diagnostics. A
-future HLS task submission must reuse a new command correlation through selection persistence,
-segment planning, transfer and merge; it must not reuse the probe correlation or emit per-segment
-URL/content logs.
+The GPUI quality choice is local presentation state and does not create per-click diagnostics. HLS
+submission uses a new command correlation rather than the probe correlation. Playlist resolution
+records `download.hls_playlist.started` followed by one `download.hls_playlist.completed` or
+`download.hls_playlist.failed`; a durable-plan restore uses the same pair with
+`source=checkpoint`. Plan creation records `download.hls_transfer_plan.created`. Transfer records
+`download.hls_transfer.started` and one `download.hls_transfer.completed`,
+`download.hls_transfer.paused`, `download.hls_transfer.cancelled` or the existing correlated task
+failure. A transient segment retry uses `download.hls_segment_retry.scheduled`; staging cleanup
+failure uses `download.hls_cleanup.failed` with a fixed reason and native error code.
+
+These events retain only correlation/task identity, fixed source/reason/error kind, bounded segment
+and byte counts, connection count and elapsed time. Manifest text, playlist/segment URLs, local
+paths, file names, headers, cookies, encryption keys and media bytes are never logged. Successful
+segments do not emit per-segment production logs.

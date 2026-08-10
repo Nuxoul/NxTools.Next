@@ -9,7 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 4;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 5;
 
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
@@ -345,7 +345,7 @@ pub enum DownloadEventSequenceError {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum DownloadEvent {
     TaskChanged {
-        task: DownloadTask,
+        task: Box<DownloadTask>,
     },
     TaskRemoved {
         task_id: DownloadTaskId,
