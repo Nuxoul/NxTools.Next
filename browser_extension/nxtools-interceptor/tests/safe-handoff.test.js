@@ -1,7 +1,41 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { completeAcceptedHandoff } = require("../handoff-policy.js");
+const {
+  acceptedHandoffResponse,
+  buildExtensionLogRequest,
+  completeAcceptedHandoff,
+} = require("../handoff-policy.js");
+
+test("extension diagnostics keep transport identity separate from feature correlation", () => {
+  const allocated = ["feature-correlation", "already-pending", "log-transport-id"];
+  const request = buildExtensionLogRequest({
+    protocolVersion: 2,
+    level: "info",
+    event: "batch_handoff_started",
+    message: "started",
+    correlationId: "feature-correlation",
+    allocateRequestId: () => allocated.shift(),
+    isRequestIdPending: (requestId) => requestId === "already-pending",
+  });
+
+  assert.equal(request.requestId, "log-transport-id");
+  assert.equal(request.payload.correlationId, "feature-correlation");
+});
+
+test("manual and context-menu handoffs require explicit identity-bound acceptance", () => {
+  assert.equal(acceptedHandoffResponse({
+    ok: true,
+    accepted: true,
+    handoffId: "handoff-1",
+  }, "handoff-1"), true);
+  assert.equal(acceptedHandoffResponse({ ok: true }, "handoff-1"), false);
+  assert.equal(acceptedHandoffResponse({
+    ok: true,
+    accepted: true,
+    handoffId: "foreign",
+  }, "handoff-1"), false);
+});
 
 test("a rejected desktop handoff leaves the browser download untouched", async () => {
   const calls = [];

@@ -783,8 +783,22 @@ GPUI source 预填文件名、大小、MIME 和目录，不做伪网络探测，
 移动/跨卷复制边界登记为 Completed 浏览器任务；数据库拒绝会恢复 staging，恢复失败会作为
 关联终态显式上报而不会被吞掉。关闭窗口会通过引擎删除未提交 staging，过期部分上传会实时
 释放活动/待处理配额，启动时也清理一小时旧文件。
-下载 IPC 协议随新命令升至 v2。真实 TCP→磁盘、一次性/超限/offset、引擎导入/幂等、私有对话
+该 Blob 切片当时将下载 IPC 协议升至 v2。真实 TCP→磁盘、一次性/超限/offset、引擎导入/幂等、私有对话
 框和 GPUI 预填测试均已加入；仍需与浏览器冷启动/前台修复一起打包做真实 Chrome/Edge 验收。
+
+2026-08-10 完成同一组合项中的批量任务与右键纵向切片，组合 checklist 仍等待与 Blob 一起
+做真实浏览器验收后再勾选。资源面板新增独立的“批量加入队列”动作，一次只接受 1–32 个普通
+HTTP/HTTPS 资源；Blob 继续使用单项有界数据面。扩展以一个父 correlation 和逐项稳定 handoff
+ID 发出单个 Native Messaging 请求，Rust 下载 IPC 升至 v3，并逐项回显 handoff/task ID、重复
+状态或失败；扩展在发请求前先持久化这些 handoff ID，不确定响应可用原 ID 重试而不会重复建
+任务，同 URL 的后续捕获也不能清除此 ID；飞行期间缓存对象被重新捕获替换时，接受结果会按
+resource ID 回查并只清理匹配 handoff 的当前权威对象；单项发送在等待 Native Messaging 前
+冻结该 ID，旧响应不能清理后发请求的新 ID。部分失败仍保留选择。扩展诊断使用独立 transport
+request ID，业务 correlation 单独传递，避免日志 ACK 抢先完成批量 Promise；传输拒绝/超时也
+会产生同一 correlation 的单一批量终态。批次强制
+QueueOnly，不提前实现阶段 3 暂缓的多窗口防风暴策略。右键菜单统一为“使用 NxTools 下载”，
+只处理已声明 ID，只有收到同一 handoff 的明确接受才显示成功。扩展策略、Host 映射与真实下载
+引擎幂等回归已先红后绿；尚未打包或启动 GUI，等待本阶段组合验收。
 
 ### 阶段 5：HLS/DASH（6–10 天）
 

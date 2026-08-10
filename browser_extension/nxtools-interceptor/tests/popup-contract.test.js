@@ -34,6 +34,9 @@ test("popup uses semantic landmarks and an honest browser handoff label", () => 
   assert.doesNotMatch(html, /交接后等待手动开始/);
   assert.match(html, /Native Messaging/);
   assert.match(html, /合并 · 后续/);
+  assert.match(html, /id="batchResourcesButton"/);
+  assert.match(html, /批量加入队列/);
+  assert.match(script, /type:\s*"popup_send_resources"/);
   assert.match(html, /role="tablist"/);
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
   assert.equal((html.match(/role="tabpanel"/g) || []).length, 4);

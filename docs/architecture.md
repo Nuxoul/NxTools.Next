@@ -28,8 +28,10 @@ Browser extension
           -> opens NxTools.exe --background only for non-interactive download commands
           -> Blob metadata/capability stays on Native Messaging; Blob bytes use a random-loopback,
              one-time, current-user capability stream with 1 MiB chunks and a 2 GiB total bound
-          -> only a complete staging ID crosses download command protocol v2; the engine owns
+          -> only a complete staging ID crosses download command protocol v3; the engine owns
              confirmation, final artifact import, task persistence and cancellation cleanup
+          -> ordinary batch intake is one bounded 1–32 item command with one parent correlation;
+             each item has a stable handoff ID and is queue-only to avoid a window storm
 ```
 
 The desktop process is the source of truth. Adapter processes may reconnect and be restarted

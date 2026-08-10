@@ -1,9 +1,9 @@
 "use strict";
 
-importScripts("handoff-policy.js", "capture-policy.js", "blob-transfer-policy.js");
+importScripts("handoff-policy.js", "capture-policy.js", "blob-transfer-policy.js", "batch-handoff-policy.js");
 
 const NATIVE_HOST_NAME = "com.nxtools.next.browser";
-const BROWSER_PROTOCOL_VERSION = 1;
+const BROWSER_PROTOCOL_VERSION = 2;
 const MAX_NATIVE_REQUEST_BYTES = 256 * 1024;
 
 const DEFAULT_SETTINGS = {
@@ -984,7 +984,14 @@ function trimLogText(value, maxLength = 1200) {
   return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function sendExtensionLog(level, event, message, details = {}, throttleMs = EXTENSION_LOG_THROTTLE_MS) {
+function sendExtensionLog(
+  level,
+  event,
+  message,
+  details = {},
+  throttleMs = EXTENSION_LOG_THROTTLE_MS,
+  correlationId = ""
+) {
   const key = `${trimLogText(level, 16)}:${trimLogText(event, 128)}:${trimLogText(details.reason, 128)}`;
   const now = Date.now();
   const last = extensionLogTimes.get(key) || 0;
@@ -1013,16 +1020,15 @@ function sendExtensionLog(level, event, message, details = {}, throttleMs = EXTE
   ensureDesktopConnection()
     .then((port) => {
       if (port) {
-        port.postMessage({
+        port.postMessage(NxToolsHandoffPolicy.buildExtensionLogRequest({
           protocolVersion: BROWSER_PROTOCOL_VERSION,
-          type: "extension_log",
-          requestId: nextRequestId(),
-          payload: {
-            level: payload.level,
-            event: payload.event,
-            message: trimLogText(payload.message, 240)
-          }
-        });
+          level: payload.level,
+          event: payload.event,
+          message: trimLogText(payload.message, 240),
+          correlationId,
+          allocateRequestId: nextRequestId,
+          isRequestIdPending: (requestId) => pendingDesktopRequests.has(requestId)
+        }));
       }
     })
     .catch(() => {
@@ -1785,6 +1791,7 @@ function cacheResource(resource) {
     width: boundedCapturedNumber(resource.width),
     height: boundedCapturedNumber(resource.height),
     requestHeaders: sanitizeCapturedHeaderObject(resource.requestHeaders),
+    pendingBatchHandoffId: NxToolsBatchHandoffPolicy.normalizeHandoffId(resource.pendingBatchHandoffId),
     capturedAt: boundedCapturedNumber(resource.capturedAt) || Date.now()
   };
   if (!resource.id) {
@@ -1873,6 +1880,17 @@ function schedulePersistResources() {
       [STORAGE_LAST_TAB_KEY]: lastActiveTabId
     });
   }, 600);
+}
+
+async function persistResourcesNow() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = 0;
+  }
+  await chrome.storage.local.set({
+    [STORAGE_RESOURCE_KEY]: serializeResources(),
+    [STORAGE_LAST_TAB_KEY]: lastActiveTabId
+  });
 }
 
 async function loadPersistentResources() {
@@ -2737,7 +2755,7 @@ async function sendBlobResourceViaContentScript(resource) {
   };
 }
 
-async function addDownloadToNxTools(payload) {
+async function addDownloadToNxTools(payload, correlationId) {
   const settings = await getSettings();
   return sendDesktopRequest("create_task", {
     payload: {
@@ -2747,16 +2765,17 @@ async function addDownloadToNxTools(payload) {
       ...payload,
       handoffId: payload.handoffId || nextRequestId()
     }
-  }, 15000);
+  }, 15000, correlationId);
 }
 
 async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}, size = 0, supportsRange = false, contextUrl = "" }) {
+  const effectiveHandoffId = handoffId || nextRequestId();
   const invalidGoogleVideoReason = googleVideoInvalidReason(url);
   if (invalidGoogleVideoReason) {
     sendExtensionLog("warn", "handoff_rejected", "已拒绝过期或异常的 YouTube 直链", {
       url,
       reason: invalidGoogleVideoReason
-    }, 30000);
+    }, 30000, effectiveHandoffId);
     return {
       ok: false,
       message: "捕获到的 YouTube 直链已过期，请让视频播放几秒后重新选择资源"
@@ -2783,11 +2802,11 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
     headerCount: headerNames.length + (enrichedHeaders?.cookie ? 1 : 0),
     headerNames: headerNames.slice(0, 16).join(","),
     cookieIncluded: Boolean(enrichedHeaders?.cookie)
-  }, 15000);
+  }, 15000, effectiveHandoffId);
 
   try {
     const result = await addDownloadToNxTools({
-      handoffId,
+      handoffId: effectiveHandoffId,
       url,
       fileName: resolvedFileName,
       headers: enrichedHeaders,
@@ -2795,7 +2814,8 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
       cookie: headerPayload.cookie,
       size: resolvedSize,
       supportsRange
-    });
+    }, effectiveHandoffId);
+    const accepted = NxToolsHandoffPolicy.acceptedHandoffResponse(result, effectiveHandoffId);
     const queued = Boolean(result?.data?.queued);
     sendExtensionLog(result?.ok === false || queued ? "warn" : "info", "handoff_result", result?.ok === false
       ? "资源发送到 NxTools 失败"
@@ -2806,13 +2826,21 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
       reason: result?.message || "",
       queued,
       size: resolvedSize
-    }, result?.ok === false ? 0 : 15000);
+    }, result?.ok === false ? 0 : 15000, effectiveHandoffId);
+    if (!accepted) {
+      return {
+        ...result,
+        ok: false,
+        accepted: false,
+        message: result?.message || result?.error || "NxTools 未确认接收下载任务"
+      };
+    }
     return result;
   } catch (error) {
     sendExtensionLog("error", "handoff_failed", "资源发送到 NxTools 异常", {
       url,
       reason: error instanceof Error ? error.message : String(error)
-    }, 0);
+    }, 0, effectiveHandoffId);
     throw error;
   }
 }
@@ -2907,6 +2935,7 @@ async function sendUrl(url, options = {}) {
   }
 
   return sendDownloadPayload({
+    handoffId: options.handoffId || "",
     url,
     fileName: options.fileName || getFileNameFromUrl(url),
     headers,
@@ -2952,17 +2981,133 @@ async function sendResource(resourceId, overrides = {}) {
     height: Number(overrides.height || 0) > 0 ? Number(overrides.height || 0) : Number(resource.height || 0)
   };
 
-  const result = await sendDownloadPayload({
-    url: outboundResource.url,
-    fileName: buildResourceFileName(outboundResource),
-    headers: outboundResource.requestHeaders,
-    size: outboundResource.size,
-    supportsRange: outboundResource.supportsRange,
-    contextUrl: outboundResource.pageUrl || outboundResource.referer || ""
+  resource.pendingBatchHandoffId ||= nextRequestId();
+  const result = await NxToolsBatchHandoffPolicy.runSingleResourceHandoff({
+    resource,
+    persistHandoff: persistResourcesNow,
+    sendHandoff: (handoffId) => sendDownloadPayload({
+      handoffId,
+      url: outboundResource.url,
+      fileName: buildResourceFileName(outboundResource),
+      headers: outboundResource.requestHeaders,
+      size: outboundResource.size,
+      supportsRange: outboundResource.supportsRange,
+      contextUrl: outboundResource.pageUrl || outboundResource.referer || ""
+    }),
+    resolveCurrentResource: (resourceId) => resourcesById.get(resourceId)
   });
-  resource.sentToDesktopAt = Date.now();
   schedulePersistResources();
   return result;
+}
+
+async function sendResourcesBatch(resourceIds) {
+  const resources = [...new Set(Array.isArray(resourceIds) ? resourceIds.map(String) : [])]
+    .map((resourceId) => resourcesById.get(resourceId))
+    .filter(Boolean);
+  const selection = NxToolsBatchHandoffPolicy.selectBatchResources(resources);
+  if (selection.error) {
+    return { ok: false, message: selection.error };
+  }
+  if (selection.items.length === 0) {
+    return {
+      ok: false,
+      message: selection.unsupportedIds.length > 0
+        ? "Blob 资源请使用单项下载"
+        : "没有可批量提交的 HTTP/HTTPS 资源"
+    };
+  }
+
+  const settings = await getSettings();
+  const handoffToResource = new Map();
+  const items = [];
+  for (const resource of selection.items) {
+    resource.pendingBatchHandoffId ||= nextRequestId();
+    const handoffId = resource.pendingBatchHandoffId;
+    handoffToResource.set(handoffId, resource);
+    const dispositionName = dispositionFileNameForUrl(resource.url);
+    const fileName = ensureFileNameForUrl(
+      dispositionName || buildResourceFileName(resource),
+      resource.url,
+      resource.mime
+    );
+    const headers = await enrichHeadersForDownload(
+      resource.url,
+      resource.requestHeaders,
+      settings,
+      resource.pageUrl || resource.referer || ""
+    );
+    const headerPayload = headerObjectToPayload(headers, settings);
+    items.push({
+      handoffId,
+      url: resource.url,
+      fileName,
+      headers,
+      cookie: headerPayload.cookie,
+      referrer: resource.referer || resource.pageUrl || "",
+      size: Number(resource.size || 0),
+      startImmediately: false,
+      openDialog: false
+    });
+  }
+  await persistResourcesNow();
+
+  const correlationId = nextRequestId();
+  const { validation } = await NxToolsBatchHandoffPolicy.runBatchHandoffRequest({
+    correlationId,
+    handoffIds: items.map((item) => item.handoffId),
+    sendRequest: () => sendDesktopRequest("create_tasks", {
+      payload: { items }
+    }, 20000, correlationId),
+    emitLifecycle: (phase, details, lifecycleCorrelationId) => {
+      const failed = details.failedCount > 0 || details.transportFailed === true;
+      sendExtensionLog(
+        failed ? "warn" : "info",
+        `batch_handoff_${phase}`,
+        phase === "started" ? "开始批量发送资源" : "批量发送资源完成",
+        details,
+        0,
+        lifecycleCorrelationId
+      );
+    }
+  });
+  if (!validation.valid) {
+    return { ok: false, message: "NxTools 返回了无效的批量关联响应" };
+  }
+
+  const acceptedResourceIds = [];
+  const failedResourceIds = [];
+  for (const handoffId of validation.acceptedHandoffIds) {
+    const resource = handoffToResource.get(handoffId);
+    if (resource) {
+      acceptedResourceIds.push(resource.id);
+      NxToolsBatchHandoffPolicy.applyAcceptedHandoff({
+        resourceId: resource.id,
+        handoffId,
+        observedResource: resource,
+        resolveCurrentResource: (resourceId) => resourcesById.get(resourceId)
+      });
+    }
+  }
+  for (const handoffId of validation.failedHandoffIds) {
+    const resource = handoffToResource.get(handoffId);
+    if (resource) {
+      failedResourceIds.push(resource.id);
+    }
+  }
+  schedulePersistResources();
+  return {
+    ok: true,
+    accepted: failedResourceIds.length === 0,
+    message: [
+      `已加入 ${acceptedResourceIds.length} 个`,
+      failedResourceIds.length > 0 ? `${failedResourceIds.length} 个失败` : "",
+      selection.unsupportedIds.length > 0 ? `${selection.unsupportedIds.length} 个 Blob 请单独下载` : ""
+    ].filter(Boolean).join("，"),
+    acceptedResourceIds,
+    failedResourceIds,
+    unsupportedResourceIds: selection.unsupportedIds,
+    data: { queued: true }
+  };
 }
 
 function findResourceByUrl(rawUrl, tabId = 0) {
@@ -3812,14 +3957,14 @@ function createContextMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: "nxtools-download-link",
-      title: "使用 NxTools 解析下载",
+      title: "使用 NxTools 下载",
       contexts: ["link", "image", "audio", "video"],
       targetUrlPatterns: ["http://*/*", "https://*/*"]
     });
 
     chrome.contextMenus.create({
       id: "nxtools-download-page",
-      title: "使用 NxTools 解析当前页面",
+      title: "使用 NxTools 下载当前页面",
       contexts: ["page"],
       documentUrlPatterns: ["http://*/*", "https://*/*"]
     });
@@ -4173,23 +4318,32 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return;
   }
 
+  if (info.menuItemId !== "nxtools-download-link" &&
+      info.menuItemId !== "nxtools-download-page") {
+    return;
+  }
+
   const url = info.linkUrl || info.srcUrl || info.pageUrl;
   if (!url) {
     return;
   }
 
+  const correlationId = nextRequestId();
   void sendUrl(url, {
+    handoffId: correlationId,
     referrer: info.pageUrl || tab?.url || ""
-  }).then(
-    () => {
-      setBadge("OK", "#138a72");
-      setTimeout(() => setBadge("", "#138a72"), 1600);
-    },
-    (error) => {
-      console.warn("Failed to send context menu URL to NxTools.", error);
-      setBadge("!", "#9a3412");
+  }).then((result) => {
+    if (result?.ok !== true || result?.accepted !== true) {
+      throw new Error(result?.message || "NxTools 未接受右键下载请求");
     }
-  );
+    sendExtensionLog("info", "context_menu_handoff_completed", "右键下载已由 NxTools 接受", {}, 0, correlationId);
+    setBadge("OK", "#138a72");
+    setTimeout(() => setBadge("", "#138a72"), 1600);
+  }).catch((error) => {
+    sendExtensionLog("warn", "context_menu_handoff_failed", "右键下载未交接", {}, 0, correlationId);
+    console.warn("Failed to send context menu URL to NxTools.", error);
+    setBadge("!", "#9a3412");
+  });
 });
 
 async function toggleFeature(feature, tabId) {
@@ -4517,11 +4671,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return { ok: false, message: "当前页面不是可下载链接" };
       }
 
-      await sendUrl(tab.url, {
+      const result = await sendUrl(tab.url, {
         fileName: getFileNameFromUrl(tab.url),
         referrer: tab.url
       });
-      return { ok: true, message: "已发送到 NxTools" };
+      return result;
     })().then(sendResponse, (error) => {
       sendResponse({
         ok: false,
@@ -4536,6 +4690,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         ok: false,
         message: error instanceof Error ? error.message : "发送资源失败"
+      });
+    });
+    return true;
+  }
+
+  if (message.type === "popup_send_resources") {
+    void sendResourcesBatch(message.resourceIds).then(sendResponse, (error) => {
+      sendResponse({
+        ok: false,
+        message: error instanceof Error ? error.message : "批量发送资源失败"
       });
     });
     return true;

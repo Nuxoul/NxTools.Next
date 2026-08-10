@@ -100,6 +100,23 @@ test("later weak page observations cannot erase authoritative metadata", () => {
   assert.equal(merged.capturedAt, 300);
 });
 
+test("recapture cannot erase a pending stable browser handoff identity", () => {
+  const pendingBatchHandoffId = "12345678-1234-4abc-8def-1234567890ab";
+  const merged = policy.mergeCapturedResource({
+    id: "resource-1",
+    url: "https://cdn.example.test/archive.zip",
+    pendingBatchHandoffId,
+    capturedAt: 100,
+  }, {
+    id: "resource-1",
+    url: "https://cdn.example.test/archive.zip",
+    pendingBatchHandoffId: "",
+    capturedAt: 200,
+  });
+
+  assert.equal(merged.pendingBatchHandoffId, pendingBatchHandoffId);
+});
+
 test("weak page MIME cannot reinterpret a generic response", () => {
   const merged = policy.mergeCapturedResource({
     mime: "application/octet-stream",
@@ -138,6 +155,7 @@ test("popup projection omits privileged request context", () => {
     },
     referer: "https://private.example.test/account",
     pageUrl: "https://private.example.test/account",
+    pendingBatchHandoffId: "12345678-1234-4abc-8def-1234567890ab",
     supportsRange: true,
     capturedAt: 100
   });
@@ -148,6 +166,7 @@ test("popup projection omits privileged request context", () => {
   assert.equal("requestHeaders" in projected, false);
   assert.equal("referer" in projected, false);
   assert.equal("pageUrl" in projected, false);
+  assert.equal("pendingBatchHandoffId" in projected, false);
 });
 
 test("storage projection never persists page or request context", () => {
@@ -159,10 +178,12 @@ test("storage projection never persists page or request context", () => {
     pageUrl: "https://private.example.test/account",
     referer: "https://private.example.test/account",
     requestHeaders: { cookie: "session=secret" },
+    pendingBatchHandoffId: "12345678-1234-4abc-8def-1234567890ab",
     filename: "archive.zip"
   });
 
   assert.equal(projected.filename, "archive.zip");
+  assert.equal(projected.pendingBatchHandoffId, "12345678-1234-4abc-8def-1234567890ab");
   for (const field of ["pageTitle", "pageKey", "pageUrl", "referer", "requestHeaders"]) {
     assert.equal(field in projected, false, `${field} must remain worker-only`);
   }

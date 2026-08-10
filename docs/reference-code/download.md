@@ -361,6 +361,29 @@ product compatibility baseline rather than designing a replacement from memory:
   page/content hooks, media resource discovery, a media-adjacent download affordance and a drop
   target. Capability negotiation must keep unsupported media/merge actions honest until phases 4/5
   actually provide their backend rather than displaying a future success message.
+- Reverified on 2026-08-10 before the batch/context-action slice: the old and migrated workers both
+  register link/media and page context actions, but the handler accepts every non-popup menu ID and
+  paints a success badge when `sendUrl` merely resolves, even when the native response explicitly
+  rejects the handoff. The user-facing action is therefore normalized to the exact
+  `使用 NxTools 下载` wording, handles only its declared IDs, preserves the captured browser
+  Referrer/Header boundary, and reports success only after a positive correlated acceptance.
+- The migrated resource list already owns checkbox selection, but those selections only feed the
+  disabled Phase 5 merge affordance. Phase 4 reuses that explicit selection for a separate
+  `批量加入队列` action. One native request carries 1–32 ordinary HTTP(S) items, one parent
+  correlation ID and a stable UUID handoff per item; the worker durably stores those IDs before the
+  request leaves the extension, and Rust returns an identity-bound result for each
+  item, so a retry cannot duplicate accepted tasks and partial failures remain selected for retry.
+  Later observations of the same resource cannot erase a pending handoff ID, and acceptance resolves
+  the current authoritative resource by ID before clearing only the matching handoff, so an in-flight
+  recapture cannot leave an already accepted identity stuck in the cache. A single-resource send
+  freezes that identity before awaiting Native Messaging, so an older response also cannot clear a
+  newer in-flight handoff. Best-effort extension
+  diagnostics use a separate transport request ID and carry the feature correlation as validated
+  payload metadata, so a log acknowledgement cannot resolve the pending batch request; transport
+  rejection still produces the batch terminal event.
+  Blob items retain their proven single-resource data plane and are not smuggled through the native
+  control message. Batch intake is queue-only to avoid the explicitly deferred multi-window storm
+  policy; starting or confirming many visible task windows remains outside this slice.
 - Chromium `interceptBrowserDownload` cancels the browser item before desktop acceptance and only
   attempts a new URL-only browser download when handoff fails. Firefox
   `handlePreemptiveBrowserDownload` cancels at response-header time before the asynchronous handoff;

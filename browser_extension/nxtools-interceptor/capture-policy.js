@@ -222,6 +222,10 @@
       mediaHint: incoming.mediaHint || incoming.assetHint || existing.mediaHint || existing.assetHint || null,
       assetHint: incoming.assetHint || existing.assetHint || null,
       requestHeaders: mergeRequestHeaders(existing, incoming),
+      pendingBatchHandoffId: preferText(
+        incoming.pendingBatchHandoffId,
+        existing.pendingBatchHandoffId
+      ),
       capturedAt: Math.max(existingCapturedAt, incomingCapturedAt) || Date.now()
     };
   }
@@ -231,6 +235,7 @@
       requestHeaders: _requestHeaders,
       referer: _referer,
       pageUrl: _pageUrl,
+      pendingBatchHandoffId: _pendingBatchHandoffId,
       ...presentation
     } = resource || {};
     return {

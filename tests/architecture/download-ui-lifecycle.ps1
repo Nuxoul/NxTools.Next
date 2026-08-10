@@ -8,6 +8,8 @@ $sourcePath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads
 $source = Get-Content -LiteralPath $sourcePath -Raw
 $platformAdapterPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs"
 $platformAdapter = Get-Content -LiteralPath $platformAdapterPath -Raw
+$nativeFileDragCoordinatorPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\NativeFileDragCoordinator.cs"
+$nativeFileDragCoordinator = Get-Content -LiteralPath $nativeFileDragCoordinatorPath -Raw
 $nativeFileDragPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\NativeFileDragService.cs"
 $nativeFileDrag = Get-Content -LiteralPath $nativeFileDragPath -Raw
 
@@ -69,7 +71,8 @@ if ($dragBody.Contains("cx.defer(")) {
 if (-not $dragBody.Contains("source_window_handle")) {
     throw "The pressed GPUI window HWND must cross the protocol seam with the completed artifact."
 }
-if (-not $platformAdapter.Contains("NativeFileDragService.TryDragFile")) {
+if (-not $platformAdapter.Contains("NativeFileDragCoordinator") -or
+    -not $nativeFileDragCoordinator.Contains("NativeFileDragService.TryDragFile")) {
     throw "The Windows adapter must use the reference-compatible OLE file-drag source."
 }
 if ($platformAdapter.Contains("_fileDragSource.DoDragDrop(")) {
@@ -82,7 +85,7 @@ if (-not $nativeFileDrag.Contains("WmCancelMode") -or
 if (-not $nativeFileDrag.Contains("GetAsyncKeyState")) {
     throw "The C# drag adapter must reject a gesture that ended before the OLE handoff."
 }
-if (-not $nativeFileDrag.Contains("SHDoDragDrop")) {
+if (-not $nativeFileDrag.Contains("private static extern int DoDragDrop")) {
     throw "The native Shell drag loop must receive the visible GPUI source HWND."
 }
 

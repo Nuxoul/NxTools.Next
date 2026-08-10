@@ -40,13 +40,38 @@ Assert-Contains $background 'openDialog: settings.openDialog' `
     'Browser confirmation-window preference must cross the Native Messaging boundary.'
 Assert-Contains $background 'sanitizeCapturedHeaderObject(resource.requestHeaders)' `
     'Page-derived resource headers must be bounded and allowlisted at the cache boundary.'
+Assert-Contains $background 'importScripts("handoff-policy.js", "capture-policy.js", "blob-transfer-policy.js", "batch-handoff-policy.js")' `
+    'The service worker must load the bounded batch handoff policy.'
+Assert-Contains $background 'sendDesktopRequest("create_tasks"' `
+    'Selected resources must cross Native Messaging as one correlated batch request.'
+Assert-Contains $background 'await persistResourcesNow()' `
+    'Stable per-item handoff IDs must be durable before the native batch request is sent.'
+Assert-Contains $background 'NxToolsHandoffPolicy.buildExtensionLogRequest' `
+    'Extension diagnostics must use the tested transport/correlation separation policy.'
+Assert-Contains $background '}, 15000, correlationId)' `
+    'Ordinary handoff must preserve one correlation ID from extension to Rust.'
+Assert-Contains $background 'info.menuItemId !== "nxtools-download-link"' `
+    'The context-menu listener must reject undeclared menu identifiers.'
+Assert-Contains $background 'result?.ok !== true || result?.accepted !== true' `
+    'The context-menu success badge requires explicit native acceptance.'
 if ($background.Contains('return { cancel: true };', [StringComparison]::Ordinal)) {
     throw 'Browser response hooks must not cancel before asynchronous acceptance.'
 }
 
 $handoffPolicy = Get-Content -LiteralPath (Join-Path $extension 'handoff-policy.js') -Raw
-Assert-Contains $handoffPolicy 'response.handoffId !== expectedHandoffId' `
+Assert-Contains $handoffPolicy 'response.handoffId === expectedHandoffId' `
     'Desktop acceptance must echo the exact handoff ID before browser cancellation.'
+Assert-Contains $handoffPolicy 'requestId !== correlationId && !isRequestIdPending(requestId)' `
+    'Best-effort extension log responses must not collide with pending feature requests.'
+$batchPolicy = Get-Content -LiteralPath (Join-Path $extension 'batch-handoff-policy.js') -Raw
+Assert-Contains $batchPolicy 'MAX_BATCH_ITEMS = 32' `
+    'Browser batch handoff must enforce the product item-count bound.'
+Assert-Contains $batchPolicy 'response?.data?.queued === true' `
+    'Browser batch acceptance must prove queue-only task creation.'
+Assert-Contains $batchPolicy 'batch handoff response identity mismatch' `
+    'Browser batch responses must bind every result to the submitted handoff identities.'
+Assert-Contains $batchPolicy 'runBatchHandoffRequest' `
+    'Browser batch transport failure must emit one correlated terminal lifecycle event.'
 
 $pageHook = Get-Content -LiteralPath (Join-Path $extension 'page-hook.js') -Raw
 Assert-Contains $pageHook '__nxtoolsBlobChunkRequest' `
@@ -85,6 +110,10 @@ Assert-Contains $nativeHostSource 'MAX_NATIVE_MESSAGE_BYTES: usize = 256 * 1024'
     'Native Messaging input must use the product-level bounded frame limit.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserSubmit' `
     'Native host must submit through the Rust download command boundary.'
+Assert-Contains $nativeHostSource 'DownloadCommand::BrowserBatchSubmit' `
+    'Native host must submit bounded browser batches through one typed Rust command.'
+Assert-Contains $nativeHostSource 'DownloadSubmitMode::QueueOnly' `
+    'Browser batch intake must remain queue-only until the window anti-storm policy is implemented.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenDialog' `
     'Native host must distinguish a GPUI confirmation-window request from direct task creation.'
 Assert-Contains $nativeHostSource 'DownloadCommand::BrowserOpenBlobDialog' `

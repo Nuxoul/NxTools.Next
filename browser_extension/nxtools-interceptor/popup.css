@@ -472,6 +472,16 @@ button.primary:hover:not(:disabled) {
   gap: 7px;
 }
 
+.batch-action {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  color: var(--accent);
+}
+
+.batch-action:not(:disabled):hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .resource-toolbar {
   justify-content: space-between;
   gap: 7px;

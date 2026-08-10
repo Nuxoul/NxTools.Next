@@ -26,6 +26,7 @@ const elements = {
   testButton: document.getElementById("testButton"),
   sendTabButton: document.getElementById("sendTabButton"),
   clearResourcesButton: document.getElementById("clearResourcesButton"),
+  batchResourcesButton: document.getElementById("batchResourcesButton"),
   mergeResourcesButton: document.getElementById("mergeResourcesButton"),
   statusText: document.getElementById("statusText"),
   statusDot: document.getElementById("statusDot"),
@@ -361,9 +362,14 @@ function expandedResourcePreviewMarkup(resource) {
 }
 
 function updateMergeButton() {
+  const selectedCount = selectedResourceIds.size;
+  elements.batchResourcesButton.disabled = selectedCount === 0 || selectedCount > 32;
+  elements.batchResourcesButton.textContent = selectedCount > 0
+    ? `加入队列 ${selectedCount}/32`
+    : "批量加入队列";
   elements.mergeResourcesButton.disabled = true;
-  elements.mergeResourcesButton.textContent = selectedResourceIds.size > 0
-    ? `合并 ${selectedResourceIds.size}/2 · 后续`
+  elements.mergeResourcesButton.textContent = selectedCount > 0
+    ? `合并 ${selectedCount}/2 · 后续`
     : "合并 · 后续";
 }
 
@@ -689,6 +695,13 @@ function renderSiteToggle(site) {
 
 function render(state) {
   currentState = state;
+  const liveResourceIds = new Set([
+    ...(state.currentResources || []),
+    ...(state.otherResources || [])
+  ].map((resource) => resource.id));
+  selectedResourceIds = new Set(
+    [...selectedResourceIds].filter((resourceId) => liveResourceIds.has(resourceId))
+  );
   const settings = state.settings || {};
   elements.interceptDownloads.checked = Boolean(settings.interceptDownloads);
   elements.openDialog.checked = settings.openDialog !== false;
@@ -895,6 +908,30 @@ elements.clearResourcesButton.addEventListener("click", async () => {
     setMessage(error instanceof Error ? error.message : "清空失败");
   } finally {
     endBusy(elements.clearResourcesButton);
+  }
+});
+
+elements.batchResourcesButton.addEventListener("click", async () => {
+  if (selectedResourceIds.size === 0 || selectedResourceIds.size > 32) {
+    setMessage("请选择 1–32 个普通 HTTP/HTTPS 资源");
+    return;
+  }
+  beginBusy(elements.batchResourcesButton, "提交中");
+  try {
+    const result = await sendMessage({
+      type: "popup_send_resources",
+      resourceIds: [...selectedResourceIds]
+    }, 24000);
+    for (const resourceId of result.acceptedResourceIds || []) {
+      selectedResourceIds.delete(resourceId);
+    }
+    setMessage(result.message || (result.ok ? "资源已加入队列" : "批量提交失败"));
+    await refresh({ force: true });
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "批量提交失败");
+  } finally {
+    endBusy(elements.batchResourcesButton);
+    updateMergeButton();
   }
 });
 

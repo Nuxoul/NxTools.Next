@@ -15,19 +15,21 @@ use crate::http::{
 };
 use crate::storage::{BrowserHandoffSave, StoredTransferState};
 use crate::{
-    ArtifactAllocation, BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
-    DownloadBatchAction, DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandOutcome, DownloadCommandResult, DownloadDailySchedule, DownloadEvent,
-    DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
-    DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
+    ArtifactAllocation, BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
+    DownloadCommandResult, DownloadDailySchedule, DownloadEvent, DownloadEventEnvelope,
+    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
+    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
     DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
     DownloadSchedule, DownloadSegment, DownloadSegmentError, DownloadSegmentProgress,
     DownloadSegmentState, DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
     DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError, DownloadStorageError,
     DownloadStorageRequirement, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
     DownloadTaskDetail, DownloadTaskError, DownloadTaskId, DownloadTransferContext,
-    DownloadTransferControl, DownloadWeekday, HttpDownloadClient, HttpDownloadError, RequestOrigin,
-    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadTransferControl, DownloadWeekday, HttpDownloadClient, HttpDownloadError,
+    MAX_BROWSER_BATCH_ITEMS, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
+    TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -623,6 +625,9 @@ impl DownloadEngine {
                         duplicate,
                     },
                 ),
+            DownloadCommand::BrowserBatchSubmit { submissions } => self
+                .submit_browser_batch_correlated(submissions, request_id)
+                .map(|results| DownloadCommandOutcome::BrowserBatchAccepted { results }),
             DownloadCommand::BrowserOpenDialog {
                 handoff_id,
                 request,
@@ -1508,6 +1513,76 @@ impl DownloadEngine {
             "browser handoff accepted"
         );
         Ok((task_id, false))
+    }
+
+    fn submit_browser_batch_correlated(
+        &self,
+        submissions: Vec<BrowserDownloadSubmission>,
+        correlation_id: uuid::Uuid,
+    ) -> Result<Vec<BrowserBatchSubmissionResult>, DownloadEngineError> {
+        if submissions.is_empty() || submissions.len() > MAX_BROWSER_BATCH_ITEMS {
+            return Err(DownloadEngineError::InvalidBrowserBatchSize {
+                count: submissions.len(),
+                maximum: MAX_BROWSER_BATCH_ITEMS,
+            });
+        }
+        let mut handoff_ids = HashSet::with_capacity(submissions.len());
+        for submission in &submissions {
+            if !handoff_ids.insert(submission.handoff_id) {
+                return Err(DownloadEngineError::DuplicateBrowserBatchHandoff);
+            }
+            submission.request.validate()?;
+        }
+
+        let started_at = Instant::now();
+        info!(
+            event = "download.browser_batch.started",
+            %correlation_id,
+            item_count = submissions.len(),
+            "browser batch submission started"
+        );
+        let mut accepted_count = 0_usize;
+        let mut duplicate_count = 0_usize;
+        let results = submissions
+            .into_iter()
+            .map(|submission| {
+                let handoff_id = submission.handoff_id;
+                match self.submit_browser_correlated(
+                    handoff_id,
+                    submission.request,
+                    DownloadSubmitMode::QueueOnly,
+                    correlation_id,
+                ) {
+                    Ok((task_id, duplicate)) => {
+                        accepted_count += 1;
+                        duplicate_count += usize::from(duplicate);
+                        BrowserBatchSubmissionResult {
+                            handoff_id,
+                            task_id: Some(task_id),
+                            duplicate,
+                            fault: None,
+                        }
+                    }
+                    Err(error) => BrowserBatchSubmissionResult {
+                        handoff_id,
+                        task_id: None,
+                        duplicate: false,
+                        fault: Some(error.fault()),
+                    },
+                }
+            })
+            .collect::<Vec<_>>();
+        info!(
+            event = "download.browser_batch.completed",
+            %correlation_id,
+            item_count = results.len(),
+            accepted_count,
+            duplicate_count,
+            rejected_count = results.len().saturating_sub(accepted_count),
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            "browser batch submission completed"
+        );
+        Ok(results)
     }
 
     fn import_browser_blob_correlated(
@@ -4106,6 +4181,10 @@ pub enum DownloadEngineError {
     },
     #[error("download queue concurrency must be at least one")]
     InvalidQueueConcurrency,
+    #[error("browser batch must contain between 1 and {maximum} items, got {count}")]
+    InvalidBrowserBatchSize { count: usize, maximum: usize },
+    #[error("browser batch contains a duplicate handoff ID")]
+    DuplicateBrowserBatchHandoff,
     #[error("download task is not eligible for queue reordering: {0:?}")]
     InvalidQueueMove(DownloadTaskId),
     #[error("download engine task lock is poisoned")]
@@ -4145,7 +4224,9 @@ impl DownloadEngineError {
             };
         }
         let (code, retryable) = match self {
-            Self::InvalidRequest(_) => (DownloadFaultCode::InvalidRequest, false),
+            Self::InvalidRequest(_)
+            | Self::InvalidBrowserBatchSize { .. }
+            | Self::DuplicateBrowserBatchHandoff => (DownloadFaultCode::InvalidRequest, false),
             Self::Task(_)
             | Self::Segment(_)
             | Self::TransferPlan(_)

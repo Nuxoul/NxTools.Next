@@ -7,12 +7,13 @@ use std::time::Duration;
 
 use chrono::{Datelike, Local, Weekday};
 use nxtools_download::{
-    BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAdaptiveSegmentPolicy,
-    DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
-    DownloadDailySchedule, DownloadEngine, DownloadEvent, DownloadQueueAction,
-    DownloadQueuePlacement, DownloadRequest, DownloadSchedule, DownloadScheduleMoment,
-    DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction,
-    DownloadWeekday, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
+    BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+    DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
+    DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine, DownloadEvent,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadSchedule,
+    DownloadScheduleMoment, DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask,
+    DownloadTaskAction, DownloadWeekday, RequestOrigin, SqliteDownloadStore,
+    daily_schedule_window_contains,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
 
@@ -392,6 +393,80 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
             task_id,
             duplicate: true,
         } if task_id == first_task_id
+    ));
+}
+
+#[test]
+fn browser_batch_submission_creates_each_task_once_and_replays_by_handoff_identity() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut first_request = request(&server, directory.path().join("artifacts"));
+    first_request.file_name = Some("first.bin".into());
+    let mut second_request = first_request.clone();
+    second_request.file_name = Some("second.bin".into());
+    let submissions = vec![
+        BrowserDownloadSubmission {
+            handoff_id: uuid::Uuid::new_v4(),
+            request: first_request,
+        },
+        BrowserDownloadSubmission {
+            handoff_id: uuid::Uuid::new_v4(),
+            request: second_request,
+        },
+    ];
+    let command = DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserBatchSubmit {
+            submissions: submissions.clone(),
+        },
+    };
+
+    let first = engine.handle_command(command.clone());
+    let DownloadCommandOutcome::BrowserBatchAccepted { results } = first.outcome else {
+        panic!("browser batch was not accepted");
+    };
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|result| !result.duplicate));
+    assert_eq!(engine.tasks().expect("read tasks").len(), 2);
+
+    let replay = engine.handle_command(command);
+    let DownloadCommandOutcome::BrowserBatchAccepted { results } = replay.outcome else {
+        panic!("browser batch replay was not accepted");
+    };
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.handoff_id)
+            .collect::<Vec<_>>(),
+        submissions
+            .iter()
+            .map(|submission| submission.handoff_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(results.iter().all(|result| result.duplicate));
+    assert_eq!(engine.tasks().expect("read tasks after replay").len(), 2);
+}
+
+#[test]
+fn browser_batch_rejects_an_empty_payload_as_an_invalid_request() {
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserBatchSubmit {
+            submissions: Vec::new(),
+        },
+    });
+
+    assert!(matches!(
+        result.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::InvalidRequest
+                && !fault.retryable
     ));
 }
 

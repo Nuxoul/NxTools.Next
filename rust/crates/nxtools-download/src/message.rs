@@ -9,7 +9,9 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 2;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 3;
+
+pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserBlob {
@@ -17,6 +19,20 @@ pub struct BrowserBlob {
     pub file_name: String,
     pub media_type: Option<String>,
     pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserDownloadSubmission {
+    pub handoff_id: Uuid,
+    pub request: DownloadRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserBatchSubmissionResult {
+    pub handoff_id: Uuid,
+    pub task_id: Option<DownloadTaskId>,
+    pub duplicate: bool,
+    pub fault: Option<DownloadFault>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +60,9 @@ pub enum DownloadCommand {
         request: DownloadRequest,
         #[serde(default)]
         mode: DownloadSubmitMode,
+    },
+    BrowserBatchSubmit {
+        submissions: Vec<BrowserDownloadSubmission>,
     },
     BrowserOpenDialog {
         handoff_id: Uuid,
@@ -168,6 +187,9 @@ pub enum DownloadCommandOutcome {
     BrowserAccepted {
         task_id: DownloadTaskId,
         duplicate: bool,
+    },
+    BrowserBatchAccepted {
+        results: Vec<BrowserBatchSubmissionResult>,
     },
     BrowserDialogAccepted {
         handoff_id: Uuid,

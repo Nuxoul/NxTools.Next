@@ -26,13 +26,14 @@ pub use http::{
     HttpDownloadError,
 };
 pub use message::{
-    BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
     DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
     DownloadQuery, DownloadQueueAction, DownloadQueuePlacement, DownloadSegmentProgress,
     DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail,
-    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};

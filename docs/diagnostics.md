@@ -180,6 +180,20 @@ one-time capability/token, loopback URL, page/blob URL, filename, MIME payload a
 logged. Rejected chunks are coalesced into the upload's single bounded failure/expiry terminal rather
 than per-chunk payload diagnostics.
 
+Selected-resource batches use one parent correlation ID from extension to engine. The extension
+emits `batch_handoff_started` and one `batch_handoff_completed`; BrowserHost emits
+`browser_native_host.batch_started` followed by `browser_native_host.batch_completed`,
+`browser_native_host.batch_rejected` or the generic correlated
+`browser_native_host.request_failed`; the engine emits
+`download.browser_batch.started` and `download.browser_batch.completed`. Batch events contain only
+item/accepted/rejected/duplicate counts and elapsed time. Per-item URLs, names, request headers,
+cookies and referrers are never logged. Context-menu handoff uses the existing single-item chain and
+adds only the fixed event identities `context_menu_handoff_completed` or
+`context_menu_handoff_failed`.
+Extension diagnostic messages use their own transport request ID so their acknowledgements cannot
+complete a pending feature request; the validated feature correlation travels as a separate UUID
+field and is the only correlation recorded for correlated extension events.
+
 When the extension requests its legacy confirmation-window behavior and no Desktop pipe exists,
 BrowserHost records `browser_native_host.desktop_start_requested`, starts the protected sibling as
 `NxTools.exe --browser-dialog --browser-correlation-id <id>`, and records

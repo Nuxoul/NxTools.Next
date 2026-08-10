@@ -7,6 +7,44 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
+  function acceptedHandoffResponse(response, expectedHandoffId) {
+    return Boolean(
+      response &&
+      response.ok === true &&
+      response.accepted === true &&
+      expectedHandoffId &&
+      response.handoffId === expectedHandoffId
+    );
+  }
+
+  function buildExtensionLogRequest({
+    protocolVersion,
+    level,
+    event,
+    message,
+    correlationId = "",
+    allocateRequestId,
+    isRequestIdPending = () => false,
+  }) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const requestId = String(allocateRequestId() || "");
+      if (requestId && requestId !== correlationId && !isRequestIdPending(requestId)) {
+        return {
+          protocolVersion,
+          type: "extension_log",
+          requestId,
+          payload: {
+            level,
+            event,
+            message,
+            correlationId: correlationId || undefined,
+          },
+        };
+      }
+    }
+    throw new Error("unable to allocate an isolated extension log request ID");
+  }
+
   async function completeAcceptedHandoff({
     response,
     expectedHandoffId,
@@ -14,8 +52,7 @@
     eraseBrowserDownload,
     rollbackDesktopTask,
   }) {
-    if (!response || response.ok !== true || response.accepted !== true ||
-        !expectedHandoffId || response.handoffId !== expectedHandoffId) {
+    if (!acceptedHandoffResponse(response, expectedHandoffId)) {
       return {
         transferred: false,
         error: response?.accepted === true && response?.handoffId !== expectedHandoffId
@@ -45,5 +82,9 @@
     };
   }
 
-  return Object.freeze({ completeAcceptedHandoff });
+  return Object.freeze({
+    acceptedHandoffResponse,
+    buildExtensionLogRequest,
+    completeAcceptedHandoff,
+  });
 });

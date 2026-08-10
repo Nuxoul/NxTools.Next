@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use nxtools_download::{
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
-    DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome, DownloadEvent,
-    DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe,
-    DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
+    BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
+    DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
+    DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
+    DownloadProbe, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
     DownloadRequestHeader, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
     DownloadTaskId, RequestOrigin, ResourceValidator,
 };
@@ -73,7 +73,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(2));
+    assert_eq!(value["protocol_version"], json!(3));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));
@@ -82,6 +82,37 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
         value["data"]["request"]["source_url"],
         json!("https://example.test/file.bin")
     );
+}
+
+#[test]
+fn browser_batch_command_round_trips_stable_item_identities_in_queue_only_mode() {
+    let handoff_ids = [Uuid::new_v4(), Uuid::new_v4()];
+    let command = DownloadCommand::BrowserBatchSubmit {
+        submissions: handoff_ids
+            .into_iter()
+            .map(|handoff_id| BrowserDownloadSubmission {
+                handoff_id,
+                request: request(),
+            })
+            .collect(),
+    };
+
+    let encoded = serde_json::to_value(&command).expect("serialize browser batch command");
+    let decoded: DownloadCommand =
+        serde_json::from_value(encoded.clone()).expect("deserialize browser batch command");
+    let mut forged_start_mode = encoded.clone();
+    forged_start_mode["data"]["mode"] = json!("start_now");
+    let decoded_forged: DownloadCommand = serde_json::from_value(forged_start_mode)
+        .expect("ignore unsupported browser batch start mode");
+
+    assert_eq!(encoded["command"], json!("browser_batch_submit"));
+    assert!(encoded["data"].get("mode").is_none());
+    assert_eq!(
+        encoded["data"]["submissions"][0]["handoff_id"],
+        json!(handoff_ids[0])
+    );
+    assert_eq!(decoded, command);
+    assert_eq!(decoded_forged, command);
 }
 
 #[test]
