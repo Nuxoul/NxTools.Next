@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use nxtools_download::{
-    DownloadProbe, DownloadRequest, DownloadSegment, DownloadSegmentState,
+    DownloadMediaProbe, DownloadProbe, DownloadRequest, DownloadSegment, DownloadSegmentState,
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSegmentTransferRequest,
     DownloadTaskId, DownloadTransferContext, DownloadTransferControl, DownloadTransferOutcome,
     HttpDownloadClient, HttpDownloadError, ResourceValidator, SegmentedArtifact,
@@ -37,7 +37,66 @@ fn single_stream_probe(request: &DownloadRequest) -> DownloadProbe {
         supports_ranges: false,
         content_type: None,
         validator: ResourceValidator::default(),
+        media: None,
     }
+}
+
+#[tokio::test]
+async fn probe_resolves_and_orders_hls_master_variants() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let probe = client
+        .probe(&request(&server, "/hls/master.m3u8"))
+        .await
+        .expect("probe HLS master playlist");
+    let DownloadMediaProbe::Hls(hls) = probe.media.expect("HLS probe metadata");
+
+    assert!(hls.is_master);
+    assert_eq!(hls.variants.len(), 2);
+    assert_eq!(hls.variants[0].resolution, Some((1920, 1080)));
+    assert_eq!(hls.variants[0].bandwidth, 4_200_000);
+    assert_eq!(hls.variants[0].average_bandwidth, Some(3_900_000));
+    assert_eq!(hls.variants[0].frame_rate_milli, Some(60_000));
+    assert_eq!(hls.variants[0].codecs, "avc1.640028,mp4a.40.2");
+    assert_eq!(
+        hls.variants[0].playlist_url,
+        format!("http://{}/hls/high/index.m3u8", server.address())
+    );
+    assert_eq!(hls.variants[1].resolution, Some((640, 360)));
+    assert_eq!(hls.variants[1].frame_rate_milli, Some(29_970));
+}
+
+#[tokio::test]
+async fn probe_rejects_an_hls_manifest_above_the_bounded_body_limit() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let error = client
+        .probe(&request(&server, "/hls/too-large.m3u8"))
+        .await
+        .expect_err("reject oversized HLS manifest");
+
+    assert!(matches!(error, HttpDownloadError::HlsManifestTooLarge));
+}
+
+#[tokio::test]
+async fn probe_rejects_an_hls_playlist_without_variants_or_media_segments() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let error = client
+        .probe(&request(&server, "/hls/empty.m3u8"))
+        .await
+        .expect_err("reject empty HLS playlist");
+
+    assert!(matches!(
+        error,
+        HttpDownloadError::InvalidHlsManifest("playlist contains no playable entries")
+    ));
 }
 
 #[tokio::test]
@@ -345,6 +404,7 @@ async fn malformed_or_ignored_ranges_are_rejected_before_the_artifact_is_changed
             } else {
                 ResourceValidator::default()
             },
+            media: None,
         };
 
         let error = client

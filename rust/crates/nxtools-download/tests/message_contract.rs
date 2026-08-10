@@ -73,7 +73,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(3));
+    assert_eq!(value["protocol_version"], json!(4));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));
@@ -197,6 +197,7 @@ fn probe_outcome_returns_metadata_without_creating_a_task() {
             etag: Some("\"v1\"".to_owned()),
             last_modified: None,
         },
+        media: None,
     });
 
     let value = serde_json::to_value(outcome).expect("serialize probe outcome");

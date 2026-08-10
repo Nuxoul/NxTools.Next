@@ -296,10 +296,70 @@ mod tests {
     use std::time::Instant;
 
     use nxtools_download::{
-        DownloadCommandOutcome, DownloadQuery, DownloadRequest, DownloadStatus, DownloadSubmitMode,
+        DownloadCommandOutcome, DownloadCommandResult, DownloadMediaProbe, DownloadProbe,
+        DownloadQuery, DownloadRequest, DownloadStatus, DownloadSubmitMode, HlsProbe,
+        HlsVariantProbe, MAX_HLS_ATTRIBUTE_BYTES, MAX_HLS_PROBE_SERIALIZED_BYTES,
+        MAX_HLS_VARIANT_URL_BYTES, MAX_HLS_VARIANTS, ResourceValidator,
     };
 
     use super::*;
+
+    #[test]
+    fn maximum_hls_probe_metadata_fits_one_download_ipc_frame() {
+        let variants = (0..MAX_HLS_VARIANTS)
+            .map(|index| {
+                let prefix = format!("https://example.test/{index}/");
+                let playlist_url = format!(
+                    "{prefix}{}",
+                    "u".repeat(MAX_HLS_VARIANT_URL_BYTES - prefix.len())
+                );
+                assert_eq!(playlist_url.len(), MAX_HLS_VARIANT_URL_BYTES);
+                HlsVariantProbe {
+                    playlist_url,
+                    bandwidth: u64::MAX,
+                    average_bandwidth: Some(u64::MAX),
+                    resolution: Some((u32::MAX, u32::MAX)),
+                    frame_rate_milli: Some(u32::MAX),
+                    codecs: "c".repeat(MAX_HLS_ATTRIBUTE_BYTES),
+                    audio_group: Some("a".repeat(MAX_HLS_ATTRIBUTE_BYTES)),
+                    subtitles_group: Some("s".repeat(MAX_HLS_ATTRIBUTE_BYTES)),
+                }
+            })
+            .collect();
+        let final_url_prefix = "https://example.test/";
+        let final_url = format!(
+            "{final_url_prefix}{}",
+            "f".repeat(MAX_HLS_VARIANT_URL_BYTES - final_url_prefix.len())
+        );
+        assert_eq!(final_url.len(), MAX_HLS_VARIANT_URL_BYTES);
+        let probe = DownloadProbe {
+            final_url,
+            file_name: Some("master.m3u8".into()),
+            total_bytes: Some(2 * 1024 * 1024),
+            supports_ranges: false,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            validator: ResourceValidator::default(),
+            media: Some(DownloadMediaProbe::Hls(HlsProbe {
+                is_master: true,
+                variants,
+            })),
+        };
+        assert!(
+            serde_json::to_vec(&probe)
+                .expect("serialize bounded HLS probe")
+                .len()
+                <= MAX_HLS_PROBE_SERIALIZED_BYTES
+        );
+        let frame = DownloadIpcFrame::Result(DownloadCommandResult {
+            request_id: uuid::Uuid::new_v4(),
+            outcome: DownloadCommandOutcome::Probe(probe),
+        });
+        let mut encoded = Vec::new();
+
+        write_frame(&mut encoded, &frame).expect("maximum bounded HLS probe fits IPC frame");
+
+        assert!(encoded.len() <= nxtools_protocol::MAX_FRAME_BYTES + 1);
+    }
 
     #[test]
     fn a_cli_client_uses_the_host_owned_engine_over_one_pipe() {

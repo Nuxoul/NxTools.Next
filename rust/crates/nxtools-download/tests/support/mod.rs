@@ -9,6 +9,14 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 const BODY: &[u8; 16] = b"0123456789abcdef";
+const HLS_MASTER: &[u8] = br#"#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-STREAM-INF:BANDWIDTH=800000,AVERAGE-BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS="avc1.4d401e,mp4a.40.2",AUDIO="stereo"
+low/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4200000,AVERAGE-BANDWIDTH=3900000,RESOLUTION=1920x1080,FRAME-RATE=60,CODECS="avc1.640028,mp4a.40.2",AUDIO="stereo"
+high/index.m3u8
+"#;
+const HLS_EMPTY: &[u8] = b"#EXTM3U\n#EXT-X-VERSION:6\n";
 const CONCURRENT_BODY_LEN: usize = 256 * 1024;
 const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
@@ -325,6 +333,30 @@ fn serve_connection(
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
     match path {
+        "/hls/master.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" { b"" } else { HLS_MASTER },
+            Some(HLS_MASTER.len()),
+        ),
+        "/hls/too-large.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            b"",
+            Some(2 * 1024 * 1024 + 1),
+        ),
+        "/hls/empty.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" { b"" } else { HLS_EMPTY },
+            Some(HLS_EMPTY.len()),
+        ),
         "/range" => serve_range(&mut stream, method, headers.get("range")),
         "/range-if-range-incompatible" => serve_if_range_incompatible(
             &mut stream,

@@ -8,6 +8,7 @@ use uuid::Uuid;
 mod artifact;
 mod capacity;
 mod engine;
+mod hls;
 mod http;
 mod message;
 mod rate_limit;
@@ -18,6 +19,10 @@ pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
 pub use engine::{
     BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
     DownloadEngineTask, DownloadScheduleMoment, daily_schedule_window_contains,
+};
+pub use hls::{
+    MAX_HLS_ATTRIBUTE_BYTES, MAX_HLS_PROBE_SERIALIZED_BYTES, MAX_HLS_VARIANT_URL_BYTES,
+    MAX_HLS_VARIANTS,
 };
 pub use http::{
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
@@ -30,10 +35,11 @@ pub use message::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueueAction, DownloadQueuePlacement, DownloadSegmentProgress,
-    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail,
-    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, MAX_BROWSER_BATCH_ITEMS,
+    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadMediaProbe, DownloadProbe,
+    DownloadProgress, DownloadQuery, DownloadQueueAction, DownloadQueuePlacement,
+    DownloadSegmentProgress, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
+    DownloadTaskDetail, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, HlsProbe,
+    HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};

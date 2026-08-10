@@ -11,10 +11,14 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
+use crate::hls::{
+    HlsProbeError, MAX_HLS_MANIFEST_BYTES, MAX_HLS_VARIANT_URL_BYTES, parse_hls_probe,
+    validate_hls_probe_size,
+};
 use crate::{
-    DownloadProbe, DownloadRateLimitError, DownloadRateLimiter, DownloadRequest,
-    DownloadRequestError, DownloadSegment, DownloadTaskId, ResourceValidator, SegmentedArtifact,
-    SegmentedArtifactError, is_safe_windows_file_name,
+    DownloadMediaProbe, DownloadProbe, DownloadRateLimitError, DownloadRateLimiter,
+    DownloadRequest, DownloadRequestError, DownloadSegment, DownloadTaskId, ResourceValidator,
+    SegmentedArtifact, SegmentedArtifactError, is_safe_windows_file_name,
 };
 
 const PROBE_RANGE: &str = "bytes=0-0";
@@ -118,12 +122,20 @@ impl HttpDownloadClient {
             .or(fallback.as_ref())
             .or(head.as_ref())
             .expect("probe response");
+        let probed_url = response.url().clone();
+        let (final_url, media) = if is_hls_candidate(&probed_url, metadata.content_type.as_deref())
+        {
+            let (manifest_url, hls) = self.probe_hls_manifest(request).await?;
+            (manifest_url, Some(DownloadMediaProbe::Hls(hls)))
+        } else {
+            (probed_url, None)
+        };
 
-        Ok(DownloadProbe {
-            final_url: response.url().to_string(),
+        let probe = DownloadProbe {
+            final_url: final_url.to_string(),
             file_name: Some(resolve_file_name(
                 metadata.content_disposition.as_deref(),
-                response.url(),
+                &final_url,
             )),
             total_bytes: metadata.total_bytes(valid_range),
             supports_ranges: valid_range,
@@ -132,7 +144,50 @@ impl HttpDownloadClient {
                 etag: metadata.etag,
                 last_modified: metadata.last_modified,
             },
-        })
+            media,
+        };
+        if probe.media.is_some() {
+            validate_hls_probe_size(&probe).map_err(map_hls_probe_error)?;
+        }
+        Ok(probe)
+    }
+
+    async fn probe_hls_manifest(
+        &self,
+        request: &DownloadRequest,
+    ) -> Result<(url::Url, crate::HlsProbe), HttpDownloadError> {
+        let mut response = self.send(Method::GET, request, false).await?;
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_HLS_MANIFEST_BYTES as u64)
+        {
+            return Err(HttpDownloadError::HlsManifestTooLarge);
+        }
+        let final_url = response.url().clone();
+        if final_url.as_str().len() > MAX_HLS_VARIANT_URL_BYTES {
+            return Err(HttpDownloadError::HlsMetadataTooLarge);
+        }
+        let mut manifest = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(4096)
+                .min(MAX_HLS_MANIFEST_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| self.client_error(error))?
+        {
+            if manifest.len().saturating_add(chunk.len()) > MAX_HLS_MANIFEST_BYTES {
+                return Err(HttpDownloadError::HlsManifestTooLarge);
+            }
+            manifest.extend_from_slice(&chunk);
+        }
+        let hls = parse_hls_probe(&final_url, &manifest).map_err(map_hls_probe_error)?;
+        Ok((final_url, hls))
     }
 
     pub async fn download<F>(
@@ -1121,6 +1176,32 @@ fn valid_probe_range(response: &Response) -> bool {
         .is_some_and(|(start, end, total)| start == 0 && end == 0 && total > end)
 }
 
+fn is_hls_candidate(url: &url::Url, content_type: Option<&str>) -> bool {
+    let path_is_hls = url.path().to_ascii_lowercase().ends_with(".m3u8");
+    let content_type_is_hls = content_type
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .is_some_and(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "application/vnd.apple.mpegurl"
+                    | "application/x-mpegurl"
+                    | "application/mpegurl"
+                    | "audio/mpegurl"
+                    | "audio/x-mpegurl"
+            )
+        });
+    path_is_hls || content_type_is_hls
+}
+
+fn map_hls_probe_error(error: HlsProbeError) -> HttpDownloadError {
+    match error {
+        HlsProbeError::InvalidManifest(reason) => HttpDownloadError::InvalidHlsManifest(reason),
+        HlsProbeError::TooManyVariants => HttpDownloadError::TooManyHlsVariants,
+        HlsProbeError::MetadataTooLarge => HttpDownloadError::HlsMetadataTooLarge,
+    }
+}
+
 fn validate_segment_response(
     response: &Response,
     expected_start: u64,
@@ -1267,6 +1348,14 @@ pub enum HttpDownloadError {
     InvalidStallTimeout,
     #[error("HTTP response made no progress for {timeout_ms} ms")]
     Stalled { timeout_ms: u64 },
+    #[error("HLS manifest exceeds the 2 MiB probe limit")]
+    HlsManifestTooLarge,
+    #[error("invalid HLS manifest: {0}")]
+    InvalidHlsManifest(&'static str),
+    #[error("HLS manifest contains more than 32 variants")]
+    TooManyHlsVariants,
+    #[error("HLS presentation metadata exceeds its bounded field limits")]
+    HlsMetadataTooLarge,
     #[error(
         "download ended after {downloaded_bytes} bytes, expected exactly {expected_bytes} bytes"
     )]
@@ -1351,6 +1440,10 @@ impl HttpDownloadError {
             | Self::InsufficientDiskSpace { .. }
             | Self::LengthOverflow
             | Self::InvalidStallTimeout
+            | Self::HlsManifestTooLarge
+            | Self::InvalidHlsManifest(_)
+            | Self::TooManyHlsVariants
+            | Self::HlsMetadataTooLarge
             | Self::SegmentedTransferNeedsKnownLength
             | Self::MissingContentRange
             | Self::MalformedContentRange(_)
@@ -1374,6 +1467,10 @@ impl HttpDownloadError {
             Self::LengthOverflow => "length_overflow",
             Self::InvalidStallTimeout => "invalid_stall_timeout",
             Self::Stalled { .. } => "stalled",
+            Self::HlsManifestTooLarge => "hls_manifest_too_large",
+            Self::InvalidHlsManifest(_) => "invalid_hls_manifest",
+            Self::TooManyHlsVariants => "too_many_hls_variants",
+            Self::HlsMetadataTooLarge => "hls_metadata_too_large",
             Self::LengthMismatch { .. } => "length_mismatch",
             Self::SegmentedTransferNeedsKnownLength => "unknown_length",
             Self::RangeNotHonored { .. } => "range_not_honored",

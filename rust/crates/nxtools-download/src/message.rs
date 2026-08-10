@@ -9,7 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 3;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 4;
 
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
@@ -223,6 +223,32 @@ pub struct DownloadProbe {
     pub supports_ranges: bool,
     pub content_type: Option<String>,
     pub validator: ResourceValidator,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<DownloadMediaProbe>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum DownloadMediaProbe {
+    Hls(HlsProbe),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HlsProbe {
+    pub is_master: bool,
+    pub variants: Vec<HlsVariantProbe>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HlsVariantProbe {
+    pub playlist_url: String,
+    pub bandwidth: u64,
+    pub average_bandwidth: Option<u64>,
+    pub resolution: Option<(u32, u32)>,
+    pub frame_rate_milli: Option<u32>,
+    pub codecs: String,
+    pub audio_group: Option<String>,
+    pub subtitles_group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

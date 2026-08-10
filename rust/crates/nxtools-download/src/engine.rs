@@ -607,7 +607,7 @@ impl DownloadEngine {
         }
 
         let outcome = match envelope.command {
-            DownloadCommand::Probe { request } => self.probe_blocking(request),
+            DownloadCommand::Probe { request } => self.probe_blocking(request, request_id),
             DownloadCommand::Submit { request, mode } => self
                 .submit_with_mode_correlated(request, envelope.origin, mode, request_id)
                 .map(|task_id| DownloadCommandOutcome::Accepted {
@@ -715,17 +715,56 @@ impl DownloadEngine {
     fn probe_blocking(
         &self,
         request: DownloadRequest,
+        correlation_id: uuid::Uuid,
     ) -> Result<DownloadCommandOutcome, DownloadEngineError> {
-        request.validate()?;
-        let client = self.inner.http.clone();
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        download_runtime()?.spawn(async move {
-            let _ = sender.send(client.probe(&request).await);
-        });
-        let probe = receiver
-            .recv()
-            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))??;
-        Ok(DownloadCommandOutcome::Probe(probe))
+        let started = Instant::now();
+        info!(
+            event = "download.probe.started",
+            %correlation_id,
+            "download resource probe started"
+        );
+        let result = (|| {
+            request.validate()?;
+            let client = self.inner.http.clone();
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            download_runtime()?.spawn(async move {
+                let _ = sender.send(client.probe(&request).await);
+            });
+            receiver
+                .recv()
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+                .map_err(DownloadEngineError::from)
+        })();
+        match result {
+            Ok(probe) => {
+                let (media_kind, variant_count) = match probe.media.as_ref() {
+                    Some(crate::DownloadMediaProbe::Hls(hls)) => ("hls", hls.variants.len()),
+                    None => ("http", 0),
+                };
+                info!(
+                    event = "download.probe.completed",
+                    %correlation_id,
+                    media_kind,
+                    variant_count,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "download resource probe completed"
+                );
+                Ok(DownloadCommandOutcome::Probe(probe))
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.probe.failed",
+                    %correlation_id,
+                    error_kind = probe_error_kind(&error),
+                    native_error_code = error
+                        .io_error()
+                        .and_then(std::io::Error::raw_os_error),
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "download resource probe failed"
+                );
+                Err(error)
+            }
+        }
     }
 
     fn run_task_action(
@@ -1675,6 +1714,7 @@ impl DownloadEngine {
                 supports_ranges: false,
                 content_type: blob.media_type,
                 validator: crate::ResourceValidator::default(),
+                media: None,
             }),
             downloaded_bytes: blob.size,
             error: None,
@@ -4075,6 +4115,15 @@ fn download_runtime() -> Result<&'static tokio::runtime::Runtime, DownloadEngine
         .map_err(|message| DownloadEngineError::Runtime(message.clone()))
 }
 
+fn probe_error_kind(error: &DownloadEngineError) -> &'static str {
+    match error {
+        DownloadEngineError::InvalidRequest(_) => "invalid_request",
+        DownloadEngineError::Http(error) => error.kind(),
+        DownloadEngineError::Runtime(_) => "runtime_unavailable",
+        _ => "internal",
+    }
+}
+
 fn import_blob_artifact(source: &Path, destination: &Path) -> Result<(), DownloadEngineError> {
     match std::fs::rename(source, destination) {
         Ok(()) => Ok(()),
@@ -4893,6 +4942,7 @@ mod tests {
                 supports_ranges: false,
                 content_type: None,
                 validator: crate::ResourceValidator::default(),
+                media: None,
             }),
             downloaded_bytes: 16,
             error: None,

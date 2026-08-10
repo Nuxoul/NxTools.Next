@@ -33,14 +33,23 @@ Assert-SourceContains `
     -Pattern '.on_click(|_, window, _| window.remove_window())' `
     -Message "Client-drawn download titlebars must close through an explicit GPUI action."
 Assert-SourceContains `
-    -Pattern 'this.file_name.clone(), resolved_file_name, confirmed' `
+    -Pattern 'this.file_name.clone(),' `
     -Message "Probe completion must carry the resolved file name back to the visible input."
 Assert-SourceContains `
     -Pattern 'input.set_value(resolved_file_name, window, cx);' `
     -Message "Probe completion must hydrate the visible file-name input."
 Assert-SourceContains `
-    -Pattern 'window.resize(new_download_window_size(confirmed));' `
-    -Message "The add window must expand only after probing succeeds."
+    -Pattern '.map(new_download_window_size_for_probe)' `
+    -Message "The add window must choose its confirmed size from the typed probe result."
+Assert-SourceContains `
+    -Pattern 'window.resize(window_size);' `
+    -Message "The add window must apply the probe-state size at the real GPUI window boundary."
+Assert-SourceContains `
+    -Pattern 'window_min_size: Some(new_download_window_size(false))' `
+    -Message "The add window minimum must allow browser and retry probes to return to compact height."
+Assert-SourceContains `
+    -Pattern 'new_download_window_options(window_bounds)' `
+    -Message "The add window must pass the tested compact minimum through the production GPUI window-open boundary."
 Assert-SourceContains `
     -Pattern 'DownloadWindowPhase::Progress => size(px(440.0), px(176.0))' `
     -Message "The progress window must remain compact and content-driven."

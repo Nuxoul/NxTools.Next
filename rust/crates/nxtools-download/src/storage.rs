@@ -897,6 +897,7 @@ impl SqliteDownloadStore {
                             etag,
                             last_modified,
                         },
+                        media: None,
                     });
                     let error = match (error_code, error_message) {
                         (Some(code), Some(message)) => Some(DownloadFault {
@@ -1838,6 +1839,7 @@ mod tests {
                 supports_ranges: false,
                 content_type: Some("application/octet-stream".into()),
                 validator: ResourceValidator::default(),
+                media: None,
             }),
             downloaded_bytes: 16,
             error: None::<DownloadFault>,

@@ -244,3 +244,16 @@ Native Messaging request ID plus a fixed allowlisted extension event identity su
 Referrer are not written
 to the host log. Repeated capture events remain throttled in the extension and are never emitted per
 network chunk or scan candidate.
+
+## HLS probing
+
+The versioned download command boundary records `download.probe.started` followed by exactly one
+`download.probe.completed` or `download.probe.failed` under the command request/correlation ID.
+The success terminal carries only the fixed media kind, bounded variant count and elapsed time.
+Failure carries a fixed error kind, optional native error code and elapsed time. Manifest text,
+playlist or variant URLs, file names, request headers, cookies and referrers are never logged.
+
+The GPUI quality choice is local presentation state and does not create per-click diagnostics. A
+future HLS task submission must reuse a new command correlation through selection persistence,
+segment planning, transfer and merge; it must not reuse the probe correlation or emit per-segment
+URL/content logs.

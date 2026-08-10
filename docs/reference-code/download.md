@@ -1375,6 +1375,43 @@ Reverified on 2026-07-31:
   automatic split path, and a queued segment remains `Waiting` until a connection slot actually
   starts it. Persisted `Active` count therefore never exceeds the request's connection cap.
 
+### Stage 5 HLS master-playlist and quality-selection findings
+
+Reverified on 2026-08-10 before starting the first Stage 5 slice:
+
+- AB Download Manager keeps HLS behind a distinct downloader boundary. Its
+  `shared/app/.../hls/HLSLinkChecker.kt` reads the manifest body during link checking and carries
+  the parsed manifest into `HLSDownloadJobExtraConfig`; HTTP and HLS are not inferred later from a
+  downloaded `.m3u8` file. `downloader/core/.../hls/HLSResponseInfo.kt` bounds suspicious
+  non-HLS responses to 2 MiB, requires at least one media segment and currently accepts only
+  unencrypted TS media playlists. That implementation does not resolve master-playlist variants,
+  so it is not copied as a complete quality-selection model.
+- Old NxTools provides the product-specific master-playlist behavior in
+  `Services/HlsPlaylistParser.cs::{Parse,SelectBestVariant,ResolveUrl}`. It recognizes
+  `#EXT-X-STREAM-INF`, resolves the following URI against the effective playlist URL and preserves
+  bandwidth, average bandwidth, resolution, codecs, frame rate and audio/subtitle group identity.
+  The fallback choice is the highest advertised bandwidth.
+- Old NxTools exposes those variants through
+  `DownloadManagerService.BuildHlsResourceOptionsAsync` and
+  `AddDownloadDialogViewModel.ApplyHlsResources`. The visible label combines resolution, frame
+  rate, bitrate and codecs; an explicit selection changes the proposed output name. Submission is
+  rejected when a discovered master list has no selected resource. URLs and request credentials in
+  the old diagnostic messages are not compatible with the Next diagnostic contract and must not be
+  carried forward.
+- NxTools.Next's first vertical slice will keep HLS probing inside the Rust download engine. A
+  manifest response is read with a hard 2 MiB cap, UTF-8/BOM handling and a maximum of 32 variants.
+  Relative variant URIs are resolved against the final redirected manifest URL, a media playlist
+  must contain at least one `EXTINF` segment, and every resolved URI remains HTTP(S). Variant URLs
+  and presentation attributes are separately capped, then the complete HLS probe is checked against
+  a 512 KiB serialized budget so its result envelope stays below the 1 MiB IPC frame. The probe
+  returns only bounded presentation metadata; request headers, cookies,
+  manifest text and URLs are never written to diagnostics.
+- The add-download GPUI remains compact while the manifest is unconfirmed. A confirmed master list
+  expands once, presents a single explicit quality choice sorted from strongest to weakest, and
+  keeps ordinary HTTP confirmation unchanged. The selected playlist identity must be carried by a
+  typed Rust request before HLS transfer is enabled; it must never fall through to the ordinary HTTP
+  downloader and falsely complete after saving only the manifest.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

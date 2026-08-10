@@ -1120,22 +1120,7 @@ impl DownloadApplication {
         let window_size = initial_new_download_window_size(initial_source.as_ref());
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(window_bounds),
-                titlebar: None,
-                focus: true,
-                show: true,
-                kind: WindowKind::Normal,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
-                app_id: Some("NxTools.NewDownload".into()),
-                window_min_size: Some(window_size),
-                window_decorations: Some(WindowDecorations::Client),
-                tabbing_identifier: None,
-            },
+            new_download_window_options(window_bounds),
             move |window, cx| {
                 let blob_cleanup = match initial_source.as_ref() {
                     Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
@@ -4649,6 +4634,7 @@ struct NewDownloadView {
     external_blob: Option<BrowserBlobDialogContext>,
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
+    selected_hls_variant: Option<usize>,
     probing: bool,
     submitting: bool,
     probe_generation: u64,
@@ -4775,7 +4761,9 @@ impl NewDownloadView {
                 supports_ranges: false,
                 content_type: context.blob.media_type.clone(),
                 validator: nxtools_download::ResourceValidator::default(),
+                media: None,
             }),
+            selected_hls_variant: None,
             probing: false,
             submitting: false,
             probe_generation: 0,
@@ -4862,7 +4850,7 @@ impl NewDownloadView {
         self.confirmed_request = None;
         self.probe = None;
         window.resize(new_download_window_size(false));
-        info!(generation, "download link probe scheduled");
+        let correlation_id = uuid::Uuid::new_v4();
         let engine = self.application.read(cx).engine.clone();
         let background = cx.background_executor().clone();
         let source_window = window.window_handle();
@@ -4873,7 +4861,7 @@ impl NewDownloadView {
                     engine
                         .handle_command(DownloadCommandEnvelope {
                             protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
-                            request_id: uuid::Uuid::new_v4(),
+                            request_id: correlation_id,
                             origin: RequestOrigin::Ui,
                             command: DownloadCommand::Probe {
                                 request: request_for_probe,
@@ -4890,48 +4878,61 @@ impl NewDownloadView {
                 let mut resolved_file_name = None;
                 let confirmed = match outcome {
                     DownloadCommandOutcome::Probe(probe) => {
-                        info!(
-                            generation,
-                            file_name = ?probe.file_name,
-                            total_bytes = ?probe.total_bytes,
-                            supports_ranges = probe.supports_ranges,
-                            "download link probe completed"
-                        );
                         let mut confirmed = request;
                         if confirmed.file_name.is_none() {
                             confirmed.file_name = probe.file_name.clone();
                             resolved_file_name = probe.file_name.clone();
                         }
+                        this.selected_hls_variant =
+                            probe.media.as_ref().and_then(|media| match media {
+                                nxtools_download::DownloadMediaProbe::Hls(hls)
+                                    if hls.is_master && !hls.variants.is_empty() =>
+                                {
+                                    Some(0)
+                                }
+                                _ => None,
+                            });
                         this.confirmed_request = Some(confirmed);
                         this.probe = Some(probe);
                         this.error = None;
                         true
                     }
                     DownloadCommandOutcome::Rejected { fault } => {
-                        warn!(
-                            generation,
-                            error = %fault.message,
-                            "download link probe rejected"
-                        );
                         this.error = Some(fault.message);
                         false
                     }
                     _ => {
+                        warn!(
+                            event = "download.probe.presentation_failed",
+                            %correlation_id,
+                            reason = "unexpected_outcome",
+                            "download probe returned an unexpected outcome"
+                        );
                         this.error = Some("下载引擎返回了无效的探测结果".into());
                         false
                     }
                 };
                 cx.notify();
-                Some((this.file_name.clone(), resolved_file_name, confirmed))
+                let window_size = this
+                    .probe
+                    .as_ref()
+                    .map(new_download_window_size_for_probe)
+                    .unwrap_or_else(|| new_download_window_size(false));
+                Some((
+                    this.file_name.clone(),
+                    resolved_file_name,
+                    confirmed,
+                    window_size,
+                ))
             });
-            if let Ok(Some((file_name, resolved_file_name, confirmed))) = applied {
+            if let Ok(Some((file_name, resolved_file_name, _confirmed, window_size))) = applied {
                 let _ = source_window.update(cx, move |_, window, cx| {
                     if let Some(resolved_file_name) = resolved_file_name {
                         file_name.update(cx, |input, cx| {
                             input.set_value(resolved_file_name, window, cx);
                         });
                     }
-                    window.resize(new_download_window_size(confirmed));
+                    window.resize(window_size);
                 });
             }
         })
@@ -5000,6 +5001,15 @@ impl NewDownloadView {
             cx.notify();
             return;
         };
+        if self
+            .probe
+            .as_ref()
+            .is_some_and(|probe| probe.media.is_some())
+        {
+            self.error = Some("HLS 清晰度已解析；分片传输将在阶段 5 的下一切片接入".into());
+            cx.notify();
+            return;
+        }
         let Some(request) = merge_confirmed_download_request(confirmed, current) else {
             self.confirmed_request = None;
             self.probe = None;
@@ -5078,6 +5088,7 @@ impl Render for NewDownloadView {
         let probing = self.probing;
         let submitting = self.submitting;
         let confirmed = probe.is_some();
+        let is_hls = probe.as_ref().is_some_and(|probe| probe.media.is_some());
         let schedule_label = if let Some(selection) = self.committed_schedule {
             format!(
                 "{} {:02}:{:02}",
@@ -5286,7 +5297,7 @@ impl Render for NewDownloadView {
                         })
                         .small()
                         .ghost()
-                        .disabled(submitting)
+                        .disabled(submitting || is_hls)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.submit(DownloadSubmitMode::QueueOnly, window, cx);
                         })),
@@ -5301,7 +5312,7 @@ impl Render for NewDownloadView {
                         })
                         .small()
                         .custom(download_primary_button_variant(theme, cx))
-                        .disabled(submitting)
+                        .disabled(submitting || is_hls)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.submit(DownloadSubmitMode::StartNow, window, cx);
                         })),
@@ -5310,10 +5321,27 @@ impl Render for NewDownloadView {
         });
         let body = if let Some(probe) = probe {
             let is_blob = self.external_blob.is_some();
-            let size = probe
-                .total_bytes
-                .map(format_download_size)
-                .unwrap_or_else(|| "大小未知".into());
+            let hls_quality_panel = match probe.media.as_ref() {
+                Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+                    Some(hls_quality_options(
+                        theme,
+                        &hls.variants,
+                        self.selected_hls_variant.unwrap_or(0),
+                        cx.entity().downgrade(),
+                    ))
+                }
+                _ => None,
+            };
+            let size = match probe.media.as_ref() {
+                Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+                    format!("{} 个清晰度", hls.variants.len())
+                }
+                Some(nxtools_download::DownloadMediaProbe::Hls(_)) => "HLS 媒体列表".into(),
+                None => probe
+                    .total_bytes
+                    .map(format_download_size)
+                    .unwrap_or_else(|| "大小未知".into()),
+            };
             div()
                 .flex_1()
                 .px(px(16.0))
@@ -5400,6 +5428,8 @@ impl Render for NewDownloadView {
                                                 .text_color(theme.success)
                                                 .child(if is_blob {
                                                     "Blob 已接收"
+                                                } else if probe.media.is_some() {
+                                                    "HLS 已解析"
                                                 } else {
                                                     "链接可用"
                                                 }),
@@ -5424,6 +5454,15 @@ impl Render for NewDownloadView {
                                                 .content_type
                                                 .clone()
                                                 .unwrap_or_else(|| "类型未知".into())
+                                        } else if let Some(
+                                            nxtools_download::DownloadMediaProbe::Hls(hls),
+                                        ) = probe.media.as_ref()
+                                        {
+                                            if hls.is_master {
+                                                "请选择清晰度".into()
+                                            } else {
+                                                "媒体播放列表".into()
+                                            }
                                         } else if probe.supports_ranges {
                                             "支持断点续传".into()
                                         } else {
@@ -5432,6 +5471,7 @@ impl Render for NewDownloadView {
                                 ),
                         ),
                 )
+                .when_some(hls_quality_panel, |body, panel| body.child(panel))
                 .when_some(self.error.clone(), |body, error| {
                     body.child(download_inline_error(theme, error))
                 })
@@ -5546,6 +5586,143 @@ impl Render for NewDownloadView {
                     ),
             )
     }
+}
+
+fn hls_quality_options(
+    theme: Theme,
+    variants: &[nxtools_download::HlsVariantProbe],
+    selected: usize,
+    view: gpui::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let rows = variants.iter().enumerate().map(|(index, variant)| {
+        let row_selector = format!("download-hls-quality-{index}");
+        let selected_selector = format!("download-hls-quality-selected-{index}");
+        let selected_row = index == selected;
+        let view = view.clone();
+        let resolution = variant.resolution.map_or_else(
+            || "自动".into(),
+            |(width, height)| format!("{width}×{height}"),
+        );
+        let frame_rate = variant
+            .frame_rate_milli
+            .map(|value| format!(" · {:.2} fps", value as f64 / 1000.0))
+            .unwrap_or_default();
+        let bandwidth = variant.average_bandwidth.unwrap_or(variant.bandwidth);
+        let bitrate = format!("{:.2} Mbps", bandwidth as f64 / 1_000_000.0);
+        let codec = variant.codecs.clone();
+        div()
+            .id(("download-hls-quality", index))
+            .debug_selector(move || row_selector.clone())
+            .h(px(34.0))
+            .px(px(8.0))
+            .rounded(px(4.0))
+            .border_1()
+            .border_color(if selected_row {
+                theme.border_active
+            } else {
+                theme.border_subtle
+            })
+            .bg(if selected_row {
+                theme.accent_soft
+            } else {
+                theme.surface
+            })
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .debug_selector(move || selected_selector.clone())
+                    .size(px(13.0))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(if selected_row {
+                        theme.accent
+                    } else {
+                        theme.border
+                    })
+                    .when(selected_row, |marker| {
+                        marker.child(
+                            div()
+                                .m(px(3.0))
+                                .size(px(5.0))
+                                .rounded_full()
+                                .bg(theme.accent),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(format!("{resolution}{frame_rate}")),
+                    )
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(px(8.5))
+                            .text_color(theme.text_muted)
+                            .child(if codec.is_empty() {
+                                "编码未知".into()
+                            } else {
+                                codec
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(9.0))
+                    .text_color(theme.text_secondary)
+                    .child(bitrate),
+            )
+            .on_click(move |_, _, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    view.selected_hls_variant = Some(index);
+                    view.error = None;
+                    cx.notify();
+                });
+            })
+    });
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(5.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(9.0))
+                        .text_color(theme.text_muted)
+                        .child("HLS 清晰度"),
+                )
+                .child(
+                    div()
+                        .text_size(px(8.5))
+                        .text_color(theme.text_muted)
+                        .child("分片传输将在下一切片启用"),
+                ),
+        )
+        .child(
+            div()
+                .max_h(px(108.0))
+                .overflow_y_scrollbar()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .children(rows),
+        )
+        .into_any_element()
 }
 
 fn delayed_start_calendar(
@@ -5710,10 +5887,43 @@ fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
     }
 }
 
+fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui::Pixels> {
+    if matches!(
+        probe.media.as_ref(),
+        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master
+    ) {
+        size(px(500.0), px(402.0))
+    } else {
+        new_download_window_size(true)
+    }
+}
+
 fn initial_new_download_window_size(
     initial_source: Option<&NewDownloadInitialSource>,
 ) -> gpui::Size<gpui::Pixels> {
-    new_download_window_size(initial_source.is_some())
+    new_download_window_size(matches!(
+        initial_source,
+        Some(NewDownloadInitialSource::Blob(_))
+    ))
+}
+
+fn new_download_window_options(window_bounds: WindowBounds) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(window_bounds),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::Normal,
+        is_movable: true,
+        is_resizable: false,
+        is_minimizable: false,
+        display_id: None,
+        window_background: WindowBackgroundAppearance::Opaque,
+        app_id: Some("NxTools.NewDownload".into()),
+        window_min_size: Some(new_download_window_size(false)),
+        window_decorations: Some(WindowDecorations::Client),
+        tabbing_identifier: None,
+    }
 }
 
 fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Size<gpui::Pixels> {
@@ -6905,7 +7115,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_download_window_reserves_the_confirmed_form_height_before_probe() {
+    fn browser_download_window_starts_at_compact_probe_height() {
         let request = DownloadRequest {
             source_url: "https://example.test/browser.bin".into(),
             save_directory: PathBuf::from(r"C:\Downloads"),
@@ -6921,9 +7131,81 @@ mod tests {
         };
         assert_eq!(
             initial_new_download_window_size(Some(&NewDownloadInitialSource::Download(request))),
-            new_download_window_size(true),
-            "a browser handoff must reserve the complete confirmed form instead of opening at the clipped URL-only height"
+            new_download_window_size(false),
+            "an unconfirmed browser handoff must open at the compact probe height"
         );
+    }
+
+    #[gpui::test]
+    fn browser_probe_window_options_allow_the_compact_native_minimum(cx: &mut TestAppContext) {
+        let compact = new_download_window_size(false);
+        let options =
+            cx.update(|cx| new_download_window_options(WindowBounds::centered(compact, cx)));
+        let initial = options
+            .window_bounds
+            .expect("initial native window bounds")
+            .get_bounds()
+            .size;
+        let minimum = options.window_min_size.expect("native minimum window size");
+
+        assert_eq!(initial.width.as_f32(), compact.width.as_f32());
+        assert_eq!(initial.height.as_f32(), compact.height.as_f32());
+        assert_eq!(minimum.width.as_f32(), compact.width.as_f32());
+        assert_eq!(minimum.height.as_f32(), compact.height.as_f32());
+    }
+
+    #[gpui::test]
+    fn browser_download_window_shrinks_to_compact_height_while_probe_is_unconfirmed(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "browser-probe-window-height");
+        let request = DownloadRequest {
+            source_url: "http://127.0.0.1:9/browser.bin".into(),
+            save_directory: directory.clone(),
+            file_name: Some("browser.bin".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(4),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application
+                    .open_new_download_window_with_request(
+                        Some(NewDownloadInitialSource::Download(request)),
+                        None,
+                        cx,
+                    )
+                    .expect("open browser download window");
+            });
+        });
+        cx.run_until_parked();
+
+        let window = cx.read(|cx| {
+            application
+                .read(cx)
+                .new_download_window
+                .expect("browser download window")
+        });
+        let height = cx.update(|cx| {
+            window
+                .update(cx, |_, window, _| window.bounds().size.height.as_f32())
+                .expect("read browser download window bounds")
+        });
+        assert_eq!(
+            height,
+            new_download_window_size(false).height.as_f32(),
+            "an unconfirmed browser probe must not retain the full confirmed-form height"
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[gpui::test]
@@ -6988,6 +7270,7 @@ mod tests {
                     supports_ranges: true,
                     content_type: Some("application/octet-stream".into()),
                     validator: nxtools_download::ResourceValidator::default(),
+                    media: None,
                 });
                 cx.notify();
             });
@@ -7115,6 +7398,116 @@ mod tests {
             ),
             "submission must continue to use the last confirmed schedule"
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn confirmed_hls_master_renders_selectable_quality_rows(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-hls-quality");
+        let application_for_window = application.clone();
+        let default_directory = directory.clone();
+        let default_connection_limit =
+            cx.read(|cx| application.read(cx).default_connection_limit());
+        let default_adaptive_segment_policy =
+            cx.read(|cx| application.read(cx).default_adaptive_segment_policy());
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    application_for_window,
+                    default_directory,
+                    default_connection_limit,
+                    default_adaptive_segment_policy,
+                    None,
+                    window,
+                    cx,
+                )
+            });
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = view_slot
+            .borrow()
+            .clone()
+            .expect("new download view mounted");
+        let request = DownloadRequest {
+            source_url: "https://example.test/master.m3u8".into(),
+            save_directory: directory.clone(),
+            file_name: Some("master.m3u8".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(default_connection_limit),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+        window.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.confirmed_request = Some(request);
+                view.probe = Some(DownloadProbe {
+                    final_url: "https://example.test/master.m3u8".into(),
+                    file_name: Some("master.m3u8".into()),
+                    total_bytes: Some(512),
+                    supports_ranges: false,
+                    content_type: Some("application/vnd.apple.mpegurl".into()),
+                    validator: nxtools_download::ResourceValidator::default(),
+                    media: Some(nxtools_download::DownloadMediaProbe::Hls(
+                        nxtools_download::HlsProbe {
+                            is_master: true,
+                            variants: vec![
+                                nxtools_download::HlsVariantProbe {
+                                    playlist_url: "https://example.test/high.m3u8".into(),
+                                    bandwidth: 4_200_000,
+                                    average_bandwidth: Some(3_900_000),
+                                    resolution: Some((1920, 1080)),
+                                    frame_rate_milli: Some(60_000),
+                                    codecs: "avc1.640028,mp4a.40.2".into(),
+                                    audio_group: Some("stereo".into()),
+                                    subtitles_group: None,
+                                },
+                                nxtools_download::HlsVariantProbe {
+                                    playlist_url: "https://example.test/low.m3u8".into(),
+                                    bandwidth: 800_000,
+                                    average_bandwidth: Some(700_000),
+                                    resolution: Some((640, 360)),
+                                    frame_rate_milli: Some(29_970),
+                                    codecs: "avc1.4d401e,mp4a.40.2".into(),
+                                    audio_group: Some("stereo".into()),
+                                    subtitles_group: None,
+                                },
+                            ],
+                        },
+                    )),
+                });
+                cx.notify();
+            });
+        });
+        window.refresh().expect("render HLS quality choices");
+        window.run_until_parked();
+        window.refresh().expect("refresh HLS quality choices");
+
+        assert!(window.debug_bounds("download-hls-quality-0").is_some());
+        assert!(window.debug_bounds("download-hls-quality-1").is_some());
+        assert!(
+            window
+                .debug_bounds("download-hls-quality-selected-0")
+                .is_some()
+        );
+        let lower_quality = window
+            .debug_bounds("download-hls-quality-1")
+            .expect("lower HLS quality row");
+        window.simulate_click(lower_quality.center(), Modifiers::default());
+        window.refresh().expect("render changed HLS selection");
+        assert_eq!(
+            window.read(|cx| view.read(cx).selected_hls_variant),
+            Some(1)
+        );
+
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -7989,7 +8382,8 @@ mod tests {
             .expect("NewDownloadView::begin_probe body");
 
         assert!(
-            begin_probe.contains("Some((this.file_name.clone()")
+            begin_probe.contains("this.file_name.clone(),")
+                && begin_probe.contains("resolved_file_name,")
                 && begin_probe.contains("file_name.update"),
             "the resolved server filename must be written into the editable file-name field"
         );
