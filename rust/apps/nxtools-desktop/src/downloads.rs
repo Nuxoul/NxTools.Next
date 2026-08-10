@@ -1115,10 +1115,9 @@ impl DownloadApplication {
         let default_connection_limit = self.default_connection_limit();
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
         let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
-        let blob_source = matches!(initial_source, Some(NewDownloadInitialSource::Blob(_)));
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
-        let window_size = new_download_window_size(blob_source);
+        let window_size = initial_new_download_window_size(initial_source.as_ref());
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -5711,6 +5710,12 @@ fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
     }
 }
 
+fn initial_new_download_window_size(
+    initial_source: Option<&NewDownloadInitialSource>,
+) -> gpui::Size<gpui::Pixels> {
+    new_download_window_size(initial_source.is_some())
+}
+
 fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Size<gpui::Pixels> {
     match phase {
         DownloadWindowPhase::Progress => size(px(440.0), px(176.0)),
@@ -6897,6 +6902,28 @@ mod tests {
 
         assert!(cx.read(|cx| { application.read(cx).new_download_window.as_ref().is_some() }));
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn browser_download_window_reserves_the_confirmed_form_height_before_probe() {
+        let request = DownloadRequest {
+            source_url: "https://example.test/browser.bin".into(),
+            save_directory: PathBuf::from(r"C:\Downloads"),
+            file_name: Some("browser.bin".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(4),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+        };
+        assert_eq!(
+            initial_new_download_window_size(Some(&NewDownloadInitialSource::Download(request))),
+            new_download_window_size(true),
+            "a browser handoff must reserve the complete confirmed form instead of opening at the clipped URL-only height"
+        );
     }
 
     #[gpui::test]

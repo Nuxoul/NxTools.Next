@@ -521,8 +521,7 @@ fn reconcile_download_selection<T, Id: Copy + Eq + Hash>(
                 .iter()
                 .map(&id)
                 .find(|visible_id| selected.contains(visible_id))
-        })
-        .or_else(|| visible.first().map(id));
+        });
     if let Some(primary_id) = primary {
         selected.insert(primary_id);
     }
@@ -555,8 +554,8 @@ fn update_download_selection(
     control: bool,
     shift: bool,
 ) {
-    *primary = Some(clicked);
     if shift {
+        *primary = Some(clicked);
         let anchor_id = anchor.unwrap_or(clicked);
         let start = visible
             .iter()
@@ -569,11 +568,18 @@ fn update_download_selection(
         selected.clear();
         selected.extend(visible[start.min(end)..=start.max(end)].iter().copied());
     } else if control {
-        if !selected.remove(&clicked) {
+        if selected.remove(&clicked) {
+            *primary = visible
+                .iter()
+                .copied()
+                .find(|task_id| selected.contains(task_id));
+        } else {
             selected.insert(clicked);
+            *primary = Some(clicked);
         }
         *anchor = Some(clicked);
     } else {
+        *primary = Some(clicked);
         selected.clear();
         selected.insert(clicked);
         *anchor = Some(clicked);
@@ -5439,8 +5445,24 @@ mod tests {
             false,
         );
         assert!(!selected.contains(&tasks[2]));
-        assert_eq!(primary, Some(tasks[2]));
+        assert_eq!(primary, Some(tasks[1]));
         assert_eq!(anchor, Some(tasks[2]));
+
+        selected.clear();
+        selected.insert(tasks[0]);
+        primary = Some(tasks[0]);
+        anchor = Some(tasks[0]);
+        update_download_selection(
+            &mut selected,
+            &mut primary,
+            &mut anchor,
+            &tasks,
+            tasks[0],
+            true,
+            false,
+        );
+        assert!(selected.is_empty());
+        assert_eq!(primary, None);
     }
 
     use super::{
@@ -6113,6 +6135,13 @@ mod tests {
             None
         );
         assert!(selected.is_empty());
+
+        assert_eq!(
+            reconcile_download_selection(None, &mut selected, &[1, 2, 3], |id| *id),
+            None,
+            "visible rows must not create a selection without an explicit user action"
+        );
+        assert!(selected.is_empty());
     }
 
     #[test]
@@ -6234,7 +6263,7 @@ mod tests {
                 RequestOrigin::Internal,
             )
             .expect("enqueue first task");
-        let second_task = engine
+        let _second_task = engine
             .enqueue(
                 DownloadRequest {
                     source_url: "https://example.com/second.bin".into(),
@@ -6292,50 +6321,51 @@ mod tests {
         let search = window
             .debug_bounds("download-search")
             .expect("download search bounds");
-        let segment_tab = window
-            .debug_bounds("download-detail-tab-segments")
-            .expect("download segment detail tab bounds");
         assert!(page_header.contains(&search.origin));
         assert!(page_header.contains(&search.bottom_right()));
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_detail_tab),
+            DownloadDetailTab::Overview
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_task),
+            None,
+            "opening the download page must not invent a task selection"
+        );
+        assert!(
+            window.debug_bounds("download-task-detail").is_none(),
+            "the detail dock must stay hidden until the user selects a task"
+        );
+
+        let selected_task = first_task;
+        let selected_element_id = selected_task.as_uuid().as_u64_pair().0;
+        let selected_row_selector: &'static str =
+            Box::leak(format!("download-task-row-{selected_element_id}").into_boxed_str());
+        let selected_row = window
+            .debug_bounds(selected_row_selector)
+            .expect("production task row bounds");
+        assert_eq!(
+            selected_row.size.height.as_f32(),
+            DOWNLOAD_TASK_ROW_HEIGHT,
+            "the main table must keep its compact row density"
+        );
+        window.simulate_click(selected_row.center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_task),
+            Some(selected_task)
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_tasks.clone()),
+            HashSet::from([selected_task])
+        );
+
+        let segment_tab = window
+            .debug_bounds("download-detail-tab-segments")
+            .expect("download segment detail tab bounds after selecting a task");
         window.simulate_click(segment_tab.center(), Modifiers::default());
         assert_eq!(
             window.read(|cx| main_window.read(cx).download_detail_tab),
             DownloadDetailTab::Segments
-        );
-
-        let selected_before = window
-            .read(|cx| main_window.read(cx).selected_download_task)
-            .expect("first visible task is selected");
-        assert!(selected_before == first_task || selected_before == second_task);
-        let other_task = if selected_before == first_task {
-            second_task
-        } else {
-            first_task
-        };
-        let other_element_id = other_task.as_uuid().as_u64_pair().0;
-        let other_row_selector: &'static str =
-            Box::leak(format!("download-task-row-{other_element_id}").into_boxed_str());
-        let other_row = window
-            .debug_bounds(other_row_selector)
-            .expect("second production task row bounds");
-        assert_eq!(
-            other_row.size.height.as_f32(),
-            DOWNLOAD_TASK_ROW_HEIGHT,
-            "the main table must keep its compact row density"
-        );
-        window.simulate_mouse_down(
-            other_row.center(),
-            gpui::MouseButton::Right,
-            Modifiers::default(),
-        );
-        assert_eq!(
-            window.read(|cx| main_window.read(cx).selected_download_task),
-            Some(other_task)
-        );
-        assert_eq!(
-            window.read(|cx| main_window.read(cx).selected_download_tasks.clone()),
-            HashSet::from([other_task]),
-            "secondary click replaces a selection that did not contain the clicked row"
         );
 
         let name = window

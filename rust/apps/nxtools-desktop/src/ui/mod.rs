@@ -195,7 +195,7 @@ impl PanelStatus {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 pub(crate) fn native_window_handle(window: &Window) -> Option<i64> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -206,7 +206,7 @@ pub(crate) fn native_window_handle(window: &Window) -> Option<i64> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(any(not(windows), test))]
 pub(crate) fn native_window_handle(_window: &Window) -> Option<i64> {
     None
 }

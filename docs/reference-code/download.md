@@ -859,9 +859,10 @@ Verified on 2026-07-28 before implementing the first Phase 3 desktop slice:
   visible under All but is not misreported in another status category.
 - Filter changes are local presentation transitions. They must not issue engine commands, disturb
   active transfers, recreate task windows or change queue order.
-- The selected detail row must always belong to the visible result. If the previous selection is
-  filtered out, select the first visible task; if the result is empty, clear the detail pane and
-  show a filter-specific empty state.
+- The selected detail row must always belong to the visible result. Following the 2026-08-10
+  interaction correction, an empty selection stays empty instead of silently selecting the first
+  visible task; the bottom detail dock is rendered only after an explicit row selection. Filtering
+  out every selected task clears the detail pane and shows the matching list or filter state.
 - Counts are computed from the same snapshot as the rows. Task events update counts and visible rows
   together on the next GPUI render, without per-byte diagnostic logging.
 - A user filter change emits one low-noise diagnostic containing the filter name, visible count and
@@ -940,6 +941,10 @@ Reverified on 2026-07-27 after the first packaged interaction pass:
   metadata appear only after a successful probe; the probe result must hydrate the visible file-name
   input immediately. Destination and file-name edits do not invalidate remote metadata, while a URL
   edit does require a new probe.
+- A browser handoff already carries a populated download request and opens the complete confirmed
+  form height before its automatic probe begins. It must not rely on a later asynchronous native
+  resize to make destination, file-name and footer controls reachable; a manual empty form keeps the
+  compact URL-only height. This browser-specific correction was verified on 2026-08-10.
 - Client-drawn close controls bind an explicit GPUI close action. Windows control-area hit testing is
   not accepted as the sole close path for the add, progress, failed or completed windows.
 - Submitting from the add-window entity must not synchronously open another GPUI window. The accepted
