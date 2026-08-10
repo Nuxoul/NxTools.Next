@@ -4,6 +4,200 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260810-IPCSOCKET] windows_fixture_inherited_nonblocking_socket
+
+**Logged**: 2026-08-10T12:30:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The full Rust workspace gate exposed a deterministic Windows `WouldBlock` race in an existing HTTP test fixture.
+
+### Error
+
+```text
+Os { code: 10035, kind: WouldBlock }
+```
+
+### Context
+
+- The fixture listener was nonblocking so its server loop could stop.
+- The accepted stream could inherit nonblocking mode and was read immediately.
+
+### Suggested Fix
+
+Restore blocking mode on each accepted fixture stream while leaving the listener interruptible.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download-ipc/src/lib.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T12:30:00+08:00
+- **Notes**: The accepted stream now explicitly uses blocking mode before reading the request.
+
+---
+
+## [ERR-20260810-ENGINEFLAKE] workspace_engine_contract_transient_failure
+
+**Logged**: 2026-08-10T12:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Workspace runs intermittently failed the timing-sensitive dynamic rebalance engine test.
+
+### Error
+
+```text
+dynamic_rebalance_splits_a_slow_tail_without_overlapping_output ... FAILED
+attempts=0
+```
+
+### Context
+
+- The first verbose run truncated the failing test name; a later quiet run identified dynamic rebalance.
+- The complete 54-test target passed afterward, including the new browser batch tests.
+- The dynamic rebalance test also passed when rerun by exact name.
+
+### Suggested Fix
+
+Use `cargo test --workspace -q` for large verification runs so any actual failure remains visible.
+
+### Metadata
+
+- Reproducible: no
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+- Recurrence-Count: 2
+
+### Resolution
+
+- **Resolved**: 2026-08-10T12:40:00+08:00
+- **Notes**: The full engine target and the exact dynamic-rebalance test passed on focused rerun.
+
+---
+
+## [ERR-20260810-NODETESTDIR] node_test_directory_on_windows
+
+**Logged**: 2026-08-10T12:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Node 24 did not expand a test directory into JavaScript test files on Windows.
+
+### Error
+
+```text
+Cannot find module '...\\tests'
+```
+
+### Context
+
+- Attempted `node --test browser_extension/nxtools-interceptor/tests`.
+- The JavaScript syntax checks in the same command had already passed.
+
+### Suggested Fix
+
+Pass explicit `*.test.js` file paths from PowerShell to `node --test`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `browser_extension/nxtools-interceptor/tests/*.test.js`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T12:00:00+08:00
+- **Notes**: Switched to an explicit file list.
+
+---
+
+## [ERR-20260810-PATCHCONTEXT] multi_file_patch_context_mismatch
+
+**Logged**: 2026-08-10T12:05:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: docs
+
+### Summary
+
+A broad multi-file patch was rejected because one expected context did not exactly match.
+
+### Error
+
+```text
+apply_patch verification failed: Failed to find expected lines in docs/diagnostics.md
+```
+
+### Context
+
+- The first rejected patch included architecture gates and several documentation files; the same
+  pattern recurred twice while changing a large JavaScript worker.
+- The patch was atomic, so no partial documentation change was left behind.
+
+### Suggested Fix
+
+Inspect the exact local context and split broad documentation edits into smaller patches.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `docs/diagnostics.md`, `docs/download-plan.md`, `browser_extension/nxtools-interceptor/background.js`
+- Recurrence-Count: 3
+
+### Resolution
+
+- **Resolved**: 2026-08-10T12:05:00+08:00
+- **Notes**: Reapplied the edits with exact, smaller contexts and inspected each changed site.
+
+---
+
+## [ERR-20260810-RGREGEX] ripgrep_unclosed_group
+
+**Logged**: 2026-08-10T12:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A PowerShell ripgrep query used an unnecessarily complex escaped regular expression and failed to parse.
+
+### Error
+
+```text
+regex parse error: unclosed group
+```
+
+### Context
+
+- The query was only inspecting the extension logging helper.
+
+### Suggested Fix
+
+Use a simple literal search when one symbol is sufficient.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `browser_extension/nxtools-interceptor/background.js`
+
+### Resolution
+
+- **Resolved**: 2026-08-10T12:15:00+08:00
+- **Notes**: Re-ran with a simple literal pattern.
+
+---
+
 ## [ERR-20260810-PACKAGETIMEOUT] release_wrapper_killed_by_outer_timeout
 
 **Logged**: 2026-08-10T11:02:00+08:00
