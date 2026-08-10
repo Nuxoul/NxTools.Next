@@ -425,6 +425,9 @@ mod tests {
                     }
                     Err(error) => panic!("accept HTTP request: {error}"),
                 };
+                stream
+                    .set_nonblocking(false)
+                    .expect("make accepted HTTP fixture stream blocking");
                 let mut request = [0_u8; 2048];
                 let read = stream.read(&mut request).expect("read HTTP request");
                 let request = String::from_utf8_lossy(&request[..read]);
