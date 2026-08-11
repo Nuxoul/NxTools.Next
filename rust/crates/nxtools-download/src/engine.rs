@@ -2196,6 +2196,8 @@ impl DownloadEngine {
     }
 
     pub fn cancel(&self, task_id: DownloadTaskId) -> Result<(), DownloadEngineError> {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
         let _scheduler = self
             .inner
             .scheduler_gate
@@ -2216,7 +2218,22 @@ impl DownloadEngine {
                 false
             }
             DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed => {
-                remove_task_temporary_artifact(state);
+                if matches!(
+                    state.task.request().media.as_ref(),
+                    Some(DownloadRequestMedia::Hls(_))
+                ) {
+                    remove_hls_owned_artifacts(
+                        state.task.request(),
+                        task_id,
+                        state.transfer.temporary_path.as_deref(),
+                        correlation_id,
+                        "cancelled",
+                        started_at,
+                    )?;
+                    self.inner.store.clear_hls_transfer_plan(task_id)?;
+                } else {
+                    remove_task_temporary_artifact(state);
+                }
                 state.transfer.temporary_path = None;
                 state
                     .task
@@ -2245,6 +2262,8 @@ impl DownloadEngine {
         task_id: DownloadTaskId,
         delete_artifact: bool,
     ) -> Result<(), DownloadEngineError> {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
         let snapshot = {
             let tasks = self.inner.lock_tasks()?;
             let state = tasks
@@ -2267,7 +2286,19 @@ impl DownloadEngine {
             snapshot_from_state(state)
         };
 
-        if let Some(temporary_path) = snapshot.temporary_path.as_deref() {
+        if matches!(
+            snapshot.task.request().media.as_ref(),
+            Some(DownloadRequestMedia::Hls(_))
+        ) {
+            remove_hls_owned_artifacts(
+                snapshot.task.request(),
+                task_id,
+                snapshot.temporary_path.as_deref(),
+                correlation_id,
+                "removed",
+                started_at,
+            )?;
+        } else if let Some(temporary_path) = snapshot.temporary_path.as_deref() {
             remove_path_if_exists(temporary_path)?;
         }
         if delete_artifact && let Some(final_path) = snapshot.final_path.as_deref() {
@@ -2589,15 +2620,16 @@ async fn run_hls_task(
     playlist_url: &str,
 ) -> Result<(), DownloadEngineError> {
     let started_at = Instant::now();
-    info!(
-        event = "download.hls_playlist.started",
-        %correlation_id,
-        ?task_id,
-        "HLS media playlist resolution started"
-    );
     let stored_plan = match inner.store.load_hls_transfer_plan(task_id) {
         Ok(plan) => plan,
         Err(error) => {
+            info!(
+                event = "download.hls_playlist.started",
+                %correlation_id,
+                ?task_id,
+                source = "checkpoint",
+                "HLS media playlist resolution started"
+            );
             warn!(
                 event = "download.hls_playlist.failed",
                 %correlation_id,
@@ -2610,6 +2642,18 @@ async fn run_hls_task(
             return Err(error.into());
         }
     };
+    let playlist_source = if stored_plan.is_some() {
+        "network_revalidation"
+    } else {
+        "network"
+    };
+    info!(
+        event = "download.hls_playlist.started",
+        %correlation_id,
+        ?task_id,
+        source = playlist_source,
+        "HLS media playlist resolution started"
+    );
     if stored_plan
         .as_ref()
         .is_some_and(|plan| plan.segments.is_empty())
@@ -2618,7 +2662,7 @@ async fn run_hls_task(
             event = "download.hls_playlist.failed",
             %correlation_id,
             ?task_id,
-            source = "checkpoint",
+            source = playlist_source,
             error_kind = "invalid_checkpoint",
             elapsed_ms = started_at.elapsed().as_millis(),
             "persisted HLS media playlist checkpoint is empty"
@@ -2636,7 +2680,7 @@ async fn run_hls_task(
                 event = "download.hls_playlist.failed",
                 %correlation_id,
                 ?task_id,
-                source = "network",
+                source = playlist_source,
                 error_kind = error.kind(),
                 retryable = error.is_retryable_transfer(),
                 elapsed_ms = started_at.elapsed().as_millis(),
@@ -2731,9 +2775,7 @@ async fn run_hls_task(
     if tokio::fs::try_exists(&final_path).await? {
         return Err(HttpDownloadError::DestinationExists(final_path).into());
     }
-    let working_directory = request
-        .save_directory
-        .join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    let working_directory = hls_working_directory(request, task_id);
     tokio::fs::create_dir_all(&working_directory).await?;
     let control = {
         let mut tasks = inner.lock_tasks()?;
@@ -3094,6 +3136,7 @@ async fn run_hls_task(
         })
         .await?;
     commit_completed_state(&inner, task_id)?;
+    let cleanup_started_at = Instant::now();
     if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
         && error.kind() != std::io::ErrorKind::NotFound
     {
@@ -3102,7 +3145,9 @@ async fn run_hls_task(
             %correlation_id,
             ?task_id,
             reason = "completed",
+            artifact_kind = "segment_directory",
             native_error_code = error.raw_os_error(),
+            elapsed_ms = cleanup_started_at.elapsed().as_millis(),
             "HLS task staging cleanup failed"
         );
     }
@@ -3289,6 +3334,7 @@ fn spawn_hls_segment_transfer(
                     let _ = control.wait_for_stop_or_timeout(delay).await;
                 }
                 terminal => {
+                    let cleanup_started_at = Instant::now();
                     if terminal.is_err()
                         && let Err(cleanup_error) = tokio::fs::remove_file(&staging_path).await
                         && cleanup_error.kind() != std::io::ErrorKind::NotFound
@@ -3299,7 +3345,9 @@ fn spawn_hls_segment_transfer(
                             ?task_id,
                             segment_index = segment.index,
                             reason = "segment_terminal_failure",
+                            artifact_kind = "segment_staging",
                             native_error_code = cleanup_error.raw_os_error(),
+                            elapsed_ms = cleanup_started_at.elapsed().as_millis(),
                             "HLS segment staging cleanup failed"
                         );
                     }
@@ -4705,6 +4753,79 @@ fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask {
 fn remove_task_temporary_artifact(state: &EngineTaskState) {
     if let Some(path) = state.transfer.temporary_path.as_deref() {
         let _ = remove_path_if_exists(path);
+    }
+}
+
+fn hls_working_directory(request: &DownloadRequest, task_id: DownloadTaskId) -> PathBuf {
+    request
+        .save_directory
+        .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
+}
+
+fn remove_hls_owned_artifacts(
+    request: &DownloadRequest,
+    task_id: DownloadTaskId,
+    temporary_path: Option<&Path>,
+    correlation_id: uuid::Uuid,
+    reason: &'static str,
+    started_at: Instant,
+) -> Result<(), std::io::Error> {
+    let working_directory = hls_working_directory(request, task_id);
+    let segment_cleanup = remove_hls_artifact(
+        &working_directory,
+        "segment_directory",
+        true,
+        task_id,
+        correlation_id,
+        reason,
+        started_at,
+    );
+    let merge_cleanup = temporary_path.map_or(Ok(()), |path| {
+        remove_hls_artifact(
+            path,
+            "merge_temporary",
+            false,
+            task_id,
+            correlation_id,
+            reason,
+            started_at,
+        )
+    });
+    segment_cleanup?;
+    merge_cleanup
+}
+
+#[allow(clippy::too_many_arguments)]
+fn remove_hls_artifact(
+    path: &Path,
+    artifact_kind: &'static str,
+    directory: bool,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    reason: &'static str,
+    started_at: Instant,
+) -> Result<(), std::io::Error> {
+    let result = if directory {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            warn!(
+                event = "download.hls_cleanup.failed",
+                %correlation_id,
+                ?task_id,
+                reason,
+                artifact_kind,
+                native_error_code = error.raw_os_error(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS task-owned artifact cleanup failed"
+            );
+            Err(error)
+        }
     }
 }
 

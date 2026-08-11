@@ -71,6 +71,8 @@ pub struct DeterministicHttpServer {
     max_active_range_transfers: Arc<AtomicU64>,
     hls_first_segment_attempts: Arc<AtomicU64>,
     hold_hls_first_segment: Arc<AtomicBool>,
+    hls_second_segment_attempts: Arc<AtomicU64>,
+    hold_hls_second_segment: Arc<AtomicBool>,
     transient_range_failures_remaining: Arc<AtomicU64>,
     transient_range_attempts: Arc<AtomicU64>,
     fallback_stream_failures_remaining: Arc<AtomicU64>,
@@ -105,6 +107,8 @@ impl DeterministicHttpServer {
         let max_active_range_transfers = Arc::new(AtomicU64::new(0));
         let hls_first_segment_attempts = Arc::new(AtomicU64::new(0));
         let hold_hls_first_segment = Arc::new(AtomicBool::new(false));
+        let hls_second_segment_attempts = Arc::new(AtomicU64::new(0));
+        let hold_hls_second_segment = Arc::new(AtomicBool::new(false));
         let transient_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let transient_range_attempts = Arc::new(AtomicU64::new(0));
         let fallback_stream_failures_remaining = Arc::new(AtomicU64::new(1));
@@ -121,6 +125,8 @@ impl DeterministicHttpServer {
         let listener_max_active_range_transfers = Arc::clone(&max_active_range_transfers);
         let listener_hls_first_segment_attempts = Arc::clone(&hls_first_segment_attempts);
         let listener_hold_hls_first_segment = Arc::clone(&hold_hls_first_segment);
+        let listener_hls_second_segment_attempts = Arc::clone(&hls_second_segment_attempts);
+        let listener_hold_hls_second_segment = Arc::clone(&hold_hls_second_segment);
         let listener_transient_range_failures_remaining =
             Arc::clone(&transient_range_failures_remaining);
         let listener_transient_range_attempts = Arc::clone(&transient_range_attempts);
@@ -151,6 +157,9 @@ impl DeterministicHttpServer {
                         let hls_first_segment_attempts =
                             Arc::clone(&listener_hls_first_segment_attempts);
                         let hold_hls_first_segment = Arc::clone(&listener_hold_hls_first_segment);
+                        let hls_second_segment_attempts =
+                            Arc::clone(&listener_hls_second_segment_attempts);
+                        let hold_hls_second_segment = Arc::clone(&listener_hold_hls_second_segment);
                         let transient_range_failures_remaining =
                             Arc::clone(&listener_transient_range_failures_remaining);
                         let transient_range_attempts =
@@ -176,6 +185,8 @@ impl DeterministicHttpServer {
                                 &max_active_range_transfers,
                                 &hls_first_segment_attempts,
                                 &hold_hls_first_segment,
+                                &hls_second_segment_attempts,
+                                &hold_hls_second_segment,
                                 &transient_range_failures_remaining,
                                 &transient_range_attempts,
                                 &fallback_stream_failures_remaining,
@@ -193,7 +204,15 @@ impl DeterministicHttpServer {
                             serve();
                         }
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::WouldBlock
+                                | std::io::ErrorKind::Interrupted
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::ConnectionReset
+                        ) =>
+                    {
                         thread::sleep(Duration::from_millis(2));
                     }
                     Err(_) => break,
@@ -209,6 +228,8 @@ impl DeterministicHttpServer {
             max_active_range_transfers,
             hls_first_segment_attempts,
             hold_hls_first_segment,
+            hls_second_segment_attempts,
+            hold_hls_second_segment,
             transient_range_failures_remaining,
             transient_range_attempts,
             fallback_stream_failures_remaining,
@@ -241,6 +262,14 @@ impl DeterministicHttpServer {
 
     pub fn hold_hls_first_segment(&self, hold: bool) {
         self.hold_hls_first_segment.store(hold, Ordering::Release);
+    }
+
+    pub fn hls_second_segment_attempts(&self) -> u64 {
+        self.hls_second_segment_attempts.load(Ordering::Acquire)
+    }
+
+    pub fn hold_hls_second_segment(&self, hold: bool) {
+        self.hold_hls_second_segment.store(hold, Ordering::Release);
     }
 
     pub fn transient_range_attempts(&self) -> u64 {
@@ -358,6 +387,8 @@ fn serve_connection(
     max_active_range_transfers: &AtomicU64,
     hls_first_segment_attempts: &AtomicU64,
     hold_hls_first_segment: &AtomicBool,
+    hls_second_segment_attempts: &AtomicU64,
+    hold_hls_second_segment: &AtomicBool,
     transient_range_failures_remaining: &AtomicU64,
     transient_range_attempts: &AtomicU64,
     fallback_stream_failures_remaining: &AtomicU64,
@@ -497,8 +528,8 @@ fn serve_connection(
             b"segment-b|",
             active_range_transfers,
             max_active_range_transfers,
-            None,
-            None,
+            Some(hls_second_segment_attempts),
+            Some(hold_hls_second_segment),
         ),
         "/hls/concurrent/segment-c.ts" => serve_concurrent_hls_segment(
             &mut stream,

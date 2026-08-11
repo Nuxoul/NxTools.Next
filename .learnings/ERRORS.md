@@ -6942,3 +6942,45 @@ mechanism for progress updates.
 - **Notes**: Verified no compiler processes remained and restarted packaging with a proper build timeout.
 
 ---
+
+## [ERR-20260811-WINDOWSACCEPT] windows_loopback_accept_transient_failure
+
+**Logged**: 2026-08-11T11:05:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Parallel loopback download tests intermittently lost their fixture listener after cancelled Windows
+connections produced transient `accept` errors.
+
+### Error
+
+```text
+error sending request for url (http://127.0.0.1:<port>/hls/...)
+```
+
+### Context
+
+- The nonblocking listener continued only for `WouldBlock` and treated every other accept error as
+  a permanent shutdown.
+- Pause/cancel boundary tests intentionally abort in-flight sockets, so Windows may surface
+  `Interrupted`, `ConnectionAborted`, or `ConnectionReset` at accept time.
+
+### Suggested Fix
+
+Continue the fixture accept loop for the explicit transient error kinds and use serial test threads
+for the final low-memory Windows gate.
+
+### Metadata
+
+- Reproducible: intermittent
+- Related Files: `rust/crates/nxtools-download/tests/support/mod.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T11:10:00+08:00
+- **Notes**: The fixture now preserves its listener across known transient accept failures; the 61-test serial engine contract passed.
+
+---

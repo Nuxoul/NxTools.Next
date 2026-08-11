@@ -121,14 +121,15 @@ async fn paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpo
     hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
         playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
     }));
+    server.hold_hls_second_segment(true);
     let task_id = engine
         .submit(hls_request, RequestOrigin::Ui)
         .expect("submit resumable HLS VOD");
     let first_segment = destination
         .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
         .join("00000000.segment");
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while !first_segment.exists() {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !first_segment.exists() || server.hls_second_segment_attempts() == 0 {
         assert!(
             std::time::Instant::now() < deadline,
             "first HLS segment did not reach its durable artifact"
@@ -140,6 +141,7 @@ async fn paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpo
         .wait_for_terminal(task_id, Duration::from_secs(2))
         .await
         .expect("wait for paused HLS VOD");
+    server.hold_hls_second_segment(false);
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
     assert!(
         first_segment.exists(),
@@ -312,6 +314,96 @@ async fn hls_cancel_cleanup_failure_is_terminal_and_preserves_checkpoint_ownersh
     assert!(
         working.is_file(),
         "failed cleanup artifact remains observable"
+    );
+    assert!(
+        engine.cancel(task_id).is_err(),
+        "retrying cancellation must not claim success while HLS cleanup is still obstructed"
+    );
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("read cleanup-failed HLS task")
+            .expect("cleanup-failed HLS task exists")
+            .task
+            .status(),
+        DownloadStatus::Failed
+    );
+}
+
+#[tokio::test]
+async fn cancelling_a_paused_hls_task_removes_segments_and_durable_plan() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create paused HLS cancellation directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("paused-cancel.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit paused cancellation HLS VOD");
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    let first_segment = working.join("00000000.segment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while !first_segment.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first HLS segment did not become durable"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine
+        .pause(task_id)
+        .expect("pause HLS task before cancellation");
+    assert_eq!(
+        engine
+            .wait_for_terminal(task_id, Duration::from_secs(2))
+            .await
+            .expect("wait for paused HLS task")
+            .task
+            .status(),
+        DownloadStatus::Paused
+    );
+
+    engine.cancel(task_id).expect("cancel paused HLS task");
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("read cancelled HLS task")
+            .expect("cancelled HLS task exists")
+            .task
+            .status(),
+        DownloadStatus::Cancelled
+    );
+    assert!(
+        !working.exists(),
+        "paused cancellation removes HLS segments"
+    );
+    let connection = rusqlite::Connection::open(&database).expect("open HLS cancellation database");
+    let plan_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM download_hls_plans WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count retained HLS plans");
+    assert_eq!(plan_count, 0, "paused cancellation clears the HLS plan");
+    drop(connection);
+
+    std::fs::create_dir_all(&working).expect("recreate orphaned HLS directory");
+    std::fs::write(working.join("orphan.segment"), b"orphan").expect("write orphaned HLS segment");
+    engine
+        .remove(task_id, false)
+        .expect("remove cancelled HLS task and owned staging");
+    assert!(
+        !working.exists(),
+        "task removal cleans any remaining task-owned HLS directory"
     );
 }
 

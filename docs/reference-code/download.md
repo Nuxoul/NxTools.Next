@@ -1461,6 +1461,9 @@ Implemented and deterministically verified on 2026-08-10:
   segment staging and merge staging are actually removed; cleanup failure is a correlated failed
   terminal that retains ownership. Checkpoint reconciliation uses one aggregate event instead of a
   per-segment success log.
+- Paused/failed cancellation and history removal use the same task-ownership cleanup rule. They
+  remove both the HLS Segment directory and merge temporary artifact before publishing success or
+  deleting the durable plan; a real filesystem obstruction keeps the prior task/plan recoverable.
 
 ## Resolved phase-0 decisions
 
