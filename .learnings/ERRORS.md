@@ -4,6 +4,88 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-RUSTEXACT] cargo_test_exact_requires_module_path
+
+**Logged**: 2026-08-11T16:24:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+Three targeted Rust regression commands used `--exact` with only the function name and therefore
+executed zero tests while reporting success.
+
+### Error
+
+```text
+running 0 tests
+test result: ok. 0 passed; 0 failed; 254 filtered out
+```
+
+### Context
+
+- `cargo test <filter> -- --exact` requires the complete module-qualified test name.
+- The wrapper correctly rejected the result because every exit code was zero when the new tests
+  were expected to fail before the fix.
+
+### Suggested Fix
+
+Use substring filtering without `--exact`, or first list the test binary names and pass the full
+module path. Always treat `running 0 tests` as an invalid regression gate.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T16:25:00+08:00
+- **Notes**: Re-run the three filters without `--exact` and require each to execute one test.
+
+---
+
+## [ERR-20260811-MULTIPATCH] multi_file_patch_context_mismatch
+
+**Logged**: 2026-08-11T16:31:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+
+A combined code-and-plan patch was rejected because the plan context wrapped differently from the
+expected excerpt; the code hunk was correctly not applied partially.
+
+### Error
+
+```text
+apply_patch verification failed: Failed to find expected lines in docs/download-plan.md
+```
+
+### Context
+
+- The patch mixed an independent test addition with a documentation insertion.
+- Reading the exact local slice showed the correct stable insertion anchor.
+
+### Suggested Fix
+
+Inspect the exact surrounding lines and use a shorter stable anchor; keep independently recoverable
+hunks separate when context is likely to wrap.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `docs/download-plan.md`, `rust/apps/nxtools-desktop/src/downloads.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T16:32:00+08:00
+- **Notes**: Reapplied against the exact `阶段 5 checklist` anchor and verified both files changed.
+
+---
+
 ## [ERR-20260811-FFMPEG-BOUNDARY-FIXTURE] First real installer fixture did not satisfy production seams
 
 **Logged**: 2026-08-11T16:10:00+08:00

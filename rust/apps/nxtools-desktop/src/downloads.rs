@@ -4233,7 +4233,7 @@ impl DownloadSettingsView {
         let ffmpeg_executable = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.ffmpeg_executable_path.clone())
-                .placeholder("留空则检测 FFMPEG_PATH 和 PATH")
+                .placeholder("留空则自动检测 FFMPEG_PATH / PATH")
         });
         let ffmpeg_input_subscription = cx.subscribe_in(
             &ffmpeg_executable,
@@ -4656,7 +4656,8 @@ impl Render for DownloadSettingsView {
         let application = self.application.clone();
         let ffmpeg_picker_path = current_ffmpeg.clone();
         let ffmpeg_control = div()
-            .w(px(274.0))
+            .debug_selector(|| "download-settings-ffmpeg-control".into())
+            .w_full()
             .flex()
             .items_center()
             .gap(px(5.0))
@@ -5093,30 +5094,37 @@ impl Render for DownloadSettingsView {
                                     ),
                                 ],
                             ))
-                            .child(download_settings_section(
-                                theme,
-                                "媒体工具",
-                                vec![
-                                    download_settings_row(
+                            .child(
+                                div()
+                                    .w_full()
+                                    .debug_selector(|| {
+                                        "download-settings-media-tools-section".into()
+                                    })
+                                    .child(download_settings_section(
                                         theme,
-                                        "FFmpeg 可执行文件",
-                                        ffmpeg_description,
-                                        ffmpeg_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "自动安装",
-                                        install_description,
-                                        ffmpeg_install_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "公开下载来源",
-                                        "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
-                                        ffmpeg_source_control,
-                                    ),
-                                ],
-                            ))
+                                        "媒体工具",
+                                        vec![
+                                            download_settings_stacked_row(
+                                                theme,
+                                                "FFmpeg 可执行文件",
+                                                ffmpeg_description,
+                                                ffmpeg_control,
+                                            ),
+                                            download_settings_row(
+                                                theme,
+                                                "自动安装",
+                                                install_description,
+                                                ffmpeg_install_control,
+                                            ),
+                                            download_settings_row(
+                                                theme,
+                                                "公开下载来源",
+                                                "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
+                                                ffmpeg_source_control,
+                                            ),
+                                        ],
+                                    )),
+                            )
                             .child(download_settings_section(
                                 theme,
                                 "窗口",
@@ -5559,6 +5567,47 @@ fn download_settings_row(
                         .text_size(px(8.8))
                         .text_color(theme.text_muted)
                         .child(description),
+                ),
+        )
+        .child(control)
+        .into_any_element()
+}
+
+fn download_settings_stacked_row(
+    theme: Theme,
+    title: &'static str,
+    description: impl Into<gpui::SharedString>,
+    control: AnyElement,
+) -> AnyElement {
+    div()
+        .w_full()
+        .min_h(px(72.0))
+        .px(px(9.0))
+        .py(px(7.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .flex_col()
+        .gap(px(6.0))
+        .child(
+            div()
+                .flex()
+                .items_end()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .text_size(px(10.5))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .truncate()
+                        .text_size(px(8.8))
+                        .text_color(theme.text_muted)
+                        .child(description.into()),
                 ),
         )
         .child(control)
@@ -6646,10 +6695,7 @@ fn hls_quality_options(
         let selected_selector = format!("download-hls-quality-selected-{index}");
         let selected_row = index == selected;
         let view = view.clone();
-        let resolution = variant.resolution.map_or_else(
-            || "自动".into(),
-            |(width, height)| format!("{width}×{height}"),
-        );
+        let resolution = hls_variant_primary_label(variant);
         let frame_rate = variant
             .frame_rate_milli
             .map(|value| format!(" · {:.2} fps", value as f64 / 1000.0))
@@ -6738,6 +6784,7 @@ fn hls_quality_options(
             })
     });
     div()
+        .debug_selector(|| "download-hls-quality-options".into())
         .w_full()
         .flex()
         .flex_col()
@@ -6770,6 +6817,27 @@ fn hls_quality_options(
                 .children(rows),
         )
         .into_any_element()
+}
+
+fn hls_variant_primary_label(variant: &nxtools_download::HlsVariantProbe) -> String {
+    if let Some((width, height)) = variant.resolution {
+        return format!("{width}×{height}");
+    }
+
+    let codecs = variant.codecs.to_ascii_lowercase();
+    if ["avc1", "avc3", "hev1", "hvc1", "vp09", "av01"]
+        .iter()
+        .any(|codec| codecs.contains(codec))
+    {
+        "视频流".into()
+    } else if ["mp4a", "ac-3", "ec-3", "opus"]
+        .iter()
+        .any(|codec| codecs.contains(codec))
+    {
+        "音频流".into()
+    } else {
+        "未标注分辨率".into()
+    }
 }
 
 fn dash_track_options(
@@ -6823,6 +6891,7 @@ fn dash_track_options(
             )
     };
     div()
+        .debug_selector(|| "download-dash-track-options".into())
         .w_full()
         .flex()
         .flex_col()
@@ -7130,11 +7199,29 @@ fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
 fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui::Pixels> {
     match probe.media.as_ref() {
         Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
-            size(px(500.0), px(402.0))
+            let rows_height = bounded_media_rows_height(hls.variants.len(), 34.0, 4.0, 108.0);
+            size(px(500.0), px(260.0 + 16.0 + rows_height))
         }
-        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => size(px(500.0), px(430.0)),
+        Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
+            let row_count = dash.video_tracks.len().max(dash.audio_tracks.len());
+            let rows_height = bounded_media_rows_height(row_count, 38.0, 4.0, 112.0);
+            size(px(500.0), px(260.0 + 16.0 + 15.0 + rows_height))
+        }
         _ => new_download_window_size(true),
     }
+}
+
+fn bounded_media_rows_height(
+    row_count: usize,
+    row_height: f32,
+    row_gap: f32,
+    maximum_height: f32,
+) -> f32 {
+    if row_count == 0 {
+        return 0.0;
+    }
+    (row_count as f32 * row_height + row_count.saturating_sub(1) as f32 * row_gap)
+        .min(maximum_height)
 }
 
 fn selected_download_request_media(
@@ -8869,6 +8956,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[test]
+    fn hls_variant_without_resolution_is_not_presented_as_automatic_quality() {
+        let variant = nxtools_download::HlsVariantProbe {
+            playlist_url: "https://example.test/gear4/prog_index.m3u8".into(),
+            bandwidth: 1_927_833,
+            average_bandwidth: None,
+            resolution: None,
+            frame_rate_milli: None,
+            codecs: "mp4a.40.2, avc1.4d401f".into(),
+            audio_group: None,
+            subtitles_group: None,
+        };
+
+        assert_eq!(hls_variant_primary_label(&variant), "视频流");
+    }
+
+    #[test]
+    fn media_probe_window_height_tracks_the_visible_choice_rows() {
+        let dash_probe = DownloadProbe {
+            final_url: "https://example.test/manifest.mpd".into(),
+            file_name: Some("manifest.mpd".into()),
+            total_bytes: None,
+            supports_ranges: false,
+            content_type: Some("application/dash+xml".into()),
+            validator: nxtools_download::ResourceValidator::default(),
+            media: Some(nxtools_download::DownloadMediaProbe::Dash(
+                nxtools_download::DashProbe {
+                    video_tracks: vec![nxtools_download::DashTrackProbe {
+                        representation_id: "video".into(),
+                        bandwidth: 5_100_000,
+                        resolution: Some((1920, 1080)),
+                        codecs: "avc1.64002a".into(),
+                        mime_type: "video/mp4".into(),
+                        language: None,
+                        segment_count: 30,
+                        has_initialization: true,
+                    }],
+                    audio_tracks: vec![nxtools_download::DashTrackProbe {
+                        representation_id: "audio".into(),
+                        bandwidth: 130_000,
+                        resolution: None,
+                        codecs: "mp4a.40.2".into(),
+                        mime_type: "audio/mp4".into(),
+                        language: None,
+                        segment_count: 30,
+                        has_initialization: true,
+                    }],
+                },
+            )),
+        };
+
+        assert_eq!(
+            new_download_window_size_for_probe(&dash_probe)
+                .height
+                .as_f32(),
+            329.0,
+            "a one-video/one-audio DASH choice should use one visible row, not the maximum scroller height"
+        );
+
+        let hls_variant = nxtools_download::HlsVariantProbe {
+            playlist_url: "https://example.test/video.m3u8".into(),
+            bandwidth: 1_000_000,
+            average_bandwidth: None,
+            resolution: None,
+            frame_rate_milli: None,
+            codecs: "mp4a.40.2, avc1.4d401e".into(),
+            audio_group: None,
+            subtitles_group: None,
+        };
+        let hls_probe = DownloadProbe {
+            final_url: "https://example.test/master.m3u8".into(),
+            file_name: Some("master.m3u8".into()),
+            total_bytes: None,
+            supports_ranges: false,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            validator: nxtools_download::ResourceValidator::default(),
+            media: Some(nxtools_download::DownloadMediaProbe::Hls(
+                nxtools_download::HlsProbe {
+                    is_master: true,
+                    variants: vec![hls_variant; 5],
+                },
+            )),
+        };
+        assert_eq!(
+            new_download_window_size_for_probe(&hls_probe)
+                .height
+                .as_f32(),
+            384.0,
+            "five HLS choices should use the bounded three-row viewport without extra footer whitespace"
+        );
+    }
+
     #[gpui::test]
     fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
@@ -9400,6 +9579,36 @@ mod tests {
                 executable
             );
         });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn settings_media_tools_gives_the_ffmpeg_path_a_full_width_row(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "ffmpeg-settings-layout");
+        let application_for_window = application.clone();
+        let initial = cx.read(|cx| application.read(cx).settings_view_initial());
+        let (_settings, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(520.0), px(486.0)));
+            DownloadSettingsView::new(application_for_window, initial, window, cx)
+        });
+        window.refresh().expect("render FFmpeg settings layout");
+
+        let section = window
+            .debug_bounds("download-settings-media-tools-section")
+            .expect("media tools section");
+        let control = window
+            .debug_bounds("download-settings-ffmpeg-control")
+            .expect("FFmpeg path control");
+        let width_ratio = control.size.width.as_f32() / section.size.width.as_f32();
+        assert!(
+            width_ratio >= 0.9,
+            "the FFmpeg path control is still cramped at {}px inside a {}px section ({width_ratio:.2})",
+            control.size.width.as_f32(),
+            section.size.width.as_f32()
+        );
+
         let _ = std::fs::remove_dir_all(directory);
     }
 

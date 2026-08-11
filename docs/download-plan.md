@@ -901,6 +901,14 @@ Bip Bop 有限 TS playlist 和 DASH-IF/CTA WAVE 60 秒双轨静态 MPD：source-
 Cargo 门禁，没有启动 GUI、全 workspace Cargo 或 Release 打包，也没有声称真实播放/浏览器人工验收
 完成；阶段 5 checklist 保持未勾选。
 
+2026-08-11 当前 Stage 5 Release 包已成功生成并进入人工验收。首次真实界面检查发现媒体工具仍沿用
+通用左右分栏，FFmpeg 路径被压缩；确认后的 DASH/HLS 窗口使用最大固定高度，少量轨道时留下大片
+空白；Apple Bip Bop master 又因没有 `RESOLUTION` 被五次显示为“自动”。修复后媒体工具使用全宽
+路径行，媒体窗口按有界可见行数计算高度；缺少分辨率时只根据已有 codec 元数据准确区分“视频流”
+或“音频流”，继续显示真实码率而不伪造尺寸。GPUI 实际布局回归、255 项 desktop 测试和 Clippy
+已通过；该修复尚未重新打包，真实媒体完成、播放、浏览器传递与长时 mux 取消验收仍未完成，阶段
+5 checklist 继续保持未勾选。
+
 ### 阶段 6：旧版高级能力与迁移（4–7 天）
 
 - [ ] SHA-256 和用户提供的期望校验值。

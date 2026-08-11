@@ -1413,6 +1413,14 @@ Reverified on 2026-08-10 before starting the first Stage 5 slice:
   keeps ordinary HTTP confirmation unchanged. The selected playlist identity must be carried by a
   typed Rust request before HLS transfer is enabled; it must never fall through to the ordinary HTTP
   downloader and falsely complete after saving only the manifest.
+- The Apple Bip Bop master used by the Stage 5 acceptance gate was rechecked after the packaged UI
+  exposed five rows all labelled `自动`. That manifest currently advertises only `BANDWIDTH` and
+  `CODECS`; it does not contain `RESOLUTION` or frame-rate attributes. The parser is therefore
+  correct to preserve an absent resolution, but GPUI must not present the absence as an automatic
+  quality decision. It labels the row as a video or audio stream from the bounded codec metadata,
+  keeps the advertised bitrate visible, and never invents dimensions by inspecting media payloads.
+  Confirmed HLS/DASH windows size themselves from the bounded visible row count so a one-row DASH
+  choice does not retain the maximum scroller height as blank space.
 
 Reverified on 2026-08-10 before the first HLS transfer slice:
 
