@@ -121,6 +121,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
         .context("desktop runtime did not provide a download engine")?;
     let download_default_directory = runtime.download_default_directory.clone();
     let download_database_path = runtime.download_database_path.clone();
+    let ffmpeg_install_directory = runtime.ffmpeg_install_directory.clone();
     let app_config = runtime.config.clone();
     let config_path = runtime.config_path.clone();
     let log_dir = runtime.log_dir.clone();
@@ -207,6 +208,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                         config_path: config_path.clone(),
                         log_directory: log_dir.clone(),
                         database_path: download_database_path,
+                        ffmpeg_install_directory,
                     },
                     cx,
                 )

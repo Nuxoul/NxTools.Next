@@ -29,9 +29,10 @@ use crate::{
     DownloadSegmentTransferOutcome, DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError,
     DownloadStorageError, DownloadStorageRequirement, DownloadSubmitMode, DownloadTask,
     DownloadTaskAction, DownloadTaskDetail, DownloadTaskError, DownloadTaskId,
-    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, HttpDownloadClient,
-    HttpDownloadError, MAX_BROWSER_BATCH_ITEMS, RequestOrigin, SegmentedArtifact,
-    SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, FfmpegInstallControl,
+    FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError, MAX_BROWSER_BATCH_ITEMS,
+    RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError,
+    TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -44,6 +45,7 @@ pub struct DownloadEngine {
 struct DownloadEngineInner {
     http: HttpDownloadClient,
     ffmpeg_executable: Mutex<Option<PathBuf>>,
+    ffmpeg_install_active: AtomicBool,
     store: SqliteDownloadStore,
     global_rate_limiter: DownloadRateLimiter,
     capacity_probe: Arc<dyn StorageCapacityProbe>,
@@ -440,6 +442,7 @@ impl DownloadEngine {
             inner: Arc::new(DownloadEngineInner {
                 http,
                 ffmpeg_executable: Mutex::new(ffmpeg_executable),
+                ffmpeg_install_active: AtomicBool::new(false),
                 store,
                 global_rate_limiter: DownloadRateLimiter::new(global_speed_limit)?,
                 capacity_probe,
@@ -561,6 +564,48 @@ impl DownloadEngine {
         Ok(crate::media::resolve_ffmpeg_executable(
             configured.as_deref(),
         ))
+    }
+
+    pub fn start_ffmpeg_install(
+        &self,
+        correlation_id: uuid::Uuid,
+        install_root: PathBuf,
+        preserve_executable: Option<PathBuf>,
+    ) -> Result<FfmpegInstallOperation, DownloadEngineError> {
+        info!(
+            event = "download.ffmpeg_install.started",
+            %correlation_id,
+            source_count = crate::FfmpegInstallSource::ALL.len(),
+            "managed FFmpeg installation started"
+        );
+        let runtime = download_runtime()?;
+        self.inner
+            .ffmpeg_install_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| DownloadEngineError::FfmpegInstallAlreadyActive)?;
+        let control = DownloadTransferControl::new();
+        let public_control = FfmpegInstallControl::new(control.clone());
+        let (progress_sender, progress) = async_channel::bounded(32);
+        let (completion_sender, completion) = async_channel::bounded(1);
+        let inner = self.inner.clone();
+        runtime.spawn(async move {
+            let result = crate::ffmpeg_install::run_ffmpeg_install(
+                correlation_id,
+                install_root,
+                preserve_executable,
+                control,
+                progress_sender,
+            )
+            .await;
+            inner.ffmpeg_install_active.store(false, Ordering::Release);
+            let _ = completion_sender.send(result).await;
+        });
+        Ok(FfmpegInstallOperation {
+            correlation_id,
+            control: public_control,
+            progress,
+            completion,
+        })
     }
 
     pub fn queue_order(&self, queue_id: &str) -> Result<Vec<DownloadTaskId>, DownloadEngineError> {
@@ -6894,6 +6939,8 @@ pub enum DownloadEngineError {
     },
     #[error("未找到 FFmpeg；请打开“下载设置 → 媒体工具”指定 ffmpeg.exe，或使用其中的公开下载链接")]
     FfmpegUnavailable,
+    #[error("FFmpeg automatic installation is already running")]
+    FfmpegInstallAlreadyActive,
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
     #[error("download task has no active transfer control: {0:?}")]
@@ -6973,6 +7020,7 @@ impl DownloadEngineError {
             | Self::MissingSegmentedLength(_)
             | Self::EmptySegmentLayout(_)
             | Self::IncompleteSegmentLayout(_)
+            | Self::FfmpegInstallAlreadyActive
             | Self::InvalidQueueConcurrency
             | Self::InvalidQueueMove(_)
             | Self::InvalidAction { .. } => (DownloadFaultCode::InvalidState, false),

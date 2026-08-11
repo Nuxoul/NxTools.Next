@@ -93,6 +93,7 @@ pub struct DesktopRuntime {
     pub download_engine: Option<DownloadEngine>,
     pub download_default_directory: PathBuf,
     pub download_database_path: PathBuf,
+    pub ffmpeg_install_directory: PathBuf,
     _instance: SingleInstanceGuard,
     _log_guard: LogGuard,
     _platform_host: Option<PlatformHostSupervisor>,
@@ -125,6 +126,7 @@ impl DesktopRuntime {
         )
         .context("failed to initialize the application launcher catalog")?;
         let download_database_path = paths.data_dir.join("downloads.sqlite3");
+        let ffmpeg_install_directory = paths.data_dir.join("tools").join("ffmpeg");
         let download_engine = DownloadEngine::open(download_database_path.clone())
             .context("failed to initialize the download engine")?;
         start_download_host(download_engine.clone())?;
@@ -151,6 +153,7 @@ impl DesktopRuntime {
             download_engine: Some(download_engine),
             download_default_directory,
             download_database_path,
+            ffmpeg_install_directory,
             _instance: instance,
             _log_guard: log_guard,
             _platform_host: platform_host,

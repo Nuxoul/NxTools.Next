@@ -1541,14 +1541,30 @@ Reverified on 2026-08-11 before starting the DASH vertical slice:
   fragments, separate audio/video track artifacts and FFmpeg mux. Its source, schema, comments and
   tests are not copied, and silent first-Period fallback or URL-bearing diagnostics are not adopted.
 - Old NxTools `Services/VideoCompressionService.cs::ResolveFfmpegExecutable`,
-  `Services/FfmpegInstallerService.cs` and `Views/VideoSettingsWindow.axaml` were rechecked for the
-  user-managed FFmpeg boundary. The old product accepts a configured executable, probes `PATH`,
-  also checks application-local/install locations and can download an archive automatically. For
-  NxTools.Next the user explicitly selected a narrower policy: a valid configured executable wins,
-  then the `FFMPEG_PATH` environment variable, then the process `PATH`; application-local bundled
-  binaries and automatic download/install are forbidden. GPUI always offers public Gyan.dev and
-  BtbN build links through the existing typed shell-open adapter, including when no candidate resolves. The links originate
-  from the old installer's public sources, but NxTools.Next never downloads or extracts them itself.
+  `Services/FfmpegInstallerService.cs`, `MainWindowVideoViewModel::InstallFfmpegAsync` and
+  `Views/VideoSettingsWindow.axaml` were rechecked for the user-managed FFmpeg boundary. The old
+  product accepts a configured executable, probes `PATH`, also checks application-local/install
+  locations, and exposes an explicit “自动下载” action. That action tries Gyan then BtbN-derived
+  sources, streams a ZIP with progress and cancellation, extracts to a unique temporary directory,
+  finds `ffmpeg.exe`, copies its binary directory under the current user's local tools directory,
+  writes the installed path back into settings, and cleans its temporary directory.
+- AB Download Manager was checked first for this FFmpeg-management slice, following the download
+  reference priority. A repository-wide scan of its Kotlin/Java/XML/Gradle sources found no
+  `ffmpeg`/`ffprobe` executable resolver, managed installer, external-tool download flow or related
+  settings entry. It therefore supplies no FFmpeg auto-install behavior to reproduce; old NxTools
+  is the product-behavior reference for this specific boundary.
+- The corrected NxTools.Next product decision is: FFmpeg is not bundled into the release package,
+  but a user may explicitly request an in-product download/install. A valid configured executable
+  still wins, followed by `FFMPEG_PATH` and process `PATH`; a successful managed install becomes the
+  new configured path. GPUI retains the public Gyan.dev and BtbN page links as manual fallbacks.
+  The managed installer uses only the publishers' HTTPS artifacts and checksum manifests:
+  Gyan's release-essentials ZIP/sidecar and BtbN's floating `win64-gpl` ZIP plus
+  `checksums.sha256`. These are separately installed third-party FFmpeg builds under their own
+  licenses after an explicit user action; NxTools neither mirrors them nor includes them in its
+  package. Proxy mirrors from the old implementation are intentionally not retained.
+  NxTools.Next must not copy the old installer's unsafe edges: source URLs/paths in logs, proxy
+  mirrors, unbounded archives/entry expansion, path traversal, in-place overwrite, swallowed cleanup
+  failures, or accepting an executable without a bounded `-version` validation.
   Diagnostics record only the fixed resolution source (`configured`, `environment`, `path` or
   `missing`) and elapsed time, never the executable path or child output. Settings labels an
   existing path only as a discovered candidate; the bounded `-version` process remains the

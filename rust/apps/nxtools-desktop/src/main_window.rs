@@ -6006,6 +6006,9 @@ mod tests {
                         config_path: std::env::temp_dir().join("nxtools-test-config.json"),
                         log_directory: std::env::temp_dir(),
                         database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                        ffmpeg_install_directory: std::env::temp_dir()
+                            .join("nxtools-test-tools")
+                            .join("ffmpeg"),
                     },
                     cx,
                 )
@@ -6300,6 +6303,9 @@ mod tests {
                         config_path: std::env::temp_dir().join("nxtools-test-config.json"),
                         log_directory: std::env::temp_dir(),
                         database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                        ffmpeg_install_directory: std::env::temp_dir()
+                            .join("nxtools-test-tools")
+                            .join("ffmpeg"),
                     },
                     cx,
                 )
@@ -6440,6 +6446,9 @@ mod tests {
                         config_path: std::env::temp_dir().join("nxtools-test-config.json"),
                         log_directory: std::env::temp_dir(),
                         database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                        ffmpeg_install_directory: std::env::temp_dir()
+                            .join("nxtools-test-tools")
+                            .join("ffmpeg"),
                     },
                     cx,
                 )

@@ -1328,7 +1328,7 @@ impl DownloadTransferControl {
         self.directive.send_replace(TransferDirective::Cancel);
     }
 
-    fn subscribe(&self) -> watch::Receiver<TransferDirective> {
+    pub(crate) fn subscribe(&self) -> watch::Receiver<TransferDirective> {
         self.directive.subscribe()
     }
 

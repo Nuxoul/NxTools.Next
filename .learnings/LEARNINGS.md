@@ -5,6 +5,35 @@ Corrections, insights, and knowledge gaps captured during development.
 **Categories**: correction | insight | knowledge_gap | best_practice
 
 ---
+## [LRN-20260811-FFMPEGAUTOINSTALL] correction
+
+**Logged**: 2026-08-11T15:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+
+“FFmpeg 不内置”表示发布包不携带二进制，不表示产品不能提供用户主动触发的按需下载与自动配置。
+
+### Details
+
+旧 NxTools 的 `FfmpegInstallerService` 明确实现了多源下载、进度、取消、ZIP 解压、用户工具目录
+安装和路径写回。此前虽然读到了这一边界，却错误地把“不要随包内置”映射成了“禁止自动下载”，
+导致新设置页只保留手动选择、环境检测和公开链接。
+
+### Suggested Action
+
+遇到“内置、捆绑、自动下载、自动安装”时分别确认发布物边界与运行时行为；若用户要求参考旧版，
+必须让参考调用链与最终产品决策逐项对照，不能只记录源码存在后自行否定其产品行为。
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `docs/reference-code/download.md`, `rust/crates/nxtools-download/src/media.rs`, `rust/apps/nxtools-desktop/src/downloads.rs`
+- Tags: ffmpeg, requirements, reference-first
+
+---
 ## [LRN-20260808-POPUPINTRINSIC] correction
 
 **Logged**: 2026-08-08T17:29:00+08:00

@@ -9,6 +9,7 @@ mod artifact;
 mod capacity;
 mod dash;
 mod engine;
+mod ffmpeg_install;
 mod hls;
 mod http;
 mod media;
@@ -25,6 +26,10 @@ pub use dash::{
 pub use engine::{
     BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
     DownloadEngineTask, DownloadScheduleMoment, daily_schedule_window_contains,
+};
+pub use ffmpeg_install::{
+    FfmpegInstallControl, FfmpegInstallFailure, FfmpegInstallOperation, FfmpegInstallPhase,
+    FfmpegInstallProgress, FfmpegInstallSource, FfmpegInstallation,
 };
 pub use hls::{
     MAX_HLS_ATTRIBUTE_BYTES, MAX_HLS_PROBE_SERIALIZED_BYTES, MAX_HLS_VARIANT_URL_BYTES,

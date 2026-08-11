@@ -4095,6 +4095,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo 0.39.6",
  "tempfile",
  "thiserror 2.0.18",
@@ -4103,6 +4104,7 @@ dependencies = [
  "url",
  "uuid",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

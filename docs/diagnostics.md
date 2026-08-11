@@ -311,6 +311,23 @@ The settings file picker and public-source buttons use correlated
 `download.ffmpeg_picker.started` → one picker terminal and
 `download.ffmpeg_download_page.started` → one page terminal. They record elapsed time and only the
 fixed page source (`gyan|btbn`); selected paths and download URLs are never logged.
+
+The user-triggered managed install uses one correlation ID from
+`download.ffmpeg_install.started` to exactly one `download.ffmpeg_install.completed`,
+`download.ffmpeg_install.cancelled` or `download.ffmpeg_install.failed`. At most two bounded source
+attempts may emit `download.ffmpeg_install.source_started` and `source_failed`, identified only by
+the fixed source (`gyan|btbn`) and attempt number. Terminals carry fixed phase/failure kind,
+downloaded byte count, optional HTTP/native error code and elapsed time. They never record source
+URLs, redirect locations, archive/executable paths, response bodies, child output or ZIP entry names.
+Progress is UI-only and is not written per chunk. Cleanup/publish failure is terminal and remains
+correlated; a failed install never updates the configured executable path.
+Best-effort removal of a superseded or unconfigured managed version may emit one correlated
+`download.ffmpeg_install.cleanup_failed` with fixed `artifact_kind`, `reason`, optional native
+error code and elapsed time. It never records the managed directory or executable path.
+If the settings write fails after the live engine accepted the new executable, a failed live
+rollback emits `download.ffmpeg_install.rollback_failed` with the same correlation and fixed
+`operation=engine_configuration`; the managed artifact remains owned rather than being deleted
+while the engine may still reference it.
 Windows picker or system-browser launch failures also carry an optional native error code. Error
 messages are reserved for the UI and are not copied into these structured events.
 Both platform operations own bounded pending state. A picker result is capped at ten minutes and a

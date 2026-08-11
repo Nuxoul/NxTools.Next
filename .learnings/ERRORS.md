@@ -4,6 +4,137 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-FFMPEG-BOUNDARY-FIXTURE] First real installer fixture did not satisfy production seams
+
+**Logged**: 2026-08-11T16:10:00+08:00
+**Status**: resolved
+**Area**: testing
+
+### Summary
+
+The first real HTTP installer regression used an unavailable async-channel iterator and renamed
+`cmd.exe` as `ffmpeg.exe`; compilation then failed, and the corrected test reached the real version
+boundary but was rejected because its output did not start with `ffmpeg version`.
+
+### Error
+
+```text
+no method named `try_iter` found for async_channel::Receiver
+Version(InvalidVersion)
+```
+
+### Context
+
+- The test needed to drain a bounded channel with repeated `try_recv()` calls.
+- A process exiting successfully is not a valid FFmpeg fixture; production deliberately validates
+  the bounded first version line, so the test must exercise that exact contract.
+
+### Suggested Fix
+
+For real child-process boundaries, compile a tiny bounded fixture executable that emits the exact
+public protocol expected by production instead of substituting an unrelated system executable.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/ffmpeg_install.rs`
+- Recurrence-Count: 1
+
+### Resolution
+
+- **Resolved**: 2026-08-11T16:20:00+08:00
+- **Notes**: The fixture now compiles a tiny executable through the active Rust toolchain, and the
+  real fallback/version/publish, checksum-mismatch and streaming-cancel tests all pass.
+
+---
+
+## [ERR-20260811-FFMPEG-CLIPPY] New installer failed the repository warning gate
+
+**Logged**: 2026-08-11T15:20:00+08:00
+**Status**: resolved
+**Area**: testing
+
+### Summary
+
+The first all-target Clippy runs rejected two style issues and four `unwrap()` calls in the new
+FFmpeg installer tests; later review-driven boundary tests also exposed a data-clump function and
+an obfuscated fixture conditional.
+
+### Error
+
+```text
+clippy::collapsible-if, clippy::len-zero, clippy::unwrap-used,
+clippy::too-many-arguments, clippy::obfuscated-if-else
+```
+
+### Context
+
+- Production cleanup used a nested `if` and ZIP validation compared length with zero.
+- Test fixtures used `unwrap()` even though this repository promotes all warnings to errors.
+- The first source-attempt interface carried eight related parameters instead of one operation
+  context, and a fixture header used a boolean combinator where an explicit branch was clearer.
+
+### Suggested Fix
+
+Run the exact all-target `-D warnings` gate after adding a new Rust module, including its tests.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/src/ffmpeg_install.rs`
+- Recurrence-Count: 3
+
+### Resolution
+
+- **Resolved**: 2026-08-11T15:22:00+08:00
+- **Notes**: The production expressions were simplified, test unwraps gained contextual expects,
+  the source-attempt data became one context type, and the fixture conditional is explicit. The
+  download/desktop all-target Clippy gate passed after each correction.
+
+---
+
+## [ERR-20260811-FFMPEG-VERIFY-TIMEOUT] Combined Rust verification exceeded wrapper timeout
+
+**Logged**: 2026-08-11T15:14:18+08:00
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+
+A combined sequential command ran the download-core test and then started a desktop test build,
+but the 120-second shell wrapper expired while the second Cargo process was still compiling.
+
+### Error
+
+```text
+command timed out after 124029 milliseconds
+```
+
+### Context
+
+- The prescribed single-job, non-incremental, high-codegen-unit settings make Windows desktop
+  linking intentionally slower in exchange for bounded commit memory.
+- The child Cargo/rustc processes continued after the wrapper timed out, so they were inspected by
+  exact PID and allowed to finish rather than starting a competing build.
+
+### Suggested Fix
+
+Run download-core and desktop verification as separate commands with a longer timeout, and inspect
+exact process ancestry before retrying a timed-out Cargo command.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src/downloads.rs`
+- Recurrence-Count: 1
+
+### Resolution
+
+- **Resolved**: 2026-08-11T15:14:18+08:00
+- **Notes**: No duplicate Cargo process was started; subsequent verification uses separate commands.
+
+---
+
 ## [ERR-20260811-PSARRAYSUBEXPR] powershell_multiline_array_subexpression_not_closed
 
 **Logged**: 2026-08-11T15:20:00+08:00

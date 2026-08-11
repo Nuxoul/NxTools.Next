@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -23,6 +25,8 @@ use nxtools_core::{
     AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
     DownloadTaskbarProgressOverlaySettings,
 };
+#[cfg(test)]
+use nxtools_download::FfmpegInstallSource;
 use nxtools_download::{
     BrowserBlob, BrowserDownloadDialogRequest, BrowserDownloadDialogSource,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
@@ -31,7 +35,9 @@ use nxtools_download::{
     DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
     DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
     DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
-    FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL, RequestOrigin, resolve_ffmpeg_executable,
+    FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL, FfmpegInstallControl, FfmpegInstallFailure,
+    FfmpegInstallPhase, FfmpegInstallProgress, FfmpegInstallation, RequestOrigin,
+    resolve_ffmpeg_executable,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
@@ -64,9 +70,65 @@ pub(crate) enum DownloadApplicationEvent {
     FfmpegExecutablePicked {
         path: PathBuf,
     },
+    FfmpegInstallChanged {
+        state: FfmpegInstallViewState,
+    },
     TaskbarOverlayEditChanged {
         settings: DownloadTaskbarProgressOverlaySettings,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FfmpegInstallViewState {
+    Idle,
+    Installing {
+        phase: FfmpegInstallPhase,
+        percent: u8,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+        cancelling: bool,
+    },
+    Completed,
+    Cancelled,
+    Failed(String),
+}
+
+impl FfmpegInstallViewState {
+    fn is_active(&self) -> bool {
+        matches!(self, Self::Installing { .. })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PendingFfmpegInstall {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+    control: PendingFfmpegInstallControl,
+}
+
+#[derive(Debug, Clone)]
+enum PendingFfmpegInstallControl {
+    Core(FfmpegInstallControl),
+    #[cfg(test)]
+    Test(Rc<Cell<bool>>),
+}
+
+impl PendingFfmpegInstallControl {
+    fn cancel(&self) {
+        match self {
+            Self::Core(control) => control.cancel(),
+            #[cfg(test)]
+            Self::Test(cancelled) => cancelled.set(true),
+        }
+    }
+}
+
+#[cfg(test)]
+struct FfmpegInstallOperationOverride {
+    correlation_id: uuid::Uuid,
+    progress: async_channel::Receiver<FfmpegInstallProgress>,
+    completion: async_channel::Receiver<Result<FfmpegInstallation, FfmpegInstallFailure>>,
+    cancelled: Rc<Cell<bool>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +158,7 @@ struct DownloadSettingsViewInitial {
     config_path: String,
     log_directory: String,
     database_path: String,
+    ffmpeg_install_state: FfmpegInstallViewState,
 }
 
 const FFMPEG_PICKER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -149,6 +212,7 @@ pub(crate) struct DownloadRuntimeContext {
     pub config_path: PathBuf,
     pub log_directory: PathBuf,
     pub database_path: PathBuf,
+    pub ffmpeg_install_directory: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,10 +350,15 @@ pub(crate) struct DownloadApplication {
     config_path: PathBuf,
     log_directory: PathBuf,
     database_path: PathBuf,
+    ffmpeg_install_directory: PathBuf,
     show_progress_window: bool,
     show_completion_window: bool,
     pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
     pending_ffmpeg_operations: HashMap<uuid::Uuid, PendingFfmpegPlatformOperation>,
+    ffmpeg_install_state: FfmpegInstallViewState,
+    pending_ffmpeg_install: Option<PendingFfmpegInstall>,
+    #[cfg(test)]
+    ffmpeg_install_operation_override: Option<FfmpegInstallOperationOverride>,
     #[cfg(test)]
     ffmpeg_platform_commands: Rc<RefCell<Vec<(uuid::Uuid, PlatformCommand)>>>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
@@ -314,6 +383,7 @@ impl DownloadApplication {
             config_path,
             log_directory,
             database_path,
+            ffmpeg_install_directory,
         } = runtime;
         config.download.normalize();
         let configured_ffmpeg = (!config.download.ffmpeg_executable_path.is_empty())
@@ -436,10 +506,15 @@ impl DownloadApplication {
             config_path,
             log_directory,
             database_path,
+            ffmpeg_install_directory,
             show_progress_window,
             show_completion_window,
             pending_directory_picker: None,
             pending_ffmpeg_operations: HashMap::new(),
+            ffmpeg_install_state: FfmpegInstallViewState::Idle,
+            pending_ffmpeg_install: None,
+            #[cfg(test)]
+            ffmpeg_install_operation_override: None,
             #[cfg(test)]
             ffmpeg_platform_commands: Rc::new(RefCell::new(Vec::new())),
             notified_terminal_states,
@@ -595,6 +670,7 @@ impl DownloadApplication {
             config_path: self.config_path.display().to_string(),
             log_directory: self.log_directory.display().to_string(),
             database_path: self.database_path.display().to_string(),
+            ffmpeg_install_state: self.ffmpeg_install_state.clone(),
         }
     }
 
@@ -1130,6 +1206,358 @@ impl DownloadApplication {
             FFMPEG_PICKER_TIMEOUT,
             cx,
         );
+    }
+
+    fn start_ffmpeg_install(&mut self, cx: &mut Context<Self>) {
+        if self.pending_ffmpeg_install.is_some() {
+            return;
+        }
+        let preserve_executable = (!self.config.download.ffmpeg_executable_path.is_empty())
+            .then(|| PathBuf::from(&self.config.download.ffmpeg_executable_path));
+        #[cfg(test)]
+        let correlation_id = self
+            .ffmpeg_install_operation_override
+            .as_ref()
+            .map_or_else(uuid::Uuid::new_v4, |operation| operation.correlation_id);
+        #[cfg(not(test))]
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        #[cfg(test)]
+        let operation_result =
+            if let Some(operation) = self.ffmpeg_install_operation_override.take() {
+                Ok((
+                    operation.correlation_id,
+                    PendingFfmpegInstallControl::Test(operation.cancelled),
+                    operation.progress,
+                    operation.completion,
+                ))
+            } else {
+                self.engine
+                    .start_ffmpeg_install(
+                        correlation_id,
+                        self.ffmpeg_install_directory.clone(),
+                        preserve_executable,
+                    )
+                    .map(|operation| {
+                        (
+                            operation.correlation_id,
+                            PendingFfmpegInstallControl::Core(operation.control),
+                            operation.progress,
+                            operation.completion,
+                        )
+                    })
+            };
+        #[cfg(not(test))]
+        let operation_result = self
+            .engine
+            .start_ffmpeg_install(
+                correlation_id,
+                self.ffmpeg_install_directory.clone(),
+                preserve_executable,
+            )
+            .map(|operation| {
+                (
+                    operation.correlation_id,
+                    PendingFfmpegInstallControl::Core(operation.control),
+                    operation.progress,
+                    operation.completion,
+                )
+            });
+        let (correlation_id, control, progress, completion) = match operation_result {
+            Ok(operation) => operation,
+            Err(error) => {
+                let message = format!("无法启动 FFmpeg 自动下载：{error}");
+                warn!(
+                    event = "download.ffmpeg_install.failed",
+                    %correlation_id,
+                    phase = "connecting",
+                    failure_kind = "start_rejected",
+                    downloaded_bytes = 0,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "managed FFmpeg installation start was rejected"
+                );
+                self.set_ffmpeg_install_state(FfmpegInstallViewState::Failed(message.clone()), cx);
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "ffmpeg-install-start",
+                        "无法自动下载 FFmpeg",
+                        message,
+                        cx,
+                    );
+                });
+                return;
+            }
+        };
+        self.pending_ffmpeg_install = Some(PendingFfmpegInstall {
+            correlation_id,
+            started_at,
+            control,
+        });
+        self.set_ffmpeg_install_state(
+            FfmpegInstallViewState::Installing {
+                phase: FfmpegInstallPhase::Connecting,
+                percent: 0,
+                downloaded_bytes: 0,
+                total_bytes: None,
+                cancelling: false,
+            },
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            while let Ok(update) = progress.recv().await {
+                let Some(this) = this.upgrade() else {
+                    return;
+                };
+                if this
+                    .update(cx, |application, cx| {
+                        application.handle_ffmpeg_install_progress(correlation_id, update, cx);
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            let Ok(result) = completion.recv().await else {
+                return;
+            };
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+            let _ = this.update(cx, |application, cx| {
+                application.finish_ffmpeg_install(correlation_id, result, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_ffmpeg_install(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_ffmpeg_install.as_ref() else {
+            return;
+        };
+        pending.control.cancel();
+        if let FfmpegInstallViewState::Installing {
+            phase,
+            percent,
+            downloaded_bytes,
+            total_bytes,
+            ..
+        } = self.ffmpeg_install_state.clone()
+        {
+            self.set_ffmpeg_install_state(
+                FfmpegInstallViewState::Installing {
+                    phase,
+                    percent,
+                    downloaded_bytes,
+                    total_bytes,
+                    cancelling: true,
+                },
+                cx,
+            );
+        }
+    }
+
+    fn handle_ffmpeg_install_progress(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        progress: FfmpegInstallProgress,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_ffmpeg_install.as_ref() else {
+            return;
+        };
+        if pending.correlation_id != correlation_id {
+            return;
+        }
+        let cancelling = matches!(
+            self.ffmpeg_install_state,
+            FfmpegInstallViewState::Installing {
+                cancelling: true,
+                ..
+            }
+        );
+        self.set_ffmpeg_install_state(
+            FfmpegInstallViewState::Installing {
+                phase: progress.phase,
+                percent: progress.percent,
+                downloaded_bytes: progress.downloaded_bytes,
+                total_bytes: progress.total_bytes,
+                cancelling,
+            },
+            cx,
+        );
+    }
+
+    fn finish_ffmpeg_install(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        result: Result<FfmpegInstallation, FfmpegInstallFailure>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_ffmpeg_install.take() else {
+            return;
+        };
+        if pending.correlation_id != correlation_id {
+            self.pending_ffmpeg_install = Some(pending);
+            return;
+        }
+        let elapsed_ms = pending.started_at.elapsed().as_millis();
+        match result {
+            Ok(installation) => {
+                if let Err(message) = self.commit_ffmpeg_installation(correlation_id, &installation)
+                {
+                    warn!(
+                        event = "download.ffmpeg_install.failed",
+                        %correlation_id,
+                        phase = "configuring",
+                        failure_kind = "configuration",
+                        downloaded_bytes = installation.downloaded_bytes,
+                        elapsed_ms,
+                        "managed FFmpeg installation could not be configured"
+                    );
+                    self.set_ffmpeg_install_state(
+                        FfmpegInstallViewState::Failed(message.clone()),
+                        cx,
+                    );
+                    self.notifications.update(cx, |notifications, cx| {
+                        notifications.show_error(
+                            "ffmpeg-install-failed",
+                            "FFmpeg 自动安装失败",
+                            message,
+                            cx,
+                        );
+                    });
+                    return;
+                }
+                info!(
+                    event = "download.ffmpeg_install.completed",
+                    %correlation_id,
+                    source = installation.source.as_str(),
+                    downloaded_bytes = installation.downloaded_bytes,
+                    elapsed_ms,
+                    "managed FFmpeg installation completed and was configured"
+                );
+                self.set_ffmpeg_install_state(FfmpegInstallViewState::Completed, cx);
+                cx.emit(DownloadApplicationEvent::FfmpegExecutablePicked {
+                    path: installation.executable.clone(),
+                });
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_success(
+                        "ffmpeg-install-completed",
+                        "FFmpeg 已安装",
+                        "已下载到用户目录并自动配置，DASH 双轨任务可以直接合并。",
+                        cx,
+                    );
+                });
+            }
+            Err(error) if error.is_cancelled() => {
+                let downloaded_bytes = error.downloaded_bytes();
+                info!(
+                    event = "download.ffmpeg_install.cancelled",
+                    %correlation_id,
+                    phase = error.phase().as_str(),
+                    downloaded_bytes,
+                    elapsed_ms,
+                    "managed FFmpeg installation cancelled"
+                );
+                self.set_ffmpeg_install_state(FfmpegInstallViewState::Cancelled, cx);
+            }
+            Err(error) => {
+                let message = error.user_message().to_owned();
+                let downloaded_bytes = error.downloaded_bytes();
+                warn!(
+                    event = "download.ffmpeg_install.failed",
+                    %correlation_id,
+                    phase = error.phase().as_str(),
+                    failure_kind = error.failure_kind(),
+                    native_error_code = error.native_error_code(),
+                    http_status = error.http_status(),
+                    downloaded_bytes,
+                    elapsed_ms,
+                    "managed FFmpeg installation failed"
+                );
+                self.set_ffmpeg_install_state(FfmpegInstallViewState::Failed(message.clone()), cx);
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "ffmpeg-install-failed",
+                        "FFmpeg 自动安装失败",
+                        message,
+                        cx,
+                    );
+                });
+            }
+        }
+    }
+
+    fn commit_ffmpeg_installation(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        installation: &FfmpegInstallation,
+    ) -> Result<(), String> {
+        let previous = (!self.config.download.ffmpeg_executable_path.is_empty())
+            .then(|| PathBuf::from(&self.config.download.ffmpeg_executable_path));
+        if let Err(error) = self
+            .engine
+            .set_ffmpeg_executable_path(Some(installation.executable.clone()))
+        {
+            self.discard_unconfigured_ffmpeg(correlation_id, &installation.executable);
+            return Err(format!("FFmpeg 已下载，但无法同步到下载引擎：{error}"));
+        }
+        let mut settings = self.config.download.clone();
+        settings.ffmpeg_executable_path = installation.executable.to_string_lossy().into_owned();
+        match AppConfig::update_download_settings(&self.config_path, settings) {
+            Ok(config) => {
+                self.config = config;
+                Ok(())
+            }
+            Err(error) => match self.engine.set_ffmpeg_executable_path(previous) {
+                Ok(()) => {
+                    self.discard_unconfigured_ffmpeg(correlation_id, &installation.executable);
+                    Err(format!("FFmpeg 已下载，但无法保存自动配置：{error}"))
+                }
+                Err(rollback_error) => {
+                    warn!(
+                        event = "download.ffmpeg_install.rollback_failed",
+                        %correlation_id,
+                        operation = "engine_configuration",
+                        "managed FFmpeg configuration rollback failed; installed artifact remains owned"
+                    );
+                    Err(format!(
+                        "FFmpeg 已下载，但无法保存配置，且下载引擎回滚失败：{rollback_error}"
+                    ))
+                }
+            },
+        }
+    }
+
+    fn discard_unconfigured_ffmpeg(&self, correlation_id: uuid::Uuid, executable: &Path) {
+        let started_at = Instant::now();
+        let Some(directory) = executable.parent() else {
+            return;
+        };
+        let is_owned = directory.parent() == Some(self.ffmpeg_install_directory.as_path())
+            && directory
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("managed-"));
+        if !is_owned {
+            return;
+        }
+        if let Err(error) = std::fs::remove_dir_all(directory) {
+            warn!(
+                event = "download.ffmpeg_install.cleanup_failed",
+                %correlation_id,
+                artifact_kind = "unconfigured_install",
+                reason = "configuration_failed",
+                native_error_code = error.raw_os_error(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "unconfigured managed FFmpeg installation remains owned for later cleanup"
+            );
+        }
+    }
+
+    fn set_ffmpeg_install_state(&mut self, state: FfmpegInstallViewState, cx: &mut Context<Self>) {
+        self.ffmpeg_install_state = state.clone();
+        cx.emit(DownloadApplicationEvent::FfmpegInstallChanged { state });
+        cx.notify();
     }
 
     fn open_ffmpeg_download_page(&mut self, source: FfmpegDownloadSource, cx: &mut Context<Self>) {
@@ -3751,6 +4179,7 @@ struct DownloadSettingsView {
     ffmpeg_executable: Entity<InputState>,
     ffmpeg_discovery_state: FfmpegDiscoveryState,
     ffmpeg_discovery_generation: u64,
+    ffmpeg_install_state: FfmpegInstallViewState,
     connection_limit: Entity<InputState>,
     adaptive_segment_max_segments: Entity<InputState>,
     adaptive_segment_min_mib: Entity<InputState>,
@@ -3794,6 +4223,7 @@ impl DownloadSettingsView {
             config_path,
             log_directory,
             database_path,
+            ffmpeg_install_state,
         } = initial;
         let directory = cx.new(|cx| {
             InputState::new(window, cx)
@@ -3885,6 +4315,13 @@ impl DownloadSettingsView {
                         this.schedule_ffmpeg_discovery(cx);
                         this.error = None;
                     }
+                    DownloadApplicationEvent::FfmpegInstallChanged { state } => {
+                        this.ffmpeg_install_state = state.clone();
+                        this.error = match state {
+                            FfmpegInstallViewState::Failed(message) => Some(message.clone()),
+                            _ => None,
+                        };
+                    }
                     DownloadApplicationEvent::TaskbarOverlayEditChanged { settings } => {
                         this.taskbar_overlay_offset_x.update(cx, |input, cx| {
                             input.set_value(settings.offset_x.to_string(), window, cx);
@@ -3951,6 +4388,7 @@ impl DownloadSettingsView {
             ffmpeg_executable,
             ffmpeg_discovery_state: FfmpegDiscoveryState::Checking,
             ffmpeg_discovery_generation: 0,
+            ffmpeg_install_state,
             connection_limit,
             adaptive_segment_max_segments,
             adaptive_segment_min_mib,
@@ -4212,7 +4650,7 @@ impl Render for DownloadSettingsView {
                 "已从系统 PATH 发现候选文件；双轨下载时会验证版本"
             }
             FfmpegDiscoveryState::Missing => {
-                "未发现 FFmpeg；可自行安装后指定路径，或使用下方公开来源"
+                "未发现 FFmpeg；可自动下载到用户目录，也可手动指定或使用环境变量"
             }
         };
         let application = self.application.clone();
@@ -4247,6 +4685,95 @@ impl Render for DownloadSettingsView {
                             }),
                     ),
             )
+            .into_any_element();
+        let install_active = self.ffmpeg_install_state.is_active();
+        let install_description = match &self.ffmpeg_install_state {
+            FfmpegInstallViewState::Idle => {
+                "从官方 Gyan.dev 下载，失败时切换 BtbN；校验后自动配置".to_owned()
+            }
+            FfmpegInstallViewState::Installing {
+                phase,
+                percent,
+                downloaded_bytes,
+                total_bytes,
+                cancelling,
+            } => {
+                let phase = if *cancelling {
+                    "正在取消"
+                } else {
+                    ffmpeg_install_phase_label(*phase)
+                };
+                match total_bytes {
+                    Some(total) => format!(
+                        "{phase} · {percent}% · {} / {}",
+                        format_download_size(*downloaded_bytes),
+                        format_download_size(*total)
+                    ),
+                    None => format!(
+                        "{phase} · 已接收 {}",
+                        format_download_size(*downloaded_bytes)
+                    ),
+                }
+            }
+            FfmpegInstallViewState::Completed => {
+                "已安装并自动配置，可直接用于 DASH 合并".to_owned()
+            }
+            FfmpegInstallViewState::Cancelled => {
+                "自动下载已取消；未更改当前 FFmpeg 配置".to_owned()
+            }
+            FfmpegInstallViewState::Failed(message) => message.clone(),
+        };
+        let install_application = self.application.clone();
+        let cancel_application = self.application.clone();
+        let ffmpeg_install_control = div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-ffmpeg-install".into())
+                    .child(
+                        Button::new("download-settings-ffmpeg-install-button")
+                            .label(if install_active {
+                                "正在下载…"
+                            } else {
+                                "自动下载"
+                            })
+                            .xsmall()
+                            .compact()
+                            .primary()
+                            .disabled(install_active)
+                            .on_click(move |_, _, cx| {
+                                let application = install_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.start_ffmpeg_install(cx);
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .when(install_active, |control| {
+                control.child(
+                    div()
+                        .debug_selector(|| "download-settings-ffmpeg-cancel".into())
+                        .child(
+                            Button::new("download-settings-ffmpeg-cancel-button")
+                                .label("取消")
+                                .xsmall()
+                                .compact()
+                                .ghost()
+                                .on_click(move |_, _, cx| {
+                                    let application = cancel_application.clone();
+                                    cx.defer(move |cx| {
+                                        application.update(cx, |application, cx| {
+                                            application.cancel_ffmpeg_install(cx);
+                                        });
+                                    });
+                                }),
+                        ),
+                )
+            })
             .into_any_element();
         let gyan_application = self.application.clone();
         let btbn_application = self.application.clone();
@@ -4578,8 +5105,14 @@ impl Render for DownloadSettingsView {
                                     ),
                                     download_settings_row(
                                         theme,
+                                        "自动安装",
+                                        install_description,
+                                        ffmpeg_install_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
                                         "公开下载来源",
-                                        "仅打开浏览器，不会自动下载、安装或随包携带",
+                                        "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
                                         ffmpeg_source_control,
                                     ),
                                 ],
@@ -5001,9 +5534,10 @@ fn download_settings_section(
 fn download_settings_row(
     theme: Theme,
     title: &'static str,
-    description: &'static str,
+    description: impl Into<gpui::SharedString>,
     control: AnyElement,
 ) -> AnyElement {
+    let description = description.into();
     div()
         .min_h(px(42.0))
         .px(px(9.0))
@@ -6571,6 +7105,17 @@ fn format_download_size(bytes: u64) -> String {
         format!("{:.1} KB", bytes / KIB)
     } else {
         format!("{bytes:.0} B")
+    }
+}
+
+fn ffmpeg_install_phase_label(phase: FfmpegInstallPhase) -> &'static str {
+    match phase {
+        FfmpegInstallPhase::Connecting => "正在连接官方来源",
+        FfmpegInstallPhase::Downloading => "正在下载",
+        FfmpegInstallPhase::Verifying => "正在校验 SHA-256",
+        FfmpegInstallPhase::Extracting => "正在安全解压",
+        FfmpegInstallPhase::Validating => "正在验证 FFmpeg",
+        FfmpegInstallPhase::Publishing => "正在配置",
     }
 }
 
@@ -8621,6 +9166,7 @@ mod tests {
                         config_path: directory.join("config.json"),
                         log_directory: directory.clone(),
                         database_path: directory.join("downloads.sqlite3"),
+                        ffmpeg_install_directory: directory.join("tools").join("ffmpeg"),
                     },
                     cx,
                 )
@@ -8759,6 +9305,161 @@ mod tests {
     }
 
     #[gpui::test]
+    fn settings_auto_download_commits_managed_ffmpeg_without_manual_save(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "ffmpeg-auto-install");
+        let config_path = directory.join("config.json");
+        AppConfig::default()
+            .save_to(&config_path)
+            .expect("save FFmpeg auto-install config fixture");
+        let managed_directory = directory
+            .join("tools")
+            .join("ffmpeg")
+            .join("managed-fixture");
+        std::fs::create_dir_all(&managed_directory).expect("create managed FFmpeg fixture");
+        let executable = managed_directory.join("ffmpeg.exe");
+        std::fs::write(&executable, b"fixture").expect("write managed FFmpeg fixture");
+        let (progress_sender, progress) = async_channel::bounded(4);
+        let (completion_sender, completion) = async_channel::bounded(1);
+        let correlation_id = uuid::Uuid::new_v4();
+        cx.update(|cx| {
+            application.update(cx, |application, _| {
+                application.ffmpeg_install_operation_override =
+                    Some(FfmpegInstallOperationOverride {
+                        correlation_id,
+                        progress,
+                        completion,
+                        cancelled: Rc::new(Cell::new(false)),
+                    });
+            });
+        });
+        let application_for_window = application.clone();
+        let initial = cx.read(|cx| application.read(cx).settings_view_initial());
+        let (settings, window) = cx.add_window_view(move |window, cx| {
+            DownloadSettingsView::new(application_for_window, initial, window, cx)
+        });
+        window
+            .refresh()
+            .expect("render FFmpeg auto-install settings");
+        window.run_until_parked();
+        let install = window
+            .debug_bounds("download-settings-ffmpeg-install")
+            .expect("FFmpeg auto-download button");
+        window.simulate_click(install.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(
+            window
+                .debug_bounds("download-settings-ffmpeg-cancel")
+                .is_some()
+        );
+        progress_sender
+            .try_send(FfmpegInstallProgress {
+                phase: FfmpegInstallPhase::Downloading,
+                percent: 48,
+                downloaded_bytes: 48,
+                total_bytes: Some(100),
+            })
+            .expect("send FFmpeg install progress");
+        drop(progress_sender);
+        completion_sender
+            .try_send(Ok(FfmpegInstallation {
+                executable: executable.clone(),
+                source: FfmpegInstallSource::Gyan,
+                downloaded_bytes: 100,
+            }))
+            .expect("complete FFmpeg install");
+        drop(completion_sender);
+        window.run_until_parked();
+
+        let persisted = AppConfig::load_from(&config_path).expect("load automatic FFmpeg config");
+        assert_eq!(
+            persisted.download.ffmpeg_executable_path,
+            executable.display().to_string()
+        );
+        assert_eq!(
+            window.read(|cx| {
+                settings
+                    .read(cx)
+                    .ffmpeg_executable
+                    .read(cx)
+                    .value()
+                    .to_string()
+            }),
+            executable.display().to_string()
+        );
+        cx.read(|cx| {
+            assert_eq!(
+                application
+                    .read(cx)
+                    .engine
+                    .ffmpeg_resolution()
+                    .expect("resolve managed FFmpeg")
+                    .expect("managed FFmpeg should be configured")
+                    .executable,
+                executable
+            );
+        });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn settings_auto_download_cancel_click_reaches_the_operation_control(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "ffmpeg-auto-install-cancel");
+        AppConfig::default()
+            .save_to(&directory.join("config.json"))
+            .expect("save FFmpeg cancel config fixture");
+        let (progress_sender, progress) = async_channel::bounded(1);
+        let (completion_sender, completion) = async_channel::bounded(1);
+        let cancelled = Rc::new(Cell::new(false));
+        let cancellation_assertion = Rc::clone(&cancelled);
+        cx.update(|cx| {
+            application.update(cx, |application, _| {
+                application.ffmpeg_install_operation_override =
+                    Some(FfmpegInstallOperationOverride {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        progress,
+                        completion,
+                        cancelled,
+                    });
+            });
+        });
+        let application_for_window = application.clone();
+        let initial = cx.read(|cx| application.read(cx).settings_view_initial());
+        let (_settings, window) = cx.add_window_view(move |window, cx| {
+            DownloadSettingsView::new(application_for_window, initial, window, cx)
+        });
+        window.refresh().expect("render FFmpeg cancel settings");
+        window.run_until_parked();
+        let install = window
+            .debug_bounds("download-settings-ffmpeg-install")
+            .expect("FFmpeg auto-download button");
+        window.simulate_click(install.center(), Modifiers::default());
+        window.run_until_parked();
+        let cancel = window
+            .debug_bounds("download-settings-ffmpeg-cancel")
+            .expect("FFmpeg auto-download cancel button");
+        window.simulate_click(cancel.center(), Modifiers::default());
+        window.run_until_parked();
+
+        assert!(cancellation_assertion.get());
+        cx.read(|cx| {
+            assert!(matches!(
+                application.read(cx).ffmpeg_install_state,
+                FfmpegInstallViewState::Installing {
+                    cancelling: true,
+                    ..
+                }
+            ));
+        });
+        drop(progress_sender);
+        drop(completion_sender);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         cx: &mut TestAppContext,
     ) {
@@ -8788,6 +9489,7 @@ mod tests {
                         config_path: config_path.clone(),
                         log_directory: directory.clone(),
                         database_path: directory.join("downloads.sqlite3"),
+                        ffmpeg_install_directory: directory.join("tools").join("ffmpeg"),
                     },
                     cx,
                 )
@@ -9022,6 +9724,7 @@ mod tests {
                         config_path: missing_config,
                         log_directory: directory.clone(),
                         database_path: directory.join("downloads.sqlite3"),
+                        ffmpeg_install_directory: directory.join("tools").join("ffmpeg"),
                     },
                     cx,
                 )
