@@ -882,6 +882,18 @@ SQLite schema v8
 普通浏览器/CLI 媒体自动接管会把探测得到的 `.mpd` 输出名改为 `.mp4`，把 `.m3u8` 改为 `.ts`；
 用户已经提供的非 manifest 扩展名保持不变。
 
+2026-08-11 已启动阶段 5 组合验收门禁。`tests/runtime/download-media-smoke.ps1` 使用外部 Apple
+Bip Bop 有限 TS playlist 和 DASH-IF/CTA WAVE 60 秒双轨静态 MPD：source-only 模式以 2 MiB
+上限、HLS 片段/总时长和 DASH 每轨展开/时长上下界验证远端样本仍符合当前支持边界且已实跑通过；full 模式必须连接用户已启动的精确发布包，
+或它的三件套哈希完全一致的受保护副本；每条正式 CLI 命令使用 `--connect-only`，不会在管道
+断开后暗启后台桌面。远端 body、CLI 和 ffprobe 都有 deadline、有界输出与完整进程树终止门禁；
+协作式异常/中止会在 `finally` 中按本次唯一输出身份对账，即使 add 回执丢失也会取消找到的任务并
+有界等待持久终态。强制终止 PowerShell 进程仍属于不可保证清理的外部边界，不作过度承诺。脚本
+依次创建 HLS/DASH 任务、保留最终产物，并可用用户提供的 `ffprobe.exe` 验证视频、音频和预期时长
+范围。当前机器尚未配置 FFmpeg，且提交内存余量低于 6 GiB 打包门槛，所以只运行了定向 CLI
+Cargo 门禁，没有启动 GUI、全 workspace Cargo 或 Release 打包，也没有声称真实播放/浏览器人工验收
+完成；阶段 5 checklist 保持未勾选。
+
 ### 阶段 6：旧版高级能力与迁移（4–7 天）
 
 - [ ] SHA-256 和用户提供的期望校验值。

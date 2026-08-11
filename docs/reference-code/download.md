@@ -25,8 +25,10 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
   primary desktop stream and can attach additional bounded event subscribers for IPC watch clients.
 - `rust/crates/nxtools-download-ipc` owns the current-user named-pipe transport, handshake and
   typed command/result/event frames. It never opens download storage.
-- `rust/apps/nxtools-cli` owns parsing, human/JSON output, stable exit-code mapping and background
-  host discovery. It never invokes SQLite or constructs a download engine.
+- `rust/apps/nxtools-cli` owns parsing, human/JSON output, stable exit-code mapping and host
+  discovery. Normal commands may start the packaged desktop in background mode; the explicit global
+  `--connect-only` policy only attaches to an existing host and never crosses the process-start
+  boundary. It never invokes SQLite or constructs a download engine.
 - `docs/architecture.md` already assigns download planning, segmentation, scheduling and persistence to Rust.
 - C# remains a Windows adapter and GPUI remains the renderer.
 - `Windows/TaskbarProgress.cs` requests the Windows 7+ `ITaskbarList4` interface, which inherits the
@@ -1581,6 +1583,33 @@ Reverified on 2026-08-11 before starting the DASH vertical slice:
   Single-track concatenation and FFmpeg version/mux are pause/cancel aware; dual-track publication
   gives FFmpeg an explicit MP4 muxer (`-f mp4`) because the temporary output suffix is deliberately
   not a media extension.
+
+Reverified on 2026-08-11 before the combined real-media acceptance gate:
+
+- Apple's official HLS Streaming Examples page remains the source for the Bip Bop sample. The
+  HTTPS `bipbop_4x3_variant.m3u8` master currently exposes five relative variants; the lower
+  `gear1/prog_index.m3u8` media playlist is finite (`EXT-X-ENDLIST`), plaintext MPEG-TS and contains
+  no `EXT-X-MAP`, `EXT-X-BYTERANGE` or `EXT-X-KEY`. The remote media is not copied into this
+  repository and availability remains an external acceptance dependency.
+- DASH-IF's dash.js repository documents the Akamai-hosted reference streams, and the CTA WAVE
+  `avc_sets/15_30_60/t1/stream.mpd` fixture was checked directly. It is a 60-second static MPD with
+  one Period, finite SegmentTimeline templates, one AVC `video/mp4` track and one AAC `audio/mp4`
+  track, without ContentProtection, SegmentList or SegmentBase. The manifest credits the remote
+  Tears of Steel derivative under CC BY 3.0; NxTools only downloads it during an explicit runtime
+  acceptance and does not redistribute the asset.
+- `tests/runtime/download-media-smoke.ps1` keeps remote-source drift separate from product
+  acceptance. Source-only mode caps body bytes, HLS segment count/duration and DASH per-track
+  timeline expansion/duration, and never launches NxTools.
+  Full mode requires exactly one selected package desktop or its byte-identical protected atomic
+  desktop/indexer/PlatformHost copy. Every CLI invocation uses the production `--connect-only`
+  policy, so a pipe race cannot start a hidden replacement. Remote bodies and native CLI/ffprobe
+  children have end-to-end deadlines, bounded capture and whole-process-tree termination. Before
+  submit, the script reserves a unique source/directory/name identity; a lost add response is
+  reconciled through the durable snapshot, and cooperative failure/interrupt cleanup runs in
+  `finally`, requests cancellation for every reconciled task and boundedly verifies its terminal.
+  Abrupt termination of the PowerShell host remains an external unknown boundary. Final artifacts
+  must match the requested path, remain available for manual playback, and may be checked for
+  audio/video plus the fixture-specific duration range with a user-supplied `ffprobe.exe`.
 
 ## Resolved phase-0 decisions
 

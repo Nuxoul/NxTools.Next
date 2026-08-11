@@ -4023,6 +4023,7 @@ dependencies = [
  "nxtools-download-ipc",
  "serde",
  "serde_json",
+ "tempfile",
  "url",
  "uuid",
 ]

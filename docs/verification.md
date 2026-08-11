@@ -106,3 +106,48 @@ smoke test ignored intervening status events, completed in 139 ms
   sequenced/coalesced events.
 - The desktop UI was not launched. Real-network download, pause/restart/resume, native directory
   picking, notifications and filesystem cleanup remain the Phase 1A manual acceptance gate.
+
+## Stage 5 real-media acceptance
+
+The checked-in runtime smoke uses two public, externally hosted samples without copying media into
+the repository:
+
+- Apple Bip Bop: the source preflight checks the official master playlist and a finite plaintext
+  MPEG-TS media playlist. The runtime task uses the lower-bandwidth media playlist so CLI acceptance
+  does not automatically select and download the largest 30-minute variant.
+- DASH-IF/CTA WAVE Tears of Steel: a 60-second, one-Period static MPD with one AVC video track, one
+  AAC audio track and finite SegmentTimeline expansion. It exercises the user-managed FFmpeg mux
+  boundary.
+
+Use PowerShell 7 or newer. First verify that the bounded process-tree runner and remote fixtures have
+not changed outside the supported Stage 5 profile:
+
+```powershell
+.\tests\runtime\download-media-smoke.ps1 -ContractTestOnly
+.\tests\runtime\download-media-smoke.ps1 -SourcePreflightOnly
+```
+
+For the full smoke, package the current commit, launch that exact `NxTools.exe` (or allow it to
+redirect to the byte-identical protected desktop), configure a valid FFmpeg executable under
+“下载设置 → 媒体工具”, and use a new explicit output directory. The script validates the atomic
+desktop/indexer/PlatformHost package, invokes every CLI command with `--connect-only`, bounds and
+drains every child process, kills timed-out descendant trees, and uses the unique requested artifact
+identity to reconcile a task when the add response is lost. Cooperative failure/interrupt cleanup
+requests cancellation and boundedly verifies the durable outcome; forcibly terminating the
+PowerShell host remains outside that guarantee. It cannot silently start a hidden desktop after a
+pipe disconnect. It retains both completed artifacts for inspection and accepts an optional
+user-supplied `ffprobe.exe` for stream and fixture-specific duration-range validation:
+
+```powershell
+.\tests\runtime\download-media-smoke.ps1 `
+  -PackageDirectory .\artifacts\win-x64 `
+  -OutputDirectory "$env:USERPROFILE\Downloads\NxTools-Media-Acceptance" `
+  -FfprobePath C:\Tools\ffmpeg\bin\ffprobe.exe
+```
+
+Acceptance still requires opening both retained files and confirming picture, sound, duration and
+seeking. In the GUI, separately submit the Apple master playlist to verify explicit quality
+selection, then pause/restart/resume one media task and confirm completed fragments are reused.
+The deterministic blocking-child tests remain the gate for pause/cancel during the normally brief
+FFmpeg version/mux windows; do not claim a human timed a real stream-copy cancellation unless the
+finalization state was actually observed before the action.

@@ -1,10 +1,11 @@
 use std::process::ExitCode;
 
-use nxtools_cli::{default_download_directory, parse_args, run};
+use nxtools_cli::{default_download_directory, parse_invocation, run_with_host_policy};
 
 fn main() -> ExitCode {
-    let command = match parse_args(std::env::args().skip(1), default_download_directory()) {
-        Ok(command) => command,
+    let invocation = match parse_invocation(std::env::args().skip(1), default_download_directory())
+    {
+        Ok(invocation) => invocation,
         Err(error) => {
             eprintln!("{}", error.message);
             return ExitCode::from(error.exit_code);
@@ -17,7 +18,7 @@ fn main() -> ExitCode {
             return ExitCode::from(nxtools_cli::EXIT_HOST_UNAVAILABLE);
         }
     };
-    match run(command, &executable) {
+    match run_with_host_policy(invocation.command, &executable, invocation.host_policy) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             if !error.message.is_empty() {

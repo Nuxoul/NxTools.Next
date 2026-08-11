@@ -25,6 +25,19 @@ pub const EXIT_REQUEST_REJECTED: u8 = 6;
 pub const EXIT_OPERATION_FAILED: u8 = 7;
 pub const EXIT_PROTOCOL_INCOMPATIBLE: u8 = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CliHostPolicy {
+    #[default]
+    ConnectOrStart,
+    ConnectOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CliInvocation {
+    pub command: CliCommand,
+    pub host_policy: CliHostPolicy,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliCommand {
     Add {
@@ -99,6 +112,30 @@ impl CliError {
         };
         Self { exit_code, message }
     }
+}
+
+pub fn parse_invocation<I, S>(
+    arguments: I,
+    default_directory: PathBuf,
+) -> Result<CliInvocation, CliError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut arguments = arguments.into_iter().map(Into::into).collect::<Vec<_>>();
+    let host_policy = if arguments
+        .first()
+        .is_some_and(|value| value == "--connect-only")
+    {
+        arguments.remove(0);
+        CliHostPolicy::ConnectOnly
+    } else {
+        CliHostPolicy::ConnectOrStart
+    };
+    Ok(CliInvocation {
+        command: parse_args(arguments, default_directory)?,
+        host_policy,
+    })
 }
 
 pub fn parse_args<I, S>(arguments: I, default_directory: PathBuf) -> Result<CliCommand, CliError>
@@ -422,8 +459,16 @@ fn parse_task_id(value: &str) -> Result<DownloadTaskId, CliError> {
 }
 
 pub fn run(command: CliCommand, executable: &Path) -> Result<(), CliError> {
+    run_with_host_policy(command, executable, CliHostPolicy::ConnectOrStart)
+}
+
+pub fn run_with_host_policy(
+    command: CliCommand,
+    executable: &Path,
+    host_policy: CliHostPolicy,
+) -> Result<(), CliError> {
     let json_output = command.json_output();
-    let mut client = match connect_or_start(executable) {
+    let mut client = match connect_with_policy(executable, host_policy) {
         Ok(client) => client,
         Err(mut error) => {
             if json_output {
@@ -850,16 +895,31 @@ fn fetch_task(
         })
 }
 
-fn connect_or_start(executable: &Path) -> Result<DownloadIpcClient, CliError> {
-    if let Ok(client) = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150)) {
-        return Ok(client);
+fn connect_with_policy(
+    executable: &Path,
+    host_policy: CliHostPolicy,
+) -> Result<DownloadIpcClient, CliError> {
+    connect_with_policy_named(executable, host_policy, DOWNLOAD_PIPE_NAME)
+}
+
+fn connect_with_policy_named(
+    executable: &Path,
+    host_policy: CliHostPolicy,
+    pipe_name: &str,
+) -> Result<DownloadIpcClient, CliError> {
+    let initial_error = match DownloadIpcClient::connect(pipe_name, Duration::from_millis(150)) {
+        Ok(client) => return Ok(client),
+        Err(error) => error,
+    };
+    if host_policy == CliHostPolicy::ConnectOnly {
+        return Err(CliError::host(initial_error));
     }
     let host = host_executable_for(executable);
     start_background_host(&host).map_err(CliError::host)?;
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut last_error = None;
     while Instant::now() < deadline {
-        match DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(250)) {
+        match DownloadIpcClient::connect(pipe_name, Duration::from_millis(250)) {
             Ok(client) => return Ok(client),
             Err(error) => last_error = Some(error),
         }
@@ -1096,18 +1156,50 @@ pub fn default_download_directory() -> PathBuf {
 
 pub fn usage() -> &'static str {
     "用法：
-  NxTools.Cli.exe download add <url> [--dir <path>] [--name <name>] [--header <k:v>] [--json]
+  NxTools.Cli.exe [--connect-only] download add <url> [--dir <path>] [--name <name>] [--header <k:v>] [--json]
   NxTools.Cli.exe download list [--active|--completed|--failed] [--json]
   NxTools.Cli.exe download show <id> [--watch] [--json]
   NxTools.Cli.exe download pause|resume|cancel <id...> [--json]
   NxTools.Cli.exe download remove <id...> [--delete-file] [--json]
   NxTools.Cli.exe download schedule [--queue <id>] [--start HH:MM] [--stop HH:MM] [--days mon,tue,...] [--json]
-  NxTools.Cli.exe download schedule [--queue <id>] --disable [--json]"
+  NxTools.Cli.exe download schedule [--queue <id>] --disable [--json]
+
+全局选项：--connect-only 只连接已运行的下载宿主，连接失败时不会启动后台桌面。"
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connect_only_is_an_explicit_global_invocation_policy() {
+        let invocation = parse_invocation(
+            ["--connect-only", "download", "list", "--json"],
+            PathBuf::new(),
+        )
+        .expect("parse connect-only invocation");
+        assert_eq!(invocation.host_policy, CliHostPolicy::ConnectOnly);
+        assert!(matches!(
+            invocation.command,
+            CliCommand::List { json: true, .. }
+        ));
+    }
+
+    #[test]
+    fn connect_only_never_crosses_the_background_host_start_boundary() {
+        let directory = tempfile::tempdir().expect("create connect-only fixture");
+        let cli = directory.path().join("NxTools.Cli.exe");
+        let pipe_name = format!("nxtools-connect-only-test-{}", Uuid::new_v4());
+
+        let error = match connect_with_policy_named(&cli, CliHostPolicy::ConnectOnly, &pipe_name) {
+            Ok(_) => panic!("unique pipe must be unavailable"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.exit_code, EXIT_HOST_UNAVAILABLE);
+        assert!(!error.message.contains("packaged download host"));
+        assert!(!directory.path().join("NxTools.exe").exists());
+    }
 
     #[test]
     fn add_parses_repeated_headers_without_exposing_them_to_output_types() {
