@@ -49,7 +49,10 @@ frame even with its result envelope; GPUI renders the quality choice.
 The selected playlist is persisted with the task; the Rust engine owns its finite media-playlist
 plan, SQLite segment checkpoints, bounded workers and ordered atomic merge. The ordinary HTTP
 adapter cannot save a manifest as a completed media artifact. AES-128, live playlists, byte ranges
-and initialization maps remain typed rejections until their Stage 5 slices.
+and initialization maps remain typed rejections until their Stage 5 slices. Resume re-fetches the
+selected finite playlist and reuses artifacts only while media sequence, segment identity and
+duration layout remain compatible; refreshed signed segment URLs may change without losing safe
+checkpoints.
 
 ## Rust owns
 

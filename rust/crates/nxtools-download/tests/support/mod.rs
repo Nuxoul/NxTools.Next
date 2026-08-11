@@ -45,6 +45,21 @@ segment-c.ts
 segment-d.ts
 #EXT-X-ENDLIST
 "#;
+const HLS_CONCURRENT_VOD_CHANGED: &[u8] = br#"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:20
+#EXT-X-TARGETDURATION:2
+#EXTINF:2.0,
+segment-a.ts
+#EXTINF:2.0,
+segment-b.ts
+#EXTINF:2.0,
+segment-c.ts
+#EXTINF:2.0,
+segment-d.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_RATE_LIMITED_VOD: &[u8] = b"#EXTM3U\n#EXTINF:10.0,\nsegment.ts\n#EXT-X-ENDLIST\n";
 const CONCURRENT_BODY_LEN: usize = 256 * 1024;
 const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
@@ -54,6 +69,8 @@ pub struct DeterministicHttpServer {
     resume_transfer_started: Arc<AtomicBool>,
     active_range_transfers: Arc<AtomicU64>,
     max_active_range_transfers: Arc<AtomicU64>,
+    hls_first_segment_attempts: Arc<AtomicU64>,
+    hold_hls_first_segment: Arc<AtomicBool>,
     transient_range_failures_remaining: Arc<AtomicU64>,
     transient_range_attempts: Arc<AtomicU64>,
     fallback_stream_failures_remaining: Arc<AtomicU64>,
@@ -86,6 +103,8 @@ impl DeterministicHttpServer {
         let resume_transfer_started = Arc::new(AtomicBool::new(false));
         let active_range_transfers = Arc::new(AtomicU64::new(0));
         let max_active_range_transfers = Arc::new(AtomicU64::new(0));
+        let hls_first_segment_attempts = Arc::new(AtomicU64::new(0));
+        let hold_hls_first_segment = Arc::new(AtomicBool::new(false));
         let transient_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let transient_range_attempts = Arc::new(AtomicU64::new(0));
         let fallback_stream_failures_remaining = Arc::new(AtomicU64::new(1));
@@ -100,6 +119,8 @@ impl DeterministicHttpServer {
         let listener_resume_transfer_started = Arc::clone(&resume_transfer_started);
         let listener_active_range_transfers = Arc::clone(&active_range_transfers);
         let listener_max_active_range_transfers = Arc::clone(&max_active_range_transfers);
+        let listener_hls_first_segment_attempts = Arc::clone(&hls_first_segment_attempts);
+        let listener_hold_hls_first_segment = Arc::clone(&hold_hls_first_segment);
         let listener_transient_range_failures_remaining =
             Arc::clone(&transient_range_failures_remaining);
         let listener_transient_range_attempts = Arc::clone(&transient_range_attempts);
@@ -127,6 +148,9 @@ impl DeterministicHttpServer {
                         let active_range_transfers = Arc::clone(&listener_active_range_transfers);
                         let max_active_range_transfers =
                             Arc::clone(&listener_max_active_range_transfers);
+                        let hls_first_segment_attempts =
+                            Arc::clone(&listener_hls_first_segment_attempts);
+                        let hold_hls_first_segment = Arc::clone(&listener_hold_hls_first_segment);
                         let transient_range_failures_remaining =
                             Arc::clone(&listener_transient_range_failures_remaining);
                         let transient_range_attempts =
@@ -150,6 +174,8 @@ impl DeterministicHttpServer {
                                 &resume_transfer_started,
                                 &active_range_transfers,
                                 &max_active_range_transfers,
+                                &hls_first_segment_attempts,
+                                &hold_hls_first_segment,
                                 &transient_range_failures_remaining,
                                 &transient_range_attempts,
                                 &fallback_stream_failures_remaining,
@@ -181,6 +207,8 @@ impl DeterministicHttpServer {
             resume_transfer_started,
             active_range_transfers,
             max_active_range_transfers,
+            hls_first_segment_attempts,
+            hold_hls_first_segment,
             transient_range_failures_remaining,
             transient_range_attempts,
             fallback_stream_failures_remaining,
@@ -205,6 +233,14 @@ impl DeterministicHttpServer {
 
     pub fn max_concurrent_range_transfers(&self) -> u64 {
         self.max_active_range_transfers.load(Ordering::Acquire)
+    }
+
+    pub fn hls_first_segment_attempts(&self) -> u64 {
+        self.hls_first_segment_attempts.load(Ordering::Acquire)
+    }
+
+    pub fn hold_hls_first_segment(&self, hold: bool) {
+        self.hold_hls_first_segment.store(hold, Ordering::Release);
     }
 
     pub fn transient_range_attempts(&self) -> u64 {
@@ -320,6 +356,8 @@ fn serve_connection(
     resume_transfer_started: &AtomicBool,
     active_range_transfers: &AtomicU64,
     max_active_range_transfers: &AtomicU64,
+    hls_first_segment_attempts: &AtomicU64,
+    hold_hls_first_segment: &AtomicBool,
     transient_range_failures_remaining: &AtomicU64,
     transient_range_attempts: &AtomicU64,
     fallback_stream_failures_remaining: &AtomicU64,
@@ -429,24 +467,29 @@ fn serve_connection(
             },
             Some(HLS_SEGMENT_12.len()),
         ),
-        "/hls/concurrent/index.m3u8" => write_response(
-            &mut stream,
-            200,
-            "OK",
-            &[("Content-Type", "application/vnd.apple.mpegurl")],
-            if method == "HEAD" {
-                b""
-            } else {
+        "/hls/concurrent/index.m3u8" => {
+            let body = if revision.load(Ordering::Acquire) == 1 {
                 HLS_CONCURRENT_VOD
-            },
-            Some(HLS_CONCURRENT_VOD.len()),
-        ),
+            } else {
+                HLS_CONCURRENT_VOD_CHANGED
+            };
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "application/vnd.apple.mpegurl")],
+                if method == "HEAD" { b"" } else { body },
+                Some(body.len()),
+            )
+        }
         "/hls/concurrent/segment-a.ts" => serve_concurrent_hls_segment(
             &mut stream,
             method,
             b"segment-a|",
             active_range_transfers,
             max_active_range_transfers,
+            Some(hls_first_segment_attempts),
+            Some(hold_hls_first_segment),
         ),
         "/hls/concurrent/segment-b.ts" => serve_concurrent_hls_segment(
             &mut stream,
@@ -454,6 +497,8 @@ fn serve_connection(
             b"segment-b|",
             active_range_transfers,
             max_active_range_transfers,
+            None,
+            None,
         ),
         "/hls/concurrent/segment-c.ts" => serve_concurrent_hls_segment(
             &mut stream,
@@ -461,6 +506,8 @@ fn serve_connection(
             b"segment-c|",
             active_range_transfers,
             max_active_range_transfers,
+            None,
+            None,
         ),
         "/hls/concurrent/segment-d.ts" => serve_concurrent_hls_segment(
             &mut stream,
@@ -468,7 +515,32 @@ fn serve_connection(
             b"segment-d",
             active_range_transfers,
             max_active_range_transfers,
+            None,
+            None,
         ),
+        "/hls/rate-limited/index.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_RATE_LIMITED_VOD
+            },
+            Some(HLS_RATE_LIMITED_VOD.len()),
+        ),
+        "/hls/rate-limited/segment.ts" => {
+            let body = vec![b'x'; 64 * 1024];
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "video/mp2t")],
+                if method == "HEAD" { b"" } else { &body },
+                Some(body.len()),
+            )
+        }
         "/range" => serve_range(&mut stream, method, headers.get("range")),
         "/range-if-range-incompatible" => serve_if_range_incompatible(
             &mut stream,
@@ -758,6 +830,8 @@ fn serve_concurrent_hls_segment(
     body: &[u8],
     active: &AtomicU64,
     max_active: &AtomicU64,
+    attempts: Option<&AtomicU64>,
+    hold: Option<&AtomicBool>,
 ) {
     if method == "HEAD" {
         write_response(
@@ -769,6 +843,17 @@ fn serve_concurrent_hls_segment(
             Some(body.len()),
         );
         return;
+    }
+
+    if let Some(attempts) = attempts {
+        attempts.fetch_add(1, Ordering::AcqRel);
+    }
+
+    let hold_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while hold.is_some_and(|hold| hold.load(Ordering::Acquire))
+        && std::time::Instant::now() < hold_deadline
+    {
+        thread::sleep(Duration::from_millis(2));
     }
 
     let current = active.fetch_add(1, Ordering::AcqRel) + 1;

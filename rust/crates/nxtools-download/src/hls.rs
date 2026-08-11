@@ -9,7 +9,7 @@ pub const MAX_HLS_VARIANT_URL_BYTES: usize = 8 * 1024;
 pub const MAX_HLS_ATTRIBUTE_BYTES: usize = 512;
 pub const MAX_HLS_PROBE_SERIALIZED_BYTES: usize = 512 * 1024;
 pub(crate) const MAX_HLS_MEDIA_SEGMENTS: usize = 10_000;
-const MAX_HLS_MEDIA_URL_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_HLS_MEDIA_URL_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct HlsMediaPlaylist {

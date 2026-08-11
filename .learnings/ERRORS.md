@@ -4,6 +4,48 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-HLSCLEANUPRACE] hls_cleanup_failure_fixture_race
+
+**Logged**: 2026-08-11T10:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The HLS cancellation-cleanup regression depended on observing an 80 ms segment-response window and
+could miss the staging directory when the full integration suite was scheduled concurrently.
+
+### Error
+
+```text
+HLS staging was not created
+```
+
+### Context
+
+- The production cleanup behavior was correct in isolated runs.
+- The fixture exposed only a timing delay, not an explicit request-arrival barrier.
+- Under the complete 60-test engine suite, the test future could resume after the transfer had
+  already removed the working directory.
+
+### Suggested Fix
+
+Hold the first fixture segment response behind an explicit atomic gate, wait for its observed request,
+then create the real filesystem obstruction before cancellation.
+
+### Metadata
+
+- Reproducible: intermittent
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`, `rust/crates/nxtools-download/tests/support/mod.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T10:14:00+08:00
+- **Notes**: Added an explicit first-segment hold/release seam; the targeted test and complete engine contract passed.
+
+---
+
 ## [ERR-20260810-RG-LOOKAHEAD] ripgrep_default_regex_rejects_lookahead
 
 **Logged**: 2026-08-10T00:00:00+08:00
@@ -2332,13 +2374,15 @@ exact short lines.
 ### Metadata
 
 - Reproducible: yes
-- Recurrence-Count: 6
-- Related Files: `docs/quick-launch-plan.md`, `docs/reference-code/quick-launch-research.md`
+- Recurrence-Count: 7
+- Last-Seen: 2026-08-11
+- Related Files: `docs/quick-launch-plan.md`, `docs/reference-code/quick-launch-research.md`, `rust/apps/nxtools-desktop/src/downloads.rs`
 
 ### Resolution
 
 - **Resolved**: 2026-07-24T17:11:00+08:00
-- **Notes**: Retried with narrow section anchors.
+- **Notes**: Retried with narrow section anchors. The same mismatch recurred after rustfmt wrapped
+  the HLS filename condition; the exact local range was reread before retrying.
 
 ---
 

@@ -309,7 +309,23 @@ impl HttpDownloadClient {
             };
             let chunk_len =
                 u64::try_from(chunk.len()).map_err(|_| HttpDownloadError::LengthOverflow)?;
-            control.acquire_bandwidth(chunk_len).await;
+            let bandwidth = control.acquire_bandwidth(chunk_len);
+            tokio::pin!(bandwidth);
+            tokio::select! {
+                biased;
+                changed = directives.changed() => {
+                    let _ = changed;
+                    drop(output);
+                    remove_file_if_exists(staging_path).await?;
+                    return Ok(match *directives.borrow() {
+                        TransferDirective::Cancel => HlsSegmentDownloadOutcome::Cancelled,
+                        TransferDirective::Pause | TransferDirective::Running => {
+                            HlsSegmentDownloadOutcome::Paused
+                        }
+                    });
+                }
+                () = &mut bandwidth => {}
+            }
             output.write_all(&chunk).await?;
             downloaded_bytes = downloaded_bytes
                 .checked_add(chunk_len)
@@ -1054,6 +1070,10 @@ impl DownloadTransferControl {
             }
         }
     }
+
+    pub(crate) fn current_directive(&self) -> TransferDirective {
+        *self.directive.borrow()
+    }
 }
 
 impl Default for DownloadTransferControl {
@@ -1508,6 +1528,8 @@ pub enum HttpDownloadError {
     UnsupportedHlsFeature(&'static str),
     #[error("HLS media segment is empty")]
     EmptyHlsSegment,
+    #[error("HLS media playlist changed since the durable transfer plan was created")]
+    HlsResourceChanged,
     #[error(
         "download ended after {downloaded_bytes} bytes, expected exactly {expected_bytes} bytes"
     )]
@@ -1599,6 +1621,7 @@ impl HttpDownloadError {
             | Self::TooManyHlsMediaSegments
             | Self::UnsupportedHlsFeature(_)
             | Self::EmptyHlsSegment
+            | Self::HlsResourceChanged
             | Self::SegmentedTransferNeedsKnownLength
             | Self::MissingContentRange
             | Self::MalformedContentRange(_)
@@ -1629,6 +1652,7 @@ impl HttpDownloadError {
             Self::TooManyHlsMediaSegments => "too_many_hls_media_segments",
             Self::UnsupportedHlsFeature(_) => "unsupported_hls_feature",
             Self::EmptyHlsSegment => "empty_hls_segment",
+            Self::HlsResourceChanged => "hls_resource_changed",
             Self::LengthMismatch { .. } => "length_mismatch",
             Self::SegmentedTransferNeedsKnownLength => "unknown_length",
             Self::RangeNotHonored { .. } => "range_not_honored",

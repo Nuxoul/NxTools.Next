@@ -4881,12 +4881,10 @@ impl NewDownloadView {
                     DownloadCommandOutcome::Probe(probe) => {
                         let mut confirmed = request;
                         let probe_file_name = resolved_probe_file_name(&probe);
-                        let replace_manifest_name = probe.media.is_some()
-                            && confirmed.file_name.as_deref().is_some_and(|file_name| {
-                                Path::new(file_name)
-                                    .extension()
-                                    .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
-                            });
+                        let replace_manifest_name = should_replace_hls_manifest_name(
+                            confirmed.file_name.as_deref(),
+                            &probe,
+                        );
                         if confirmed.file_name.is_none() || replace_manifest_name {
                             confirmed.file_name = probe_file_name.clone();
                             resolved_file_name = probe_file_name;
@@ -5951,6 +5949,19 @@ fn resolved_probe_file_name(probe: &DownloadProbe) -> Option<String> {
     }
     let stem = Path::new(file_name).file_stem()?.to_string_lossy();
     (!stem.is_empty()).then(|| format!("{stem}.ts"))
+}
+
+fn should_replace_hls_manifest_name(
+    current_file_name: Option<&str>,
+    probe: &DownloadProbe,
+) -> bool {
+    probe.media.is_some()
+        && current_file_name == probe.file_name.as_deref()
+        && current_file_name.is_some_and(|file_name| {
+            Path::new(file_name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
+        })
 }
 
 fn initial_new_download_window_size(
@@ -8502,6 +8513,11 @@ mod tests {
         assert_eq!(
             resolved_probe_file_name(&probe).as_deref(),
             Some("index.ts")
+        );
+        assert!(should_replace_hls_manifest_name(Some("index.m3u8"), &probe));
+        assert!(
+            !should_replace_hls_manifest_name(Some("my-custom-name.m3u8"), &probe),
+            "a user-edited manifest-looking name must remain user-owned"
         );
     }
 }

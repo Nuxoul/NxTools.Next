@@ -1451,6 +1451,16 @@ Implemented and deterministically verified on 2026-08-10:
 - Real loopback HTTP tests cover ordered output, observed parallelism without exceeding the cap,
   and pause -> close engine -> reopen -> resume. Parser tests pin typed rejection of live,
   AES-128, `EXT-X-MAP` and `EXT-X-BYTERANGE` inputs for this slice.
+- The 2026-08-11 review pass made resume re-fetch the selected finite playlist. Only identical
+  media-sequence/segment identity and duration layout may reuse checkpoints; compatible refreshed
+  URLs are persisted without resetting completed state, while incompatible VOD identity fails
+  before transfer. The loopback gate counts the first segment request to prove it is not fetched
+  twice after reopen.
+- HLS bandwidth waits now select the same pause/cancel directive as ordinary transfers, and a final
+  stop check closes the last-worker race before merge. Cancellation clears its plan only after both
+  segment staging and merge staging are actually removed; cleanup failure is a correlated failed
+  terminal that retains ownership. Checkpoint reconciliation uses one aggregate event instead of a
+  per-segment success log.
 
 ## Resolved phase-0 decisions
 

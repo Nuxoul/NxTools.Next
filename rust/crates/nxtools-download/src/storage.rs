@@ -799,6 +799,59 @@ impl SqliteDownloadStore {
         }))
     }
 
+    pub(crate) fn refresh_hls_transfer_plan_urls(
+        &self,
+        task_id: DownloadTaskId,
+        playlist: &HlsMediaPlaylist,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let updated = transaction.execute(
+            r#"
+            UPDATE download_hls_plans
+            SET final_url = ?2, media_sequence = ?3, updated_at_unix_ms = ?4
+            WHERE task_id = ?1
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                playlist.final_url,
+                i64::try_from(playlist.media_sequence)
+                    .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                now_unix_ms(),
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        for segment in &playlist.segments {
+            let updated = transaction.execute(
+                r#"
+                UPDATE download_hls_segments
+                SET url = ?3, duration_millis = ?4, updated_at_unix_ms = ?5
+                WHERE task_id = ?1 AND segment_index = ?2 AND sequence_number = ?6
+                "#,
+                params![
+                    task_id.as_uuid().to_string(),
+                    i64::from(segment.index),
+                    segment.url,
+                    i64::try_from(segment.duration_millis)
+                        .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    now_unix_ms(),
+                    i64::try_from(segment.sequence)
+                        .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                ],
+            )?;
+            if updated == 0 {
+                return Err(DownloadStorageError::SegmentNotFound {
+                    task_id,
+                    segment_index: segment.index,
+                });
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub(crate) fn save_hls_segment_checkpoint(
         &self,
         task_id: DownloadTaskId,
@@ -1875,6 +1928,13 @@ mod tests {
             store
                 .save_hls_segment_checkpoint(task.id(), 0, DownloadSegmentState::Completed, 12)
                 .expect("save HLS segment checkpoint");
+            let mut refreshed = playlist.clone();
+            refreshed.final_url = "https://cdn.example.test/high/index.m3u8?token=fresh".into();
+            refreshed.segments[0].url = "https://cdn.example.test/high/42.ts?token=fresh".into();
+            refreshed.segments[1].url = "https://cdn.example.test/high/43.ts?token=fresh".into();
+            store
+                .refresh_hls_transfer_plan_urls(task.id(), &refreshed)
+                .expect("refresh signed HLS URLs");
         }
 
         let reopened = SqliteDownloadStore::open(&database).expect("reopen HLS store");
@@ -1882,11 +1942,18 @@ mod tests {
             .load_hls_transfer_plan(task.id())
             .expect("load HLS plan")
             .expect("HLS plan exists");
-        assert_eq!(restored.final_url, playlist.final_url);
+        assert_eq!(
+            restored.final_url,
+            "https://cdn.example.test/high/index.m3u8?token=fresh"
+        );
         assert_eq!(restored.media_sequence, 42);
         assert_eq!(restored.segments.len(), 2);
         assert_eq!(restored.segments[0].state, DownloadSegmentState::Completed);
         assert_eq!(restored.segments[0].downloaded_bytes, 12);
+        assert_eq!(
+            restored.segments[0].media.url,
+            "https://cdn.example.test/high/42.ts?token=fresh"
+        );
         assert_eq!(restored.segments[1].state, DownloadSegmentState::Waiting);
     }
 

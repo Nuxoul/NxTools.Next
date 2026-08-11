@@ -81,7 +81,6 @@ async fn selected_hls_vod_bounds_parallel_segment_transfers_by_connection_limit(
     hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
         playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
     }));
-
     let task_id = engine
         .submit(hls_request, RequestOrigin::Ui)
         .expect("submit concurrent HLS VOD");
@@ -122,7 +121,6 @@ async fn paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpo
     hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
         playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
     }));
-
     let task_id = engine
         .submit(hls_request, RequestOrigin::Ui)
         .expect("submit resumable HLS VOD");
@@ -169,6 +167,151 @@ async fn paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpo
     assert_eq!(
         std::fs::read(destination.join("resumed.ts")).expect("read resumed HLS artifact"),
         b"segment-a|segment-b|segment-c|segment-d"
+    );
+    assert_eq!(
+        server.hls_first_segment_attempts(),
+        1,
+        "a durable completed HLS segment must not be requested again after reopen"
+    );
+}
+
+#[tokio::test]
+async fn hls_pause_interrupts_a_worker_waiting_for_task_bandwidth() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create rate-limited HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination);
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("rate-limited.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.speed_limit_bytes_per_second = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/rate-limited/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit rate-limited HLS VOD");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let task = engine
+            .task(task_id)
+            .expect("read rate-limited HLS task")
+            .expect("rate-limited HLS task exists");
+        if task.task.status() == DownloadStatus::Downloading {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "HLS task did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    engine.pause(task_id).expect("pause rate-limited HLS VOD");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(1))
+        .await
+        .expect("bandwidth wait must be pause-responsive");
+
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+}
+
+#[tokio::test]
+async fn reopened_hls_vod_rejects_an_incompatible_media_playlist_before_mixing_segments() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create mutable HLS engine directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("mutable.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit mutable HLS VOD");
+    let first_segment = destination
+        .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
+        .join("00000000.segment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !first_segment.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first mutable HLS segment did not complete"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause mutable HLS VOD");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for mutable HLS pause");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    drop(engine);
+    server.advance_resource_revision();
+
+    let reopened = DownloadEngine::open(&database).expect("reopen persistent download engine");
+    reopened.resume(task_id).expect("resume mutable HLS VOD");
+    let failed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for incompatible HLS terminal state");
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(!destination.join("mutable.ts").exists());
+    assert!(
+        first_segment.exists(),
+        "identity rejection preserves old progress"
+    );
+}
+
+#[tokio::test]
+async fn hls_cancel_cleanup_failure_is_terminal_and_preserves_checkpoint_ownership() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create HLS cleanup directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("cleanup.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/concurrent/index.m3u8", server.address()),
+    }));
+    server.hold_hls_first_segment(true);
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit cleanup HLS VOD");
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    let moved = destination.join(format!(".nxtools-hls-moved-{}", task_id.as_uuid()));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while server.hls_first_segment_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "HLS segment request did not reach the fixture"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(working.is_dir(), "HLS staging exists before segment I/O");
+    std::fs::rename(&working, &moved).expect("move HLS staging out of cleanup path");
+    std::fs::write(&working, b"cleanup obstruction").expect("obstruct HLS cleanup directory");
+    engine.cancel(task_id).expect("request HLS cancellation");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for HLS cleanup failure");
+    server.hold_hls_first_segment(false);
+
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(
+        working.is_file(),
+        "failed cleanup artifact remains observable"
     );
 }
 

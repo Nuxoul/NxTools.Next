@@ -257,11 +257,17 @@ The GPUI quality choice is local presentation state and does not create per-clic
 submission uses a new command correlation rather than the probe correlation. Playlist resolution
 records `download.hls_playlist.started` followed by one `download.hls_playlist.completed` or
 `download.hls_playlist.failed`; a durable-plan restore uses the same pair with
-`source=checkpoint`. Plan creation records `download.hls_transfer_plan.created`. Transfer records
+`source=network_revalidation` because the current finite playlist must remain compatible with the
+persisted media sequence, segment count and durations; a changed identity fails before any old/new
+segments can mix. Plan creation records `download.hls_transfer_plan.created`. Aggregate artifact
+recovery records at most one `download.hls_checkpoints.reconciled` with adopted/reset counts.
+Transfer records
 `download.hls_transfer.started` and one `download.hls_transfer.completed`,
 `download.hls_transfer.paused`, `download.hls_transfer.cancelled` or the existing correlated task
 failure. A transient segment retry uses `download.hls_segment_retry.scheduled`; staging cleanup
-failure uses `download.hls_cleanup.failed` with a fixed reason and native error code.
+failure uses `download.hls_cleanup.failed` with a fixed reason, artifact kind, native error code and
+elapsed time; cancellation cleanup failure becomes a failed task and retains plan ownership rather
+than reporting a false successful cancellation.
 
 These events retain only correlation/task identity, fixed source/reason/error kind, bounded segment
 and byte counts, connection count and elapsed time. Manifest text, playlist/segment URLs, local

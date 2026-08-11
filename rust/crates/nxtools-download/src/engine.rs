@@ -2589,60 +2589,104 @@ async fn run_hls_task(
     playlist_url: &str,
 ) -> Result<(), DownloadEngineError> {
     let started_at = Instant::now();
-    let stored_plan = inner.store.load_hls_transfer_plan(task_id)?;
     info!(
         event = "download.hls_playlist.started",
         %correlation_id,
         ?task_id,
-        source = if stored_plan.is_some() { "checkpoint" } else { "network" },
         "HLS media playlist resolution started"
     );
-    let playlist = if let Some(plan) = stored_plan.as_ref() {
-        if plan.segments.is_empty() {
-            return Err(DownloadEngineError::Runtime(
-                "persisted HLS transfer plan has no segments".into(),
-            ));
+    let stored_plan = match inner.store.load_hls_transfer_plan(task_id) {
+        Ok(plan) => plan,
+        Err(error) => {
+            warn!(
+                event = "download.hls_playlist.failed",
+                %correlation_id,
+                ?task_id,
+                source = "checkpoint",
+                error_kind = "storage",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS media playlist checkpoint could not be loaded"
+            );
+            return Err(error.into());
         }
-        let playlist = crate::hls::HlsMediaPlaylist {
-            final_url: plan.final_url.clone(),
-            media_sequence: plan.media_sequence,
-            segments: plan
-                .segments
-                .iter()
-                .map(|segment| segment.media.clone())
-                .collect(),
-        };
-        info!(
-            event = "download.hls_playlist.completed",
+    };
+    if stored_plan
+        .as_ref()
+        .is_some_and(|plan| plan.segments.is_empty())
+    {
+        warn!(
+            event = "download.hls_playlist.failed",
             %correlation_id,
             ?task_id,
             source = "checkpoint",
-            segment_count = playlist.segments.len(),
+            error_kind = "invalid_checkpoint",
             elapsed_ms = started_at.elapsed().as_millis(),
-            "persisted HLS media playlist restored"
+            "persisted HLS media playlist checkpoint is empty"
         );
-        playlist
-    } else {
-        let playlist = match inner
-            .http
-            .load_hls_media_playlist(request, playlist_url)
-            .await
+        return Err(HttpDownloadError::HlsResourceChanged.into());
+    }
+    let playlist = match inner
+        .http
+        .load_hls_media_playlist(request, playlist_url)
+        .await
+    {
+        Ok(playlist) => playlist,
+        Err(error) => {
+            warn!(
+                event = "download.hls_playlist.failed",
+                %correlation_id,
+                ?task_id,
+                source = "network",
+                error_kind = error.kind(),
+                retryable = error.is_retryable_transfer(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS media playlist resolution failed"
+            );
+            return Err(error.into());
+        }
+    };
+    let source = if let Some(plan) = stored_plan.as_ref() {
+        if !hls_plan_is_compatible(plan, &playlist) {
+            warn!(
+                event = "download.hls_playlist.failed",
+                %correlation_id,
+                ?task_id,
+                source = "network_revalidation",
+                error_kind = "hls_resource_changed",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS media playlist no longer matches the durable transfer plan"
+            );
+            return Err(HttpDownloadError::HlsResourceChanged.into());
+        }
+        if let Err(error) = inner
+            .store
+            .refresh_hls_transfer_plan_urls(task_id, &playlist)
         {
-            Ok(playlist) => playlist,
-            Err(error) => {
-                warn!(
-                    event = "download.hls_playlist.failed",
-                    %correlation_id,
-                    ?task_id,
-                    error_kind = error.kind(),
-                    retryable = error.is_retryable_transfer(),
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "HLS media playlist resolution failed"
-                );
-                return Err(error.into());
-            }
-        };
-        inner.store.save_hls_transfer_plan(task_id, &playlist)?;
+            warn!(
+                event = "download.hls_playlist.failed",
+                %correlation_id,
+                ?task_id,
+                source = "network_revalidation",
+                error_kind = "storage",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "refreshed HLS media playlist URLs could not be persisted"
+            );
+            return Err(error.into());
+        }
+        "network_revalidation"
+    } else {
+        if let Err(error) = inner.store.save_hls_transfer_plan(task_id, &playlist) {
+            warn!(
+                event = "download.hls_playlist.failed",
+                %correlation_id,
+                ?task_id,
+                source = "network",
+                error_kind = "storage",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS media transfer plan could not be persisted"
+            );
+            return Err(error.into());
+        }
         info!(
             event = "download.hls_transfer_plan.created",
             %correlation_id,
@@ -2650,17 +2694,17 @@ async fn run_hls_task(
             segment_count = playlist.segments.len(),
             "HLS media transfer plan persisted"
         );
-        info!(
-            event = "download.hls_playlist.completed",
-            %correlation_id,
-            ?task_id,
-            source = "network",
-            segment_count = playlist.segments.len(),
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "HLS media playlist resolved and persisted"
-        );
-        playlist
+        "network"
     };
+    info!(
+        event = "download.hls_playlist.completed",
+        %correlation_id,
+        ?task_id,
+        source,
+        segment_count = playlist.segments.len(),
+        elapsed_ms = started_at.elapsed().as_millis(),
+        "HLS media playlist resolved and persisted"
+    );
     let fallback_file_name = url::Url::parse(&playlist.final_url)
         .ok()
         .and_then(|url| {
@@ -2754,6 +2798,8 @@ async fn run_hls_task(
         });
     let mut completed_bytes = 0_u64;
     let mut completed_segments = 0_usize;
+    let mut adopted_segments = 0_usize;
+    let mut reset_segments = 0_usize;
     let mut pending_segments = VecDeque::new();
     for segment in &playlist.segments {
         let checkpoint = stored_segments.get(&segment.index).ok_or_else(|| {
@@ -2782,19 +2828,13 @@ async fn run_hls_task(
                         DownloadSegmentState::Completed,
                         metadata.len(),
                     )?;
-                    info!(
-                        event = "download.hls_segment_checkpoint.adopted",
-                        %correlation_id,
-                        ?task_id,
-                        segment_index = segment.index,
-                        downloaded_bytes = metadata.len(),
-                        "durable HLS segment artifact adopted into its checkpoint"
-                    );
+                    adopted_segments = adopted_segments.saturating_add(1);
                 }
                 continue;
             }
             Ok(_) => {
                 tokio::fs::remove_file(&completed_path).await?;
+                reset_segments = reset_segments.saturating_add(1);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
@@ -2806,6 +2846,17 @@ async fn run_hls_task(
             0,
         )?;
         pending_segments.push_back(segment.clone());
+    }
+    if adopted_segments > 0 || reset_segments > 0 {
+        info!(
+            event = "download.hls_checkpoints.reconciled",
+            %correlation_id,
+            ?task_id,
+            adopted_segments,
+            reset_segments,
+            segment_count = playlist.segments.len(),
+            "HLS segment checkpoints reconciled with durable artifacts"
+        );
     }
     let durable_completed_bytes = Arc::new(AtomicU64::new(completed_bytes));
     let active_progress = Arc::new(Mutex::new(HashMap::<u32, u64>::new()));
@@ -2926,6 +2977,28 @@ async fn run_hls_task(
     if let Some(error) = first_error {
         return Err(error.into());
     }
+    if !paused && !cancelled {
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        match hls_stop_directive(&control) {
+            Some(TransferDirective::Pause) => paused = true,
+            Some(TransferDirective::Cancel) => cancelled = true,
+            Some(TransferDirective::Running) | None => {
+                state.transfer.downloaded_bytes = completed_bytes;
+                probe.total_bytes = Some(completed_bytes);
+                state.transfer.probe = Some(probe);
+                state
+                    .task
+                    .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
+                inner.persist(state)?;
+                inner.emit(DownloadEvent::TaskChanged {
+                    task: Box::new(state.task.clone()),
+                });
+            }
+        }
+    }
     if paused {
         let mut tasks = inner.lock_tasks()?;
         let state = tasks
@@ -2952,30 +3025,27 @@ async fn run_hls_task(
         return Ok(());
     }
     if cancelled {
-        if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            warn!(
-                event = "download.hls_cleanup.failed",
-                %correlation_id,
-                ?task_id,
-                reason = "cancelled",
-                native_error_code = error.raw_os_error(),
-                "HLS task staging cleanup failed"
-            );
-        }
-        if let Err(error) = tokio::fs::remove_file(&temporary_path).await
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            warn!(
-                event = "download.hls_cleanup.failed",
-                %correlation_id,
-                ?task_id,
-                reason = "cancelled_merge_artifact",
-                native_error_code = error.raw_os_error(),
-                "HLS merge artifact cleanup failed"
-            );
-        }
+        let cleanup_started = Instant::now();
+        let staging_cleanup = remove_hls_cancel_artifact(
+            &working_directory,
+            "segment_staging",
+            true,
+            task_id,
+            correlation_id,
+            cleanup_started,
+        )
+        .await;
+        let merge_cleanup = remove_hls_cancel_artifact(
+            &temporary_path,
+            "merge_artifact",
+            false,
+            task_id,
+            correlation_id,
+            cleanup_started,
+        )
+        .await;
+        staging_cleanup?;
+        merge_cleanup?;
         inner.store.clear_hls_transfer_plan(task_id)?;
         let mut tasks = inner.lock_tasks()?;
         let state = tasks
@@ -3001,22 +3071,6 @@ async fn run_hls_task(
         return Ok(());
     }
 
-    {
-        let mut tasks = inner.lock_tasks()?;
-        let state = tasks
-            .get_mut(&task_id)
-            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
-        state.transfer.downloaded_bytes = completed_bytes;
-        probe.total_bytes = Some(completed_bytes);
-        state.transfer.probe = Some(probe);
-        state
-            .task
-            .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
-        inner.persist(state)?;
-        inner.emit(DownloadEvent::TaskChanged {
-            task: Box::new(state.task.clone()),
-        });
-    }
     let mut output = tokio::fs::OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -3062,6 +3116,90 @@ async fn run_hls_task(
         "HLS media transfer completed"
     );
     Ok(())
+}
+
+fn hls_plan_is_compatible(
+    stored: &crate::storage::StoredHlsTransferPlan,
+    current: &crate::hls::HlsMediaPlaylist,
+) -> bool {
+    stored_hls_plan_is_valid(stored)
+        && stored.media_sequence == current.media_sequence
+        && stored.segments.len() == current.segments.len()
+        && stored
+            .segments
+            .iter()
+            .zip(&current.segments)
+            .all(|(stored, current)| {
+                stored.media.index == current.index
+                    && stored.media.sequence == current.sequence
+                    && stored.media.duration_millis == current.duration_millis
+            })
+}
+
+fn stored_hls_plan_is_valid(plan: &crate::storage::StoredHlsTransferPlan) -> bool {
+    if plan.segments.is_empty()
+        || plan.segments.len() > crate::hls::MAX_HLS_MEDIA_SEGMENTS
+        || plan.final_url.len() > crate::MAX_HLS_VARIANT_URL_BYTES
+        || url::Url::parse(&plan.final_url)
+            .ok()
+            .is_none_or(|url| !matches!(url.scheme(), "http" | "https"))
+    {
+        return false;
+    }
+    let mut aggregate_url_bytes = 0_usize;
+    plan.segments
+        .iter()
+        .enumerate()
+        .all(|(expected_index, segment)| {
+            aggregate_url_bytes = aggregate_url_bytes.saturating_add(segment.media.url.len());
+            usize::try_from(segment.media.index).ok() == Some(expected_index)
+                && plan
+                    .media_sequence
+                    .checked_add(u64::from(segment.media.index))
+                    == Some(segment.media.sequence)
+                && segment.media.url.len() <= crate::MAX_HLS_VARIANT_URL_BYTES
+                && aggregate_url_bytes <= crate::hls::MAX_HLS_MEDIA_URL_BYTES
+                && url::Url::parse(&segment.media.url)
+                    .ok()
+                    .is_some_and(|url| matches!(url.scheme(), "http" | "https"))
+        })
+}
+
+fn hls_stop_directive(control: &DownloadTransferControl) -> Option<TransferDirective> {
+    let directive = control.current_directive();
+    (directive != TransferDirective::Running).then_some(directive)
+}
+
+async fn remove_hls_cancel_artifact(
+    path: &Path,
+    artifact_kind: &'static str,
+    directory: bool,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+) -> Result<(), std::io::Error> {
+    let result = if directory {
+        tokio::fs::remove_dir_all(path).await
+    } else {
+        tokio::fs::remove_file(path).await
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            warn!(
+                event = "download.hls_cleanup.failed",
+                %correlation_id,
+                ?task_id,
+                reason = "cancelled",
+                artifact_kind,
+                native_error_code = error.raw_os_error(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS cancellation cleanup failed"
+            );
+            Err(error)
+        }
+    }
 }
 
 type HlsSegmentTransferResult = (
@@ -5736,4 +5874,15 @@ fn transfer_retry_policy_never_schedules_a_fourth_attempt() {
     assert!(should_retry_transfer(2, &transient));
     assert!(!should_retry_transfer(3, &transient));
     assert!(!should_retry_transfer(1, &HttpDownloadError::Status(404)));
+}
+
+#[test]
+fn hls_finalization_gate_observes_a_stop_directive_after_the_last_worker() {
+    let control = DownloadTransferControl::new();
+    assert_eq!(hls_stop_directive(&control), None);
+    control.cancel();
+    assert_eq!(
+        hls_stop_directive(&control),
+        Some(TransferDirective::Cancel)
+    );
 }
