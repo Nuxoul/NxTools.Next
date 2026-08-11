@@ -245,6 +245,27 @@ Referrer are not written
 to the host log. Repeated capture events remain throttled in the extension and are never emitted per
 network chunk or scan candidate.
 
+## Product network policy
+
+Saving the product-wide proxy policy emits `network.settings.apply_started` followed by exactly one
+`network.settings.apply_succeeded` or `network.settings.apply_failed` under one correlation ID.
+Events carry only the fixed mode (`direct|system|manual_http`), bounded failure kind and elapsed
+time. They never contain the proxy host, port, credentials, exclusion patterns, destination URL,
+request Header or Cookie. The canonical config is persisted before the shared live policy is
+published; a persistence failure therefore leaves the prior policy untouched. A rare runtime-policy
+publication failure is explicit and tells the UI that the already-persisted setting needs restart.
+
+Every outbound HTTP operation snapshots the policy when that operation starts. Settings changes do
+not emit per-request events and do not mutate an active task, HLS/DASH worker set or FFmpeg install;
+a later task start or explicit resume takes a new snapshot. Each transfer attempt emits
+`download.task.attempt_started`, followed by `download.task.attempt_completed` for
+`outcome=completed|paused|cancelled` or the existing `download.task.failed`; HLS, DASH and
+single-stream protocol terminals repeat the same frozen route for local diagnosis. Correlated
+probe, task and FFmpeg-install events carry only fixed
+`proxy_mode=direct|system|manual_http|unavailable` and
+`proxy_source=none|system|configured|policy`, plus their bounded failure kind/native-or-HTTP-code
+fields. They never expose the proxy endpoint.
+
 ## HLS probing and transfer
 
 The versioned download command boundary records `download.probe.started` followed by exactly one

@@ -9,6 +9,8 @@ aes.workspace = true
 async-channel.workspace = true
 cbc.workspace = true
 chrono.workspace = true
+nxtools-core = { path = "../nxtools-core" }
+nxtools-network = { path = "../nxtools-network" }
 reqwest.workspace = true
 roxmltree.workspace = true
 rusqlite.workspace = true

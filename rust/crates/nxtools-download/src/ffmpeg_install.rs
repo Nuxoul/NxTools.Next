@@ -10,9 +10,16 @@ use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 use zip::ZipArchive;
 
+#[cfg(test)]
+use crate::NetworkPolicy;
 use crate::http::TransferDirective;
 use crate::media::{MediaProcessError, MediaProcessOutcome, detect_ffmpeg_version};
-use crate::{DownloadTransferControl, FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL};
+use crate::{
+    DownloadTransferControl, FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL,
+    NetworkOperationSnapshot, NetworkPolicyError,
+};
+#[cfg(test)]
+use nxtools_core::NetworkSettings;
 
 const GYAN_CHECKSUM_URL: &str =
     "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256";
@@ -127,6 +134,8 @@ impl FfmpegInstallControl {
 #[derive(Debug)]
 pub struct FfmpegInstallOperation {
     pub correlation_id: uuid::Uuid,
+    pub network_proxy_mode: nxtools_core::NetworkProxyMode,
+    pub network_proxy_source: &'static str,
     pub control: FfmpegInstallControl,
     pub progress: async_channel::Receiver<FfmpegInstallProgress>,
     pub completion: async_channel::Receiver<Result<FfmpegInstallation, FfmpegInstallFailure>>,
@@ -209,6 +218,8 @@ enum FfmpegInstallError {
     Cancelled { phase: FfmpegInstallPhase },
     #[error("FFmpeg source request failed")]
     Network(#[source] reqwest::Error),
+    #[error("FFmpeg network policy could not be applied")]
+    NetworkPolicy(#[source] NetworkPolicyError),
     #[error("FFmpeg source returned HTTP {0}")]
     HttpStatus(u16),
     #[error("FFmpeg checksum response exceeded its bound")]
@@ -238,6 +249,7 @@ impl FfmpegInstallError {
             Self::UnsupportedPlatform => "unsupported_platform",
             Self::Cancelled { .. } => "cancelled",
             Self::Network(_) => "network",
+            Self::NetworkPolicy(_) => "network_policy",
             Self::HttpStatus(_) => "http_status",
             Self::ChecksumTooLarge => "checksum_too_large",
             Self::ChecksumMissing => "checksum_missing",
@@ -254,9 +266,10 @@ impl FfmpegInstallError {
     fn phase(&self) -> FfmpegInstallPhase {
         match self {
             Self::Context { phase, .. } => *phase,
-            Self::UnsupportedPlatform | Self::Network(_) | Self::HttpStatus(_) => {
-                FfmpegInstallPhase::Connecting
-            }
+            Self::UnsupportedPlatform
+            | Self::Network(_)
+            | Self::NetworkPolicy(_)
+            | Self::HttpStatus(_) => FfmpegInstallPhase::Connecting,
             Self::ChecksumTooLarge | Self::ChecksumMissing | Self::ChecksumInvalid => {
                 FfmpegInstallPhase::Verifying
             }
@@ -320,6 +333,7 @@ pub(crate) async fn run_ffmpeg_install(
     preserve_executable: Option<PathBuf>,
     control: DownloadTransferControl,
     progress: async_channel::Sender<FfmpegInstallProgress>,
+    network: NetworkOperationSnapshot,
 ) -> Result<FfmpegInstallation, FfmpegInstallFailure> {
     run_ffmpeg_install_inner(
         correlation_id,
@@ -327,6 +341,7 @@ pub(crate) async fn run_ffmpeg_install(
         preserve_executable.as_deref(),
         &control,
         &progress,
+        &network,
     )
     .await
 }
@@ -337,18 +352,21 @@ async fn run_ffmpeg_install_inner(
     preserve_executable: Option<&Path>,
     control: &DownloadTransferControl,
     progress: &async_channel::Sender<FfmpegInstallProgress>,
+    network: &NetworkOperationSnapshot,
 ) -> Result<FfmpegInstallation, FfmpegInstallFailure> {
-    run_ffmpeg_install_with_sources(
+    run_ffmpeg_install_with_sources_and_network(
         correlation_id,
         install_root,
         preserve_executable,
         control,
         progress,
         &FFMPEG_INSTALL_SOURCES,
+        network,
     )
     .await
 }
 
+#[cfg(test)]
 async fn run_ffmpeg_install_with_sources(
     correlation_id: uuid::Uuid,
     install_root: &Path,
@@ -357,6 +375,34 @@ async fn run_ffmpeg_install_with_sources(
     progress: &async_channel::Sender<FfmpegInstallProgress>,
     sources: &[FfmpegInstallSourceSpec<'_>],
 ) -> Result<FfmpegInstallation, FfmpegInstallFailure> {
+    let policy = NetworkPolicy::new(NetworkSettings::default())
+        .map_err(FfmpegInstallError::NetworkPolicy)?;
+    let network = policy
+        .snapshot()
+        .map_err(FfmpegInstallError::NetworkPolicy)?;
+    run_ffmpeg_install_with_sources_and_network(
+        correlation_id,
+        install_root,
+        preserve_executable,
+        control,
+        progress,
+        sources,
+        &network,
+    )
+    .await
+}
+
+async fn run_ffmpeg_install_with_sources_and_network(
+    correlation_id: uuid::Uuid,
+    install_root: &Path,
+    preserve_executable: Option<&Path>,
+    control: &DownloadTransferControl,
+    progress: &async_channel::Sender<FfmpegInstallProgress>,
+    sources: &[FfmpegInstallSourceSpec<'_>],
+    network: &NetworkOperationSnapshot,
+) -> Result<FfmpegInstallation, FfmpegInstallFailure> {
+    let proxy_mode = nxtools_network::proxy_mode_name(network.mode());
+    let proxy_source = network.source();
     if !cfg!(windows) {
         return Err(FfmpegInstallError::UnsupportedPlatform.into());
     }
@@ -370,18 +416,20 @@ async fn run_ffmpeg_install_with_sources(
         preserve_executable,
         "startup_reconciliation",
     );
-    let client = reqwest::Client::builder()
-        .timeout(NETWORK_TIMEOUT)
-        .read_timeout(STALL_TIMEOUT)
-        .redirect(Policy::custom(|attempt| {
-            if attempt.previous().len() < 5 && attempt.url().scheme() == "https" {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }))
-        .build()
-        .map_err(FfmpegInstallError::Network)?;
+    let client = network
+        .build_client(
+            reqwest::Client::builder()
+                .timeout(NETWORK_TIMEOUT)
+                .read_timeout(STALL_TIMEOUT)
+                .redirect(Policy::custom(|attempt| {
+                    if attempt.previous().len() < 5 && attempt.url().scheme() == "https" {
+                        attempt.follow()
+                    } else {
+                        attempt.stop()
+                    }
+                })),
+        )
+        .map_err(FfmpegInstallError::NetworkPolicy)?;
     let mut last_error = None;
     let mut downloaded_bytes = 0_u64;
     for (index, spec) in sources.iter().copied().enumerate() {
@@ -395,6 +443,8 @@ async fn run_ffmpeg_install_with_sources(
         info!(
             event = "download.ffmpeg_install.source_started",
             %correlation_id,
+            proxy_mode,
+            proxy_source,
             source = source.as_str(),
             attempt = index + 1,
             "managed FFmpeg source attempt started"
@@ -423,6 +473,8 @@ async fn run_ffmpeg_install_with_sources(
                 warn!(
                     event = "download.ffmpeg_install.source_failed",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     source = source.as_str(),
                     attempt = index + 1,
                     phase = error.phase().as_str(),
@@ -1432,6 +1484,51 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn ffmpeg_source_requests_use_the_shared_manual_proxy_snapshot() {
+        let archive = cancellable_archive_fixture();
+        let wrong_checksum = "00".repeat(32);
+        let (proxy_url, _, server) = start_http_fixture(vec![
+            HttpFixtureResponse::ok("/checksum", wrong_checksum.into_bytes(), true),
+            HttpFixtureResponse::ok("/archive.zip", archive, true),
+        ]);
+        let proxy = url::Url::parse(&proxy_url).expect("parse proxy fixture URL");
+        let policy = NetworkPolicy::new(NetworkSettings {
+            proxy: nxtools_core::NetworkProxySettings {
+                mode: nxtools_core::NetworkProxyMode::ManualHttp,
+                host: proxy.host_str().expect("proxy host").into(),
+                port: proxy.port().expect("proxy port"),
+            },
+        })
+        .expect("manual installer policy");
+        let network = policy.snapshot().expect("installer proxy snapshot");
+        let sources = [FfmpegInstallSourceSpec {
+            source: FfmpegInstallSource::Gyan,
+            archive_url: "http://unreachable.invalid/archive.zip",
+            checksum_url: "http://unreachable.invalid/checksum",
+            archive_name: GYAN_ARCHIVE_NAME,
+        }];
+        let directory = tempfile::tempdir().expect("create proxied installer fixture");
+        let (progress_sender, _) = async_channel::bounded(8);
+
+        let error = run_ffmpeg_install_with_sources_and_network(
+            uuid::Uuid::new_v4(),
+            &directory.path().join("ffmpeg"),
+            None,
+            &DownloadTransferControl::new(),
+            &progress_sender,
+            &sources,
+            &network,
+        )
+        .await
+        .expect_err("wrong checksum must fail after both proxied requests");
+        server.join().expect("join installer proxy fixture");
+
+        assert_eq!(error.phase(), FfmpegInstallPhase::Verifying);
+        assert_eq!(error.failure_kind(), "checksum_mismatch");
+    }
+
     fn decode(hash: &str) -> [u8; 32] {
         let mut output = [0_u8; 32];
         for (index, byte) in output.iter_mut().enumerate() {
@@ -1584,11 +1681,14 @@ mod tests {
                 let mut request = [0_u8; 4096];
                 let read = stream.read(&mut request).expect("read installer request");
                 let request = String::from_utf8_lossy(&request[..read]);
-                let request_path = request
+                let request_target = request
                     .lines()
                     .next()
                     .and_then(|line| line.split_whitespace().nth(1))
                     .expect("parse installer request path");
+                let request_path = url::Url::parse(request_target)
+                    .map(|url| url.path().to_owned())
+                    .unwrap_or_else(|_| request_target.to_owned());
                 assert_eq!(request_path, response.path);
                 let reason = if response.status == 200 {
                     "OK"

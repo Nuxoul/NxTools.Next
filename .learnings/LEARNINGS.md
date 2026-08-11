@@ -5,6 +5,37 @@ Corrections, insights, and knowledge gaps captured during development.
 **Categories**: correction | insight | knowledge_gap | best_practice
 
 ---
+
+## [LRN-20260811-STAGE6SCOPE] correction
+
+**Logged**: 2026-08-11T17:02:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: config
+
+### Summary
+
+Stage 6 excludes checksum work and all legacy-state migration; proxy belongs to the product-wide
+settings surface, while download Header/Cookie and certificate policy remain download settings.
+
+### Details
+
+The user explicitly removed former items 6A, 6E and 6F. Categories/duplicate behavior and completion
+actions remain. Proxy configuration must be shared by the product's three functions through one
+Rust-owned network-policy module instead of being embedded in download settings.
+
+### Suggested Action
+
+Update the canonical Stage 6 plan before implementation and define snapshot, credential-storage and
+consumer opt-in semantics at the shared network-policy seam.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: `docs/download-plan.md`, `rust/apps/nxtools-desktop/src`
+- Tags: stage6, proxy, settings, scope
+
+---
 ## [LRN-20260811-FFMPEGAUTOINSTALL] correction
 
 **Logged**: 2026-08-11T15:40:00+08:00

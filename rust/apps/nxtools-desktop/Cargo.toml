@@ -17,6 +17,7 @@ nxtools-download = { path = "../../crates/nxtools-download" }
 nxtools-download-ipc = { path = "../../crates/nxtools-download-ipc" }
 nxtools-finder = { path = "../../crates/nxtools-finder" }
 nxtools-ipc = { path = "../../crates/nxtools-ipc" }
+nxtools-network = { path = "../../crates/nxtools-network" }
 nxtools-protocol = { path = "../../crates/nxtools-protocol" }
 raw-window-handle.workspace = true
 serde_json.workspace = true

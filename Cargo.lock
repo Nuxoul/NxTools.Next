@@ -4071,6 +4071,7 @@ dependencies = [
  "nxtools-download-ipc",
  "nxtools-finder",
  "nxtools-ipc",
+ "nxtools-network",
  "nxtools-protocol",
  "raw-window-handle",
  "serde_json",
@@ -4090,6 +4091,8 @@ dependencies = [
  "async-channel 2.5.0",
  "cbc",
  "chrono",
+ "nxtools-core",
+ "nxtools-network",
  "reqwest",
  "roxmltree",
  "rusqlite",
@@ -4166,6 +4169,16 @@ dependencies = [
  "tracing",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nxtools-network"
+version = "0.1.0"
+dependencies = [
+ "nxtools-core",
+ "reqwest",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

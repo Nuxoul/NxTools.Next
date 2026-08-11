@@ -1,0 +1,16 @@
+[package]
+name = "nxtools-network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nxtools-core = { path = "../nxtools-core" }
+reqwest.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -56,6 +56,7 @@ pub use message::{
     DownloadTaskAction, DownloadTaskDetail, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
     HlsProbe, HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
+pub use nxtools_network::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};
 

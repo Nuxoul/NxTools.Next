@@ -153,6 +153,7 @@ const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
 pub struct DeterministicHttpServer {
     address: SocketAddr,
+    total_requests: Arc<AtomicU64>,
     revision: Arc<AtomicU64>,
     resume_transfer_started: Arc<AtomicBool>,
     active_range_transfers: Arc<AtomicU64>,
@@ -189,6 +190,7 @@ impl DeterministicHttpServer {
             .set_nonblocking(true)
             .expect("make fixture listener non-blocking");
         let address = listener.local_addr().expect("read fixture address");
+        let total_requests = Arc::new(AtomicU64::new(0));
         let revision = Arc::new(AtomicU64::new(1));
         let resume_transfer_started = Arc::new(AtomicBool::new(false));
         let active_range_transfers = Arc::new(AtomicU64::new(0));
@@ -208,6 +210,7 @@ impl DeterministicHttpServer {
         let network_available = Arc::new(AtomicBool::new(true));
         let shutdown = Arc::new(AtomicBool::new(false));
         let listener_revision = Arc::clone(&revision);
+        let listener_total_requests = Arc::clone(&total_requests);
         let listener_resume_transfer_started = Arc::clone(&resume_transfer_started);
         let listener_active_range_transfers = Arc::clone(&active_range_transfers);
         let listener_max_active_range_transfers = Arc::clone(&max_active_range_transfers);
@@ -238,6 +241,7 @@ impl DeterministicHttpServer {
                             break;
                         }
                         let revision = Arc::clone(&listener_revision);
+                        let total_requests = Arc::clone(&listener_total_requests);
                         let resume_transfer_started = Arc::clone(&listener_resume_transfer_started);
                         let active_range_transfers = Arc::clone(&listener_active_range_transfers);
                         let max_active_range_transfers =
@@ -267,6 +271,7 @@ impl DeterministicHttpServer {
                         let serve = move || {
                             serve_connection(
                                 stream,
+                                &total_requests,
                                 &revision,
                                 &resume_transfer_started,
                                 &active_range_transfers,
@@ -315,6 +320,7 @@ impl DeterministicHttpServer {
 
         Self {
             address,
+            total_requests,
             revision,
             resume_transfer_started,
             active_range_transfers,
@@ -339,6 +345,10 @@ impl DeterministicHttpServer {
 
     pub fn address(&self) -> SocketAddr {
         self.address
+    }
+
+    pub fn total_requests(&self) -> u64 {
+        self.total_requests.load(Ordering::Acquire)
     }
 
     pub fn advance_resource_revision(&self) {
@@ -514,6 +524,7 @@ impl RawHttpResponse {
 #[allow(clippy::too_many_arguments)]
 fn serve_connection(
     mut stream: TcpStream,
+    total_requests: &AtomicU64,
     revision: &AtomicU64,
     resume_transfer_started: &AtomicBool,
     active_range_transfers: &AtomicU64,
@@ -556,7 +567,12 @@ fn serve_connection(
     };
     let mut request_parts = request_line.split_whitespace();
     let method = request_parts.next().unwrap_or("");
-    let path = request_parts.next().unwrap_or("");
+    let request_target = request_parts.next().unwrap_or("");
+    let path = request_target
+        .strip_prefix("http://")
+        .and_then(|target| target.find('/').map(|index| &target[index..]))
+        .unwrap_or(request_target);
+    total_requests.fetch_add(1, Ordering::AcqRel);
     let headers: BTreeMap<String, String> = lines
         .take_while(|line| !line.is_empty())
         .filter_map(|line| line.split_once(':'))

@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
+use nxtools_core::NetworkSettings;
+use nxtools_network::proxy_mode_name;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error, info, warn};
@@ -31,8 +33,8 @@ use crate::{
     DownloadTaskAction, DownloadTaskDetail, DownloadTaskError, DownloadTaskId,
     DownloadTransferContext, DownloadTransferControl, DownloadWeekday, FfmpegInstallControl,
     FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError, MAX_BROWSER_BATCH_ITEMS,
-    RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError,
-    TransferProtocol,
+    NetworkPolicy, NetworkPolicyError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore,
+    TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -43,7 +45,8 @@ pub struct DownloadEngine {
 }
 
 struct DownloadEngineInner {
-    http: HttpDownloadClient,
+    http_template: HttpDownloadClient,
+    network_policy: NetworkPolicy,
     ffmpeg_executable: Mutex<Option<PathBuf>>,
     ffmpeg_install_active: AtomicBool,
     store: SqliteDownloadStore,
@@ -317,6 +320,20 @@ pub fn daily_schedule_window_contains(
 
 impl DownloadEngine {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DownloadEngineError> {
+        Self::open_with_network(path, NetworkSettings::default())
+    }
+
+    pub fn open_with_network(
+        path: impl AsRef<Path>,
+        network_settings: NetworkSettings,
+    ) -> Result<Self, DownloadEngineError> {
+        Self::open_with_network_policy(path, NetworkPolicy::new(network_settings)?)
+    }
+
+    pub fn open_with_network_policy(
+        path: impl AsRef<Path>,
+        network_policy: NetworkPolicy,
+    ) -> Result<Self, DownloadEngineError> {
         let path = path.as_ref();
         let staging_root = path
             .parent()
@@ -329,11 +346,26 @@ impl DownloadEngine {
             Arc::new(SystemStorageCapacityProbe),
             Some(staging_root),
             None,
+            network_policy,
         )
     }
 
     pub fn open_in_memory() -> Result<Self, DownloadEngineError> {
         Self::from_store(SqliteDownloadStore::open_in_memory()?)
+    }
+
+    #[doc(hidden)]
+    pub fn open_in_memory_with_network_policy(
+        network_policy: NetworkPolicy,
+    ) -> Result<Self, DownloadEngineError> {
+        Self::from_store_with_http_and_capacity_and_staging_root(
+            SqliteDownloadStore::open_in_memory()?,
+            HttpDownloadClient::new()?,
+            Arc::new(SystemStorageCapacityProbe),
+            None,
+            None,
+            network_policy,
+        )
     }
 
     #[doc(hidden)]
@@ -346,6 +378,7 @@ impl DownloadEngine {
             Arc::new(SystemStorageCapacityProbe),
             None,
             Some(executable.as_ref().to_owned()),
+            NetworkPolicy::new(NetworkSettings::default())?,
         )
     }
 
@@ -371,6 +404,7 @@ impl DownloadEngine {
             capacity_probe,
             None,
             None,
+            NetworkPolicy::new(NetworkSettings::default())?,
         )
     }
 
@@ -380,6 +414,7 @@ impl DownloadEngine {
         capacity_probe: Arc<dyn StorageCapacityProbe>,
         browser_blob_staging_root: Option<PathBuf>,
         ffmpeg_executable: Option<PathBuf>,
+        network_policy: NetworkPolicy,
     ) -> Result<Self, DownloadEngineError> {
         let persisted_tasks = store.load_tasks()?;
         let reconciliation_id = uuid::Uuid::new_v4();
@@ -440,7 +475,8 @@ impl DownloadEngine {
         let (browser_dialog_sender, browser_dialog_receiver) = async_channel::bounded(16);
         let engine = Self {
             inner: Arc::new(DownloadEngineInner {
-                http,
+                http_template: http,
+                network_policy,
                 ffmpeg_executable: Mutex::new(ffmpeg_executable),
                 ffmpeg_install_active: AtomicBool::new(false),
                 store,
@@ -572,13 +608,18 @@ impl DownloadEngine {
         install_root: PathBuf,
         preserve_executable: Option<PathBuf>,
     ) -> Result<FfmpegInstallOperation, DownloadEngineError> {
+        let runtime = download_runtime()?;
+        let network = self.inner.network_policy.snapshot()?;
+        let network_proxy_mode = network.mode();
+        let network_proxy_source = network.source();
         info!(
             event = "download.ffmpeg_install.started",
             %correlation_id,
+            proxy_mode = proxy_mode_name(network_proxy_mode),
+            proxy_source = network_proxy_source,
             source_count = crate::FfmpegInstallSource::ALL.len(),
             "managed FFmpeg installation started"
         );
-        let runtime = download_runtime()?;
         self.inner
             .ffmpeg_install_active
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -595,6 +636,7 @@ impl DownloadEngine {
                 preserve_executable,
                 control,
                 progress_sender,
+                network,
             )
             .await;
             inner.ffmpeg_install_active.store(false, Ordering::Release);
@@ -602,6 +644,8 @@ impl DownloadEngine {
         });
         Ok(FfmpegInstallOperation {
             correlation_id,
+            network_proxy_mode,
+            network_proxy_source,
             control: public_control,
             progress,
             completion,
@@ -815,14 +859,24 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadCommandOutcome, DownloadEngineError> {
         let started = Instant::now();
+        let client = self.inner.http_for_operation();
+        let (proxy_mode, proxy_source) =
+            client.as_ref().map_or(("unavailable", "policy"), |client| {
+                (
+                    proxy_mode_name(client.network_proxy_mode()),
+                    client.network_proxy_source(),
+                )
+            });
         info!(
             event = "download.probe.started",
             %correlation_id,
+            proxy_mode,
+            proxy_source,
             "download resource probe started"
         );
         let result = (|| {
             request.validate()?;
-            let client = self.inner.http.clone();
+            let client = client?;
             let (sender, receiver) = std::sync::mpsc::sync_channel(1);
             download_runtime()?.spawn(async move {
                 let _ = sender.send(client.probe(&request).await);
@@ -847,6 +901,8 @@ impl DownloadEngine {
                 info!(
                     event = "download.probe.completed",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     media_kind,
                     variant_count,
                     elapsed_ms = started.elapsed().as_millis(),
@@ -858,6 +914,8 @@ impl DownloadEngine {
                 warn!(
                     event = "download.probe.failed",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     error_kind = probe_error_kind(&error),
                     native_error_code = error
                         .io_error()
@@ -2613,6 +2671,11 @@ impl DownloadEngine {
 }
 
 impl DownloadEngineInner {
+    fn http_for_operation(&self) -> Result<HttpDownloadClient, DownloadEngineError> {
+        let snapshot = self.network_policy.snapshot()?;
+        Ok(self.http_template.for_network_snapshot(&snapshot)?)
+    }
+
     fn lock_tasks(
         &self,
     ) -> Result<MutexGuard<'_, HashMap<DownloadTaskId, EngineTaskState>>, DownloadEngineError> {
@@ -2688,6 +2751,21 @@ fn is_active_download_status(status: DownloadStatus) -> bool {
     )
 }
 
+const fn download_terminal_name(status: DownloadStatus) -> &'static str {
+    match status {
+        DownloadStatus::Completed => "completed",
+        DownloadStatus::Paused => "paused",
+        DownloadStatus::Cancelled => "cancelled",
+        DownloadStatus::Failed => "failed",
+        DownloadStatus::Created
+        | DownloadStatus::Probing
+        | DownloadStatus::Waiting
+        | DownloadStatus::Downloading
+        | DownloadStatus::Finalizing
+        | DownloadStatus::Verifying => "non_terminal",
+    }
+}
+
 fn spawn_download_worker(
     inner: Arc<DownloadEngineInner>,
     queue_id: String,
@@ -2696,8 +2774,56 @@ fn spawn_download_worker(
 ) -> Result<(), DownloadEngineError> {
     download_runtime()?.spawn(async move {
         let started_at = Instant::now();
-        if let Err(error) = run_task(Arc::clone(&inner), task_id, correlation_id).await {
-            record_failure(&inner, task_id, correlation_id, started_at.elapsed(), error);
+        let http = inner.http_for_operation();
+        let (proxy_mode, proxy_source) =
+            http.as_ref().map_or(("unavailable", "policy"), |client| {
+                (
+                    proxy_mode_name(client.network_proxy_mode()),
+                    client.network_proxy_source(),
+                )
+            });
+        info!(
+            event = "download.task.attempt_started",
+            %correlation_id,
+            ?task_id,
+            proxy_mode,
+            proxy_source,
+            "download task attempt started"
+        );
+        let result = match http {
+            Ok(http) => run_task(Arc::clone(&inner), task_id, correlation_id, http).await,
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(()) => {
+                let outcome = inner
+                    .lock_tasks()
+                    .ok()
+                    .and_then(|tasks| tasks.get(&task_id).map(|state| state.task.status()))
+                    .map(download_terminal_name)
+                    .unwrap_or("unknown");
+                info!(
+                    event = "download.task.attempt_completed",
+                    %correlation_id,
+                    ?task_id,
+                    proxy_mode,
+                    proxy_source,
+                    outcome,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download task attempt reached its non-failure terminal"
+                );
+            }
+            Err(error) => {
+                record_failure(
+                    &inner,
+                    task_id,
+                    correlation_id,
+                    started_at.elapsed(),
+                    proxy_mode,
+                    proxy_source,
+                    error,
+                );
+            }
         }
         let engine = DownloadEngine {
             inner: Arc::clone(&inner),
@@ -2720,7 +2846,10 @@ async fn run_task(
     inner: Arc<DownloadEngineInner>,
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
+    http: HttpDownloadClient,
 ) -> Result<(), DownloadEngineError> {
+    // `spawn_download_worker` freezes one route before entering this attempt. Every probe,
+    // fragment and retry below shares this client and cannot re-snapshot a settings change.
     let request = {
         let tasks = inner.lock_tasks()?;
         tasks
@@ -2737,27 +2866,40 @@ async fn run_task(
             correlation_id,
             &request,
             &hls.playlist_url,
+            &http,
         )
         .await;
     }
     if let Some(DownloadRequestMedia::Dash(dash)) = request.media.as_ref() {
-        return run_dash_task(Arc::clone(&inner), task_id, correlation_id, &request, dash).await;
+        return run_dash_task(
+            Arc::clone(&inner),
+            task_id,
+            correlation_id,
+            &request,
+            dash,
+            &http,
+        )
+        .await;
     }
     let probe_started_at = Instant::now();
     info!(
         event = "download.probe.started",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         requested_connections = request.connection_limit.unwrap_or(1),
         "download resource probe started"
     );
-    let probe = match inner.http.probe(&request).await {
+    let probe = match http.probe(&request).await {
         Ok(probe) => probe,
         Err(error) => {
             warn!(
                 event = "download.probe.failed",
                 %correlation_id,
                 ?task_id,
+                proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+                proxy_source = http.network_proxy_source(),
                 error_kind = error.kind(),
                 native_error_code = error.io_error().and_then(std::io::Error::raw_os_error),
                 elapsed_ms = probe_started_at.elapsed().as_millis(),
@@ -2789,6 +2931,8 @@ async fn run_task(
         event = "download.probe.completed",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         media_kind,
         variant_count,
         video_track_count,
@@ -2858,6 +3002,7 @@ async fn run_task(
                     correlation_id,
                     &selected_request,
                     &hls.playlist_url,
+                    &http,
                 )
                 .await;
             }
@@ -2868,6 +3013,7 @@ async fn run_task(
                     correlation_id,
                     &selected_request,
                     &dash,
+                    &http,
                 )
                 .await;
             }
@@ -2928,6 +3074,7 @@ async fn run_task(
             &request,
             &probe,
             &control,
+            &http,
             temporary_path,
             final_path,
         )
@@ -2941,6 +3088,7 @@ async fn run_task(
         &request,
         &probe,
         &control,
+        &http,
         "probe_single_stream",
     )
     .await
@@ -2979,6 +3127,7 @@ async fn run_hls_task(
     correlation_id: uuid::Uuid,
     request: &DownloadRequest,
     playlist_url: &str,
+    http: &HttpDownloadClient,
 ) -> Result<(), DownloadEngineError> {
     let started_at = Instant::now();
     let stored_plan = match inner.store.load_hls_transfer_plan(task_id) {
@@ -3030,11 +3179,7 @@ async fn run_hls_task(
         );
         return Err(HttpDownloadError::HlsResourceChanged.into());
     }
-    let playlist = match inner
-        .http
-        .load_hls_media_playlist(request, playlist_url)
-        .await
-    {
+    let playlist = match http.load_hls_media_playlist(request, playlist_url).await {
         Ok(playlist) => playlist,
         Err(error) => {
             warn!(
@@ -3214,6 +3359,8 @@ async fn run_hls_task(
         event = "download.hls_transfer.started",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         segment_count = playlist.segments.len(),
         requested_connections = request.connection_limit.unwrap_or(1),
         "HLS media transfer started"
@@ -3334,6 +3481,7 @@ async fn run_hls_task(
         spawn_hls_segment_transfer(
             &mut transfers,
             &inner,
+            http,
             task_id,
             correlation_id,
             request,
@@ -3421,6 +3569,7 @@ async fn run_hls_task(
             spawn_hls_segment_transfer(
                 &mut transfers,
                 &inner,
+                http,
                 task_id,
                 correlation_id,
                 request,
@@ -3478,6 +3627,8 @@ async fn run_hls_task(
             event = "download.hls_transfer.paused",
             %correlation_id,
             ?task_id,
+            proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+            proxy_source = http.network_proxy_source(),
             completed_segments,
             downloaded_bytes = completed_bytes,
             elapsed_ms = started_at.elapsed().as_millis(),
@@ -3525,6 +3676,8 @@ async fn run_hls_task(
             event = "download.hls_transfer.cancelled",
             %correlation_id,
             ?task_id,
+            proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+            proxy_source = http.network_proxy_source(),
             downloaded_bytes = completed_bytes,
             elapsed_ms = started_at.elapsed().as_millis(),
             "HLS media transfer cancelled"
@@ -3546,14 +3699,12 @@ async fn run_hls_task(
     output.flush().await?;
     output.sync_all().await?;
     drop(output);
-    inner
-        .http
-        .commit_prepared(PreparedDownload {
-            temporary_path,
-            final_path,
-            downloaded_bytes: completed_bytes,
-        })
-        .await?;
+    http.commit_prepared(PreparedDownload {
+        temporary_path,
+        final_path,
+        downloaded_bytes: completed_bytes,
+    })
+    .await?;
     commit_completed_state(&inner, task_id)?;
     let cleanup_started_at = Instant::now();
     if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
@@ -3574,6 +3725,8 @@ async fn run_hls_task(
         event = "download.hls_transfer.completed",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         segment_count = playlist.segments.len(),
         downloaded_bytes = completed_bytes,
         elapsed_ms = started_at.elapsed().as_millis(),
@@ -3588,6 +3741,7 @@ async fn run_dash_task(
     correlation_id: uuid::Uuid,
     request: &DownloadRequest,
     selection: &crate::DashDownloadRequest,
+    http: &HttpDownloadClient,
 ) -> Result<(), DownloadEngineError> {
     let started_at = Instant::now();
     let stored_plan = inner.store.load_dash_transfer_plan(task_id)?;
@@ -3603,8 +3757,7 @@ async fn run_dash_task(
         source = manifest_source,
         "DASH manifest resolution started"
     );
-    let manifest = match inner
-        .http
+    let manifest = match http
         .load_dash_manifest(request, &selection.manifest_url)
         .await
     {
@@ -3782,6 +3935,8 @@ async fn run_dash_task(
         event = "download.dash_transfer.started",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         track_count = selected_track_count,
         segment_count = selected_segment_count,
         requested_connections = request.connection_limit.unwrap_or(1),
@@ -3902,6 +4057,7 @@ async fn run_dash_task(
         spawn_dash_fragment_transfer(
             &mut transfers,
             &inner,
+            http,
             task_id,
             correlation_id,
             request,
@@ -3997,6 +4153,7 @@ async fn run_dash_task(
             spawn_dash_fragment_transfer(
                 &mut transfers,
                 &inner,
+                http,
                 task_id,
                 correlation_id,
                 request,
@@ -4029,6 +4186,8 @@ async fn run_dash_task(
             event = "download.dash_transfer.paused",
             %correlation_id,
             ?task_id,
+            proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+            proxy_source = http.network_proxy_source(),
             downloaded_bytes,
             elapsed_ms = started_at.elapsed().as_millis(),
             "DASH media transfer paused"
@@ -4047,6 +4206,8 @@ async fn run_dash_task(
             event = "download.dash_transfer.cancelled",
             %correlation_id,
             ?task_id,
+            proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+            proxy_source = http.network_proxy_source(),
             downloaded_bytes,
             elapsed_ms = started_at.elapsed().as_millis(),
             "DASH media transfer cancelled"
@@ -4362,8 +4523,7 @@ async fn run_dash_task(
         )
         .await;
     }
-    if let Err(error) = inner
-        .http
+    if let Err(error) = http
         .commit_prepared(PreparedDownload {
             temporary_path,
             final_path,
@@ -4444,6 +4604,8 @@ async fn run_dash_task(
         event = "download.dash_transfer.completed",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         track_count = selected_track_count,
         segment_count = selected_segment_count,
         downloaded_bytes,
@@ -4840,6 +5002,7 @@ type DashFragmentTransferResult = (
 fn spawn_dash_fragment_transfer(
     transfers: &mut tokio::task::JoinSet<DashFragmentTransferResult>,
     inner: &Arc<DownloadEngineInner>,
+    http: &HttpDownloadClient,
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
     request: &DownloadRequest,
@@ -4853,7 +5016,7 @@ fn spawn_dash_fragment_transfer(
     segment_index: Option<u32>,
     resource_url: String,
 ) {
-    let http = inner.http.clone();
+    let http = http.clone();
     let request = request.clone();
     let control = control.clone();
     let progress_inner = Arc::clone(inner);
@@ -5048,6 +5211,7 @@ where
 fn spawn_hls_segment_transfer(
     transfers: &mut tokio::task::JoinSet<HlsSegmentTransferResult>,
     inner: &Arc<DownloadEngineInner>,
+    http: &HttpDownloadClient,
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
     request: &DownloadRequest,
@@ -5059,7 +5223,7 @@ fn spawn_hls_segment_transfer(
     key_cache: &HlsKeyCache,
     segment: crate::hls::HlsMediaSegment,
 ) {
-    let http = inner.http.clone();
+    let http = http.clone();
     let request = request.clone();
     let control = control.clone();
     let progress_inner = Arc::clone(inner);
@@ -5266,6 +5430,7 @@ async fn preflight_storage_capacity(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_single_stream_task(
     inner: &Arc<DownloadEngineInner>,
     task_id: DownloadTaskId,
@@ -5273,6 +5438,7 @@ async fn run_single_stream_task(
     request: &DownloadRequest,
     probe: &DownloadProbe,
     control: &DownloadTransferControl,
+    http: &HttpDownloadClient,
     reason: &'static str,
 ) -> Result<(), DownloadEngineError> {
     let started_at = Instant::now();
@@ -5280,6 +5446,8 @@ async fn run_single_stream_task(
         event = "download.single_stream.started",
         %correlation_id,
         ?task_id,
+        proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+        proxy_source = http.network_proxy_source(),
         reason,
         expected_bytes = probe.total_bytes.unwrap_or_default(),
         "single-stream transfer started"
@@ -5287,8 +5455,7 @@ async fn run_single_stream_task(
     let mut attempt = 1_u32;
     let outcome = loop {
         let progress_inner = Arc::clone(inner);
-        let outcome = inner
-            .http
+        let outcome = http
             .prepare_download(request, probe, task_id, control, move |progress| {
                 publish_transfer_progress(
                     &progress_inner,
@@ -5367,12 +5534,14 @@ async fn run_single_stream_task(
                     task: Box::new(state.task.clone()),
                 });
             }
-            inner.http.commit_prepared(ready).await?;
+            http.commit_prepared(ready).await?;
             commit_completed_state(inner, task_id)?;
             info!(
                 event = "download.single_stream.completed",
                 %correlation_id,
                 ?task_id,
+                proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+                proxy_source = http.network_proxy_source(),
                 reason,
                 downloaded_bytes,
                 elapsed_ms = started_at.elapsed().as_millis(),
@@ -5399,6 +5568,8 @@ async fn run_single_stream_task(
                 event = "download.single_stream.paused",
                 %correlation_id,
                 ?task_id,
+                proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+                proxy_source = http.network_proxy_source(),
                 reason,
                 downloaded_bytes,
                 elapsed_ms = started_at.elapsed().as_millis(),
@@ -5423,6 +5594,8 @@ async fn run_single_stream_task(
                 event = "download.single_stream.cancelled",
                 %correlation_id,
                 ?task_id,
+                proxy_mode = proxy_mode_name(http.network_proxy_mode()),
+                proxy_source = http.network_proxy_source(),
                 reason,
                 downloaded_bytes,
                 elapsed_ms = started_at.elapsed().as_millis(),
@@ -5442,6 +5615,7 @@ type SegmentTransferResult = (
 fn spawn_segment_transfer(
     transfers: &mut tokio::task::JoinSet<SegmentTransferResult>,
     inner: &Arc<DownloadEngineInner>,
+    http: &HttpDownloadClient,
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
     request: &DownloadRequest,
@@ -5456,7 +5630,7 @@ fn spawn_segment_transfer(
     use_if_range: bool,
     segment: DownloadSegment,
 ) -> DownloadSegmentTransferControl {
-    let http = inner.http.clone();
+    let http = http.clone();
     let request = request.clone();
     let probe = probe.clone();
     let artifact = artifact.clone();
@@ -5588,6 +5762,7 @@ async fn run_segmented_task(
     request: &DownloadRequest,
     probe: &DownloadProbe,
     control: &DownloadTransferControl,
+    http: &HttpDownloadClient,
     temporary_path: PathBuf,
     final_path: PathBuf,
 ) -> Result<(), DownloadEngineError> {
@@ -5743,6 +5918,7 @@ async fn run_segmented_task(
         let worker_control = spawn_segment_transfer(
             &mut transfers,
             inner,
+            http,
             task_id,
             correlation_id,
             request,
@@ -6001,6 +6177,7 @@ async fn run_segmented_task(
                                 let worker_control = spawn_segment_transfer(
                                     &mut transfers,
                                     inner,
+                                    http,
                                     task_id,
                                     correlation_id,
                                     request,
@@ -6031,6 +6208,7 @@ async fn run_segmented_task(
                             let worker_control = spawn_segment_transfer(
                                 &mut transfers,
                                 inner,
+                                http,
                                 task_id,
                                 correlation_id,
                                 request,
@@ -6079,6 +6257,7 @@ async fn run_segmented_task(
             let worker_control = spawn_segment_transfer(
                 &mut transfers,
                 inner,
+                http,
                 task_id,
                 correlation_id,
                 request,
@@ -6202,6 +6381,7 @@ async fn run_segmented_task(
                 request,
                 probe,
                 control,
+                http,
                 temporary_path,
                 final_path,
             ))
@@ -6237,6 +6417,7 @@ async fn run_segmented_task(
                 request,
                 &fallback_probe,
                 control,
+                http,
                 "range_validation_fallback",
             )
             .await;
@@ -6277,14 +6458,12 @@ async fn run_segmented_task(
             task: Box::new(state.task.clone()),
         });
     }
-    inner
-        .http
-        .commit_prepared(PreparedDownload {
-            temporary_path,
-            final_path,
-            downloaded_bytes: total_bytes,
-        })
-        .await?;
+    http.commit_prepared(PreparedDownload {
+        temporary_path,
+        final_path,
+        downloaded_bytes: total_bytes,
+    })
+    .await?;
     commit_completed_state(inner, task_id)?;
     Ok(())
 }
@@ -6490,6 +6669,8 @@ fn record_failure(
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
     elapsed: Duration,
+    proxy_mode: &'static str,
+    proxy_source: &'static str,
     error: DownloadEngineError,
 ) {
     let Ok(mut tasks) = inner.tasks.lock() else {
@@ -6503,6 +6684,8 @@ fn record_failure(
         event = "download.task.failed",
         %correlation_id,
         ?task_id,
+        proxy_mode,
+        proxy_source,
         fault_code = ?fault.code,
         retryable = fault.retryable,
         native_error = error.native_os_error().unwrap_or_default(),
@@ -6923,6 +7106,8 @@ pub enum DownloadEngineError {
     #[error(transparent)]
     Http(#[from] HttpDownloadError),
     #[error(transparent)]
+    NetworkPolicy(#[from] NetworkPolicyError),
+    #[error(transparent)]
     Segment(#[from] DownloadSegmentError),
     #[error(transparent)]
     TransferPlan(#[from] TransferPlanError),
@@ -7047,6 +7232,7 @@ impl DownloadEngineError {
             }
             Self::ResourceChanged(_) => (DownloadFaultCode::Protocol, false),
             Self::Http(_) => (DownloadFaultCode::Protocol, false),
+            Self::NetworkPolicy(_) => (DownloadFaultCode::Unavailable, false),
             Self::Runtime(_) | Self::WaitTimeout(_) => (DownloadFaultCode::Unavailable, true),
         };
         DownloadFault {

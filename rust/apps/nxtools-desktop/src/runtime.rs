@@ -20,6 +20,7 @@ use nxtools_finder::{FinderCatalog, default_application_roots};
 use nxtools_ipc::{
     INDEXER_PIPE_NAME, connect_local_indexer_pipe, read_bounded_sync_frame, write_envelope_sync,
 };
+use nxtools_network::NetworkPolicy;
 use nxtools_protocol::{Envelope, Hello, IndexerCommand, IndexerEvent, Message};
 use tracing::{error, info, warn};
 
@@ -91,6 +92,7 @@ pub struct DesktopRuntime {
     pub clipboard_asset_dir: Option<PathBuf>,
     pub finder_catalog: Option<FinderCatalog>,
     pub download_engine: Option<DownloadEngine>,
+    pub network_policy: NetworkPolicy,
     pub download_default_directory: PathBuf,
     pub download_database_path: PathBuf,
     pub ffmpeg_install_directory: PathBuf,
@@ -127,8 +129,13 @@ impl DesktopRuntime {
         .context("failed to initialize the application launcher catalog")?;
         let download_database_path = paths.data_dir.join("downloads.sqlite3");
         let ffmpeg_install_directory = paths.data_dir.join("tools").join("ffmpeg");
-        let download_engine = DownloadEngine::open(download_database_path.clone())
-            .context("failed to initialize the download engine")?;
+        let network_policy = NetworkPolicy::new(config.network.clone())
+            .context("failed to initialize the product network policy")?;
+        let download_engine = DownloadEngine::open_with_network_policy(
+            download_database_path.clone(),
+            network_policy.clone(),
+        )
+        .context("failed to initialize the download engine")?;
         start_download_host(download_engine.clone())?;
         let download_default_directory = std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
@@ -151,6 +158,7 @@ impl DesktopRuntime {
             clipboard_asset_dir: Some(clipboard_asset_dir),
             finder_catalog: Some(finder_catalog),
             download_engine: Some(download_engine),
+            network_policy,
             download_default_directory,
             download_database_path,
             ffmpeg_install_directory,
@@ -166,8 +174,14 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
     let paths = AppPaths::discover()?;
     let _instance = SingleInstanceGuard::acquire_with_timeout(&paths, "desktop", instance_wait)?;
     let _log_guard = init_file_logging(&paths, "download-host")?;
-    let engine = DownloadEngine::open(paths.data_dir.join("downloads.sqlite3"))
-        .context("failed to initialize the background download engine")?;
+    let config = AppConfig::load_or_create(&paths)?;
+    let network_policy = NetworkPolicy::new(config.network)
+        .context("failed to initialize the background network policy")?;
+    let engine = DownloadEngine::open_with_network_policy(
+        paths.data_dir.join("downloads.sqlite3"),
+        network_policy,
+    )
+    .context("failed to initialize the background download engine")?;
     let background_events = engine
         .take_event_receiver()
         .context("failed to attach the background engine event drain")?;

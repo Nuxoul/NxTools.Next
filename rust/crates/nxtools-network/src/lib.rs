@@ -1,0 +1,204 @@
+use std::sync::{Arc, RwLock};
+
+use nxtools_core::{NetworkProxyMode, NetworkSettings};
+use reqwest::{Client, ClientBuilder};
+use thiserror::Error;
+
+/// Product-wide outbound HTTP policy.
+///
+/// Consumers freeze an immutable snapshot at the start of an operation. Updating the policy only
+/// changes snapshots created afterwards, so one operation cannot mix routes while it is running.
+#[derive(Clone)]
+pub struct NetworkPolicy {
+    settings: Arc<RwLock<NetworkSettings>>,
+}
+
+impl NetworkPolicy {
+    pub fn new(mut settings: NetworkSettings) -> Result<Self, NetworkPolicyError> {
+        normalize_and_validate(&mut settings)?;
+        Ok(Self {
+            settings: Arc::new(RwLock::new(settings)),
+        })
+    }
+
+    pub fn update(&self, mut settings: NetworkSettings) -> Result<(), NetworkPolicyError> {
+        normalize_and_validate(&mut settings)?;
+        *self
+            .settings
+            .write()
+            .map_err(|_| NetworkPolicyError::LockPoisoned)? = settings;
+        Ok(())
+    }
+
+    pub fn snapshot(&self) -> Result<NetworkOperationSnapshot, NetworkPolicyError> {
+        let settings = self
+            .settings
+            .read()
+            .map_err(|_| NetworkPolicyError::LockPoisoned)?
+            .clone();
+        NetworkOperationSnapshot::from_settings(settings)
+    }
+}
+
+#[derive(Clone)]
+pub struct NetworkOperationSnapshot {
+    route: NetworkRoute,
+}
+
+#[derive(Clone)]
+enum NetworkRoute {
+    Direct,
+    System,
+    ManualHttp { endpoint: String },
+}
+
+impl NetworkOperationSnapshot {
+    fn from_settings(settings: NetworkSettings) -> Result<Self, NetworkPolicyError> {
+        let route = match settings.proxy.mode {
+            NetworkProxyMode::Direct => NetworkRoute::Direct,
+            NetworkProxyMode::System => NetworkRoute::System,
+            NetworkProxyMode::ManualHttp => NetworkRoute::ManualHttp {
+                endpoint: manual_proxy_endpoint(&settings.proxy.host, settings.proxy.port),
+            },
+        };
+        Ok(Self { route })
+    }
+
+    pub const fn mode(&self) -> NetworkProxyMode {
+        match self.route {
+            NetworkRoute::Direct => NetworkProxyMode::Direct,
+            NetworkRoute::System => NetworkProxyMode::System,
+            NetworkRoute::ManualHttp { .. } => NetworkProxyMode::ManualHttp,
+        }
+    }
+
+    pub const fn source(&self) -> &'static str {
+        match self.route {
+            NetworkRoute::Direct => "none",
+            NetworkRoute::System => "system",
+            NetworkRoute::ManualHttp { .. } => "configured",
+        }
+    }
+
+    pub fn build_client(&self, builder: ClientBuilder) -> Result<Client, NetworkPolicyError> {
+        let builder = match &self.route {
+            NetworkRoute::Direct => builder.no_proxy(),
+            NetworkRoute::System => builder,
+            NetworkRoute::ManualHttp { endpoint } => builder
+                .no_proxy()
+                .proxy(reqwest::Proxy::all(endpoint).map_err(NetworkPolicyError::Client)?),
+        };
+        builder.build().map_err(NetworkPolicyError::Client)
+    }
+}
+
+pub const fn proxy_mode_name(mode: NetworkProxyMode) -> &'static str {
+    match mode {
+        NetworkProxyMode::Direct => "direct",
+        NetworkProxyMode::System => "system",
+        NetworkProxyMode::ManualHttp => "manual_http",
+    }
+}
+
+fn normalize_and_validate(settings: &mut NetworkSettings) -> Result<(), NetworkPolicyError> {
+    settings.normalize();
+    settings
+        .validate()
+        .map_err(NetworkPolicyError::InvalidSettings)
+}
+
+fn manual_proxy_endpoint(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("http://[{host}]:{port}")
+    } else {
+        format!("http://{host}:{port}")
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum NetworkPolicyError {
+    #[error("invalid network settings: {0}")]
+    InvalidSettings(String),
+    #[error("network policy lock is poisoned")]
+    LockPoisoned,
+    #[error("could not build HTTP client: {0}")]
+    Client(#[source] reqwest::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    use nxtools_core::{NetworkProxySettings, NetworkSettings};
+
+    use super::*;
+
+    #[test]
+    fn operation_snapshot_is_immutable_across_policy_updates() {
+        let policy = NetworkPolicy::new(NetworkSettings::default()).expect("direct policy");
+        let active = policy.snapshot().expect("active snapshot");
+
+        policy
+            .update(NetworkSettings {
+                proxy: NetworkProxySettings {
+                    mode: NetworkProxyMode::ManualHttp,
+                    host: "127.0.0.1".into(),
+                    port: 3128,
+                },
+            })
+            .expect("update policy");
+        let next = policy.snapshot().expect("next snapshot");
+
+        assert_eq!(active.mode(), NetworkProxyMode::Direct);
+        assert_eq!(next.mode(), NetworkProxyMode::ManualHttp);
+    }
+
+    #[tokio::test]
+    async fn manual_snapshot_routes_a_real_http_request_through_the_proxy() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind proxy fixture");
+        let address = listener.local_addr().expect("proxy fixture address");
+        let fixture = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept proxied request");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("set fixture timeout");
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).expect("read proxied request");
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(
+                request.starts_with("GET http://example.invalid/network-policy HTTP/1.1"),
+                "proxy must receive the absolute request target: {request}"
+            );
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nproxied",
+                )
+                .expect("write proxy response");
+        });
+        let policy = NetworkPolicy::new(NetworkSettings {
+            proxy: NetworkProxySettings {
+                mode: NetworkProxyMode::ManualHttp,
+                host: address.ip().to_string(),
+                port: address.port(),
+            },
+        })
+        .expect("manual policy");
+        let response = policy
+            .snapshot()
+            .expect("manual snapshot")
+            .build_client(
+                reqwest::Client::builder()
+                    .connect_timeout(Duration::from_secs(2))
+                    .read_timeout(Duration::from_secs(2)),
+            )
+            .expect("proxied client")
+            .get("http://example.invalid/network-policy")
+            .send()
+            .await
+            .expect("proxied request");
+        assert_eq!(response.bytes().await.expect("response body"), "proxied");
+        fixture.join().expect("join proxy fixture");
+    }
+}

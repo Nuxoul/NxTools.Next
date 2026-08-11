@@ -23,7 +23,7 @@ use gpui_component::select::{Select, SelectState};
 use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
     AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
-    DownloadTaskbarProgressOverlaySettings,
+    DownloadTaskbarProgressOverlaySettings, NetworkProxyMode,
 };
 #[cfg(test)]
 use nxtools_download::FfmpegInstallSource;
@@ -103,6 +103,8 @@ impl FfmpegInstallViewState {
 struct PendingFfmpegInstall {
     correlation_id: uuid::Uuid,
     started_at: Instant,
+    network_proxy_mode: NetworkProxyMode,
+    network_proxy_source: &'static str,
     control: PendingFfmpegInstallControl,
 }
 
@@ -1227,6 +1229,8 @@ impl DownloadApplication {
             if let Some(operation) = self.ffmpeg_install_operation_override.take() {
                 Ok((
                     operation.correlation_id,
+                    NetworkProxyMode::Direct,
+                    "none",
                     PendingFfmpegInstallControl::Test(operation.cancelled),
                     operation.progress,
                     operation.completion,
@@ -1241,6 +1245,8 @@ impl DownloadApplication {
                     .map(|operation| {
                         (
                             operation.correlation_id,
+                            operation.network_proxy_mode,
+                            operation.network_proxy_source,
                             PendingFfmpegInstallControl::Core(operation.control),
                             operation.progress,
                             operation.completion,
@@ -1258,18 +1264,29 @@ impl DownloadApplication {
             .map(|operation| {
                 (
                     operation.correlation_id,
+                    operation.network_proxy_mode,
+                    operation.network_proxy_source,
                     PendingFfmpegInstallControl::Core(operation.control),
                     operation.progress,
                     operation.completion,
                 )
             });
-        let (correlation_id, control, progress, completion) = match operation_result {
+        let (
+            correlation_id,
+            network_proxy_mode,
+            network_proxy_source,
+            control,
+            progress,
+            completion,
+        ) = match operation_result {
             Ok(operation) => operation,
             Err(error) => {
                 let message = format!("无法启动 FFmpeg 自动下载：{error}");
                 warn!(
                     event = "download.ffmpeg_install.failed",
                     %correlation_id,
+                    proxy_mode = "unavailable",
+                    proxy_source = "policy",
                     phase = "connecting",
                     failure_kind = "start_rejected",
                     downloaded_bytes = 0,
@@ -1291,6 +1308,8 @@ impl DownloadApplication {
         self.pending_ffmpeg_install = Some(PendingFfmpegInstall {
             correlation_id,
             started_at,
+            network_proxy_mode,
+            network_proxy_source,
             control,
         });
         self.set_ffmpeg_install_state(
@@ -1401,6 +1420,8 @@ impl DownloadApplication {
             return;
         }
         let elapsed_ms = pending.started_at.elapsed().as_millis();
+        let proxy_mode = nxtools_network::proxy_mode_name(pending.network_proxy_mode);
+        let proxy_source = pending.network_proxy_source;
         match result {
             Ok(installation) => {
                 if let Err(message) = self.commit_ffmpeg_installation(correlation_id, &installation)
@@ -1408,6 +1429,8 @@ impl DownloadApplication {
                     warn!(
                         event = "download.ffmpeg_install.failed",
                         %correlation_id,
+                        proxy_mode,
+                        proxy_source,
                         phase = "configuring",
                         failure_kind = "configuration",
                         downloaded_bytes = installation.downloaded_bytes,
@@ -1431,6 +1454,8 @@ impl DownloadApplication {
                 info!(
                     event = "download.ffmpeg_install.completed",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     source = installation.source.as_str(),
                     downloaded_bytes = installation.downloaded_bytes,
                     elapsed_ms,
@@ -1454,6 +1479,8 @@ impl DownloadApplication {
                 info!(
                     event = "download.ffmpeg_install.cancelled",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     phase = error.phase().as_str(),
                     downloaded_bytes,
                     elapsed_ms,
@@ -1467,6 +1494,8 @@ impl DownloadApplication {
                 warn!(
                     event = "download.ffmpeg_install.failed",
                     %correlation_id,
+                    proxy_mode,
+                    proxy_source,
                     phase = error.phase().as_str(),
                     failure_kind = error.failure_kind(),
                     native_error_code = error.native_error_code(),
@@ -5509,7 +5538,7 @@ fn download_settings_progress_mode(
         .into_any_element()
 }
 
-fn download_settings_section(
+pub(crate) fn download_settings_section(
     theme: Theme,
     title: &'static str,
     rows: Vec<AnyElement>,
@@ -5539,7 +5568,7 @@ fn download_settings_section(
         .into_any_element()
 }
 
-fn download_settings_row(
+pub(crate) fn download_settings_row(
     theme: Theme,
     title: &'static str,
     description: impl Into<gpui::SharedString>,
@@ -8011,7 +8040,7 @@ fn download_window_metric(theme: Theme, label: &'static str, value: String) -> i
         )
 }
 
-fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoElement {
+pub(crate) fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoElement {
     div()
         .h(px(34.0))
         .pl(px(14.0))
@@ -8079,7 +8108,7 @@ fn download_settings_titlebar(
         )
 }
 
-fn download_primary_button_variant(theme: Theme, cx: &gpui::App) -> ButtonCustomVariant {
+pub(crate) fn download_primary_button_variant(theme: Theme, cx: &gpui::App) -> ButtonCustomVariant {
     ButtonCustomVariant::new(cx)
         .color(theme.accent.into())
         .foreground(theme.accent_text.into())
@@ -8243,6 +8272,7 @@ fn download_input_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use gpui::{AppContext, Modifiers, TestAppContext};
 
     #[test]

@@ -64,6 +64,14 @@ checkpoints.
 - floating assistant profiles, actions and orchestration;
 - settings, migrations, storage, telemetry and lifecycle.
 
+`nxtools-network` is the product-level outbound HTTP policy module. The desktop runtime owns one
+shared instance initialized from `AppConfig.network`; concrete consumers such as the download
+engine receive clones of that instance and freeze an immutable snapshot at operation start.
+Clipboard and quick-launch can opt in for future real outbound HTTP operations without depending
+on the download domain. Local IPC, Native Messaging, indexing, Shell and Windows-adapter traffic do
+not inherit the proxy. The global GPUI settings controller persists canonical config before it
+publishes the next live policy, so a failed save cannot affect a concurrent operation.
+
 ## C# owns
 
 - clipboard listener, format extraction, write-back and OLE interaction;

@@ -49,6 +49,8 @@ pub struct AppConfig {
     pub theme: ThemePreference,
     pub platform_pipe_name: String,
     #[serde(default)]
+    pub network: NetworkSettings,
+    #[serde(default)]
     pub clipboard_panel: ClipboardPanelSize,
     #[serde(default)]
     pub clipboard: ClipboardSettings,
@@ -63,12 +65,92 @@ impl Default for AppConfig {
         Self {
             theme: ThemePreference::Dark,
             platform_pipe_name: "nxtools-next-platform-v1".into(),
+            network: NetworkSettings::default(),
             clipboard_panel: ClipboardPanelSize::default(),
             clipboard: ClipboardSettings::default(),
             quick_launch: QuickLaunchSettings::default(),
             download: DownloadSettings::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct NetworkSettings {
+    #[serde(default)]
+    pub proxy: NetworkProxySettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NetworkProxySettings {
+    #[serde(default)]
+    pub mode: NetworkProxyMode,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default = "default_network_proxy_port")]
+    pub port: u16,
+}
+
+impl Default for NetworkProxySettings {
+    fn default() -> Self {
+        Self {
+            mode: NetworkProxyMode::Direct,
+            host: String::new(),
+            port: default_network_proxy_port(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkProxyMode {
+    #[default]
+    Direct,
+    System,
+    ManualHttp,
+}
+
+const fn default_network_proxy_port() -> u16 {
+    8080
+}
+
+impl NetworkSettings {
+    pub fn normalize(&mut self) {
+        self.proxy.host = self.proxy.host.trim().to_owned();
+    }
+
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        if self.proxy.mode != NetworkProxyMode::ManualHttp {
+            return Ok(());
+        }
+        let host = self.proxy.host.as_str();
+        if host.is_empty() {
+            return Err("手动代理缺少服务器地址".into());
+        }
+        if !valid_proxy_host(host) {
+            return Err("手动代理服务器地址无效".into());
+        }
+        if self.proxy.port == 0 {
+            return Err("手动代理端口必须在 1–65535 之间".into());
+        }
+        Ok(())
+    }
+}
+
+fn valid_proxy_host(host: &str) -> bool {
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    !host.is_empty()
+        && host.len() <= 253
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -634,6 +716,7 @@ impl AppConfig {
     }
 
     fn normalize(&mut self) {
+        self.network.normalize();
         self.clipboard_panel =
             ClipboardPanelSize::clamped(self.clipboard_panel.width, self.clipboard_panel.height);
         self.clipboard.normalize();
@@ -650,6 +733,15 @@ impl AppConfig {
         settings.normalize();
         let mut config = Self::load_from(path)?;
         config.download = settings;
+        config.save_to(path)?;
+        Ok(config)
+    }
+
+    pub fn update_network_settings(path: &Path, mut settings: NetworkSettings) -> Result<Self> {
+        settings.normalize();
+        settings.validate().map_err(anyhow::Error::msg)?;
+        let mut config = Self::load_from(path)?;
+        config.network = settings;
         config.save_to(path)?;
         Ok(config)
     }
@@ -946,6 +1038,78 @@ mod tests {
         assert!(config.download.ffmpeg_executable_path.is_empty());
         assert!(config.download.show_progress_window);
         assert!(!config.download.show_completion_window);
+    }
+
+    #[test]
+    fn legacy_config_receives_safe_direct_network_defaults() {
+        let config: AppConfig =
+            serde_json::from_str(r#"{"theme":"dark","platform_pipe_name":"legacy-pipe"}"#)
+                .expect("legacy config must remain readable");
+
+        assert_eq!(config.network.proxy.mode, NetworkProxyMode::Direct);
+        assert!(config.network.proxy.host.is_empty());
+        assert_eq!(config.network.proxy.port, 8080);
+    }
+
+    #[test]
+    fn manual_proxy_validation_is_bounded_and_normalized() {
+        let mut settings = NetworkSettings {
+            proxy: NetworkProxySettings {
+                mode: NetworkProxyMode::ManualHttp,
+                host: "  proxy.example.test  ".into(),
+                port: 3128,
+            },
+        };
+
+        settings.normalize();
+
+        assert_eq!(settings.proxy.host, "proxy.example.test");
+        assert!(settings.validate().is_ok());
+
+        settings.proxy.host = "bad host".into();
+        assert!(settings.validate().is_err());
+        settings.proxy.host = "http://proxy.example.test".into();
+        assert!(settings.validate().is_err());
+        settings.proxy.host = "proxy.example.test".into();
+        settings.proxy.port = 0;
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn updating_network_settings_preserves_module_configuration() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-network-settings-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("create settings directory");
+        let path = directory.join("config.json");
+        let mut original = AppConfig::default();
+        original.quick_launch.enabled = false;
+        original.download.default_connection_limit = 12;
+        original.save_to(&path).expect("save original config");
+
+        let updated = AppConfig::update_network_settings(
+            &path,
+            NetworkSettings {
+                proxy: NetworkProxySettings {
+                    mode: NetworkProxyMode::ManualHttp,
+                    host: "proxy.example.test".into(),
+                    port: 8081,
+                },
+            },
+        )
+        .expect("update only network settings");
+
+        assert_eq!(updated.network.proxy.mode, NetworkProxyMode::ManualHttp);
+        assert_eq!(updated.network.proxy.host, "proxy.example.test");
+        assert_eq!(updated.network.proxy.port, 8081);
+        assert!(!updated.quick_launch.enabled);
+        assert_eq!(updated.download.default_connection_limit, 12);
+        fs::remove_dir_all(directory).expect("remove settings directory");
     }
 
     #[test]

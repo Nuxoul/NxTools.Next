@@ -1,6 +1,6 @@
 # Download manager reference implementation index
 
-Last verified: 2026-07-28.
+Last verified: 2026-08-11.
 
 ## Scope and authority
 
@@ -19,8 +19,9 @@ architecture and failure scenarios, but its AGPL code must not enter NxTools.Nex
 
 - `rust/apps/nxtools-desktop/src/main_window.rs::render_downloads` renders the Phase 1A real task list,
   actions, progress and task details.
-- `rust/crates/nxtools-download` owns the domain/message/storage contracts, deterministic HTTP fixture
-  and the Phase 1A single-connection HTTP execution path.
+- `rust/crates/nxtools-network` owns the product-wide validated network policy and immutable
+  per-operation route snapshots. `rust/crates/nxtools-download` consumes that policy and owns the
+  download domain/message/storage contracts, deterministic HTTP fixture and transfer execution.
 - Desktop and CLI call the same versioned command/snapshot seam. The engine retains one bounded
   primary desktop stream and can attach additional bounded event subscribers for IPC watch clients.
 - `rust/crates/nxtools-download-ipc` owns the current-user named-pipe transport, handshake and
@@ -1635,6 +1636,54 @@ Reverified on 2026-08-11 before the combined real-media acceptance gate:
   must match the requested path, remain available for manual playback, and may be checked for
   audio/video plus the fixture-specific duration range with a user-supplied `ffprobe.exe`.
 
+### Stage 6 product-wide proxy findings
+
+Reverified on 2026-08-11 before the first Stage 6 vertical slice:
+
+- AB Download Manager was inspected first at
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/proxy/{Proxy.kt,ProxyManager.kt}`,
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/ProxyDatastoreStorage.kt`,
+  `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/{proxy/Proxy.kt,OkHttpHttpDownloaderClient.kt}`,
+  `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/proxy/DesktopSystemProxySelectorProvider.kt`
+  and `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ProxyConfigurableRenderer.kt`.
+  It persists one application proxy policy, exposes Direct/System/Manual/PAC modes, validates a
+  nonempty manual host and a port in `1..65535`, applies a strategy for each requested URL, and
+  injects desktop system-proxy discovery behind a provider seam. Manual HTTP authentication is
+  attached by the HTTP client; system and PAC selection remain desktop-specific infrastructure.
+- The useful invariants are one shared policy, explicit direct/system/manual selection, bounded
+  validation, per-request strategy resolution and an injected system-proxy boundary. NxTools.Next
+  does not adopt ABDM's process-global Java SOCKS authenticator, mutable live-policy lookup during
+  an operation, PAC mode, or plaintext persisted credentials in the first slice.
+- Old NxTools was then rechecked at `Models/AppState.cs`, `Services/AppStateStore.cs`,
+  `ViewModels/MainWindowViewModel.cs` and `Services/DownloadManagerService.cs`. Its global settings
+  persist Off/Auto/Custom plus protocol, host, port, username and password; a task snapshots proxy
+  values into its runtime configuration and HTTP clients are cached by proxy plus certificate
+  policy. This supplies the requested product compatibility, but its URL/Header/proxy diagnostics,
+  plaintext secret persistence and silent legacy-TLS fallback are not retained.
+- The NxTools.Next decision is one product-level `AppConfig.network` owned by Rust and rendered in
+  a global GPUI settings surface, separate from download-only Header/Cookie/certificate controls.
+  The independent `nxtools-network::NetworkPolicy` (not the download domain) validates
+  configuration and returns an immutable operation snapshot, so clipboard and quick-launch can
+  opt in without depending on `nxtools-download`. The desktop runtime owns one shared policy and
+  injects it into current outbound consumers. A settings save persists canonical `AppConfig`
+  before publishing the new live value; a rejected persistence write therefore cannot leak a
+  tentative route into a concurrently starting operation. Setting changes affect only later
+  operations or an explicit later resume and never mutate an active transfer. Only real outbound
+  HTTP consumers opt in—local IPC, Native Messaging, the MFT indexer and Windows adapter traffic do
+  not use the proxy merely because they belong to a product feature.
+- The first slice supports Direct, Windows System and Manual HTTP proxy modes. PAC and authenticated
+  proxy storage remain unavailable until their Windows discovery/credential-protection boundaries
+  are designed; the UI must not fake either capability. Manual proxy configuration is host plus
+  `1..65535` port, never logs address/path/credentials, and fails validation before an operation is
+  accepted. Diagnostics carry only correlation ID, fixed mode/source, bounded failure kind, native
+  or HTTP code where owned, terminal result and elapsed time.
+- Reqwest 0.13.4's checked-in crate documentation and `system-proxy` feature contract explicitly
+  cover Windows and macOS system proxy settings; the workspace already enables that feature.
+  `System` therefore keeps the builder's automatic system resolver, while Direct calls
+  `ClientBuilder::no_proxy()` and Manual disables automatic resolution before installing its one
+  explicit HTTP proxy. If later Windows acceptance finds a WinINET/WinHTTP mismatch, that becomes a
+  typed C# adapter follow-up rather than a silent fallback to Direct.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
@@ -1643,7 +1692,6 @@ Reverified on 2026-08-11 before the combined real-media acceptance gate:
 
 ## Open research items
 
-- Whether Windows system proxy resolution can remain wholly in Rust or needs one C# discovery command.
 - The final authenticated browser transport: Native Messaging only, or Native Messaging plus a bounded loopback
   channel for large Blob payloads.
 - HLS/DASH shared protocol seam must wait until the HTTP implementation and one media implementation both exist.

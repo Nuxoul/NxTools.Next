@@ -26,6 +26,8 @@ use crate::{
     DownloadRequest, DownloadRequestError, DownloadSegment, DownloadTaskId, ResourceValidator,
     SegmentedArtifact, SegmentedArtifactError, is_safe_windows_file_name,
 };
+use crate::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
+use nxtools_core::{NetworkProxyMode, NetworkSettings};
 
 const PROBE_RANGE: &str = "bytes=0-0";
 const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -34,6 +36,8 @@ const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct HttpDownloadClient {
     client: Client,
     stall_timeout: Duration,
+    network_proxy_mode: NetworkProxyMode,
+    network_proxy_source: &'static str,
     #[cfg(test)]
     injected_artifact_fault: Option<InjectedArtifactFault>,
 }
@@ -44,21 +48,54 @@ impl HttpDownloadClient {
     }
 
     pub fn with_stall_timeout(stall_timeout: Duration) -> Result<Self, HttpDownloadError> {
+        let policy = NetworkPolicy::new(NetworkSettings::default())?;
+        let snapshot = policy.snapshot()?;
+        Self::with_stall_timeout_and_network(stall_timeout, &snapshot)
+    }
+
+    pub fn with_stall_timeout_and_network(
+        stall_timeout: Duration,
+        network: &NetworkOperationSnapshot,
+    ) -> Result<Self, HttpDownloadError> {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
-        let client = Client::builder()
-            .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .read_timeout(stall_timeout)
-            .connect_timeout(stall_timeout)
-            .build()?;
+        let client = network.build_client(
+            Client::builder()
+                .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
+                .redirect(reqwest::redirect::Policy::limited(10))
+                .read_timeout(stall_timeout)
+                .connect_timeout(stall_timeout),
+        )?;
         Ok(Self {
             client,
             stall_timeout,
+            network_proxy_mode: network.mode(),
+            network_proxy_source: network.source(),
             #[cfg(test)]
             injected_artifact_fault: None,
         })
+    }
+
+    pub const fn network_proxy_mode(&self) -> NetworkProxyMode {
+        self.network_proxy_mode
+    }
+
+    pub const fn network_proxy_source(&self) -> &'static str {
+        self.network_proxy_source
+    }
+
+    pub(crate) fn for_network_snapshot(
+        &self,
+        network: &NetworkOperationSnapshot,
+    ) -> Result<Self, HttpDownloadError> {
+        #[allow(unused_mut)]
+        let mut rebuilt = Self::with_stall_timeout_and_network(self.stall_timeout, network)?;
+        #[cfg(test)]
+        {
+            rebuilt.injected_artifact_fault = self.injected_artifact_fault;
+        }
+        Ok(rebuilt)
     }
 
     pub async fn probe(
@@ -1933,6 +1970,8 @@ pub enum HttpDownloadError {
     InvalidRequest(#[from] DownloadRequestError),
     #[error(transparent)]
     Client(#[from] reqwest::Error),
+    #[error(transparent)]
+    NetworkPolicy(#[from] NetworkPolicyError),
     #[error("HTTP probe returned status {0}")]
     Status(u16),
     #[error("download request does not contain a safe file name")]
@@ -2061,6 +2100,7 @@ impl HttpDownloadError {
             Self::Client(error) => {
                 error.is_timeout() || error.is_connect() || error.is_body() || error.is_request()
             }
+            Self::NetworkPolicy(_) => false,
             Self::Status(status) | Self::RangeNotHonored { status } => {
                 matches!(*status, 408 | 425 | 429 | 500..=599)
             }
@@ -2106,6 +2146,7 @@ impl HttpDownloadError {
         match self {
             Self::InvalidRequest(_) => "invalid_request",
             Self::Client(_) => "client",
+            Self::NetworkPolicy(_) => "network_policy",
             Self::Status(_) => "status",
             Self::MissingFileName => "missing_file_name",
             Self::DestinationExists(_) => "destination_exists",

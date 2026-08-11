@@ -4,6 +4,45 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-RGWINPATH] powershell_rg_literal_wildcard_path
+
+**Logged**: 2026-08-11T17:02:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A PowerShell `rg` inspection passed `src/*.rs` as a literal Windows path, producing an invalid-path
+error after returning only partial matches from the preceding explicit files.
+
+### Error
+
+```text
+rg: rust/apps/nxtools-desktop/src/*.rs: 文件名、目录名或卷标语法不正确 (os error 123)
+```
+
+### Context
+
+- PowerShell did not expand the wildcard into file arguments for this native command.
+- The failed output was not treated as a complete settings-surface inventory.
+
+### Suggested Fix
+
+Pass the containing directory to `rg` and constrain file types with `-g '*.rs'`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-desktop/src`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T17:03:00+08:00
+- **Notes**: Re-ran against the source directory with an `rg` glob filter.
+
+---
+
 ## [ERR-20260811-RUSTEXACT] cargo_test_exact_requires_module_path
 
 **Logged**: 2026-08-11T16:24:00+08:00
@@ -2038,7 +2077,7 @@ repeated. Do not change production transfer logic without a repeatable red signa
 
 - Reproducible: no
 - Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
-- Recurrence-Count: 4
+- Recurrence-Count: 5
 - Last-Seen: 2026-07-30
 
 ### Resolution
@@ -2089,7 +2128,7 @@ single-job, non-incremental, high-codegen-unit environment.
 - Reproducible: yes
 - Related Files: `AGENTS.md`
 - Recurrence-Count: 2
-- Last-Seen: 2026-08-10
+- Last-Seen: 2026-08-11
 
 ### Resolution
 
@@ -3109,6 +3148,8 @@ The same pattern later recurred with `src/*.rs` while entering the HLS transfer 
 search passed `src` as the directory and relied on ripgrep's recursive traversal.
 The same wildcard-path mistake then recurred while checking a Cargo registry source directory;
 the corrected form passed the concrete registry directory and selected packages with `-g`.
+It recurred again while inspecting workspace Cargo manifests using `rust/crates/*/Cargo.toml` and
+`rust/apps/*/Cargo.toml`; pass the repository directory and filter with `-g 'Cargo.toml'` instead.
 
 ---
 
@@ -7526,3 +7567,24 @@ for the final low-memory Windows gate.
 - **Notes**: The fixture now preserves its listener across known transient accept failures; the 61-test serial engine contract passed. A later parallel workspace run still produced three connection-refused failures across DASH, HLS and Range fixtures, so final Windows verification continues to require the documented serial engine-contract gate.
 
 ---
+## 2026-08-11 — ABDM proxy reference package path was inferred incorrectly
+
+- Failed approach: opened proxy reference files using an inferred `shared/app/.../shared/app/...` package path.
+- Symptom: `Get-Content` reported that `Proxy.kt` did not exist.
+- Cause: the actual Kotlin package path is `shared/util/proxy`, while the desktop files use `desktop/app/src/main` rather than an inferred source-set directory.
+- Better approach: when a reference index gives logical names but not exact paths, use a filename-bounded `rg --files ... | rg '(ExactName...)$'` lookup once, then record and follow those exact entries.
+
+## 2026-08-11 — Stage 6 verification and patching corrections
+
+- A full-workspace Cargo wrapper was given a tool timeout far shorter than the build. The wrapper
+  exited while child Cargo/rustc processes continued; inspect them first, wait for ownership to end,
+  then rerun once with a full-duration timeout and resumable polling.
+- A GPUI click test tried to locate a component-library `Button` by its internal ID. The node was
+  not present in the debug tree; wrap the button in an explicit `debug_selector` element, matching
+  the established settings tests.
+- A broad multi-hunk `apply_patch` assumed exact function signatures and failed verification. Split
+  cross-cutting signature changes into small patches after reading each current declaration.
+- Moving proxy diagnostics across the FFmpeg wrapper initially declared fixed mode/source in the
+  outer function while logging in the inner source loop; derive boundary metadata in the function
+  that owns the terminal event. Likewise, Rust test submodules without `use super::*` need their own
+  imports when a constructor gains a new product-level entity type.

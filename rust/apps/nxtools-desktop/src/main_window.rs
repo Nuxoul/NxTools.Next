@@ -31,6 +31,7 @@ use tracing::info;
 use crate::clipboard::ClipboardApplication;
 use crate::downloads::DownloadApplication;
 use crate::icons::MaterialIcon;
+use crate::network_settings::NetworkSettingsApplication;
 use crate::notifications::{NOTIFICATION_EXIT_DURATION, NotificationCenter, NotificationLevel};
 use crate::quick_launch::{
     QuickLaunchApplication, QuickLaunchApplicationEvent, QuickLaunchPerformanceSnapshot,
@@ -80,6 +81,7 @@ pub(crate) struct MainWindow {
     clipboard: gpui::WeakEntity<ClipboardApplication>,
     quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
     downloads: gpui::WeakEntity<DownloadApplication>,
+    network_settings: gpui::WeakEntity<NetworkSettingsApplication>,
     notifications: Entity<NotificationCenter>,
     download_search_input: gpui::Entity<InputState>,
     exclusions_input: gpui::Entity<InputState>,
@@ -865,6 +867,7 @@ impl MainWindow {
         clipboard: gpui::WeakEntity<ClipboardApplication>,
         quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
         downloads: gpui::WeakEntity<DownloadApplication>,
+        network_settings: gpui::WeakEntity<NetworkSettingsApplication>,
         notifications: Entity<NotificationCenter>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1037,6 +1040,7 @@ impl MainWindow {
             clipboard,
             quick_launch,
             downloads,
+            network_settings,
             notifications,
             download_search_input,
             exclusions_input,
@@ -1794,6 +1798,25 @@ impl MainWindow {
             )
             .child(modules)
             .child(div().flex_1())
+            .child(
+                Button::new("global-network-settings")
+                    .icon(Icon::new(MaterialIcon::Settings))
+                    .label("全局设置")
+                    .small()
+                    .compact()
+                    .ghost()
+                    .on_click({
+                        let network_settings = self.network_settings.clone();
+                        move |_, _, cx| {
+                            let network_settings = network_settings.clone();
+                            cx.defer(move |cx| {
+                                let _ = network_settings.update(cx, |application, cx| {
+                                    application.open_window(cx);
+                                });
+                            });
+                        }
+                    }),
+            )
             .into_any_element()
     }
 
@@ -5404,6 +5427,7 @@ mod tests {
 
     use crate::clipboard::ClipboardApplication;
     use crate::downloads::{DownloadApplication, DownloadRuntimeContext};
+    use crate::network_settings::NetworkSettingsApplication;
     use crate::notifications::NotificationCenter;
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
@@ -6020,6 +6044,7 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
+                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
                 notifications,
                 window,
                 cx,
@@ -6174,6 +6199,7 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
                 notifications,
                 window,
                 cx,
@@ -6223,6 +6249,7 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
                 notifications,
                 window,
                 cx,
@@ -6317,6 +6344,7 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
+                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
                 notifications,
                 window,
                 cx,
@@ -6465,6 +6493,7 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
+                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
                 notifications,
                 window,
                 cx,

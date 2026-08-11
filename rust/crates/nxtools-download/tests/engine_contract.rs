@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use chrono::{Datelike, Local, Weekday};
+use nxtools_core::{NetworkProxyMode, NetworkProxySettings, NetworkSettings};
 use nxtools_download::{
     BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
     DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
@@ -13,7 +14,7 @@ use nxtools_download::{
     DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestMedia,
     DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState, DownloadStatus,
     DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday, HlsDownloadRequest,
-    RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
+    NetworkPolicy, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
 };
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
 
@@ -1098,6 +1099,74 @@ async fn selected_hls_vod_bounds_parallel_segment_transfers_by_connection_limit(
     assert!(observed <= 3, "HLS exceeded connection limit: {observed}");
     assert_eq!(
         std::fs::read(destination.join("concurrent.ts")).expect("read concurrent HLS artifact"),
+        b"segment-a|segment-b|segment-c|segment-d"
+    );
+}
+
+#[tokio::test]
+async fn live_hls_attempt_keeps_its_proxy_snapshot_after_the_global_policy_changes() {
+    let first_proxy = DeterministicHttpServer::start_concurrent();
+    let next_proxy = DeterministicHttpServer::start();
+    first_proxy.hold_hls_first_segment(true);
+    let policy = NetworkPolicy::new(NetworkSettings {
+        proxy: NetworkProxySettings {
+            mode: NetworkProxyMode::ManualHttp,
+            host: first_proxy.address().ip().to_string(),
+            port: first_proxy.address().port(),
+        },
+    })
+    .expect("first proxy policy");
+    let engine = DownloadEngine::open_in_memory_with_network_policy(policy.clone())
+        .expect("open proxied engine");
+    let destination = tempfile::tempdir().expect("proxy snapshot destination");
+    let mut hls_request = request(&first_proxy, destination.path().to_owned());
+    hls_request.source_url = "http://origin.invalid/hls/master.m3u8".into();
+    hls_request.file_name = Some("proxy-snapshot.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: "http://origin.invalid/hls/concurrent/index.m3u8".into(),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit proxied HLS task");
+    let first_segment_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while first_proxy.hls_first_segment_attempts() == 0 {
+        assert!(
+            tokio::time::Instant::now() < first_segment_deadline,
+            "the first proxy never received the live attempt"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    policy
+        .update(NetworkSettings {
+            proxy: NetworkProxySettings {
+                mode: NetworkProxyMode::ManualHttp,
+                host: next_proxy.address().ip().to_string(),
+                port: next_proxy.address().port(),
+            },
+        })
+        .expect("publish next proxy policy");
+    first_proxy.hold_hls_first_segment(false);
+
+    let terminal = engine
+        .wait_for_terminal(task_id, Duration::from_secs(10))
+        .await
+        .expect("wait for proxied HLS terminal");
+    assert_eq!(terminal.task.status(), DownloadStatus::Completed);
+    assert!(
+        first_proxy.total_requests() >= 5,
+        "playlist and every segment must stay on the attempt's first proxy"
+    );
+    assert_eq!(
+        next_proxy.total_requests(),
+        0,
+        "a settings update must not re-snapshot inside the active attempt"
+    );
+    assert_eq!(
+        std::fs::read(destination.path().join("proxy-snapshot.ts"))
+            .expect("read completed HLS artifact"),
         b"segment-a|segment-b|segment-c|segment-d"
     );
 }

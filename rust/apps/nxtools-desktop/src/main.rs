@@ -5,6 +5,7 @@ mod download_window_lifecycle;
 mod downloads;
 mod icons;
 mod main_window;
+mod network_settings;
 mod notifications;
 mod platform_events;
 mod popup_lifecycle;
@@ -24,6 +25,7 @@ use gpui::{
 };
 use gpui_component::{Root, Theme, ThemeMode};
 use main_window::MainWindow;
+use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
 use platform_events::{
     BrowserStartupWindow, PlatformEventDispatcher, PlatformEventDispatcherGlobal,
@@ -122,6 +124,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
     let download_default_directory = runtime.download_default_directory.clone();
     let download_database_path = runtime.download_database_path.clone();
     let ffmpeg_install_directory = runtime.ffmpeg_install_directory.clone();
+    let network_policy = runtime.network_policy.clone();
     let app_config = runtime.config.clone();
     let config_path = runtime.config_path.clone();
     let log_dir = runtime.log_dir.clone();
@@ -158,6 +161,14 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             component_theme.colors.scrollbar_thumb_hover = visual_theme.text_muted.into();
 
             let notifications = cx.new(|_| NotificationCenter::default());
+            let network_settings = cx.new(|_| {
+                NetworkSettingsApplication::new(
+                    network_policy,
+                    app_config.clone(),
+                    config_path.clone(),
+                    notifications.clone(),
+                )
+            });
             let platform_bridge = Rc::new(platform_bridge);
             let indexer_bridge = Rc::new(indexer_bridge);
             let quick_launch = cx.new(|_| {
@@ -221,6 +232,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let clipboard_for_window = clipboard.downgrade();
             let quick_launch_for_window = quick_launch.downgrade();
             let downloads_for_window = downloads.downgrade();
+            let network_settings_for_window = network_settings.downgrade();
             let startup_started_at = Instant::now();
             let window = cx.open_window(
                 WindowOptions {
@@ -249,6 +261,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                             clipboard_for_window,
                             quick_launch_for_window,
                             downloads_for_window,
+                            network_settings_for_window,
                             notifications.clone(),
                             window,
                             cx,
