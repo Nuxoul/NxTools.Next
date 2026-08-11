@@ -14,7 +14,8 @@ internal sealed record WindowsCommandResult(
     bool Success,
     string? Error = null,
     string? Data = null,
-    bool Fatal = false);
+    bool Fatal = false,
+    int? NativeErrorCode = null);
 
 internal readonly record struct NativeWindowPresentationState(
     bool Exists,
@@ -472,7 +473,14 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             target.Launch();
             return new WindowsCommandResult(true);
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+        catch (Win32Exception error)
+        {
+            return new WindowsCommandResult(
+                false,
+                error.Message,
+                NativeErrorCode: error.NativeErrorCode);
+        }
+        catch (InvalidOperationException error)
         {
             return new WindowsCommandResult(false, error.Message);
         }

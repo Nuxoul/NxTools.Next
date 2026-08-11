@@ -13,9 +13,170 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(3);
 const MUX_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const MAX_CHILD_OUTPUT_BYTES: usize = 4 * 1024;
 
+pub const FFMPEG_GYAN_DOWNLOAD_URL: &str =
+    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+pub const FFMPEG_BTBN_DOWNLOAD_URL: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfmpegResolutionSource {
+    Configured,
+    Environment,
+    Path,
+}
+
+impl FfmpegResolutionSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Configured => "configured",
+            Self::Environment => "environment",
+            Self::Path => "path",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegResolution {
+    pub executable: PathBuf,
+    pub source: FfmpegResolutionSource,
+}
+
 struct BoundedChildOutput {
     bytes: Vec<u8>,
     overflowed: bool,
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+
+    #[test]
+    fn configured_ffmpeg_wins_over_environment_and_path_without_bundle_fallback() {
+        let directory = tempfile::tempdir().expect("create FFmpeg resolution directory");
+        let configured = directory.path().join("configured.exe");
+        let environment = directory.path().join("environment.exe");
+        let path = directory.path().join("path.exe");
+        for candidate in [&configured, &environment, &path] {
+            std::fs::write(candidate, b"fixture").expect("write FFmpeg candidate");
+        }
+
+        let resolved = resolve_ffmpeg_candidates(Some(&configured), Some(&environment), [&path])
+            .expect("configured FFmpeg should resolve");
+
+        assert_eq!(resolved.executable, configured);
+        assert_eq!(resolved.source, FfmpegResolutionSource::Configured);
+    }
+
+    #[test]
+    fn invalid_configured_ffmpeg_falls_back_to_environment_then_path() {
+        let directory = tempfile::tempdir().expect("create FFmpeg fallback directory");
+        let missing = directory.path().join("missing.exe");
+        let environment = directory.path().join("environment.exe");
+        let path = directory.path().join("path.exe");
+        std::fs::write(&environment, b"fixture").expect("write environment candidate");
+        std::fs::write(&path, b"fixture").expect("write PATH candidate");
+
+        let environment_result =
+            resolve_ffmpeg_candidates(Some(&missing), Some(&environment), [&path])
+                .expect("environment FFmpeg should resolve");
+        assert_eq!(
+            environment_result.source,
+            FfmpegResolutionSource::Environment
+        );
+
+        std::fs::remove_file(&environment).expect("remove environment candidate");
+        let path_result = resolve_ffmpeg_candidates(Some(&missing), Some(&environment), [&path])
+            .expect("PATH FFmpeg should resolve");
+        assert_eq!(path_result.source, FfmpegResolutionSource::Path);
+    }
+
+    #[test]
+    fn ffmpeg_resolution_is_missing_when_no_user_or_environment_candidate_exists() {
+        let directory = tempfile::tempdir().expect("create missing FFmpeg directory");
+        assert!(
+            resolve_ffmpeg_candidates(
+                Some(&directory.path().join("configured.exe")),
+                Some(&directory.path().join("environment.exe")),
+                [&directory.path().join("path.exe")],
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn ffmpeg_path_environment_variable_may_point_to_an_install_directory() {
+        let directory = tempfile::tempdir().expect("create FFmpeg environment directory");
+        let executable = directory.path().join(ffmpeg_executable_name());
+        std::fs::write(&executable, b"fixture").expect("write environment FFmpeg executable");
+
+        assert_eq!(
+            ffmpeg_candidate_from_environment(directory.path()),
+            executable
+        );
+    }
+
+    #[test]
+    fn public_download_links_are_https_and_do_not_target_a_bundled_artifact() {
+        assert!(FFMPEG_GYAN_DOWNLOAD_URL.starts_with("https://"));
+        assert!(FFMPEG_BTBN_DOWNLOAD_URL.starts_with("https://"));
+        assert!(!FFMPEG_GYAN_DOWNLOAD_URL.contains("NxTools"));
+        assert!(!FFMPEG_BTBN_DOWNLOAD_URL.contains("NxTools"));
+    }
+
+    #[test]
+    fn public_resolver_observes_ffmpeg_path_and_path_without_application_local_fallback() {
+        const CHILD_MARKER: &str = "NXTOOLS_FFMPEG_RESOLUTION_CHILD";
+        const EXPECTED_SOURCE: &str = "NXTOOLS_FFMPEG_EXPECTED_SOURCE";
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            let actual = resolve_ffmpeg_executable(None).map(|resolution| resolution.source);
+            let expected = match std::env::var(EXPECTED_SOURCE)
+                .expect("child expected source")
+                .as_str()
+            {
+                "environment" => Some(FfmpegResolutionSource::Environment),
+                "path" => Some(FfmpegResolutionSource::Path),
+                "missing" => None,
+                value => panic!("unexpected child source {value}"),
+            };
+            assert_eq!(actual, expected);
+            return;
+        }
+
+        let directory = tempfile::tempdir().expect("create public FFmpeg resolver directory");
+        let executable = directory.path().join(ffmpeg_executable_name());
+        std::fs::write(&executable, b"fixture").expect("write public resolver fixture");
+        let current_test = std::env::current_exe().expect("locate current test process");
+        let test_name = "media::resolution_tests::public_resolver_observes_ffmpeg_path_and_path_without_application_local_fallback";
+        let run_child =
+            |child: &Path, expected: &str, ffmpeg_path: Option<&Path>, path: Option<&Path>| {
+                let mut command = std::process::Command::new(child);
+                command
+                    .args(["--exact", test_name, "--nocapture"])
+                    .env(CHILD_MARKER, "1")
+                    .env(EXPECTED_SOURCE, expected)
+                    .env_remove("FFMPEG_PATH");
+                if let Some(ffmpeg_path) = ffmpeg_path {
+                    command.env("FFMPEG_PATH", ffmpeg_path);
+                }
+                match path {
+                    Some(path) => command.env("PATH", path),
+                    None => command.env("PATH", ""),
+                };
+                assert!(command.status().expect("run resolver child").success());
+            };
+
+        run_child(&current_test, "environment", Some(&executable), None);
+        run_child(&current_test, "path", None, Some(directory.path()));
+
+        let isolated_directory = tempfile::tempdir().expect("create isolated resolver directory");
+        let isolated_test = isolated_directory.path().join("resolver-child.exe");
+        std::fs::copy(&current_test, &isolated_test).expect("copy isolated resolver child");
+        std::fs::write(
+            isolated_directory.path().join(ffmpeg_executable_name()),
+            b"application-local fixture must be ignored",
+        )
+        .expect("write forbidden application-local candidate");
+        run_child(&isolated_test, "missing", None, None);
+    }
 }
 
 async fn drain_bounded_output(
@@ -43,12 +204,61 @@ pub(crate) enum MediaProcessOutcome {
     Cancelled,
 }
 
-pub(crate) fn default_ffmpeg_executable() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("ffmpeg.exe")))
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("ffmpeg"))
+pub fn resolve_ffmpeg_executable(configured: Option<&Path>) -> Option<FfmpegResolution> {
+    let environment = std::env::var_os("FFMPEG_PATH")
+        .map(PathBuf::from)
+        .map(|candidate| ffmpeg_candidate_from_environment(&candidate));
+    let path_candidates = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .map(|directory| directory.join(ffmpeg_executable_name()));
+    resolve_ffmpeg_candidates(configured, environment.as_deref(), path_candidates)
+}
+
+fn resolve_ffmpeg_candidates<I, P>(
+    configured: Option<&Path>,
+    environment: Option<&Path>,
+    path_candidates: I,
+) -> Option<FfmpegResolution>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
+    if let Some(executable) = configured.filter(|candidate| candidate.is_file()) {
+        return Some(FfmpegResolution {
+            executable: executable.to_owned(),
+            source: FfmpegResolutionSource::Configured,
+        });
+    }
+    if let Some(executable) = environment.filter(|candidate| candidate.is_file()) {
+        return Some(FfmpegResolution {
+            executable: executable.to_owned(),
+            source: FfmpegResolutionSource::Environment,
+        });
+    }
+    path_candidates
+        .into_iter()
+        .find(|candidate| candidate.as_ref().is_file())
+        .map(|executable| FfmpegResolution {
+            executable: executable.as_ref().to_owned(),
+            source: FfmpegResolutionSource::Path,
+        })
+}
+
+fn ffmpeg_candidate_from_environment(candidate: &Path) -> PathBuf {
+    if candidate.is_dir() {
+        candidate.join(ffmpeg_executable_name())
+    } else {
+        candidate.to_owned()
+    }
+}
+
+const fn ffmpeg_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    }
 }
 
 pub(crate) async fn detect_ffmpeg_version(

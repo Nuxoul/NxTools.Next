@@ -31,15 +31,15 @@ use nxtools_download::{
     DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
     DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadSnapshot, DownloadStatus,
     DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail, DownloadTaskId, DownloadWeekday,
-    RequestOrigin,
+    FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL, RequestOrigin, resolve_ffmpeg_executable,
 };
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
-    OpenShellTargetCommand, PickDirectoryCommand, PlaceTaskbarProgressOverlayCommand,
-    PlatformCommand, PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
-    SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction, TaskbarOverlayAnchor,
-    TaskbarProgressState,
+    OpenShellTargetCommand, PickDirectoryCommand, PickProgramCommand,
+    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
+    SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
+    TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -61,6 +61,9 @@ pub(crate) enum DownloadApplicationEvent {
         target: DownloadDirectoryTarget,
         path: PathBuf,
     },
+    FfmpegExecutablePicked {
+        path: PathBuf,
+    },
     TaskbarOverlayEditChanged {
         settings: DownloadTaskbarProgressOverlaySettings,
     },
@@ -75,6 +78,7 @@ pub(crate) enum DownloadDirectoryTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DownloadSettingsDraft {
     default_directory: PathBuf,
+    ffmpeg_executable_path: String,
     default_connection_limit: u16,
     adaptive_segment_scaling_enabled: bool,
     adaptive_segment_max_segments: u16,
@@ -92,6 +96,51 @@ struct DownloadSettingsViewInitial {
     config_path: String,
     log_directory: String,
     database_path: String,
+}
+
+const FFMPEG_PICKER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const FFMPEG_DOWNLOAD_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FfmpegDownloadSource {
+    Gyan,
+    Btbn,
+}
+
+impl FfmpegDownloadSource {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Gyan => "gyan",
+            Self::Btbn => "btbn",
+        }
+    }
+
+    const fn url(self) -> &'static str {
+        match self {
+            Self::Gyan => FFMPEG_GYAN_DOWNLOAD_URL,
+            Self::Btbn => FFMPEG_BTBN_DOWNLOAD_URL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FfmpegPlatformOperationKind {
+    Picker,
+    DownloadPage(FfmpegDownloadSource),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingFfmpegPlatformOperation {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+    kind: FfmpegPlatformOperationKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FfmpegDiscoveryState {
+    Checking,
+    Found(nxtools_download::FfmpegResolutionSource),
+    Missing,
 }
 
 pub(crate) struct DownloadRuntimeContext {
@@ -240,6 +289,9 @@ pub(crate) struct DownloadApplication {
     show_progress_window: bool,
     show_completion_window: bool,
     pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
+    pending_ffmpeg_operations: HashMap<uuid::Uuid, PendingFfmpegPlatformOperation>,
+    #[cfg(test)]
+    ffmpeg_platform_commands: Rc<RefCell<Vec<(uuid::Uuid, PlatformCommand)>>>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
     last_event_sequence: u64,
     _event_task: Task<()>,
@@ -264,6 +316,11 @@ impl DownloadApplication {
             database_path,
         } = runtime;
         config.download.normalize();
+        let configured_ffmpeg = (!config.download.ffmpeg_executable_path.is_empty())
+            .then(|| PathBuf::from(&config.download.ffmpeg_executable_path));
+        if let Err(error) = engine.set_ffmpeg_executable_path(configured_ffmpeg) {
+            warn!(%error, "could not apply configured FFmpeg executable to download engine");
+        }
         let default_directory = if config.download.default_directory.is_empty() {
             fallback_default_directory
         } else {
@@ -382,6 +439,9 @@ impl DownloadApplication {
             show_progress_window,
             show_completion_window,
             pending_directory_picker: None,
+            pending_ffmpeg_operations: HashMap::new(),
+            #[cfg(test)]
+            ffmpeg_platform_commands: Rc::new(RefCell::new(Vec::new())),
             notified_terminal_states,
             last_event_sequence: 0,
             _event_task: event_task,
@@ -513,6 +573,7 @@ impl DownloadApplication {
     fn settings_draft(&self) -> DownloadSettingsDraft {
         DownloadSettingsDraft {
             default_directory: self.default_directory.clone(),
+            ffmpeg_executable_path: self.config.download.ffmpeg_executable_path.clone(),
             default_connection_limit: self.config.download.default_connection_limit,
             adaptive_segment_scaling_enabled: self.config.download.adaptive_segment_scaling_enabled,
             adaptive_segment_max_segments: self.config.download.adaptive_segment_max_segments,
@@ -1053,6 +1114,168 @@ impl DownloadApplication {
 
     fn request_settings_directory(&mut self, current_directory: String, cx: &mut Context<Self>) {
         self.request_directory(current_directory, DownloadDirectoryTarget::Settings, cx);
+    }
+
+    fn request_ffmpeg_executable(&mut self, current_path: String, cx: &mut Context<Self>) {
+        if self
+            .pending_ffmpeg_operations
+            .values()
+            .any(|pending| pending.kind == FfmpegPlatformOperationKind::Picker)
+        {
+            return;
+        }
+        self.begin_ffmpeg_platform_operation(
+            PlatformCommand::PickProgram(PickProgramCommand { current_path }),
+            FfmpegPlatformOperationKind::Picker,
+            FFMPEG_PICKER_TIMEOUT,
+            cx,
+        );
+    }
+
+    fn open_ffmpeg_download_page(&mut self, source: FfmpegDownloadSource, cx: &mut Context<Self>) {
+        self.begin_ffmpeg_platform_operation(
+            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: source.url().into(),
+                action: ShellOpenAction::Open,
+            }),
+            FfmpegPlatformOperationKind::DownloadPage(source),
+            FFMPEG_DOWNLOAD_PAGE_TIMEOUT,
+            cx,
+        );
+    }
+
+    fn begin_ffmpeg_platform_operation(
+        &mut self,
+        command: PlatformCommand,
+        kind: FfmpegPlatformOperationKind,
+        timeout: Duration,
+        cx: &mut Context<Self>,
+    ) {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        match kind {
+            FfmpegPlatformOperationKind::Picker => info!(
+                event = "download.ffmpeg_picker.started",
+                %correlation_id,
+                "FFmpeg executable picker started"
+            ),
+            FfmpegPlatformOperationKind::DownloadPage(source) => info!(
+                event = "download.ffmpeg_download_page.started",
+                %correlation_id,
+                source = source.name(),
+                "public FFmpeg download page open started"
+            ),
+        }
+        #[cfg(test)]
+        let send_result = {
+            let command_id = uuid::Uuid::new_v4();
+            self.ffmpeg_platform_commands
+                .borrow_mut()
+                .push((command_id, command));
+            Ok::<uuid::Uuid, nxtools_ipc::PlatformBridgeError>(command_id)
+        };
+        #[cfg(not(test))]
+        let send_result = self
+            .platform
+            .send_command_correlated(command, correlation_id);
+        match send_result {
+            Ok(command_id) => {
+                self.pending_ffmpeg_operations.insert(
+                    command_id,
+                    PendingFfmpegPlatformOperation {
+                        correlation_id,
+                        started_at,
+                        kind,
+                    },
+                );
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(timeout).await;
+                    let _ = this.update(cx, |application, cx| {
+                        application.ffmpeg_platform_operation_timed_out(command_id, cx);
+                    });
+                })
+                .detach();
+            }
+            Err(error) => {
+                self.finish_ffmpeg_platform_operation_failure(
+                    PendingFfmpegPlatformOperation {
+                        correlation_id,
+                        started_at,
+                        kind,
+                    },
+                    None,
+                    error.to_string(),
+                    cx,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    fn ffmpeg_platform_operation_timed_out(
+        &mut self,
+        command_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_ffmpeg_operations.remove(&command_id) else {
+            return;
+        };
+        self.finish_ffmpeg_platform_operation_failure(
+            pending,
+            None,
+            "Windows 适配器未在时限内返回结果".into(),
+            cx,
+        );
+    }
+
+    fn finish_ffmpeg_platform_operation_failure(
+        &mut self,
+        pending: PendingFfmpegPlatformOperation,
+        native_error_code: Option<i32>,
+        user_message: String,
+        cx: &mut Context<Self>,
+    ) {
+        let native_error_present = native_error_code.is_some();
+        match pending.kind {
+            FfmpegPlatformOperationKind::Picker => {
+                warn!(
+                    event = "download.ffmpeg_picker.failed",
+                    correlation_id = %pending.correlation_id,
+                    native_error_present,
+                    native_error_code,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "FFmpeg executable picker failed"
+                );
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        "download-ffmpeg-picker",
+                        "无法选择 FFmpeg",
+                        user_message,
+                        cx,
+                    );
+                });
+            }
+            FfmpegPlatformOperationKind::DownloadPage(source) => {
+                warn!(
+                    event = "download.ffmpeg_download_page.failed",
+                    correlation_id = %pending.correlation_id,
+                    source = source.name(),
+                    native_error_present,
+                    native_error_code,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "public FFmpeg download page could not be opened"
+                );
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        format!("download-ffmpeg-page-{}", source.name()),
+                        "无法打开 FFmpeg 下载链接",
+                        user_message,
+                        cx,
+                    );
+                });
+            }
+        }
+        cx.notify();
     }
 
     pub(crate) fn open_new_download_window(&mut self, cx: &mut Context<Self>) {
@@ -1722,6 +1945,7 @@ impl DownloadApplication {
         let previous_speed_limit = self.engine.global_speed_limit();
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
+            ffmpeg_executable_path: draft.ffmpeg_executable_path.clone(),
             default_connection_limit: draft.default_connection_limit,
             adaptive_segment_scaling_enabled: draft.adaptive_segment_scaling_enabled,
             adaptive_segment_max_segments: draft.adaptive_segment_max_segments,
@@ -1770,6 +1994,11 @@ impl DownloadApplication {
                 }
             };
         self.config = next_config;
+        let configured_ffmpeg = (!draft.ffmpeg_executable_path.is_empty())
+            .then(|| PathBuf::from(&draft.ffmpeg_executable_path));
+        if let Err(error) = self.engine.set_ffmpeg_executable_path(configured_ffmpeg) {
+            return failed(format!("FFmpeg 路径已保存，但无法同步到下载引擎：{error}"));
+        }
         self.default_directory = draft.default_directory;
         self.show_progress_window = draft.show_progress_window;
         self.show_completion_window = draft.show_completion_window;
@@ -2422,6 +2651,53 @@ impl DownloadApplication {
                     );
                 }
             }
+            return;
+        }
+        if let Some(pending) = self.pending_ffmpeg_operations.remove(&correlation_id) {
+            if !result.success {
+                let reason = result
+                    .error
+                    .unwrap_or_else(|| "Windows 未返回错误详情".into());
+                self.finish_ffmpeg_platform_operation_failure(
+                    pending,
+                    result.native_error_code,
+                    reason,
+                    cx,
+                );
+                return;
+            }
+            match pending.kind {
+                FfmpegPlatformOperationKind::Picker => {
+                    if let Some(path) = result.data.filter(|path| !path.trim().is_empty()) {
+                        info!(
+                            event = "download.ffmpeg_picker.succeeded",
+                            correlation_id = %pending.correlation_id,
+                            elapsed_ms = pending.started_at.elapsed().as_millis(),
+                            "FFmpeg executable picker completed"
+                        );
+                        cx.emit(DownloadApplicationEvent::FfmpegExecutablePicked {
+                            path: PathBuf::from(path),
+                        });
+                    } else {
+                        info!(
+                            event = "download.ffmpeg_picker.cancelled",
+                            correlation_id = %pending.correlation_id,
+                            elapsed_ms = pending.started_at.elapsed().as_millis(),
+                            "FFmpeg executable picker completed without a selection"
+                        );
+                    }
+                }
+                FfmpegPlatformOperationKind::DownloadPage(source) => {
+                    info!(
+                        event = "download.ffmpeg_download_page.completed",
+                        correlation_id = %pending.correlation_id,
+                        source = source.name(),
+                        elapsed_ms = pending.started_at.elapsed().as_millis(),
+                        "public FFmpeg download page opened"
+                    );
+                }
+            }
+            cx.notify();
             return;
         }
         let Some((pending_id, target)) = self.pending_directory_picker else {
@@ -3441,6 +3717,7 @@ fn parse_download_settings_draft(
     }
     Ok(DownloadSettingsDraft {
         default_directory: PathBuf::from(default_directory),
+        ffmpeg_executable_path: String::new(),
         default_connection_limit,
         adaptive_segment_scaling_enabled,
         adaptive_segment_max_segments,
@@ -3471,6 +3748,9 @@ struct DownloadSettingsView {
     theme: Theme,
     application: Entity<DownloadApplication>,
     directory: Entity<InputState>,
+    ffmpeg_executable: Entity<InputState>,
+    ffmpeg_discovery_state: FfmpegDiscoveryState,
+    ffmpeg_discovery_generation: u64,
     connection_limit: Entity<InputState>,
     adaptive_segment_max_segments: Entity<InputState>,
     adaptive_segment_min_mib: Entity<InputState>,
@@ -3520,6 +3800,20 @@ impl DownloadSettingsView {
                 .default_value(snapshot.default_directory.to_string_lossy().into_owned())
                 .placeholder("选择默认保存目录")
         });
+        let ffmpeg_executable = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.ffmpeg_executable_path.clone())
+                .placeholder("留空则检测 FFMPEG_PATH 和 PATH")
+        });
+        let ffmpeg_input_subscription = cx.subscribe_in(
+            &ffmpeg_executable,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.schedule_ffmpeg_discovery(cx);
+                }
+            },
+        );
         let connection_limit = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.default_connection_limit.to_string())
@@ -3584,6 +3878,13 @@ impl DownloadSettingsView {
                         });
                         this.error = None;
                     }
+                    DownloadApplicationEvent::FfmpegExecutablePicked { path } => {
+                        this.ffmpeg_executable.update(cx, |input, cx| {
+                            input.set_value(path.to_string_lossy().into_owned(), window, cx);
+                        });
+                        this.schedule_ffmpeg_discovery(cx);
+                        this.error = None;
+                    }
                     DownloadApplicationEvent::TaskbarOverlayEditChanged { settings } => {
                         this.taskbar_overlay_offset_x.update(cx, |input, cx| {
                             input.set_value(settings.offset_x.to_string(), window, cx);
@@ -3639,10 +3940,17 @@ impl DownloadSettingsView {
                 }
             },
         );
+        let view = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let _ = view.update(cx, |view, cx| view.schedule_ffmpeg_discovery(cx));
+        });
         Self {
             theme: Theme::zed_dark(),
             application,
             directory,
+            ffmpeg_executable,
+            ffmpeg_discovery_state: FfmpegDiscoveryState::Checking,
+            ffmpeg_discovery_generation: 0,
             connection_limit,
             adaptive_segment_max_segments,
             adaptive_segment_min_mib,
@@ -3679,6 +3987,7 @@ impl DownloadSettingsView {
             error: None,
             _subscriptions: vec![
                 subscription,
+                ffmpeg_input_subscription,
                 offset_x_subscription,
                 offset_y_subscription,
                 width_subscription,
@@ -3687,8 +3996,36 @@ impl DownloadSettingsView {
         }
     }
 
+    fn schedule_ffmpeg_discovery(&mut self, cx: &mut Context<Self>) {
+        self.ffmpeg_discovery_generation = self.ffmpeg_discovery_generation.wrapping_add(1).max(1);
+        let generation = self.ffmpeg_discovery_generation;
+        let configured = self.ffmpeg_executable.read(cx).value().trim().to_owned();
+        self.ffmpeg_discovery_state = FfmpegDiscoveryState::Checking;
+        let background = cx.background_executor().clone();
+        cx.spawn(async move |this, cx| {
+            let resolution = background
+                .spawn(async move {
+                    let configured = (!configured.is_empty()).then(|| PathBuf::from(configured));
+                    resolve_ffmpeg_executable(configured.as_deref())
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.ffmpeg_discovery_generation != generation {
+                    return;
+                }
+                this.ffmpeg_discovery_state = resolution
+                    .map_or(FfmpegDiscoveryState::Missing, |resolution| {
+                        FfmpegDiscoveryState::Found(resolution.source)
+                    });
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     fn current_draft(&self, cx: &App) -> Result<DownloadSettingsDraft, String> {
-        parse_download_settings_draft(DownloadSettingsInput {
+        let mut draft = parse_download_settings_draft(DownloadSettingsInput {
             default_directory: &self.directory.read(cx).value(),
             connection_limit: &self.connection_limit.read(cx).value(),
             adaptive_segment_scaling_enabled: self.adaptive_segment_scaling_enabled,
@@ -3711,7 +4048,9 @@ impl DownloadSettingsView {
             taskbar_overlay_show_active_tasks: self.taskbar_overlay_show_active_tasks,
             taskbar_overlay_show_active_connections: self.taskbar_overlay_show_active_connections,
             taskbar_overlay_show_transferred_bytes: self.taskbar_overlay_show_transferred_bytes,
-        })
+        })?;
+        draft.ffmpeg_executable_path = self.ffmpeg_executable.read(cx).value().trim().to_owned();
+        Ok(draft)
     }
 
     fn toggle_taskbar_overlay_edit(&mut self, cx: &mut Context<Self>) {
@@ -3858,6 +4197,106 @@ impl Render for DownloadSettingsView {
                             });
                         });
                     }),
+            )
+            .into_any_element();
+        let current_ffmpeg = self.ffmpeg_executable.read(cx).value().trim().to_owned();
+        let ffmpeg_description = match self.ffmpeg_discovery_state {
+            FfmpegDiscoveryState::Checking => "正在后台检查用户路径、FFMPEG_PATH 与系统 PATH",
+            FfmpegDiscoveryState::Found(nxtools_download::FfmpegResolutionSource::Configured) => {
+                "已发现用户指定文件；双轨下载时会运行 -version 验证"
+            }
+            FfmpegDiscoveryState::Found(nxtools_download::FfmpegResolutionSource::Environment) => {
+                "已从 FFMPEG_PATH 发现候选文件；双轨下载时会验证版本"
+            }
+            FfmpegDiscoveryState::Found(nxtools_download::FfmpegResolutionSource::Path) => {
+                "已从系统 PATH 发现候选文件；双轨下载时会验证版本"
+            }
+            FfmpegDiscoveryState::Missing => {
+                "未发现 FFmpeg；可自行安装后指定路径，或使用下方公开来源"
+            }
+        };
+        let application = self.application.clone();
+        let ffmpeg_picker_path = current_ffmpeg.clone();
+        let ffmpeg_control = div()
+            .w(px(274.0))
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(download_settings_input(
+                theme,
+                &self.ffmpeg_executable,
+                px(236.0),
+            ))
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-pick-ffmpeg".into())
+                    .child(
+                        Button::new("download-settings-pick-ffmpeg-button")
+                            .icon(Icon::new(MaterialIcon::Folder))
+                            .xsmall()
+                            .compact()
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = application.clone();
+                                let current_path = ffmpeg_picker_path.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.request_ffmpeg_executable(current_path, cx);
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .into_any_element();
+        let gyan_application = self.application.clone();
+        let btbn_application = self.application.clone();
+        let ffmpeg_source_control = div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-ffmpeg-gyan".into())
+                    .child(
+                        Button::new("download-settings-ffmpeg-gyan-button")
+                            .label("Gyan.dev")
+                            .xsmall()
+                            .compact()
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = gyan_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.open_ffmpeg_download_page(
+                                            FfmpegDownloadSource::Gyan,
+                                            cx,
+                                        );
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-ffmpeg-btbn".into())
+                    .child(
+                        Button::new("download-settings-ffmpeg-btbn-button")
+                            .label("BtbN GitHub")
+                            .xsmall()
+                            .compact()
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = btbn_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.open_ffmpeg_download_page(
+                                            FfmpegDownloadSource::Btbn,
+                                            cx,
+                                        );
+                                    });
+                                });
+                            }),
+                    ),
             )
             .into_any_element();
         let connection_control =
@@ -4124,6 +4563,24 @@ impl Render for DownloadSettingsView {
                                         "全局限速",
                                         "单位 KiB/s；填 0 表示不限速",
                                         speed_control,
+                                    ),
+                                ],
+                            ))
+                            .child(download_settings_section(
+                                theme,
+                                "媒体工具",
+                                vec![
+                                    download_settings_row(
+                                        theme,
+                                        "FFmpeg 可执行文件",
+                                        ffmpeg_description,
+                                        ffmpeg_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "公开下载来源",
+                                        "仅打开浏览器，不会自动下载、安装或随包携带",
+                                        ffmpeg_source_control,
                                     ),
                                 ],
                             ))
@@ -8247,6 +8704,7 @@ mod tests {
                         result: PlatformCommandResult {
                             success: false,
                             error: Some("native move rejected".into()),
+                            native_error_code: None,
                             data: None,
                         },
                     },
@@ -8275,6 +8733,32 @@ mod tests {
     }
 
     #[gpui::test]
+    fn ffmpeg_platform_timeout_releases_picker_and_page_operations(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "ffmpeg-platform-timeout");
+        let (picker_id, page_id) = cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.request_ffmpeg_executable(String::new(), cx);
+                application.open_ffmpeg_download_page(FfmpegDownloadSource::Gyan, cx);
+                let commands = application.ffmpeg_platform_commands.borrow();
+                (commands[0].0, commands[1].0)
+            })
+        });
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.ffmpeg_platform_operation_timed_out(picker_id, cx);
+                application.ffmpeg_platform_operation_timed_out(page_id, cx);
+                assert!(application.pending_ffmpeg_operations.is_empty());
+                application.request_ffmpeg_executable(String::new(), cx);
+                assert_eq!(application.ffmpeg_platform_commands.borrow().len(), 3);
+            });
+        });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         cx: &mut TestAppContext,
     ) {
@@ -8282,11 +8766,14 @@ mod tests {
         let directory = unique_download_settings_test_directory("window");
         let selected_directory = directory.join("selected");
         std::fs::create_dir_all(&selected_directory).expect("create selected directory");
+        let ffmpeg_executable = directory.join("ffmpeg-user-selected.exe");
+        std::fs::write(&ffmpeg_executable, b"fixture").expect("write FFmpeg picker fixture");
         let config_path = directory.join("config.json");
         let mut config = AppConfig::default();
         config.quick_launch.enabled = false;
         config.save_to(&config_path).expect("save settings fixture");
         let engine = DownloadEngine::open_in_memory().expect("open settings engine");
+        let engine_for_assertion = engine.clone();
         let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let application = cx.update(|cx| {
@@ -8343,6 +8830,100 @@ mod tests {
             window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
             selected_directory.display().to_string()
         );
+        let ffmpeg_picker = window
+            .debug_bounds("download-settings-pick-ffmpeg")
+            .expect("FFmpeg executable picker button");
+        window.simulate_click(ffmpeg_picker.center(), Modifiers::default());
+        window.run_until_parked();
+        let picker_command_id = window.read(|cx| {
+            let application = application.read(cx);
+            let commands = application.ffmpeg_platform_commands.borrow();
+            let (command_id, command) = commands.last().expect("FFmpeg picker command");
+            assert!(matches!(command, PlatformCommand::PickProgram(_)));
+            *command_id
+        });
+        window.update(|_, cx| {
+            application.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: picker_command_id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(ffmpeg_executable.display().to_string()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| {
+                settings
+                    .read(cx)
+                    .ffmpeg_executable
+                    .read(cx)
+                    .value()
+                    .to_string()
+            }),
+            ffmpeg_executable.display().to_string()
+        );
+        for (button, expected_source, expected_url) in [
+            (
+                "download-settings-ffmpeg-gyan",
+                FfmpegDownloadSource::Gyan,
+                FFMPEG_GYAN_DOWNLOAD_URL,
+            ),
+            (
+                "download-settings-ffmpeg-btbn",
+                FfmpegDownloadSource::Btbn,
+                FFMPEG_BTBN_DOWNLOAD_URL,
+            ),
+        ] {
+            let bounds = window
+                .debug_bounds(button)
+                .expect("public FFmpeg download button");
+            window.simulate_click(bounds.center(), Modifiers::default());
+            window.run_until_parked();
+            let command_id = window.read(|cx| {
+                let application = application.read(cx);
+                let commands = application.ffmpeg_platform_commands.borrow();
+                let (command_id, command) = commands.last().expect("FFmpeg page command");
+                assert_eq!(
+                    command,
+                    &PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                        target: expected_url.into(),
+                        action: ShellOpenAction::Open,
+                    })
+                );
+                assert_eq!(
+                    application
+                        .pending_ffmpeg_operations
+                        .get(command_id)
+                        .map(|pending| pending.kind),
+                    Some(FfmpegPlatformOperationKind::DownloadPage(expected_source))
+                );
+                *command_id
+            });
+            window.update(|_, cx| {
+                application.update(cx, |application, cx| {
+                    application.handle_platform_notification(
+                        PlatformNotification::CommandResult {
+                            correlation_id: command_id,
+                            result: PlatformCommandResult {
+                                success: true,
+                                error: None,
+                                native_error_code: None,
+                                data: None,
+                            },
+                        },
+                        cx,
+                    );
+                });
+            });
+        }
         let completion_toggle = window
             .debug_bounds("download-settings-completion-window")
             .expect("completion setting toggle");
@@ -8372,6 +8953,18 @@ mod tests {
         assert_eq!(
             persisted.download.default_directory,
             selected_directory.display().to_string()
+        );
+        assert_eq!(
+            persisted.download.ffmpeg_executable_path,
+            ffmpeg_executable.display().to_string()
+        );
+        assert_eq!(
+            engine_for_assertion
+                .ffmpeg_resolution()
+                .expect("resolve applied FFmpeg")
+                .expect("applied FFmpeg should be available")
+                .executable,
+            ffmpeg_executable
         );
         assert!(!persisted.download.show_completion_window);
         assert!(!persisted.download.taskbar_progress_overlay.enabled);
@@ -8439,6 +9032,7 @@ mod tests {
                 application.apply_settings(
                     DownloadSettingsDraft {
                         default_directory: directory.clone(),
+                        ffmpeg_executable_path: String::new(),
                         default_connection_limit: 12,
                         adaptive_segment_scaling_enabled: true,
                         adaptive_segment_max_segments: 32,

@@ -8111,6 +8111,7 @@ mod tests {
                 PlatformCommandResult {
                     success: false,
                     error: Some("move failed".into()),
+                    native_error_code: None,
                     data: None,
                 },
                 cx,
@@ -8145,6 +8146,7 @@ mod tests {
                 PlatformCommandResult {
                     success: true,
                     error: None,
+                    native_error_code: None,
                     data: None,
                 },
                 cx,

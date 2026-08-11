@@ -707,6 +707,8 @@ pub struct PlatformCommandResult {
     pub success: bool,
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_error_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
 }
 
@@ -1546,6 +1548,7 @@ mod tests {
             Message::PlatformCommandResult(PlatformCommandResult {
                 success: false,
                 error: Some("target closed".into()),
+                native_error_code: Some(5),
                 data: Some("C:/backup/history.nxtclip".into()),
             }),
         );

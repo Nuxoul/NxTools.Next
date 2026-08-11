@@ -36,6 +36,10 @@ pub use http::{
     DownloadTransferControl, DownloadTransferOutcome, DownloadTransferProgress, HttpDownloadClient,
     HttpDownloadError,
 };
+pub use media::{
+    FFMPEG_BTBN_DOWNLOAD_URL, FFMPEG_GYAN_DOWNLOAD_URL, FfmpegResolution, FfmpegResolutionSource,
+    resolve_ffmpeg_executable,
+};
 pub use message::{
     BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashProbe, DashTrackProbe, DownloadAggregateMetrics,

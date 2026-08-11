@@ -1538,6 +1538,19 @@ Reverified on 2026-08-11 before starting the DASH vertical slice:
   representation/adaptation template inheritance, duration-derived Segment counts, initialization
   fragments, separate audio/video track artifacts and FFmpeg mux. Its source, schema, comments and
   tests are not copied, and silent first-Period fallback or URL-bearing diagnostics are not adopted.
+- Old NxTools `Services/VideoCompressionService.cs::ResolveFfmpegExecutable`,
+  `Services/FfmpegInstallerService.cs` and `Views/VideoSettingsWindow.axaml` were rechecked for the
+  user-managed FFmpeg boundary. The old product accepts a configured executable, probes `PATH`,
+  also checks application-local/install locations and can download an archive automatically. For
+  NxTools.Next the user explicitly selected a narrower policy: a valid configured executable wins,
+  then the `FFMPEG_PATH` environment variable, then the process `PATH`; application-local bundled
+  binaries and automatic download/install are forbidden. GPUI always offers public Gyan.dev and
+  BtbN build links through the existing typed shell-open adapter, including when no candidate resolves. The links originate
+  from the old installer's public sources, but NxTools.Next never downloads or extracts them itself.
+  Diagnostics record only the fixed resolution source (`configured`, `environment`, `path` or
+  `missing`) and elapsed time, never the executable path or child output. Settings labels an
+  existing path only as a discovered candidate; the bounded `-version` process remains the
+  authoritative validation before muxing, and a missing runtime result points back to Media Tools.
 - The first NxTools.Next DASH slice accepts only bounded static VOD MPDs with exactly one Period,
   no `ContentProtection`, and HTTP(S) resources described by inherited `SegmentTemplate` plus
   either a finite `SegmentTimeline` or positive duration with a finite Period/MPD duration.

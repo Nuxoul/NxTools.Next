@@ -16,6 +16,7 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
+            ("command result preserves native error code", CommandResultPreservesNativeErrorCode),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
             ("native clipboard format command preserves staged payload", NativeFormatPayloadRoundTrips),
@@ -160,6 +161,22 @@ internal static class Program
         Assert(json.Contains("\"protocol_version\":1", StringComparison.Ordinal));
         Assert(json.Contains("\"type\":\"hello\"", StringComparison.Ordinal));
         Assert(json.Contains("\"client_name\":\"platform_host\"", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
+    private static Task CommandResultPreservesNativeErrorCode()
+    {
+        var request = ProtocolEnvelope.Create("platform_command", new { Command = "pick_program" });
+        var response = PlatformPipeClient.CreateCommandResultEnvelope(
+            request,
+            new WindowsCommandResult(
+                false,
+                "native picker failure",
+                NativeErrorCode: 5));
+
+        Assert(response.CorrelationId == request.Id);
+        Assert(response.Payload.GetProperty("success").GetBoolean() == false);
+        Assert(response.Payload.GetProperty("native_error_code").GetInt32() == 5);
         return Task.CompletedTask;
     }
 

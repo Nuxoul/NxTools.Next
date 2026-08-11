@@ -54,6 +54,20 @@ internal sealed class PlatformPipeClient(
             "set_taskbar_progress",
             StringComparison.Ordinal);
 
+    internal static ProtocolEnvelope CreateCommandResultEnvelope(
+        ProtocolEnvelope request,
+        WindowsCommandResult result) =>
+        ProtocolEnvelope.Create(
+            "platform_command_result",
+            new
+            {
+                result.Success,
+                result.Error,
+                result.NativeErrorCode,
+                result.Data
+            },
+            request.Id);
+
     private async Task RunSessionAsync(CancellationToken cancellationToken)
     {
         await using var pipe = new NamedPipeClientStream(
@@ -266,15 +280,7 @@ internal sealed class PlatformPipeClient(
                         var command => new WindowsCommandResult(false, $"Unsupported platform command '{command}'.")
                     };
                     await outgoing.WriteAsync(
-                        ProtocolEnvelope.Create(
-                            "platform_command_result",
-                            new
-                            {
-                                result.Success,
-                                result.Error,
-                                result.Data
-                            },
-                            envelope.Id),
+                        CreateCommandResultEnvelope(envelope, result),
                         cancellationToken);
                     if (logCommandLifecycle)
                     {
@@ -284,6 +290,7 @@ internal sealed class PlatformPipeClient(
                                 ["command"] = commandName,
                                 ["success"] = result.Success,
                                 ["error_present"] = !string.IsNullOrEmpty(result.Error),
+                                ["native_error_code"] = result.NativeErrorCode,
                                 ["has_data"] = !string.IsNullOrEmpty(result.Data),
                                 ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
                             });

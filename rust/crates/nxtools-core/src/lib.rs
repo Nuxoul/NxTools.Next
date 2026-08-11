@@ -75,6 +75,8 @@ impl Default for AppConfig {
 pub struct DownloadSettings {
     #[serde(default)]
     pub default_directory: String,
+    #[serde(default)]
+    pub ffmpeg_executable_path: String,
     #[serde(default = "default_download_connection_limit")]
     pub default_connection_limit: u16,
     #[serde(default = "default_true")]
@@ -162,6 +164,7 @@ impl Default for DownloadSettings {
     fn default() -> Self {
         Self {
             default_directory: String::new(),
+            ffmpeg_executable_path: String::new(),
             default_connection_limit: default_download_connection_limit(),
             adaptive_segment_scaling_enabled: true,
             adaptive_segment_max_segments: default_download_adaptive_max_segments(),
@@ -200,6 +203,7 @@ const fn default_taskbar_overlay_height() -> u32 {
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
+        self.ffmpeg_executable_path = self.ffmpeg_executable_path.trim().to_owned();
         self.default_connection_limit = self.default_connection_limit.clamp(1, 64);
         self.adaptive_segment_max_segments = self
             .adaptive_segment_max_segments
@@ -855,6 +859,7 @@ mod tests {
         let settings = DownloadSettings::default();
 
         assert!(settings.default_directory.is_empty());
+        assert!(settings.ffmpeg_executable_path.is_empty());
         assert_eq!(settings.default_connection_limit, 8);
         assert!(settings.adaptive_segment_scaling_enabled);
         assert_eq!(settings.adaptive_segment_max_segments, 32);
@@ -938,6 +943,7 @@ mod tests {
         .expect("legacy download settings must remain readable");
 
         assert_eq!(config.download.default_connection_limit, 8);
+        assert!(config.download.ffmpeg_executable_path.is_empty());
         assert!(config.download.show_progress_window);
         assert!(!config.download.show_completion_window);
     }
@@ -963,6 +969,7 @@ mod tests {
             &path,
             DownloadSettings {
                 default_directory: r"D:\Downloads".into(),
+                ffmpeg_executable_path: r"D:\Tools\ffmpeg.exe".into(),
                 default_connection_limit: 12,
                 adaptive_segment_scaling_enabled: true,
                 adaptive_segment_max_segments: 32,
@@ -973,6 +980,11 @@ mod tests {
             },
         )
         .expect("update only download settings");
+
+        assert_eq!(
+            updated.download.ffmpeg_executable_path,
+            r"D:\Tools\ffmpeg.exe"
+        );
 
         assert!(!updated.quick_launch.enabled);
         assert_eq!(updated.clipboard.retention_days, 91);

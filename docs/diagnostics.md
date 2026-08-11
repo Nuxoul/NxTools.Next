@@ -304,6 +304,18 @@ Track concatenation and audio/video mux use `download.dash_finalize.started` fol
 only a fixed operation kind, version status from
 `not_applicable|not_started|interrupted|detected|unavailable`, child exit code, optional native
 error code and elapsed time.
+Before a dual-track FFmpeg boundary, `download.ffmpeg_resolution.completed` records only
+`source=configured|environment|path|missing`, `available`, task/correlation identity and elapsed
+time. It never records the configured/environment/PATH value or resolved executable path.
+The settings file picker and public-source buttons use correlated
+`download.ffmpeg_picker.started` → one picker terminal and
+`download.ffmpeg_download_page.started` → one page terminal. They record elapsed time and only the
+fixed page source (`gyan|btbn`); selected paths and download URLs are never logged.
+Windows picker or system-browser launch failures also carry an optional native error code. Error
+messages are reserved for the UI and are not copied into these structured events.
+Both platform operations own bounded pending state. A picker result is capped at ten minutes and a
+page-open result at fifteen seconds; timeout uses the same correlated failed terminal and releases
+the pending operation so a disconnected PlatformHost cannot permanently block Browse or grow state.
 Captured stdout/stderr is bounded for failure classification but is not copied into production
 logs. `download.dash_finalize.*.elapsed_ms` measures only finalization; a successful FFmpeg boundary
 also carries `ffmpeg_elapsed_ms`, while `download.dash_transfer.*.elapsed_ms` retains whole-task

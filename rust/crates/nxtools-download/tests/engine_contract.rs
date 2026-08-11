@@ -409,6 +409,53 @@ async fn selected_dash_video_and_audio_tracks_are_muxed_by_a_bounded_ffmpeg_proc
 }
 
 #[tokio::test]
+async fn missing_ffmpeg_fails_a_real_dual_track_task_with_actionable_settings_guidance() {
+    const CHILD_MARKER: &str = "NXTOOLS_MISSING_FFMPEG_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_none() {
+        let status = Command::new(std::env::current_exe().expect("locate engine contract process"))
+            .args([
+                "--exact",
+                "missing_ffmpeg_fails_a_real_dual_track_task_with_actionable_settings_guidance",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD_MARKER, "1")
+            .env_remove("FFMPEG_PATH")
+            .env("PATH", "")
+            .status()
+            .expect("run missing FFmpeg child");
+        assert!(status.success());
+        return;
+    }
+
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create missing FFmpeg DASH directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open engine without FFmpeg");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("missing-ffmpeg.mp4".into());
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: Some("a128".into()),
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit dual-track DASH without FFmpeg");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for missing FFmpeg terminal state");
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    let message = failed.error.expect("missing FFmpeg fault").message;
+    assert!(message.contains("下载设置 → 媒体工具"));
+    assert!(message.contains("公开下载链接"));
+    assert!(!destination.join("missing-ffmpeg.mp4").exists());
+}
+
+#[tokio::test]
 async fn pausing_during_ffmpeg_detection_preserves_dash_fragments_without_publishing_output() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create FFmpeg detection pause directory");

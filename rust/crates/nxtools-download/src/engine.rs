@@ -43,7 +43,7 @@ pub struct DownloadEngine {
 
 struct DownloadEngineInner {
     http: HttpDownloadClient,
-    ffmpeg_executable: PathBuf,
+    ffmpeg_executable: Mutex<Option<PathBuf>>,
     store: SqliteDownloadStore,
     global_rate_limiter: DownloadRateLimiter,
     capacity_probe: Arc<dyn StorageCapacityProbe>,
@@ -326,7 +326,7 @@ impl DownloadEngine {
             HttpDownloadClient::new()?,
             Arc::new(SystemStorageCapacityProbe),
             Some(staging_root),
-            crate::media::default_ffmpeg_executable(),
+            None,
         )
     }
 
@@ -343,7 +343,7 @@ impl DownloadEngine {
             HttpDownloadClient::new()?,
             Arc::new(SystemStorageCapacityProbe),
             None,
-            executable.as_ref().to_owned(),
+            Some(executable.as_ref().to_owned()),
         )
     }
 
@@ -368,7 +368,7 @@ impl DownloadEngine {
             http,
             capacity_probe,
             None,
-            crate::media::default_ffmpeg_executable(),
+            None,
         )
     }
 
@@ -377,7 +377,7 @@ impl DownloadEngine {
         http: HttpDownloadClient,
         capacity_probe: Arc<dyn StorageCapacityProbe>,
         browser_blob_staging_root: Option<PathBuf>,
-        ffmpeg_executable: PathBuf,
+        ffmpeg_executable: Option<PathBuf>,
     ) -> Result<Self, DownloadEngineError> {
         let persisted_tasks = store.load_tasks()?;
         let reconciliation_id = uuid::Uuid::new_v4();
@@ -439,7 +439,7 @@ impl DownloadEngine {
         let engine = Self {
             inner: Arc::new(DownloadEngineInner {
                 http,
-                ffmpeg_executable,
+                ffmpeg_executable: Mutex::new(ffmpeg_executable),
                 store,
                 global_rate_limiter: DownloadRateLimiter::new(global_speed_limit)?,
                 capacity_probe,
@@ -535,6 +535,32 @@ impl DownloadEngine {
 
     pub fn global_speed_limit(&self) -> Option<u64> {
         self.inner.global_rate_limiter.bytes_per_second()
+    }
+
+    pub fn set_ffmpeg_executable_path(
+        &self,
+        executable: Option<PathBuf>,
+    ) -> Result<(), DownloadEngineError> {
+        *self
+            .inner
+            .ffmpeg_executable
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)? = executable;
+        Ok(())
+    }
+
+    pub fn ffmpeg_resolution(
+        &self,
+    ) -> Result<Option<crate::FfmpegResolution>, DownloadEngineError> {
+        let configured = self
+            .inner
+            .ffmpeg_executable
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?
+            .clone();
+        Ok(crate::media::resolve_ffmpeg_executable(
+            configured.as_deref(),
+        ))
     }
 
     pub fn queue_order(&self, queue_id: &str) -> Result<Vec<DownloadTaskId>, DownloadEngineError> {
@@ -4137,8 +4163,46 @@ async fn run_dash_task(
             );
             return Err(error);
         }
+        let resolution_started = Instant::now();
+        let configured_ffmpeg = inner
+            .ffmpeg_executable
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?
+            .clone();
+        let ffmpeg_resolution =
+            crate::media::resolve_ffmpeg_executable(configured_ffmpeg.as_deref());
+        let Some(ffmpeg_resolution) = ffmpeg_resolution else {
+            warn!(
+                event = "download.ffmpeg_resolution.completed",
+                %correlation_id,
+                ?task_id,
+                source = "missing",
+                available = false,
+                elapsed_ms = resolution_started.elapsed().as_millis(),
+                "FFmpeg executable resolution completed"
+            );
+            let error = DownloadEngineError::FfmpegUnavailable;
+            log_dash_finalize_failure(
+                task_id,
+                correlation_id,
+                operation,
+                "unavailable",
+                finalize_started_at,
+                &error,
+            );
+            return Err(error);
+        };
+        info!(
+            event = "download.ffmpeg_resolution.completed",
+            %correlation_id,
+            ?task_id,
+            source = ffmpeg_resolution.source.as_str(),
+            available = true,
+            elapsed_ms = resolution_started.elapsed().as_millis(),
+            "FFmpeg executable resolution completed"
+        );
         let ffmpeg_started = Instant::now();
-        match crate::media::detect_ffmpeg_version(&inner.ffmpeg_executable, &control).await {
+        match crate::media::detect_ffmpeg_version(&ffmpeg_resolution.executable, &control).await {
             Ok(crate::media::MediaProcessOutcome::Completed) => {}
             Ok(outcome) => {
                 return complete_dash_finalize_stop(
@@ -4175,7 +4239,7 @@ async fn run_dash_task(
         }
         ffmpeg_version_status = "detected";
         match crate::media::mux_dash_tracks(
-            &inner.ffmpeg_executable,
+            &ffmpeg_resolution.executable,
             &video_track_path,
             &audio_track_path,
             &temporary_path,
@@ -6828,6 +6892,8 @@ pub enum DownloadEngineError {
         kind: &'static str,
         native_error_code: Option<i32>,
     },
+    #[error("未找到 FFmpeg；请打开“下载设置 → 媒体工具”指定 ffmpeg.exe，或使用其中的公开下载链接")]
+    FfmpegUnavailable,
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
     #[error("download task has no active transfer control: {0:?}")]
@@ -6910,7 +6976,9 @@ impl DownloadEngineError {
             | Self::InvalidQueueConcurrency
             | Self::InvalidQueueMove(_)
             | Self::InvalidAction { .. } => (DownloadFaultCode::InvalidState, false),
-            Self::MediaProcess { .. } => (DownloadFaultCode::Unavailable, false),
+            Self::MediaProcess { .. } | Self::FfmpegUnavailable => {
+                (DownloadFaultCode::Unavailable, false)
+            }
             Self::StorageCapacity(_) => (DownloadFaultCode::Storage, false),
             Self::Storage(_) | Self::LockPoisoned | Self::Io(_) => {
                 (DownloadFaultCode::Storage, true)
@@ -6974,6 +7042,25 @@ mod tests {
     use crate::{ResourceValidator, SegmentedArtifactError};
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn configured_ffmpeg_is_applied_to_the_live_engine_without_restart() {
+        let directory = tempfile::tempdir().expect("create configured FFmpeg directory");
+        let executable = directory.path().join("ffmpeg-configured.exe");
+        std::fs::write(&executable, b"fixture").expect("write configured FFmpeg executable");
+        let engine = DownloadEngine::open_in_memory().expect("open download engine");
+
+        engine
+            .set_ffmpeg_executable_path(Some(executable.clone()))
+            .expect("apply configured FFmpeg executable");
+
+        let resolution = engine
+            .ffmpeg_resolution()
+            .expect("resolve configured FFmpeg")
+            .expect("configured FFmpeg should be available");
+        assert_eq!(resolution.executable, executable);
+        assert_eq!(resolution.source, crate::FfmpegResolutionSource::Configured);
+    }
 
     #[tokio::test]
     async fn dash_concatenation_pause_interrupts_real_file_io_and_removes_partial_output() {

@@ -36,10 +36,16 @@ internal static class ProgramPicker
                 ? new WindowsCommandResult(true, Data: dialog.FileName)
                 : new WindowsCommandResult(true, Data: string.Empty);
         }
+        catch (Win32Exception error)
+        {
+            return new WindowsCommandResult(
+                false,
+                error.Message,
+                NativeErrorCode: error.NativeErrorCode);
+        }
         catch (Exception error) when (error is InvalidOperationException
                                       or IOException
                                       or UnauthorizedAccessException
-                                      or Win32Exception
                                       or ArgumentException)
         {
             return new WindowsCommandResult(false, error.Message);
