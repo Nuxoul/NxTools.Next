@@ -81,6 +81,10 @@ targets exit with `0xc0000409`. When the user declines packaging or building bec
 memory pressure, do not start Cargo verification either unless the user separately authorizes it;
 use source/static gates and report the deferred compiled verification explicitly.
 
+Give long Cargo verification and packaging commands a timeout sized for the full operation. Use the
+tool's resumable yield/poll mechanism for progress instead of a short process timeout; after any
+wrapper timeout, inspect surviving Cargo/rustc processes and never start a duplicate build.
+
 ## Indexer release gate
 
 `Ready` and successful search are not sufficient evidence for an indexer release. After changing

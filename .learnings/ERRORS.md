@@ -6397,7 +6397,8 @@ execution that returns a resumable cell ID.
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: cargo.command_timeout_must_cover_build
-- Recurrence-Count: 3
+- Recurrence-Count: 4
+- Last-Seen: 2026-08-11
 
 ### Resolution
 
@@ -6510,8 +6511,8 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
 
 - Reproducible: environment-dependent
 - Related Files: none
-- Recurrence-Count: 9
-- Last-Seen: 2026-07-30
+- Recurrence-Count: 11
+- Last-Seen: 2026-08-11
 
 ### Resolution
 
@@ -6552,6 +6553,14 @@ Use `CARGO_BUILD_JOBS=1`, disable incremental compilation for the verification r
   The following workspace Clippy/test pass also exhausted commit while mapping Rust's `libtest`
   metadata and terminated that rustc with `0xc0000409`. Targeted menu builds passed before and
   after the failure; verification resumed only after the compiler exited and commit recovered.
+  On 2026-08-11, a post-review serial workspace rerun failed to mmap cached GPUI/download rlibs with
+  OS 1455 at 3.44 GiB commit headroom. Workspace Clippy and all changed real-boundary tests had
+  already passed; trimming working sets would not release the large private commit allocations, so
+  no user processes were terminated and the full rerun remained deferred until commit recovered.
+  The FFmpeg settings GPUI test rebuild later exhausted a 90 KiB compiler allocation and exited
+  with `0xc0000409` at about 2.67 GiB commit headroom. The same source had already passed
+  `cargo check`; protocol, resolver and Windows-host boundaries remained green, and no Cargo,
+  rustc or linker process survived the failure.
 
 ---
 ## [ERR-20260728-GITPUBLISH] github_publish_prerequisites_missing
@@ -7017,10 +7026,12 @@ for the final low-memory Windows gate.
 
 - Reproducible: intermittent
 - Related Files: `rust/crates/nxtools-download/tests/support/mod.rs`
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-11
 
 ### Resolution
 
 - **Resolved**: 2026-08-11T11:10:00+08:00
-- **Notes**: The fixture now preserves its listener across known transient accept failures; the 61-test serial engine contract passed.
+- **Notes**: The fixture now preserves its listener across known transient accept failures; the 61-test serial engine contract passed. A later parallel workspace run still produced three connection-refused failures across DASH, HLS and Range fixtures, so final Windows verification continues to require the documented serial engine-contract gate.
 
 ---
