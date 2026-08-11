@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use aes::Aes128;
+use cbc::cipher::{BlockDecryptMut, KeyIvInit, generic_array::GenericArray};
 use reqwest::header::{
     ACCEPT_ENCODING, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, COOKIE,
     ETAG, HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE, REFERER,
@@ -339,6 +341,100 @@ impl HttpDownloadClient {
         }
         sync_output(&mut output).await?;
         Ok(HlsSegmentDownloadOutcome::Completed { downloaded_bytes })
+    }
+
+    pub(crate) async fn fetch_hls_aes128_key(
+        &self,
+        request: &DownloadRequest,
+        key_url: &str,
+        control: &DownloadTransferControl,
+    ) -> Result<HlsKeyFetchOutcome, HttpDownloadError> {
+        let mut key_request = request.clone();
+        key_request.source_url = key_url.to_owned();
+        key_request.media = None;
+        key_request.validate()?;
+        let mut directives = control.subscribe();
+        match *directives.borrow() {
+            TransferDirective::Running => {}
+            TransferDirective::Pause => return Ok(HlsKeyFetchOutcome::Paused),
+            TransferDirective::Cancel => return Ok(HlsKeyFetchOutcome::Cancelled),
+        }
+        let response_request = self.send(Method::GET, &key_request, false);
+        tokio::pin!(response_request);
+        let mut response = tokio::select! {
+            biased;
+            changed = directives.changed() => {
+                let _ = changed;
+                return Ok(match *directives.borrow() {
+                    TransferDirective::Cancel => HlsKeyFetchOutcome::Cancelled,
+                    TransferDirective::Pause | TransferDirective::Running => HlsKeyFetchOutcome::Paused,
+                });
+            }
+            result = &mut response_request => result?,
+            _ = tokio::time::sleep(self.stall_timeout) => {
+                return Err(HttpDownloadError::Stalled {
+                    timeout_ms: duration_millis(self.stall_timeout),
+                });
+            }
+        };
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        if response.content_length().is_some_and(|length| length != 16) {
+            return Err(HttpDownloadError::InvalidHlsKeyLength {
+                actual_bytes: response.content_length().unwrap_or_default(),
+            });
+        }
+        let mut key = Vec::with_capacity(16);
+        loop {
+            let next_chunk = response.chunk();
+            tokio::pin!(next_chunk);
+            let chunk = tokio::select! {
+                biased;
+                changed = directives.changed() => {
+                    let _ = changed;
+                    return Ok(match *directives.borrow() {
+                        TransferDirective::Cancel => HlsKeyFetchOutcome::Cancelled,
+                        TransferDirective::Pause | TransferDirective::Running => HlsKeyFetchOutcome::Paused,
+                    });
+                }
+                result = &mut next_chunk => result.map_err(|error| self.client_error(error))?,
+                _ = tokio::time::sleep(self.stall_timeout) => {
+                    return Err(HttpDownloadError::Stalled {
+                        timeout_ms: duration_millis(self.stall_timeout),
+                    });
+                }
+            };
+            let Some(chunk) = chunk else {
+                break;
+            };
+            if key.len().saturating_add(chunk.len()) > 16 {
+                return Err(HttpDownloadError::InvalidHlsKeyLength {
+                    actual_bytes: u64::try_from(key.len().saturating_add(chunk.len()))
+                        .unwrap_or(u64::MAX),
+                });
+            }
+            let chunk_len =
+                u64::try_from(chunk.len()).map_err(|_| HttpDownloadError::LengthOverflow)?;
+            let bandwidth = control.acquire_bandwidth(chunk_len);
+            tokio::pin!(bandwidth);
+            tokio::select! {
+                biased;
+                changed = directives.changed() => {
+                    let _ = changed;
+                    return Ok(match *directives.borrow() {
+                        TransferDirective::Cancel => HlsKeyFetchOutcome::Cancelled,
+                        TransferDirective::Pause | TransferDirective::Running => HlsKeyFetchOutcome::Paused,
+                    });
+                }
+                () = &mut bandwidth => {}
+            }
+            key.extend_from_slice(&chunk);
+        }
+        let actual_bytes = u64::try_from(key.len()).unwrap_or(u64::MAX);
+        let key = <[u8; 16]>::try_from(key)
+            .map_err(|_| HttpDownloadError::InvalidHlsKeyLength { actual_bytes })?;
+        Ok(HlsKeyFetchOutcome::Loaded(key))
     }
 
     pub async fn download<F>(
@@ -953,6 +1049,13 @@ pub(crate) enum HlsSegmentDownloadOutcome {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HlsKeyFetchOutcome {
+    Loaded([u8; 16]),
+    Paused,
+    Cancelled,
+}
+
 async fn sync_output(output: &mut tokio::fs::File) -> Result<(), std::io::Error> {
     output.flush().await?;
     output.sync_all().await
@@ -964,6 +1067,106 @@ async fn remove_file_if_exists(path: &PathBuf) -> Result<(), std::io::Error> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+pub(crate) const fn hls_sequence_iv(sequence: u64) -> [u8; 16] {
+    let mut iv = [0_u8; 16];
+    let sequence = sequence.to_be_bytes();
+    let mut index = 0;
+    while index < sequence.len() {
+        iv[8 + index] = sequence[index];
+        index += 1;
+    }
+    iv
+}
+
+pub(crate) async fn decrypt_hls_aes128_segment(
+    ciphertext_path: &Path,
+    plaintext_path: &Path,
+    key: [u8; 16],
+    iv: [u8; 16],
+    control: &DownloadTransferControl,
+) -> Result<HlsSegmentDownloadOutcome, HttpDownloadError> {
+    remove_file_if_exists(&plaintext_path.to_path_buf()).await?;
+    let ciphertext_path = ciphertext_path.to_path_buf();
+    let plaintext_path = plaintext_path.to_path_buf();
+    let cleanup_plaintext_path = plaintext_path.clone();
+    let control = control.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        use std::io::{Read, Write};
+
+        let ciphertext_bytes = std::fs::metadata(&ciphertext_path)?.len();
+        if ciphertext_bytes == 0 || ciphertext_bytes % 16 != 0 {
+            return Err(HttpDownloadError::InvalidHlsCiphertextLength {
+                actual_bytes: ciphertext_bytes,
+            });
+        }
+        let mut input = std::fs::File::open(&ciphertext_path)?;
+        let mut output = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&plaintext_path)?;
+        let mut decryptor = cbc::Decryptor::<Aes128>::new((&key).into(), (&iv).into());
+        let block_count = ciphertext_bytes / 16;
+        let mut plaintext_bytes = 0_u64;
+        for block_index in 0..block_count {
+            match control.current_directive() {
+                TransferDirective::Running => {}
+                directive => {
+                    drop(output);
+                    std::fs::remove_file(&plaintext_path)?;
+                    return Ok(match directive {
+                        TransferDirective::Cancel => HlsSegmentDownloadOutcome::Cancelled,
+                        TransferDirective::Pause | TransferDirective::Running => {
+                            HlsSegmentDownloadOutcome::Paused
+                        }
+                    });
+                }
+            }
+            let mut raw_block = [0_u8; 16];
+            input.read_exact(&mut raw_block)?;
+            let mut block = GenericArray::clone_from_slice(&raw_block);
+            decryptor.decrypt_block_mut(&mut block);
+            if block_index + 1 == block_count {
+                let padding = usize::from(block[15]);
+                if padding == 0
+                    || padding > 16
+                    || !block[16 - padding..]
+                        .iter()
+                        .all(|byte| usize::from(*byte) == padding)
+                {
+                    return Err(HttpDownloadError::InvalidHlsPadding);
+                }
+                output.write_all(&block[..16 - padding])?;
+                plaintext_bytes = plaintext_bytes
+                    .checked_add(u64::try_from(16 - padding).unwrap_or_default())
+                    .ok_or(HttpDownloadError::LengthOverflow)?;
+            } else {
+                output.write_all(&block)?;
+                plaintext_bytes = plaintext_bytes
+                    .checked_add(16)
+                    .ok_or(HttpDownloadError::LengthOverflow)?;
+            }
+        }
+        if plaintext_bytes == 0 {
+            return Err(HttpDownloadError::EmptyHlsSegment);
+        }
+        output.flush()?;
+        output.sync_all()?;
+        Ok(HlsSegmentDownloadOutcome::Completed {
+            downloaded_bytes: plaintext_bytes,
+        })
+    })
+    .await
+    .map_err(|error| HttpDownloadError::HlsDecryptionWorker(error.to_string()));
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => Err(error),
+    };
+    if result.is_err() {
+        remove_file_if_exists(&cleanup_plaintext_path).await?;
+    }
+    result
 }
 
 #[derive(Debug, Clone)]
@@ -1308,6 +1511,127 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn aes128_cbc_segment_uses_sequence_iv_and_removes_pkcs7_padding() {
+        let directory = tempfile::tempdir().expect("create AES fixture directory");
+        let ciphertext_path = directory.path().join("segment.encrypted.part");
+        let plaintext_path = directory.path().join("segment.part");
+        tokio::fs::write(
+            &ciphertext_path,
+            [
+                0x66, 0xde, 0x9a, 0x0c, 0x54, 0x6f, 0xfc, 0xb6, 0x3e, 0x5e, 0x74, 0x80, 0x80, 0x1e,
+                0x42, 0x98,
+            ],
+        )
+        .await
+        .expect("write independent ciphertext fixture");
+        let key = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f,
+        ];
+
+        let outcome = decrypt_hls_aes128_segment(
+            &ciphertext_path,
+            &plaintext_path,
+            key,
+            hls_sequence_iv(7_794),
+            &DownloadTransferControl::new(),
+        )
+        .await
+        .expect("decrypt AES-128 segment");
+
+        assert_eq!(
+            outcome,
+            HlsSegmentDownloadOutcome::Completed {
+                downloaded_bytes: 14
+            }
+        );
+        assert_eq!(
+            tokio::fs::read(&plaintext_path)
+                .await
+                .expect("read decrypted segment"),
+            b"encrypted-one|"
+        );
+    }
+
+    #[tokio::test]
+    async fn aes128_cbc_rejects_an_all_padding_segment_and_cleans_plaintext() {
+        let directory = tempfile::tempdir().expect("create empty AES fixture directory");
+        let ciphertext_path = directory.path().join("empty.encrypted.part");
+        let plaintext_path = directory.path().join("empty.part");
+        tokio::fs::write(
+            &ciphertext_path,
+            [
+                0xed, 0x75, 0x55, 0xc6, 0x22, 0x21, 0xcc, 0x68, 0xd2, 0x7e, 0xaa, 0xee, 0x41, 0x3e,
+                0xbc, 0xca,
+            ],
+        )
+        .await
+        .expect("write independently encrypted all-padding fixture");
+
+        let error = decrypt_hls_aes128_segment(
+            &ciphertext_path,
+            &plaintext_path,
+            [
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                0x0e, 0x0f,
+            ],
+            hls_sequence_iv(7_794),
+            &DownloadTransferControl::new(),
+        )
+        .await
+        .expect_err("reject an all-padding media segment");
+
+        assert!(matches!(error, HttpDownloadError::EmptyHlsSegment));
+        assert!(!plaintext_path.exists());
+    }
+
+    #[tokio::test]
+    async fn aes128_cbc_observes_pause_during_local_decryption_and_cleans_plaintext() {
+        let directory = tempfile::tempdir().expect("create paused AES fixture directory");
+        let ciphertext_path = directory.path().join("paused.encrypted.part");
+        let plaintext_path = directory.path().join("paused.part");
+        tokio::fs::write(&ciphertext_path, vec![0_u8; 2 * 1024 * 1024])
+            .await
+            .expect("write paused ciphertext fixture");
+        let control = DownloadTransferControl::new();
+        let worker_control = control.clone();
+        let worker_ciphertext = ciphertext_path.clone();
+        let worker_plaintext = plaintext_path.clone();
+        let decrypt = tokio::spawn(async move {
+            decrypt_hls_aes128_segment(
+                &worker_ciphertext,
+                &worker_plaintext,
+                [0_u8; 16],
+                [0_u8; 16],
+                &worker_control,
+            )
+            .await
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if tokio::fs::metadata(&plaintext_path)
+                .await
+                .is_ok_and(|metadata| metadata.len() > 0)
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline && !decrypt.is_finished(),
+                "local AES decryption did not enter its real file-write boundary"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        control.pause();
+        let outcome = decrypt
+            .await
+            .expect("join local AES decrypt worker")
+            .expect("pause local AES decryption");
+
+        assert_eq!(outcome, HlsSegmentDownloadOutcome::Paused);
+        assert!(!plaintext_path.exists());
+    }
+
     #[test]
     fn validator_mismatch_is_retried_before_failing_the_task() {
         let error = HttpDownloadError::ResourceValidatorMismatch {
@@ -1528,6 +1852,14 @@ pub enum HttpDownloadError {
     UnsupportedHlsFeature(&'static str),
     #[error("HLS media segment is empty")]
     EmptyHlsSegment,
+    #[error("HLS AES-128 key has {actual_bytes} bytes instead of exactly 16")]
+    InvalidHlsKeyLength { actual_bytes: u64 },
+    #[error("HLS AES-128 ciphertext length {actual_bytes} is not a positive block multiple")]
+    InvalidHlsCiphertextLength { actual_bytes: u64 },
+    #[error("HLS AES-128 segment has invalid PKCS#7 padding")]
+    InvalidHlsPadding,
+    #[error("HLS AES-128 decryption worker failed: {0}")]
+    HlsDecryptionWorker(String),
     #[error("HLS media playlist changed since the durable transfer plan was created")]
     HlsResourceChanged,
     #[error(
@@ -1607,6 +1939,9 @@ impl HttpDownloadError {
                 matches!(*status, 408 | 425 | 429 | 500..=599)
             }
             Self::LengthMismatch { .. } | Self::ResourceValidatorMismatch { .. } => true,
+            Self::InvalidHlsKeyLength { .. }
+            | Self::InvalidHlsCiphertextLength { .. }
+            | Self::InvalidHlsPadding => true,
             Self::Stalled { .. } => true,
             Self::InvalidRequest(_)
             | Self::MissingFileName
@@ -1621,6 +1956,7 @@ impl HttpDownloadError {
             | Self::TooManyHlsMediaSegments
             | Self::UnsupportedHlsFeature(_)
             | Self::EmptyHlsSegment
+            | Self::HlsDecryptionWorker(_)
             | Self::HlsResourceChanged
             | Self::SegmentedTransferNeedsKnownLength
             | Self::MissingContentRange
@@ -1652,6 +1988,10 @@ impl HttpDownloadError {
             Self::TooManyHlsMediaSegments => "too_many_hls_media_segments",
             Self::UnsupportedHlsFeature(_) => "unsupported_hls_feature",
             Self::EmptyHlsSegment => "empty_hls_segment",
+            Self::InvalidHlsKeyLength { .. } => "hls_key_invalid_length",
+            Self::InvalidHlsCiphertextLength { .. } => "hls_ciphertext_invalid_length",
+            Self::InvalidHlsPadding => "hls_padding_invalid",
+            Self::HlsDecryptionWorker(_) => "hls_decryption_worker",
             Self::HlsResourceChanged => "hls_resource_changed",
             Self::LengthMismatch { .. } => "length_mismatch",
             Self::SegmentedTransferNeedsKnownLength => "unknown_length",

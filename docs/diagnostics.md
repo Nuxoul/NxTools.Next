@@ -271,6 +271,11 @@ than reporting a false successful cancellation.
 Paused/failed cancellation and history removal additionally emit correlated
 `download.hls_cleanup.started` and `download.hls_cleanup.completed`; their correlation ID is the
 versioned command request ID (or a new operation ID only for a direct in-process API call).
+AES-128 playlist activation emits one `download.hls_encryption.configured` event per task attempt
+with only encrypted Segment count, distinct key-slot count and explicit-IV count. Key fetch,
+ciphertext validation and PKCS#7 failures use fixed error kinds through the existing bounded retry
+and task-failure lifecycle. Key URLs, key bytes, IVs, request headers, cookies and encrypted or
+decrypted media bytes are never logged.
 
 These events retain only correlation/task identity, fixed source/reason/error kind, bounded segment
 and byte counts, connection count and elapsed time. Manifest text, playlist/segment URLs, local

@@ -69,6 +69,323 @@ async fn selected_hls_vod_downloads_segments_and_commits_them_in_playlist_order(
 }
 
 #[tokio::test]
+async fn selected_aes128_hls_vod_decrypts_rotation_and_caches_shared_keys() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create AES-128 HLS engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("encrypted.ts".into());
+    hls_request.connection_limit = Some(3);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/index.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit AES-128 HLS VOD");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for AES-128 HLS terminal state");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "AES-128 HLS VOD failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("encrypted.ts")).expect("read decrypted HLS artifact"),
+        b"encrypted-one|encrypted-two|rotated-three|clear-four"
+    );
+    assert_eq!(
+        server.hls_aes_first_key_attempts(),
+        1,
+        "concurrent segments sharing one key slot must share one key fetch"
+    );
+    assert_eq!(server.hls_aes_second_key_attempts(), 1);
+}
+
+#[tokio::test]
+async fn paused_aes128_hls_vod_reopens_from_plaintext_checkpoint_and_refetches_keys() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create resumable AES-128 HLS directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("encrypted-resumed.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/index.m3u8", server.address()),
+    }));
+    server.hold_hls_aes_second_segment(true);
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit resumable AES-128 HLS VOD");
+    let first_segment = destination
+        .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
+        .join("00000000.segment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while !first_segment.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first decrypted HLS segment did not become durable"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        std::fs::read(&first_segment).expect("read durable decrypted segment"),
+        b"encrypted-one|"
+    );
+    engine.pause(task_id).expect("pause AES-128 HLS VOD");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for AES-128 HLS pause");
+    server.hold_hls_aes_second_segment(false);
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    assert!(first_segment.exists());
+    drop(engine);
+
+    let reopened = DownloadEngine::open(&database).expect("reopen persistent download engine");
+    reopened.resume(task_id).expect("resume AES-128 HLS VOD");
+    let completed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for resumed AES-128 HLS terminal state");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "resumed AES-128 HLS failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("encrypted-resumed.ts"))
+            .expect("read resumed decrypted HLS artifact"),
+        b"encrypted-one|encrypted-two|rotated-three|clear-four"
+    );
+    assert_eq!(
+        server.hls_aes_first_key_attempts(),
+        2,
+        "keys stay memory-only and are refetched after process reopen"
+    );
+}
+
+#[tokio::test]
+async fn invalid_aes128_key_length_fails_without_committing_ciphertext() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create invalid AES-128 HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("invalid-key.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/bad-key.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit invalid-key AES-128 HLS VOD");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for invalid-key AES-128 HLS terminal state");
+
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(!destination.join("invalid-key.ts").exists());
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    let retained_parts = std::fs::read_dir(working)
+        .expect("read retained HLS checkpoint directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
+        .count();
+    assert_eq!(
+        retained_parts, 0,
+        "failed key fetch retains no ciphertext parts"
+    );
+}
+
+#[tokio::test]
+async fn invalid_aes128_padding_fails_without_committing_ciphertext() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create invalid-padding HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("invalid-padding.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/bad-padding.m3u8", server.address()),
+    }));
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit invalid-padding AES-128 HLS VOD");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for invalid-padding AES-128 terminal state");
+
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(!destination.join("invalid-padding.ts").exists());
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    assert!(
+        std::fs::read_dir(working)
+            .expect("read retained HLS checkpoint directory")
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".part")),
+        "invalid padding retains neither plaintext nor ciphertext staging"
+    );
+}
+
+#[tokio::test]
+async fn pausing_during_aes128_key_fetch_leaves_no_segment_staging() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create paused-key HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("paused-key.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/index.m3u8", server.address()),
+    }));
+    server.hold_hls_aes_first_key(true);
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit key-blocked AES-128 HLS VOD");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while server.hls_aes_first_key_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "AES-128 key request did not reach the fixture"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine
+        .pause(task_id)
+        .expect("pause during AES-128 key fetch");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for key-fetch pause");
+    server.hold_hls_aes_first_key(false);
+
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    assert!(
+        std::fs::read_dir(working)
+            .expect("read key-fetch checkpoint directory")
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".part"))
+    );
+}
+
+#[tokio::test]
+async fn pausing_after_aes128_decryption_failure_cleans_retry_staging() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create retry-pause HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("retry-paused.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/bad-padding.m3u8", server.address()),
+    }));
+    server.hold_hls_invalid_padding_retry(true);
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit bad-padding AES-128 HLS VOD");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while server.hls_invalid_padding_attempts() < 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "invalid-padding segment did not enter its second attempt"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine
+        .pause(task_id)
+        .expect("pause during AES-128 retry backoff");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for retry-backoff pause");
+    server.hold_hls_invalid_padding_retry(false);
+
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    assert!(
+        std::fs::read_dir(working)
+            .expect("read retry checkpoint directory")
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".part")),
+        "retry pause retains neither plaintext nor ciphertext staging"
+    );
+}
+
+#[tokio::test]
+async fn cancelling_with_partial_aes128_ciphertext_removes_task_owned_staging() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create ciphertext-cancel HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/master.m3u8", server.address());
+    hls_request.file_name = Some("ciphertext-cancel.ts".into());
+    hls_request.connection_limit = Some(1);
+    hls_request.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+        playlist_url: format!("http://{}/hls/aes/cancel.m3u8", server.address()),
+    }));
+    server.hold_hls_ciphertext_body(true);
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Ui)
+        .expect("submit cancellable AES-128 HLS VOD");
+    let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
+    let ciphertext = working.join("00000000.encrypted.part");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        if std::fs::metadata(&ciphertext).is_ok_and(|metadata| metadata.len() > 0) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "partial AES-128 ciphertext did not reach disk"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine
+        .cancel(task_id)
+        .expect("cancel partial AES-128 ciphertext transfer");
+    let cancelled = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for AES-128 ciphertext cancellation");
+    server.hold_hls_ciphertext_body(false);
+
+    assert_eq!(cancelled.task.status(), DownloadStatus::Cancelled);
+    assert!(
+        !working.exists(),
+        "cancellation removes the HLS task directory"
+    );
+    assert!(!destination.join("ciphertext-cancel.ts").exists());
+}
+
+#[tokio::test]
 async fn selected_hls_vod_bounds_parallel_segment_transfers_by_connection_limit() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create concurrent HLS engine directory");

@@ -24,6 +24,17 @@ pub(crate) struct HlsMediaSegment {
     pub sequence: u64,
     pub url: String,
     pub duration_millis: u64,
+    pub encryption: HlsSegmentEncryption,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum HlsSegmentEncryption {
+    None,
+    Aes128 {
+        key_url: String,
+        key_slot: u32,
+        explicit_iv: Option<[u8; 16]>,
+    },
 }
 
 pub(crate) fn validate_hls_probe_size(probe: &DownloadProbe) -> Result<(), HlsProbeError> {
@@ -143,6 +154,8 @@ pub(crate) fn parse_hls_media_playlist(
     let mut pending_duration = None;
     let mut segments = Vec::new();
     let mut resolved_url_bytes = 0_usize;
+    let mut encryption = HlsSegmentEncryption::None;
+    let mut next_key_slot = 0_u32;
     for line in lines.into_iter().skip(1) {
         if line.is_empty() {
             continue;
@@ -165,10 +178,48 @@ pub(crate) fn parse_hls_media_playlist(
         }
         if let Some(value) = line.strip_prefix("#EXT-X-KEY:") {
             let attributes = parse_attributes(value)?;
-            let method = attribute(&attributes, "METHOD").unwrap_or("NONE");
-            if !method.eq_ignore_ascii_case("NONE") {
-                return Err(HlsProbeError::UnsupportedFeature("encryption"));
+            let method = attribute(&attributes, "METHOD").ok_or(HlsProbeError::InvalidManifest(
+                "encryption method is missing",
+            ))?;
+            if method.eq_ignore_ascii_case("NONE") {
+                if attributes.len() != 1 {
+                    return Err(HlsProbeError::InvalidManifest(
+                        "METHOD=NONE has unexpected attributes",
+                    ));
+                }
+                encryption = HlsSegmentEncryption::None;
+                continue;
             }
+            if !method.eq_ignore_ascii_case("AES-128") {
+                return Err(HlsProbeError::UnsupportedFeature("encryption_method"));
+            }
+            if attribute(&attributes, "KEYFORMAT")
+                .is_some_and(|value| !value.eq_ignore_ascii_case("identity"))
+            {
+                return Err(HlsProbeError::UnsupportedFeature("key_format"));
+            }
+            if attribute(&attributes, "KEYFORMATVERSIONS").is_some_and(|value| value != "1") {
+                return Err(HlsProbeError::UnsupportedFeature("key_format_version"));
+            }
+            let key_uri = bounded_attribute(&attributes, "URI")?
+                .filter(|value| !value.is_empty())
+                .ok_or(HlsProbeError::InvalidManifest("AES-128 key URI is missing"))?;
+            let key_url = resolve_http_url(playlist_url, key_uri, "AES-128 key URI is invalid")?;
+            if key_url.as_str().len() > MAX_HLS_VARIANT_URL_BYTES {
+                return Err(HlsProbeError::MetadataTooLarge);
+            }
+            let explicit_iv = attribute(&attributes, "IV")
+                .map(parse_aes128_iv)
+                .transpose()?;
+            let key_slot = next_key_slot;
+            next_key_slot = next_key_slot
+                .checked_add(1)
+                .ok_or(HlsProbeError::TooManyMediaSegments)?;
+            encryption = HlsSegmentEncryption::Aes128 {
+                key_url: key_url.to_string(),
+                key_slot,
+                explicit_iv,
+            };
             continue;
         }
         if line.starts_with("#EXT-X-MAP:") {
@@ -193,6 +244,9 @@ pub(crate) fn parse_hls_media_playlist(
             return Err(HlsProbeError::MetadataTooLarge);
         }
         resolved_url_bytes = resolved_url_bytes.saturating_add(url.as_str().len());
+        if let HlsSegmentEncryption::Aes128 { key_url, .. } = &encryption {
+            resolved_url_bytes = resolved_url_bytes.saturating_add(key_url.len());
+        }
         if resolved_url_bytes > MAX_HLS_MEDIA_URL_BYTES {
             return Err(HlsProbeError::MetadataTooLarge);
         }
@@ -206,6 +260,7 @@ pub(crate) fn parse_hls_media_playlist(
             sequence,
             url: url.to_string(),
             duration_millis,
+            encryption: encryption.clone(),
         });
     }
     if pending_duration.is_some() {
@@ -223,6 +278,30 @@ pub(crate) fn parse_hls_media_playlist(
         media_sequence,
         segments,
     })
+}
+
+fn parse_aes128_iv(value: &str) -> Result<[u8; 16], HlsProbeError> {
+    let hex = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or(HlsProbeError::InvalidManifest("AES-128 IV is invalid"))?;
+    if hex.is_empty() || hex.len() > 32 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(HlsProbeError::InvalidManifest("AES-128 IV is invalid"));
+    }
+    let mut normalized = String::with_capacity(hex.len().next_multiple_of(2));
+    if hex.len() % 2 != 0 {
+        normalized.push('0');
+    }
+    normalized.push_str(hex);
+    let mut iv = [0_u8; 16];
+    let offset = 16_usize.saturating_sub(normalized.len() / 2);
+    for (index, pair) in normalized.as_bytes().chunks_exact(2).enumerate() {
+        let digits = std::str::from_utf8(pair)
+            .map_err(|_| HlsProbeError::InvalidManifest("AES-128 IV is invalid"))?;
+        iv[offset + index] = u8::from_str_radix(digits, 16)
+            .map_err(|_| HlsProbeError::InvalidManifest("AES-128 IV is invalid"))?;
+    }
+    Ok(iv)
 }
 
 fn following_variant_uri<'a>(lines: &'a [&str], index: usize) -> Result<&'a str, HlsProbeError> {
@@ -462,6 +541,84 @@ b.ts
     }
 
     #[test]
+    fn aes128_key_rotation_and_sequence_iv_are_preserved() {
+        let playlist = parse_hls_media_playlist(
+            &Url::parse("https://example.test/vod/index.m3u8").expect("base URL"),
+            br#"#EXTM3U
+#EXT-X-VERSION:5
+#EXT-X-MEDIA-SEQUENCE:7794
+#EXT-X-KEY:METHOD=AES-128,URI="keys/first.bin"
+#EXTINF:4,
+a.ts
+#EXTINF:4,
+b.ts
+#EXT-X-KEY:METHOD=AES-128,URI="keys/second.bin",IV=0xF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF,KEYFORMAT="identity"
+#EXTINF:4,
+c.ts
+#EXT-X-KEY:METHOD=NONE
+#EXTINF:4,
+d.ts
+#EXT-X-ENDLIST
+"#,
+        )
+        .expect("parse encrypted finite playlist");
+
+        assert_eq!(
+            playlist.segments[0].encryption,
+            HlsSegmentEncryption::Aes128 {
+                key_url: "https://example.test/vod/keys/first.bin".into(),
+                key_slot: 0,
+                explicit_iv: None,
+            }
+        );
+        assert_eq!(
+            playlist.segments[1].encryption,
+            playlist.segments[0].encryption
+        );
+        assert_eq!(
+            playlist.segments[2].encryption,
+            HlsSegmentEncryption::Aes128 {
+                key_url: "https://example.test/vod/keys/second.bin".into(),
+                key_slot: 1,
+                explicit_iv: Some([
+                    0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc,
+                    0xfd, 0xfe, 0xff,
+                ]),
+            }
+        );
+        assert_eq!(playlist.segments[3].encryption, HlsSegmentEncryption::None);
+    }
+
+    #[test]
+    fn repeated_aes128_key_metadata_stays_within_the_aggregate_plan_budget() {
+        let key_uri = format!("{}.bin", "k".repeat(MAX_HLS_VARIANT_URL_BYTES - 64));
+        let mut manifest = format!("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"{key_uri}\"\n");
+        for index in 0..2_000 {
+            manifest.push_str(&format!("#EXTINF:1,\n{index}.ts\n"));
+        }
+        manifest.push_str("#EXT-X-ENDLIST\n");
+
+        let error = parse_hls_media_playlist(
+            &Url::parse("https://example.test/vod/index.m3u8").expect("base URL"),
+            manifest.as_bytes(),
+        )
+        .expect_err("reject a plan whose repeated key metadata exceeds the aggregate budget");
+
+        assert_eq!(error, HlsProbeError::MetadataTooLarge);
+    }
+
+    #[test]
+    fn unsupported_key_format_is_rejected_before_transfer() {
+        let error = parse_hls_media_playlist(
+            &Url::parse("https://example.test/vod/index.m3u8").expect("base URL"),
+            b"#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",KEYFORMAT=\"com.example.drm\"\n#EXTINF:1,\na.ts\n#EXT-X-ENDLIST\n",
+        )
+        .expect_err("reject unsupported key format");
+
+        assert_eq!(error, HlsProbeError::UnsupportedFeature("key_format"));
+    }
+
+    #[test]
     fn unsupported_hls_transfer_features_fail_with_typed_reasons() {
         let base = Url::parse("https://example.test/vod/index.m3u8").expect("base URL");
         let cases: [(&[u8], HlsProbeError); 4] = [
@@ -470,8 +627,8 @@ b.ts
                 HlsProbeError::UnsupportedFeature("live_playlist"),
             ),
             (
-                b"#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n",
-                HlsProbeError::UnsupportedFeature("encryption"),
+                b"#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"key.bin\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n",
+                HlsProbeError::UnsupportedFeature("encryption_method"),
             ),
             (
                 b"#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\na.m4s\n#EXT-X-ENDLIST\n",

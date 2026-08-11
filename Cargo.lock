@@ -4085,7 +4085,9 @@ dependencies = [
 name = "nxtools-download"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "async-channel 2.5.0",
+ "cbc",
  "chrono",
  "reqwest",
  "rusqlite",

@@ -1450,7 +1450,8 @@ Implemented and deterministically verified on 2026-08-10:
   order regardless of completion order.
 - Real loopback HTTP tests cover ordered output, observed parallelism without exceeding the cap,
   and pause -> close engine -> reopen -> resume. Parser tests pin typed rejection of live,
-  AES-128, `EXT-X-MAP` and `EXT-X-BYTERANGE` inputs for this slice.
+  `SAMPLE-AES`, unsupported key formats, `EXT-X-MAP` and `EXT-X-BYTERANGE` inputs; AES-128 support
+  is supplied by the subsequent slice below.
 - The 2026-08-11 review pass made resume re-fetch the selected finite playlist. Only identical
   media-sequence/segment identity and duration layout may reuse checkpoints; compatible refreshed
   URLs are persisted without resetting completed state, while incompatible VOD identity fails
@@ -1464,6 +1465,52 @@ Implemented and deterministically verified on 2026-08-10:
 - Paused/failed cancellation and history removal use the same task-ownership cleanup rule. They
   remove both the HLS Segment directory and merge temporary artifact before publishing success or
   deleting the durable plan; a real filesystem obstruction keeps the prior task/plan recoverable.
+
+Reverified on 2026-08-11 before the AES-128 vertical slice:
+
+- RFC 8216 sections 4.3.2.4, 5 and 6.3.6 define whole-segment `AES-128` as AES-128-CBC with PKCS#7
+  padding. An `identity` key file is exactly 16 binary octets. `EXT-X-KEY` applies until the next
+  tag for the same key format; `METHOD=NONE` returns following segments to plaintext. An explicit
+  IV is a 128-bit hexadecimal value; without one, the segment Media Sequence Number—not its array
+  index—is encoded big-endian into a zero-left-padded 16-byte IV.
+- Old NxTools `HlsPlaylistParser.cs` carries the current `HlsEncryptInfo` onto each subsequent
+  Segment and resolves relative key URIs. `DownloadManagerService.cs::{GetHlsKeyAsync,
+  DecryptAes128}` caches 16-byte keys by URI and decrypts AES-128-CBC/PKCS#7 before publishing each
+  Segment. Its `BuildDefaultHlsIv(segment.Index)` is not retained because it is wrong whenever
+  `EXT-X-MEDIA-SEQUENCE` is nonzero. Its per-segment logs also expose key URIs and IVs and therefore
+  violate the Next diagnostic privacy contract.
+- AB Download Manager `HLSResponseInfo.kt::isMediaPlayListEncrypted` still rejects every encrypted
+  media playlist, so it supplies no compatible decryption behavior. The Next slice keeps AES work
+  inside Rust, persists only bounded encryption metadata (never key bytes), refetches keys after
+  restart, reuses a key at most once per runtime key slot, and accepts only absent/`identity`
+  `KEYFORMAT`. `SAMPLE-AES`, unsupported key formats, MAP and BYTERANGE remain typed rejections.
+- Recovery compatibility compares the encryption method, explicit-IV value and rotation-slot
+  layout while allowing authenticated key URLs to refresh. Completed plaintext Segment artifacts
+  remain reusable only under that compatible identity; pending encrypted bytes are never treated as
+  durable progress. Diagnostics may record only bounded counts, key-slot/Segment indices, fixed
+  error kinds and elapsed time—never key URLs, key bytes, IVs, cookies or request headers.
+
+Implemented and deterministically verified on 2026-08-11:
+
+- `HlsSegmentEncryption` carries plaintext or AES-128 identity metadata on every Segment. SQLite
+  schema v7 persists this bounded metadata as JSON with a v6 default of plaintext; key bytes exist
+  only in the task runtime and are refetched after engine reopen. Because that JSON repeats the
+  active key URL on each Segment, parser and recovery validation charge every repeated copy against
+  the 8 MiB aggregate URL budget rather than counting only distinct key tags.
+- A per-task key-slot cache serializes only callers sharing the same slot, so concurrent Segments
+  fetch one 16-byte key while different rotations may proceed independently. Key requests inherit
+  the original bounded request context and the same pause/cancel and bandwidth seams as media bytes.
+- Ciphertext is written to a separate task-owned staging file. RustCrypto AES/CBC decrypts it in
+  fixed 16-byte blocks to the normal Segment staging file, checks PKCS#7 on the final block, flushes
+  and syncs nonempty plaintext, then removes ciphertext before the existing atomic Segment checkpoint.
+  Retry, pause and cancel clean both non-durable files; cleanup failure is terminal and correlated.
+- Resume compatibility compares plaintext/AES method, key-slot layout and explicit IV while allowing
+  current segment/key URLs to refresh. Completed plaintext Segment artifacts are never re-decrypted;
+  abandoned ciphertext and plaintext `.part` files are not adopted as durable progress.
+- Independent ciphertext vectors plus real loopback Engine tests cover Media Sequence Number 7794,
+  an explicit IV, key rotation, same-slot concurrent caching, exact merged plaintext, pause/reopen,
+  key-fetch/local-decrypt/retry pause boundaries, all-padding empty plaintext, and invalid key
+  length/padding without final publication or retained `.part` files.
 
 ## Resolved phase-0 decisions
 

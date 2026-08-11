@@ -16,7 +16,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 6;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 7;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
@@ -65,6 +65,9 @@ impl SqliteDownloadStore {
         }
         if current < 6 {
             connection.execute_batch(SCHEMA_V6)?;
+        }
+        if current < 7 {
+            connection.execute_batch(SCHEMA_V7)?;
         }
 
         Ok(Self {
@@ -726,9 +729,9 @@ impl SqliteDownloadStore {
                 r#"
                 INSERT INTO download_hls_segments(
                     task_id, segment_index, sequence_number, url, duration_millis,
-                    downloaded_bytes, state, updated_at_unix_ms
+                    encryption_json, downloaded_bytes, state, updated_at_unix_ms
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)
                 "#,
                 params![
                     task_id.as_uuid().to_string(),
@@ -738,6 +741,7 @@ impl SqliteDownloadStore {
                     segment.url,
                     i64::try_from(segment.duration_millis)
                         .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    serde_json::to_string(&segment.encryption)?,
                     enum_name(&DownloadSegmentState::Waiting)?,
                     now_unix_ms(),
                 ],
@@ -764,7 +768,8 @@ impl SqliteDownloadStore {
         };
         let mut statement = connection.prepare(
             r#"
-            SELECT segment_index, sequence_number, url, duration_millis, downloaded_bytes, state
+            SELECT segment_index, sequence_number, url, duration_millis, encryption_json,
+                   downloaded_bytes, state
             FROM download_hls_segments
             WHERE task_id = ?1
             ORDER BY segment_index
@@ -786,9 +791,10 @@ impl SqliteDownloadStore {
                         sequence: nonnegative_u64(row.get(1)?, 1)?,
                         url: row.get(2)?,
                         duration_millis: nonnegative_u64(row.get(3)?, 3)?,
+                        encryption: json_from_text(&row.get::<_, String>(4)?, 4)?,
                     },
-                    downloaded_bytes: nonnegative_u64(row.get(4)?, 4)?,
-                    state: enum_from_name(&row.get::<_, String>(5)?, 5)?,
+                    downloaded_bytes: nonnegative_u64(row.get(5)?, 5)?,
+                    state: enum_from_name(&row.get::<_, String>(6)?, 6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -827,8 +833,9 @@ impl SqliteDownloadStore {
             let updated = transaction.execute(
                 r#"
                 UPDATE download_hls_segments
-                SET url = ?3, duration_millis = ?4, updated_at_unix_ms = ?5
-                WHERE task_id = ?1 AND segment_index = ?2 AND sequence_number = ?6
+                SET url = ?3, duration_millis = ?4, encryption_json = ?5,
+                    updated_at_unix_ms = ?6
+                WHERE task_id = ?1 AND segment_index = ?2 AND sequence_number = ?7
                 "#,
                 params![
                     task_id.as_uuid().to_string(),
@@ -836,6 +843,7 @@ impl SqliteDownloadStore {
                     segment.url,
                     i64::try_from(segment.duration_millis)
                         .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                    serde_json::to_string(&segment.encryption)?,
                     now_unix_ms(),
                     i64::try_from(segment.sequence)
                         .map_err(|_| DownloadStorageError::IntegerOverflow)?,
@@ -1598,6 +1606,16 @@ fn enum_from_name<T: DeserializeOwned>(value: &str, column: usize) -> rusqlite::
     })
 }
 
+fn json_from_text<T: DeserializeOwned>(value: &str, column: usize) -> rusqlite::Result<T> {
+    serde_json::from_str(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 fn nonnegative_u64(value: i64, column: usize) -> rusqlite::Result<u64> {
     u64::try_from(value).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -1864,10 +1882,20 @@ PRAGMA user_version = 6;
 COMMIT;
 "#;
 
+const SCHEMA_V7: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE download_hls_segments
+    ADD COLUMN encryption_json TEXT NOT NULL DEFAULT '"None"';
+
+PRAGMA user_version = 7;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hls::{HlsMediaPlaylist, HlsMediaSegment};
+    use crate::hls::{HlsMediaPlaylist, HlsMediaSegment, HlsSegmentEncryption};
     use crate::{DownloadFault, DownloadProbe, DownloadRequest, DownloadStatus};
 
     #[test]
@@ -1909,12 +1937,18 @@ mod tests {
                     sequence: 42,
                     url: "https://media.example.test/high/42.ts".into(),
                     duration_millis: 4_000,
+                    encryption: HlsSegmentEncryption::Aes128 {
+                        key_url: "https://media.example.test/high/key.bin".into(),
+                        key_slot: 0,
+                        explicit_iv: None,
+                    },
                 },
                 HlsMediaSegment {
                     index: 1,
                     sequence: 43,
                     url: "https://media.example.test/high/43.ts".into(),
                     duration_millis: 2_000,
+                    encryption: HlsSegmentEncryption::None,
                 },
             ],
         };
@@ -1931,6 +1965,11 @@ mod tests {
             let mut refreshed = playlist.clone();
             refreshed.final_url = "https://cdn.example.test/high/index.m3u8?token=fresh".into();
             refreshed.segments[0].url = "https://cdn.example.test/high/42.ts?token=fresh".into();
+            refreshed.segments[0].encryption = HlsSegmentEncryption::Aes128 {
+                key_url: "https://cdn.example.test/high/key.bin?token=fresh".into(),
+                key_slot: 0,
+                explicit_iv: None,
+            };
             refreshed.segments[1].url = "https://cdn.example.test/high/43.ts?token=fresh".into();
             store
                 .refresh_hls_transfer_plan_urls(task.id(), &refreshed)
@@ -1955,6 +1994,14 @@ mod tests {
             "https://cdn.example.test/high/42.ts?token=fresh"
         );
         assert_eq!(restored.segments[1].state, DownloadSegmentState::Waiting);
+        assert_eq!(
+            restored.segments[0].media.encryption,
+            HlsSegmentEncryption::Aes128 {
+                key_url: "https://cdn.example.test/high/key.bin?token=fresh".into(),
+                key_slot: 0,
+                explicit_iv: None,
+            }
+        );
     }
 
     #[test]
@@ -1964,7 +2011,7 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 6);
+            assert_eq!(store.schema_version().expect("schema version"), 7);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -2020,7 +2067,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 6);
+        assert_eq!(store.schema_version().expect("schema version"), 7);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -2029,6 +2076,58 @@ mod tests {
             timeline[0].event,
             DownloadTaskTimelineEvent::TaskCreated
         ));
+    }
+
+    #[test]
+    fn schema_six_hls_rows_upgrade_as_unencrypted_without_losing_checkpoints() {
+        let connection = Connection::open_in_memory().expect("open legacy HLS database");
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .expect("enable foreign keys");
+        for schema in [
+            SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
+        ] {
+            connection
+                .execute_batch(schema)
+                .expect("apply legacy schema");
+        }
+        let task = sample_task("legacy-hls.ts");
+        save_task_row(&connection, &task).expect("save legacy HLS task");
+        connection
+            .execute(
+                r#"
+                INSERT INTO download_hls_plans(task_id, final_url, media_sequence, updated_at_unix_ms)
+                VALUES (?1, 'https://media.example.test/index.m3u8', 9, 1)
+                "#,
+                [task.id().as_uuid().to_string()],
+            )
+            .expect("save legacy HLS plan");
+        connection
+            .execute(
+                r#"
+                INSERT INTO download_hls_segments(
+                    task_id, segment_index, sequence_number, url, duration_millis,
+                    downloaded_bytes, state, updated_at_unix_ms
+                )
+                VALUES (?1, 0, 9, 'https://media.example.test/9.ts', 1000, 12, 'completed', 1)
+                "#,
+                [task.id().as_uuid().to_string()],
+            )
+            .expect("save legacy HLS segment");
+
+        let store = SqliteDownloadStore::initialize(connection).expect("upgrade HLS store");
+        let restored = store
+            .load_hls_transfer_plan(task.id())
+            .expect("load upgraded HLS plan")
+            .expect("upgraded HLS plan exists");
+
+        assert_eq!(store.schema_version().expect("schema version"), 7);
+        assert_eq!(
+            restored.segments[0].media.encryption,
+            HlsSegmentEncryption::None
+        );
+        assert_eq!(restored.segments[0].downloaded_bytes, 12);
+        assert_eq!(restored.segments[0].state, DownloadSegmentState::Completed);
     }
 
     #[test]

@@ -4,6 +4,46 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-WAITENTRY] resumed_exec_wait_entrypoint
+
+**Logged**: 2026-08-11T15:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+A yielded command was resumed through the nested orchestration namespace even though `wait` is a
+top-level tool.
+
+### Error
+
+```text
+TypeError: tools.wait is not a function
+```
+
+### Context
+
+- The earlier Cargo process had yielded a cell ID.
+- The resume attempt called `tools.wait` inside the JavaScript orchestration cell.
+
+### Suggested Fix
+
+Call the top-level wait tool for yielded cells, or rerun a small deterministic command if the cell
+is no longer available.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `.learnings/ERRORS.md`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T15:01:00+08:00
+- **Notes**: Re-ran the targeted Red test directly and captured its expected compiler failure.
+
+---
+
 ## [ERR-20260811-HLSCLEANUPRACE] hls_cleanup_failure_fixture_race
 
 **Logged**: 2026-08-11T10:10:00+08:00

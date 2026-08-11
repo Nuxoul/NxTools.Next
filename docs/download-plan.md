@@ -835,6 +835,25 @@ media sequence、Segment 数量、序号和时长兼容时刷新可能过期的�
 暂停或失败状态下再次取消、以及从历史中删除媒体任务，也会先清理任务所有的 Segment 目录和
 合并临时文件；清理失败保留原状态与持久化计划，不能发布虚假的取消/删除成功。
 
+2026-08-11 完成 AES-128 HLS 纵向切片的自动化实现，但在打包后的真实可播放性验收前仍不勾选
+第二项。媒体 parser 现在遵循 `EXT-X-KEY` 作用域、`METHOD=NONE`、仅 `identity` KEYFORMAT、
+显式 128-bit IV，以及缺省时用 Media Sequence Number（不是数组下标）生成的大端 IV；
+`SAMPLE-AES`、非 identity KEYFORMAT、Map、byte range 和直播仍保持类型化拒绝。SQLite schema
+升至 v7，只持久化有界的加密方法、key slot、key URL 和显式 IV 元数据，绝不落盘 key bytes；
+恢复时比较方法/slot/IV 布局，允许签名 URL 刷新，已完成的明文 Segment 继续复用，运行时密钥
+则在重启后重新获取。
+
+传输按 key slot 共享一次 16-byte 密钥请求，密文先进入独立 staging，再以有界流式
+AES-128-CBC/PKCS#7 解密到原 Segment staging；只有明文 flush/sync 并原子改名后才写完成
+checkpoint。暂停/取消会中断密钥、网络、限速和本地解密边界，错误 key 长度、cipher block 长度
+或 padding 都进入既有有界重试/失败链，纯 padding 的零字节明文也会被拒绝；每次重试前及
+暂停/取消终态都清理明文/密文 `.part`，清理失败不会发布伪成功。重复附着到 Segment 的 key URL
+按实际持久化次数计入 8 MiB 聚合预算，避免小 manifest 放大为无界内存或 SQLite 元数据。真实 loopback HTTP
+与文件系统门禁覆盖非零 media sequence、显式 IV、key 轮换、并发共享 key、严格明文合并、
+暂停后关闭/重开恢复、key-fetch/本地解密/失败重试时暂停，以及错误 key/padding 不发布密文。
+仍待和前一 HLS 切片一起打包做实际媒体
+文件播放、窗口交互和浏览器传递验收。
+
 ### 阶段 6：旧版高级能力与迁移（4–7 天）
 
 - [ ] SHA-256 和用户提供的期望校验值。

@@ -11,8 +11,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
-    HlsSegmentDownloadOutcome, PreparedDownload, PreparedDownloadOutcome, TransferDirective,
-    is_disk_full_error, is_file_in_use_error,
+    HlsKeyFetchOutcome, HlsSegmentDownloadOutcome, PreparedDownload, PreparedDownloadOutcome,
+    TransferDirective, decrypt_hls_aes128_segment, hls_sequence_iv, is_disk_full_error,
+    is_file_in_use_error,
 };
 use crate::storage::{BrowserHandoffSave, StoredTransferState};
 use crate::{
@@ -2796,6 +2797,49 @@ async fn run_hls_task(
         elapsed_ms = started_at.elapsed().as_millis(),
         "HLS media playlist resolved and persisted"
     );
+    let encrypted_segment_count = playlist
+        .segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment.encryption,
+                crate::hls::HlsSegmentEncryption::Aes128 { .. }
+            )
+        })
+        .count();
+    let key_slot_count = playlist
+        .segments
+        .iter()
+        .filter_map(|segment| match segment.encryption {
+            crate::hls::HlsSegmentEncryption::Aes128 { key_slot, .. } => Some(key_slot),
+            crate::hls::HlsSegmentEncryption::None => None,
+        })
+        .collect::<HashSet<_>>()
+        .len();
+    let explicit_iv_count = playlist
+        .segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment.encryption,
+                crate::hls::HlsSegmentEncryption::Aes128 {
+                    explicit_iv: Some(_),
+                    ..
+                }
+            )
+        })
+        .count();
+    if encrypted_segment_count > 0 {
+        info!(
+            event = "download.hls_encryption.configured",
+            %correlation_id,
+            ?task_id,
+            encrypted_segment_count,
+            key_slot_count,
+            explicit_iv_count,
+            "HLS AES-128 transfer configuration accepted"
+        );
+    }
     let fallback_file_name = url::Url::parse(&playlist.final_url)
         .ok()
         .and_then(|url| {
@@ -2950,6 +2994,19 @@ async fn run_hls_task(
     let durable_completed_bytes = Arc::new(AtomicU64::new(completed_bytes));
     let active_progress = Arc::new(Mutex::new(HashMap::<u32, u64>::new()));
     let active_connections = Arc::new(AtomicU16::new(0));
+    let key_cache = Arc::new(
+        playlist
+            .segments
+            .iter()
+            .filter_map(|segment| match segment.encryption {
+                crate::hls::HlsSegmentEncryption::Aes128 { key_slot, .. } => Some((
+                    key_slot,
+                    Arc::new(tokio::sync::Mutex::new(None::<[u8; 16]>)),
+                )),
+                crate::hls::HlsSegmentEncryption::None => None,
+            })
+            .collect::<HashMap<_, _>>(),
+    );
     let max_connections = usize::from(request.connection_limit.unwrap_or(1).clamp(1, 64));
     let mut transfers = tokio::task::JoinSet::new();
     while transfers.len() < max_connections
@@ -2972,6 +3029,7 @@ async fn run_hls_task(
             &durable_completed_bytes,
             &active_progress,
             &active_connections,
+            &key_cache,
             segment,
         );
     }
@@ -3058,6 +3116,7 @@ async fn run_hls_task(
                 &durable_completed_bytes,
                 &active_progress,
                 &active_connections,
+                &key_cache,
                 next,
             );
         }
@@ -3225,7 +3284,30 @@ fn hls_plan_is_compatible(
                 stored.media.index == current.index
                     && stored.media.sequence == current.sequence
                     && stored.media.duration_millis == current.duration_millis
+                    && hls_encryption_is_compatible(&stored.media.encryption, &current.encryption)
             })
+}
+
+fn hls_encryption_is_compatible(
+    stored: &crate::hls::HlsSegmentEncryption,
+    current: &crate::hls::HlsSegmentEncryption,
+) -> bool {
+    match (stored, current) {
+        (crate::hls::HlsSegmentEncryption::None, crate::hls::HlsSegmentEncryption::None) => true,
+        (
+            crate::hls::HlsSegmentEncryption::Aes128 {
+                key_slot: stored_slot,
+                explicit_iv: stored_iv,
+                ..
+            },
+            crate::hls::HlsSegmentEncryption::Aes128 {
+                key_slot: current_slot,
+                explicit_iv: current_iv,
+                ..
+            },
+        ) => stored_slot == current_slot && stored_iv == current_iv,
+        _ => false,
+    }
 }
 
 fn stored_hls_plan_is_valid(plan: &crate::storage::StoredHlsTransferPlan) -> bool {
@@ -3239,12 +3321,33 @@ fn stored_hls_plan_is_valid(plan: &crate::storage::StoredHlsTransferPlan) -> boo
         return false;
     }
     let mut aggregate_url_bytes = 0_usize;
+    let mut key_slots = HashMap::<u32, (&str, Option<[u8; 16]>)>::new();
     plan.segments
         .iter()
         .enumerate()
         .all(|(expected_index, segment)| {
             aggregate_url_bytes = aggregate_url_bytes.saturating_add(segment.media.url.len());
-            usize::try_from(segment.media.index).ok() == Some(expected_index)
+            let encryption_is_valid = match &segment.media.encryption {
+                crate::hls::HlsSegmentEncryption::None => true,
+                crate::hls::HlsSegmentEncryption::Aes128 {
+                    key_url,
+                    key_slot,
+                    explicit_iv,
+                } => {
+                    aggregate_url_bytes = aggregate_url_bytes.saturating_add(key_url.len());
+                    if let Some((known_url, known_iv)) = key_slots.get(key_slot) {
+                        *known_url == key_url && *known_iv == *explicit_iv
+                    } else {
+                        key_slots.insert(*key_slot, (key_url, *explicit_iv));
+                        key_url.len() <= crate::MAX_HLS_VARIANT_URL_BYTES
+                            && url::Url::parse(key_url)
+                                .ok()
+                                .is_some_and(|url| matches!(url.scheme(), "http" | "https"))
+                    }
+                }
+            };
+            encryption_is_valid
+                && usize::try_from(segment.media.index).ok() == Some(expected_index)
                 && plan
                     .media_sequence
                     .checked_add(u64::from(segment.media.index))
@@ -3301,6 +3404,106 @@ type HlsSegmentTransferResult = (
     Result<HlsSegmentDownloadOutcome, HttpDownloadError>,
 );
 
+type HlsKeyCache = Arc<HashMap<u32, Arc<tokio::sync::Mutex<Option<[u8; 16]>>>>>;
+
+async fn cleanup_hls_segment_attempt_files(
+    staging_path: &Path,
+    ciphertext_path: &Path,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    segment_index: u32,
+    reason: &'static str,
+) -> Result<(), HttpDownloadError> {
+    let started_at = Instant::now();
+    let mut first_error = None;
+    for (path, artifact_kind) in [
+        (staging_path, "segment_staging"),
+        (ciphertext_path, "segment_ciphertext"),
+    ] {
+        if let Err(error) = tokio::fs::remove_file(path).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                event = "download.hls_cleanup.failed",
+                %correlation_id,
+                ?task_id,
+                segment_index,
+                reason,
+                artifact_kind,
+                native_error_code = error.raw_os_error(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS segment staging cleanup failed"
+            );
+            first_error.get_or_insert(error);
+        }
+    }
+    match first_error {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn download_hls_segment_attempt<F>(
+    http: &HttpDownloadClient,
+    request: &DownloadRequest,
+    segment: &crate::hls::HlsMediaSegment,
+    staging_path: &PathBuf,
+    ciphertext_path: &PathBuf,
+    control: &DownloadTransferControl,
+    key_cache: &HlsKeyCache,
+    on_progress: F,
+) -> Result<HlsSegmentDownloadOutcome, HttpDownloadError>
+where
+    F: FnMut(u64),
+{
+    let crate::hls::HlsSegmentEncryption::Aes128 {
+        key_url,
+        key_slot,
+        explicit_iv,
+    } = &segment.encryption
+    else {
+        return http
+            .download_hls_segment(request, &segment.url, staging_path, control, on_progress)
+            .await;
+    };
+    let cache = key_cache
+        .get(key_slot)
+        .ok_or(HttpDownloadError::HlsResourceChanged)?;
+    let key = {
+        let mut cached = cache.lock().await;
+        if let Some(key) = *cached {
+            key
+        } else {
+            match http.fetch_hls_aes128_key(request, key_url, control).await? {
+                HlsKeyFetchOutcome::Loaded(key) => {
+                    *cached = Some(key);
+                    key
+                }
+                HlsKeyFetchOutcome::Paused => return Ok(HlsSegmentDownloadOutcome::Paused),
+                HlsKeyFetchOutcome::Cancelled => {
+                    return Ok(HlsSegmentDownloadOutcome::Cancelled);
+                }
+            }
+        }
+    };
+    let downloaded = http
+        .download_hls_segment(request, &segment.url, ciphertext_path, control, on_progress)
+        .await?;
+    if !matches!(downloaded, HlsSegmentDownloadOutcome::Completed { .. }) {
+        return Ok(downloaded);
+    }
+    let iv = explicit_iv.unwrap_or_else(|| hls_sequence_iv(segment.sequence));
+    let decrypted =
+        decrypt_hls_aes128_segment(ciphertext_path, staging_path, key, iv, control).await;
+    match tokio::fs::remove_file(ciphertext_path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    decrypted
+}
+
 #[allow(clippy::too_many_arguments)]
 fn spawn_hls_segment_transfer(
     transfers: &mut tokio::task::JoinSet<HlsSegmentTransferResult>,
@@ -3313,6 +3516,7 @@ fn spawn_hls_segment_transfer(
     durable_completed_bytes: &Arc<AtomicU64>,
     active_progress: &Arc<Mutex<HashMap<u32, u64>>>,
     active_connections: &Arc<AtomicU16>,
+    key_cache: &HlsKeyCache,
     segment: crate::hls::HlsMediaSegment,
 ) {
     let http = inner.http.clone();
@@ -3322,7 +3526,9 @@ fn spawn_hls_segment_transfer(
     let durable_completed_bytes = Arc::clone(durable_completed_bytes);
     let active_progress = Arc::clone(active_progress);
     let active_connections = Arc::clone(active_connections);
+    let key_cache = Arc::clone(key_cache);
     let staging_path = working_directory.join(format!("{:08}.part", segment.index));
+    let ciphertext_path = working_directory.join(format!("{:08}.encrypted.part", segment.index));
     let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
     active_connections.fetch_add(1, Ordering::AcqRel);
     transfers.spawn(async move {
@@ -3332,40 +3538,54 @@ fn spawn_hls_segment_transfer(
             let callback_progress = Arc::clone(&active_progress);
             let callback_completed = Arc::clone(&durable_completed_bytes);
             let callback_active = Arc::clone(&active_connections);
-            let outcome = http
-                .download_hls_segment(
-                    &request,
-                    &segment.url,
-                    &staging_path,
-                    &control,
-                    move |segment_bytes| {
-                        let active_bytes = callback_progress
-                            .lock()
-                            .map(|mut values| {
-                                values.insert(segment.index, segment_bytes);
-                                values.values().copied().sum::<u64>()
-                            })
-                            .unwrap_or_default();
-                        publish_transfer_progress(
-                            &callback_inner,
-                            task_id,
-                            callback_completed
-                                .load(Ordering::Acquire)
-                                .saturating_add(active_bytes),
-                            None,
-                            callback_active.load(Ordering::Acquire),
-                            None,
-                            None,
-                        );
-                    },
-                )
-                .await;
+            let outcome = download_hls_segment_attempt(
+                &http,
+                &request,
+                &segment,
+                &staging_path,
+                &ciphertext_path,
+                &control,
+                &key_cache,
+                move |segment_bytes| {
+                    let active_bytes = callback_progress
+                        .lock()
+                        .map(|mut values| {
+                            values.insert(segment.index, segment_bytes);
+                            values.values().copied().sum::<u64>()
+                        })
+                        .unwrap_or_default();
+                    publish_transfer_progress(
+                        &callback_inner,
+                        task_id,
+                        callback_completed
+                            .load(Ordering::Acquire)
+                            .saturating_add(active_bytes),
+                        None,
+                        callback_active.load(Ordering::Acquire),
+                        None,
+                        None,
+                    );
+                },
+            )
+            .await;
             match outcome {
                 Err(error) if should_retry_transfer(attempt, &error) => {
                     if let Ok(mut values) = active_progress.lock() {
                         values.insert(segment.index, 0);
                     }
                     let delay = transfer_retry_delay(attempt);
+                    if let Err(cleanup_error) = cleanup_hls_segment_attempt_files(
+                        &staging_path,
+                        &ciphertext_path,
+                        task_id,
+                        correlation_id,
+                        segment.index,
+                        "segment_retry",
+                    )
+                    .await
+                    {
+                        break Err(cleanup_error);
+                    }
                     warn!(
                         event = "download.hls_segment_retry.scheduled",
                         %correlation_id,
@@ -3381,22 +3601,18 @@ fn spawn_hls_segment_transfer(
                     let _ = control.wait_for_stop_or_timeout(delay).await;
                 }
                 terminal => {
-                    let cleanup_started_at = Instant::now();
-                    if terminal.is_err()
-                        && let Err(cleanup_error) = tokio::fs::remove_file(&staging_path).await
-                        && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                    if !matches!(terminal, Ok(HlsSegmentDownloadOutcome::Completed { .. }))
+                        && let Err(cleanup_error) = cleanup_hls_segment_attempt_files(
+                            &staging_path,
+                            &ciphertext_path,
+                            task_id,
+                            correlation_id,
+                            segment.index,
+                            "segment_terminal",
+                        )
+                        .await
                     {
-                        warn!(
-                            event = "download.hls_cleanup.failed",
-                            %correlation_id,
-                            ?task_id,
-                            segment_index = segment.index,
-                            reason = "segment_terminal_failure",
-                            artifact_kind = "segment_staging",
-                            native_error_code = cleanup_error.raw_os_error(),
-                            elapsed_ms = cleanup_started_at.elapsed().as_millis(),
-                            "HLS segment staging cleanup failed"
-                        );
+                        break Err(cleanup_error);
                     }
                     break terminal;
                 }

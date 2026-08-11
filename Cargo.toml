@@ -20,9 +20,11 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+aes = "0.8.4"
 anyhow = "1.0.98"
 async-channel = "2.5.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+cbc = "0.1.2"
 directories = "6.0.0"
 fs2 = "0.4.3"
 gpui = { version = "0.2.2", default-features = false, features = ["windows-manifest"] }

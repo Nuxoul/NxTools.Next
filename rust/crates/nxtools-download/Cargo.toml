@@ -5,7 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+aes.workspace = true
 async-channel.workspace = true
+cbc.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true

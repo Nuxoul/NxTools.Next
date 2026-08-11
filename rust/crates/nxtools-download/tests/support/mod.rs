@@ -32,6 +32,56 @@ segment-12.ts
 const HLS_SEGMENT_10: &[u8] = b"segment-ten|";
 const HLS_SEGMENT_11: &[u8] = b"segment-eleven|";
 const HLS_SEGMENT_12: &[u8] = b"segment-twelve";
+const HLS_AES128_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-VERSION:5
+#EXT-X-MEDIA-SEQUENCE:7794
+#EXT-X-KEY:METHOD=AES-128,URI="key-one.bin"
+#EXTINF:1.0,
+encrypted-one.ts
+#EXTINF:1.0,
+encrypted-two.ts
+#EXT-X-KEY:METHOD=AES-128,URI="key-two.bin",IV=0xF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF,KEYFORMAT="identity"
+#EXTINF:1.0,
+rotated-three.ts
+#EXT-X-KEY:METHOD=NONE
+#EXTINF:1.0,
+clear-four.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_AES128_BAD_KEY_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="key-short.bin"
+#EXTINF:1.0,
+encrypted-one.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_AES128_BAD_PADDING_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-MEDIA-SEQUENCE:7794
+#EXT-X-KEY:METHOD=AES-128,URI="key-one.bin"
+#EXTINF:1.0,
+invalid-padding.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_AES128_CANCEL_VOD: &[u8] = br#"#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="key-one.bin"
+#EXTINF:1.0,
+cancel-ciphertext.ts
+#EXT-X-ENDLIST
+"#;
+const HLS_AES128_KEY_ONE: &[u8] = &[
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+];
+const HLS_AES128_KEY_TWO: &[u8] = &[
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+];
+const HLS_AES128_SEGMENT_ONE: &[u8] = &[
+    0x66, 0xde, 0x9a, 0x0c, 0x54, 0x6f, 0xfc, 0xb6, 0x3e, 0x5e, 0x74, 0x80, 0x80, 0x1e, 0x42, 0x98,
+];
+const HLS_AES128_SEGMENT_TWO: &[u8] = &[
+    0x40, 0xfd, 0xb1, 0x63, 0x78, 0x31, 0x73, 0x61, 0x4d, 0x47, 0x56, 0x1e, 0x5f, 0xa7, 0x7f, 0x2c,
+];
+const HLS_AES128_SEGMENT_THREE: &[u8] = &[
+    0x64, 0x70, 0x58, 0x74, 0x9c, 0x7a, 0x33, 0x19, 0xf7, 0x0c, 0xb9, 0xbe, 0x30, 0x64, 0x88, 0x18,
+];
 const HLS_CONCURRENT_VOD: &[u8] = br#"#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:1
@@ -268,6 +318,34 @@ impl DeterministicHttpServer {
         self.hls_second_segment_attempts.load(Ordering::Acquire)
     }
 
+    pub fn hls_aes_first_key_attempts(&self) -> u64 {
+        self.hls_first_segment_attempts()
+    }
+
+    pub fn hold_hls_aes_first_key(&self, hold: bool) {
+        self.hold_hls_first_segment(hold);
+    }
+
+    pub fn hls_aes_second_key_attempts(&self) -> u64 {
+        self.hls_second_segment_attempts()
+    }
+
+    pub fn hold_hls_aes_second_segment(&self, hold: bool) {
+        self.hold_hls_second_segment(hold);
+    }
+
+    pub fn hls_invalid_padding_attempts(&self) -> u64 {
+        self.dynamic_range_attempts()
+    }
+
+    pub fn hold_hls_invalid_padding_retry(&self, hold: bool) {
+        self.hold_hls_second_segment(hold);
+    }
+
+    pub fn hold_hls_ciphertext_body(&self, hold: bool) {
+        self.hold_hls_second_segment(hold);
+    }
+
     pub fn hold_hls_second_segment(&self, hold: bool) {
         self.hold_hls_second_segment.store(hold, Ordering::Release);
     }
@@ -497,6 +575,160 @@ fn serve_connection(
                 HLS_SEGMENT_12
             },
             Some(HLS_SEGMENT_12.len()),
+        ),
+        "/hls/aes/index.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_VOD
+            },
+            Some(HLS_AES128_VOD.len()),
+        ),
+        "/hls/aes/bad-key.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_BAD_KEY_VOD
+            },
+            Some(HLS_AES128_BAD_KEY_VOD.len()),
+        ),
+        "/hls/aes/bad-padding.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_BAD_PADDING_VOD
+            },
+            Some(HLS_AES128_BAD_PADDING_VOD.len()),
+        ),
+        "/hls/aes/cancel.m3u8" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/vnd.apple.mpegurl")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_CANCEL_VOD
+            },
+            Some(HLS_AES128_CANCEL_VOD.len()),
+        ),
+        "/hls/aes/key-one.bin" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            HLS_AES128_KEY_ONE,
+            active_range_transfers,
+            max_active_range_transfers,
+            Some(hls_first_segment_attempts),
+            Some(hold_hls_first_segment),
+        ),
+        "/hls/aes/key-two.bin" => {
+            hls_second_segment_attempts.fetch_add(1, Ordering::AcqRel);
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "application/octet-stream")],
+                if method == "HEAD" {
+                    b""
+                } else {
+                    HLS_AES128_KEY_TWO
+                },
+                Some(HLS_AES128_KEY_TWO.len()),
+            )
+        }
+        "/hls/aes/key-short.bin" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "application/octet-stream")],
+            if method == "HEAD" {
+                b""
+            } else {
+                &HLS_AES128_KEY_ONE[..15]
+            },
+            Some(15),
+        ),
+        "/hls/aes/encrypted-one.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_SEGMENT_ONE
+            },
+            Some(HLS_AES128_SEGMENT_ONE.len()),
+        ),
+        "/hls/aes/invalid-padding.ts" => {
+            let attempt = dynamic_range_attempts.fetch_add(1, Ordering::AcqRel) + 1;
+            if attempt >= 2 {
+                let hold_deadline = std::time::Instant::now() + Duration::from_secs(5);
+                while hold_hls_second_segment.load(Ordering::Acquire)
+                    && std::time::Instant::now() < hold_deadline
+                {
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "video/mp2t")],
+                if method == "HEAD" {
+                    b""
+                } else {
+                    &[
+                        0x66, 0xde, 0x9a, 0x0c, 0x54, 0x6f, 0xfc, 0xb6, 0x3e, 0x5e, 0x74, 0x80,
+                        0x80, 0x1e, 0x42, 0x00,
+                    ]
+                },
+                Some(16),
+            )
+        }
+        "/hls/aes/cancel-ciphertext.ts" => {
+            serve_held_hls_ciphertext(&mut stream, method, hold_hls_second_segment)
+        }
+        "/hls/aes/encrypted-two.ts" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            HLS_AES128_SEGMENT_TWO,
+            active_range_transfers,
+            max_active_range_transfers,
+            None,
+            Some(hold_hls_second_segment),
+        ),
+        "/hls/aes/rotated-three.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" {
+                b""
+            } else {
+                HLS_AES128_SEGMENT_THREE
+            },
+            Some(HLS_AES128_SEGMENT_THREE.len()),
+        ),
+        "/hls/aes/clear-four.ts" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            if method == "HEAD" { b"" } else { b"clear-four" },
+            Some(b"clear-four".len()),
         ),
         "/hls/concurrent/index.m3u8" => {
             let body = if revision.load(Ordering::Acquire) == 1 {
@@ -853,6 +1085,40 @@ fn serve_connection(
 
 fn serve_range(stream: &mut TcpStream, method: &str, range: Option<&String>) {
     serve_range_with_validator(stream, method, range, "\"fixture-static\"");
+}
+
+fn serve_held_hls_ciphertext(stream: &mut TcpStream, method: &str, hold: &AtomicBool) {
+    const CIPHERTEXT_BYTES: usize = 64 * 1024;
+    if method == "HEAD" {
+        write_response(
+            stream,
+            200,
+            "OK",
+            &[("Content-Type", "video/mp2t")],
+            b"",
+            Some(CIPHERTEXT_BYTES),
+        );
+        return;
+    }
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: {CIPHERTEXT_BYTES}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(head.as_bytes()).is_err()
+        || stream.write_all(&[0_u8; 4 * 1024]).is_err()
+        || stream.flush().is_err()
+    {
+        return;
+    }
+    let hold_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while hold.load(Ordering::Acquire) && std::time::Instant::now() < hold_deadline {
+        thread::sleep(Duration::from_millis(2));
+    }
+    for _ in 1..16 {
+        if stream.write_all(&[0_u8; 4 * 1024]).is_err() {
+            return;
+        }
+    }
+    let _ = stream.flush();
 }
 
 fn serve_concurrent_hls_segment(
