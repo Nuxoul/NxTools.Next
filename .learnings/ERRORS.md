@@ -4,6 +4,284 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260811-PSARRAYSUBEXPR] powershell_multiline_array_subexpression_not_closed
+
+**Logged**: 2026-08-11T15:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A multiline PowerShell call wrapped in `@(...)` omitted the array subexpression's closing
+parenthesis, and a neighboring interpolated variable was immediately followed by a colon.
+
+### Error
+
+```text
+Missing closing ')' in subexpression.
+Variable reference is not valid. ':' was not followed by a valid variable name character.
+```
+
+### Suggested Fix
+
+Count the command call and array-subexpression delimiters separately, delimit variables as
+`${name}` before punctuation, and run the PowerShell AST parser before any runtime gate.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/runtime/download-media-smoke.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T15:21:00+08:00
+- **Notes**: Closed the array subexpression, delimited the variable, then passed parser, bounded
+  process-tree, and remote-source gates.
+
+---
+
+## [ERR-20260811-EXPECTERRDEBUG] expect_err_required_non_debug_success_type
+
+**Logged**: 2026-08-11T14:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A CLI boundary test used `Result::expect_err`, which requires the successful IPC client type to
+implement `Debug` even though only the error branch mattered.
+
+### Error
+
+```text
+DownloadIpcClient doesn't implement Debug
+```
+
+### Context
+
+- Adding `Debug` to the production transport solely for a test would widen an unrelated interface.
+- An explicit result match expresses the same assertion without that trait bound.
+
+### Suggested Fix
+
+Use explicit `match` when asserting an error on a result whose successful resource type intentionally
+does not implement `Debug`.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-cli/src/lib.rs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:51:00+08:00
+- **Notes**: Replaced `expect_err` with an explicit match and reran the CLI test suite.
+
+---
+
+## [ERR-20260811-CARGOWORKSPACEDEP] undeclared_workspace_dependency_inheritance
+
+**Logged**: 2026-08-11T14:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The CLI test initially tried to inherit `tempfile` from workspace dependencies even though this
+repository declares that dev dependency directly in each consuming crate.
+
+### Error
+
+```text
+dependency.tempfile was not found in workspace.dependencies
+```
+
+### Context
+
+- The failure happened during manifest loading, before Rust compilation.
+- Neighboring crates consistently use `tempfile = "3.20.0"` under dev-dependencies.
+
+### Suggested Fix
+
+Inspect neighboring Cargo manifests before choosing workspace inheritance for a new test dependency.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `rust/apps/nxtools-cli/Cargo.toml`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:46:00+08:00
+- **Notes**: Matched the existing direct dev-dependency declaration and reran the CLI gate.
+
+---
+
+## [ERR-20260811-ADDTYPEUSINGS] add_type_does_not_apply_implicit_usings
+
+**Logged**: 2026-08-11T14:32:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The standalone C# process-runner source relied on SDK implicit usings that PowerShell `Add-Type`
+does not supply.
+
+### Error
+
+```text
+CS0246: The type or namespace name 'StreamReader' could not be found.
+```
+
+### Context
+
+- The helper is compiled directly by `Add-Type`, outside an SDK-style project.
+- `System`, `System.IO`, `System.Threading` and `System.Threading.Tasks` therefore must be imported
+  explicitly.
+
+### Suggested Fix
+
+Treat standalone `Add-Type` sources as self-contained C# compilation units and execute their real
+load path during verification.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/runtime/MediaSmokeProcessRunner.cs`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:33:00+08:00
+- **Notes**: Added all explicit framework namespace imports and reran the contract mode.
+
+---
+
+## [ERR-20260811-PSNUMERIC] powershell_numeric_separator_runtime_failure
+
+**Logged**: 2026-08-11T14:30:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+PowerShell accepted the media smoke script during parser inspection but treated numeric literals
+with underscore separators as command names at runtime.
+
+### Error
+
+```text
+The term '15_000' is not recognized as a name of a cmdlet, function, script file, or executable program.
+```
+
+### Context
+
+- Rust/C# numeric separators had been carried into a PowerShell script.
+- Parser success alone did not prove runtime compatibility on the workstation shell.
+
+### Suggested Fix
+
+Use plain decimal numeric literals in repository PowerShell and run each new execution mode, not
+only the parser.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/runtime/download-media-smoke.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:31:00+08:00
+- **Notes**: Removed numeric separators and reran the process-runner and source-preflight modes.
+
+---
+
+## [ERR-20260811-POWERSHELLOUTPUT] powershell_method_output_contaminated_return_value
+
+**Logged**: 2026-08-11T14:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The bounded HTTP helper allowed `EnsureSuccessStatusCode()` to write its response object into the
+PowerShell success stream, turning the intended manifest string return into an object array.
+
+### Error
+
+```text
+The Apple HLS master no longer exposes the expected bounded variant layout.
+```
+
+### Context
+
+- The manifest reader returned both the `HttpResponseMessage` and decoded UTF-8 text.
+- PowerShell functions return every uncaptured success-stream value, including ordinary .NET
+  method return values.
+
+### Suggested Fix
+
+Assign non-payload method results to `$null` inside helpers that promise one typed output value.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/runtime/download-media-smoke.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:16:00+08:00
+- **Notes**: Suppressed the response object and reran the real bounded source preflight.
+
+---
+
+## [ERR-20260811-POWERSHELLREGEX] powershell_single_quoted_regex_overescaped
+
+**Logged**: 2026-08-11T14:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+The first media-source preflight over-escaped regex metacharacters inside PowerShell single-quoted
+patterns, so a present Apple HLS variant was reported missing.
+
+### Error
+
+```text
+The Apple HLS master no longer exposes the expected bounded variant layout.
+```
+
+### Context
+
+- The remote manifest was healthy and contained the expected relative variant.
+- PowerShell passes backslashes literally in single-quoted strings; regex `\.` and `\s` require
+  only one backslash there.
+
+### Suggested Fix
+
+Use regex-level escaping only in PowerShell single-quoted patterns and run the source-only preflight
+against the actual remote manifest.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `tests/runtime/download-media-smoke.ps1`
+
+### Resolution
+
+- **Resolved**: 2026-08-11T14:12:00+08:00
+- **Notes**: Corrected the four patterns and reran the bounded remote-source preflight.
+
+---
+
 ## [ERR-20260811-WAITENTRY] resumed_exec_wait_entrypoint
 
 **Logged**: 2026-08-11T15:00:00+08:00
