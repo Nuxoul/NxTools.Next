@@ -371,7 +371,23 @@ async fn cancelling_a_paused_hls_task_removes_segments_and_durable_plan() {
         DownloadStatus::Paused
     );
 
-    engine.cancel(task_id).expect("cancel paused HLS task");
+    let cancel_correlation = uuid::Uuid::new_v4();
+    let cancel_result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: cancel_correlation,
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Task {
+            task_id,
+            action: DownloadTaskAction::Cancel,
+        },
+    });
+    assert_eq!(cancel_result.request_id, cancel_correlation);
+    assert!(matches!(
+        cancel_result.outcome,
+        DownloadCommandOutcome::Accepted {
+            task_id: Some(accepted_task_id)
+        } if accepted_task_id == task_id
+    ));
     assert_eq!(
         engine
             .task(task_id)
@@ -398,9 +414,25 @@ async fn cancelling_a_paused_hls_task_removes_segments_and_durable_plan() {
 
     std::fs::create_dir_all(&working).expect("recreate orphaned HLS directory");
     std::fs::write(working.join("orphan.segment"), b"orphan").expect("write orphaned HLS segment");
-    engine
-        .remove(task_id, false)
-        .expect("remove cancelled HLS task and owned staging");
+    let remove_correlation = uuid::Uuid::new_v4();
+    let remove_result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: remove_correlation,
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Task {
+            task_id,
+            action: DownloadTaskAction::Remove {
+                delete_artifact: false,
+            },
+        },
+    });
+    assert_eq!(remove_result.request_id, remove_correlation);
+    assert!(matches!(
+        remove_result.outcome,
+        DownloadCommandOutcome::Accepted {
+            task_id: Some(accepted_task_id)
+        } if accepted_task_id == task_id
+    ));
     assert!(
         !working.exists(),
         "task removal cleans any remaining task-owned HLS directory"

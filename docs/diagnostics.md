@@ -268,6 +268,9 @@ failure. A transient segment retry uses `download.hls_segment_retry.scheduled`; 
 failure uses `download.hls_cleanup.failed` with a fixed reason, artifact kind, native error code and
 elapsed time; cancellation cleanup failure becomes a failed task and retains plan ownership rather
 than reporting a false successful cancellation.
+Paused/failed cancellation and history removal additionally emit correlated
+`download.hls_cleanup.started` and `download.hls_cleanup.completed`; their correlation ID is the
+versioned command request ID (or a new operation ID only for a direct in-process API call).
 
 These events retain only correlation/task identity, fixed source/reason/error kind, bounded segment
 and byte counts, connection count and elapsed time. Manifest text, playlist/segment URLs, local

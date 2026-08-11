@@ -778,11 +778,13 @@ impl DownloadEngine {
         match action {
             DownloadTaskAction::Pause => self.pause(task_id),
             DownloadTaskAction::Resume => self.resume_correlated(task_id, correlation_id),
-            DownloadTaskAction::Cancel => self.cancel(task_id),
+            DownloadTaskAction::Cancel => self.cancel_correlated(task_id, correlation_id),
             DownloadTaskAction::SetSpeedLimit { bytes_per_second } => {
                 self.set_task_speed_limit_correlated(task_id, bytes_per_second, correlation_id)
             }
-            DownloadTaskAction::Remove { delete_artifact } => self.remove(task_id, delete_artifact),
+            DownloadTaskAction::Remove { delete_artifact } => {
+                self.remove_correlated(task_id, delete_artifact, correlation_id)
+            }
         }
     }
 
@@ -2196,7 +2198,14 @@ impl DownloadEngine {
     }
 
     pub fn cancel(&self, task_id: DownloadTaskId) -> Result<(), DownloadEngineError> {
-        let correlation_id = uuid::Uuid::new_v4();
+        self.cancel_correlated(task_id, uuid::Uuid::new_v4())
+    }
+
+    fn cancel_correlated(
+        &self,
+        task_id: DownloadTaskId,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
         let started_at = Instant::now();
         let _scheduler = self
             .inner
@@ -2222,6 +2231,13 @@ impl DownloadEngine {
                     state.task.request().media.as_ref(),
                     Some(DownloadRequestMedia::Hls(_))
                 ) {
+                    info!(
+                        event = "download.hls_cleanup.started",
+                        %correlation_id,
+                        ?task_id,
+                        reason = "cancelled",
+                        "HLS task-owned artifact cleanup started"
+                    );
                     remove_hls_owned_artifacts(
                         state.task.request(),
                         task_id,
@@ -2231,6 +2247,14 @@ impl DownloadEngine {
                         started_at,
                     )?;
                     self.inner.store.clear_hls_transfer_plan(task_id)?;
+                    info!(
+                        event = "download.hls_cleanup.completed",
+                        %correlation_id,
+                        ?task_id,
+                        reason = "cancelled",
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        "HLS task-owned artifact cleanup completed"
+                    );
                 } else {
                     remove_task_temporary_artifact(state);
                 }
@@ -2262,7 +2286,15 @@ impl DownloadEngine {
         task_id: DownloadTaskId,
         delete_artifact: bool,
     ) -> Result<(), DownloadEngineError> {
-        let correlation_id = uuid::Uuid::new_v4();
+        self.remove_correlated(task_id, delete_artifact, uuid::Uuid::new_v4())
+    }
+
+    fn remove_correlated(
+        &self,
+        task_id: DownloadTaskId,
+        delete_artifact: bool,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
         let started_at = Instant::now();
         let snapshot = {
             let tasks = self.inner.lock_tasks()?;
@@ -2290,6 +2322,13 @@ impl DownloadEngine {
             snapshot.task.request().media.as_ref(),
             Some(DownloadRequestMedia::Hls(_))
         ) {
+            info!(
+                event = "download.hls_cleanup.started",
+                %correlation_id,
+                ?task_id,
+                reason = "removed",
+                "HLS task-owned artifact cleanup started"
+            );
             remove_hls_owned_artifacts(
                 snapshot.task.request(),
                 task_id,
@@ -2298,6 +2337,14 @@ impl DownloadEngine {
                 "removed",
                 started_at,
             )?;
+            info!(
+                event = "download.hls_cleanup.completed",
+                %correlation_id,
+                ?task_id,
+                reason = "removed",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS task-owned artifact cleanup completed"
+            );
         } else if let Some(temporary_path) = snapshot.temporary_path.as_deref() {
             remove_path_if_exists(temporary_path)?;
         }
