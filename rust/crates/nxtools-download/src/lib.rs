@@ -7,15 +7,21 @@ use uuid::Uuid;
 
 mod artifact;
 mod capacity;
+mod dash;
 mod engine;
 mod hls;
 mod http;
+mod media;
 mod message;
 mod rate_limit;
 mod storage;
 
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
 pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
+pub use dash::{
+    MAX_DASH_FIELD_BYTES, MAX_DASH_MANIFEST_BYTES, MAX_DASH_PROBE_SERIALIZED_BYTES,
+    MAX_DASH_REPRESENTATIONS, MAX_DASH_SEGMENTS, MAX_DASH_URL_BYTES,
+};
 pub use engine::{
     BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
     DownloadEngineTask, DownloadScheduleMoment, daily_schedule_window_contains,
@@ -32,14 +38,14 @@ pub use http::{
 };
 pub use message::{
     BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
-    DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
-    DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequenceError,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadMediaProbe, DownloadProbe,
-    DownloadProgress, DownloadQuery, DownloadQueueAction, DownloadQueuePlacement,
-    DownloadSegmentProgress, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
-    DownloadTaskDetail, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, HlsProbe,
-    HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
+    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashProbe, DashTrackProbe, DownloadAggregateMetrics,
+    DownloadBatchAction, DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope,
+    DownloadCommandOutcome, DownloadCommandResult, DownloadEvent, DownloadEventEnvelope,
+    DownloadEventSequenceError, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
+    DownloadMediaProbe, DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueueAction,
+    DownloadQueuePlacement, DownloadSegmentProgress, DownloadSnapshot, DownloadSubmitMode,
+    DownloadTaskAction, DownloadTaskDetail, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    HlsProbe, HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};
@@ -94,11 +100,19 @@ pub struct DownloadAdaptiveSegmentPolicy {
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum DownloadRequestMedia {
     Hls(HlsDownloadRequest),
+    Dash(DashDownloadRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HlsDownloadRequest {
     pub playlist_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DashDownloadRequest {
+    pub manifest_url: String,
+    pub video_representation_id: Option<String>,
+    pub audio_representation_id: Option<String>,
 }
 
 impl Default for DownloadAdaptiveSegmentPolicy {
@@ -182,6 +196,29 @@ impl DownloadRequest {
                 return Err(DownloadRequestError::MediaUrlTooLong);
             }
         }
+        if let Some(DownloadRequestMedia::Dash(dash)) = self.media.as_ref() {
+            let manifest_url = url::Url::parse(&dash.manifest_url)
+                .map_err(|_| DownloadRequestError::InvalidMediaUrl)?;
+            if !matches!(manifest_url.scheme(), "http" | "https") {
+                return Err(DownloadRequestError::UnsupportedMediaScheme(
+                    manifest_url.scheme().to_owned(),
+                ));
+            }
+            if dash.manifest_url.len() > MAX_DASH_URL_BYTES {
+                return Err(DownloadRequestError::MediaUrlTooLong);
+            }
+            if dash.video_representation_id.is_none() && dash.audio_representation_id.is_none() {
+                return Err(DownloadRequestError::MissingMediaSelection);
+            }
+            if dash
+                .video_representation_id
+                .iter()
+                .chain(dash.audio_representation_id.iter())
+                .any(|identity| identity.is_empty() || identity.len() > MAX_DASH_FIELD_BYTES)
+            {
+                return Err(DownloadRequestError::InvalidMediaSelection);
+            }
+        }
         if self.headers.iter().any(|header| {
             header.name.is_empty()
                 || header.name.contains([':', '\r', '\n'])
@@ -227,6 +264,10 @@ pub enum DownloadRequestError {
     UnsupportedMediaScheme(String),
     #[error("media playlist URL exceeds the bounded field limit")]
     MediaUrlTooLong,
+    #[error("media request has no selected track")]
+    MissingMediaSelection,
+    #[error("media track selection is invalid or exceeds the bounded field limit")]
+    InvalidMediaSelection,
     #[error("download request contains an invalid header")]
     InvalidHeader,
 }
@@ -799,7 +840,11 @@ impl DownloadStatus {
             Self::Finalizing => {
                 matches!(
                     next,
-                    Self::Verifying | Self::Completed | Self::Failed | Self::Cancelled
+                    Self::Paused
+                        | Self::Verifying
+                        | Self::Completed
+                        | Self::Failed
+                        | Self::Cancelled
                 )
             }
             Self::Verifying => {
@@ -891,6 +936,16 @@ impl DownloadTask {
 
     pub(crate) fn set_speed_limit(&mut self, bytes_per_second: Option<u64>, now_unix_ms: i64) {
         self.request.speed_limit_bytes_per_second = bytes_per_second;
+        self.updated_at_unix_ms = now_unix_ms;
+    }
+
+    pub(crate) fn set_media(&mut self, media: DownloadRequestMedia, now_unix_ms: i64) {
+        self.request.media = Some(media);
+        self.updated_at_unix_ms = now_unix_ms;
+    }
+
+    pub(crate) fn set_file_name(&mut self, file_name: String, now_unix_ms: i64) {
+        self.request.file_name = Some(file_name);
         self.updated_at_unix_ms = now_unix_ms;
     }
 

@@ -13,6 +13,10 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
+use crate::dash::{
+    DashError, MAX_DASH_MANIFEST_BYTES, MAX_DASH_URL_BYTES, parse_dash_manifest,
+    validate_dash_probe_size,
+};
 use crate::hls::{
     HlsMediaPlaylist, HlsProbeError, MAX_HLS_MANIFEST_BYTES, MAX_HLS_VARIANT_URL_BYTES,
     parse_hls_media_playlist, parse_hls_probe, validate_hls_probe_size,
@@ -129,6 +133,9 @@ impl HttpDownloadClient {
         {
             let (manifest_url, hls) = self.probe_hls_manifest(request).await?;
             (manifest_url, Some(DownloadMediaProbe::Hls(hls)))
+        } else if is_dash_candidate(&probed_url, metadata.content_type.as_deref()) {
+            let (manifest_url, dash) = self.probe_dash_manifest(request).await?;
+            (manifest_url, Some(DownloadMediaProbe::Dash(dash)))
         } else {
             (probed_url, None)
         };
@@ -148,10 +155,98 @@ impl HttpDownloadClient {
             },
             media,
         };
-        if probe.media.is_some() {
-            validate_hls_probe_size(&probe).map_err(map_hls_probe_error)?;
+        match probe.media.as_ref() {
+            Some(DownloadMediaProbe::Hls(_)) => {
+                validate_hls_probe_size(&probe).map_err(map_hls_probe_error)?;
+            }
+            Some(DownloadMediaProbe::Dash(_)) => {
+                validate_dash_probe_size(&probe).map_err(map_dash_error)?;
+            }
+            None => {}
         }
         Ok(probe)
+    }
+
+    async fn probe_dash_manifest(
+        &self,
+        request: &DownloadRequest,
+    ) -> Result<(url::Url, crate::DashProbe), HttpDownloadError> {
+        let mut response = self.send(Method::GET, request, false).await?;
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_DASH_MANIFEST_BYTES as u64)
+        {
+            return Err(HttpDownloadError::DashManifestTooLarge);
+        }
+        let final_url = response.url().clone();
+        if final_url.as_str().len() > MAX_DASH_URL_BYTES {
+            return Err(HttpDownloadError::DashMetadataTooLarge);
+        }
+        let mut manifest = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(4096)
+                .min(MAX_DASH_MANIFEST_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| self.client_error(error))?
+        {
+            if manifest.len().saturating_add(chunk.len()) > MAX_DASH_MANIFEST_BYTES {
+                return Err(HttpDownloadError::DashManifestTooLarge);
+            }
+            manifest.extend_from_slice(&chunk);
+        }
+        let dash = parse_dash_manifest(&final_url, &manifest)
+            .map_err(map_dash_error)?
+            .probe();
+        Ok((final_url, dash))
+    }
+
+    pub(crate) async fn load_dash_manifest(
+        &self,
+        request: &DownloadRequest,
+        manifest_url: &str,
+    ) -> Result<crate::dash::DashManifest, HttpDownloadError> {
+        let mut manifest_request = request.clone();
+        manifest_request.source_url = manifest_url.to_owned();
+        manifest_request.media = None;
+        manifest_request.validate()?;
+        let mut response = self.send(Method::GET, &manifest_request, false).await?;
+        if !response.status().is_success() {
+            return Err(HttpDownloadError::Status(response.status().as_u16()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_DASH_MANIFEST_BYTES as u64)
+        {
+            return Err(HttpDownloadError::DashManifestTooLarge);
+        }
+        let final_url = response.url().clone();
+        if final_url.as_str().len() > MAX_DASH_URL_BYTES {
+            return Err(HttpDownloadError::DashMetadataTooLarge);
+        }
+        let mut manifest = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(4096)
+                .min(MAX_DASH_MANIFEST_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| self.client_error(error))?
+        {
+            if manifest.len().saturating_add(chunk.len()) > MAX_DASH_MANIFEST_BYTES {
+                return Err(HttpDownloadError::DashManifestTooLarge);
+            }
+            manifest.extend_from_slice(&chunk);
+        }
+        parse_dash_manifest(&final_url, &manifest).map_err(map_dash_error)
     }
 
     async fn probe_hls_manifest(
@@ -1680,6 +1775,15 @@ fn is_hls_candidate(url: &url::Url, content_type: Option<&str>) -> bool {
     path_is_hls || content_type_is_hls
 }
 
+fn is_dash_candidate(url: &url::Url, content_type: Option<&str>) -> bool {
+    let path_is_dash = url.path().to_ascii_lowercase().ends_with(".mpd");
+    let content_type_is_dash = content_type
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .is_some_and(|value| value.eq_ignore_ascii_case("application/dash+xml"));
+    path_is_dash || content_type_is_dash
+}
+
 fn map_hls_probe_error(error: HlsProbeError) -> HttpDownloadError {
     match error {
         HlsProbeError::InvalidManifest(reason) => HttpDownloadError::InvalidHlsManifest(reason),
@@ -1689,6 +1793,16 @@ fn map_hls_probe_error(error: HlsProbeError) -> HttpDownloadError {
         HlsProbeError::UnsupportedFeature(feature) => {
             HttpDownloadError::UnsupportedHlsFeature(feature)
         }
+    }
+}
+
+fn map_dash_error(error: DashError) -> HttpDownloadError {
+    match error {
+        DashError::Invalid(reason) => HttpDownloadError::InvalidDashManifest(reason),
+        DashError::Unsupported(feature) => HttpDownloadError::UnsupportedDashFeature(feature),
+        DashError::TooManyRepresentations => HttpDownloadError::TooManyDashRepresentations,
+        DashError::TooManySegments => HttpDownloadError::TooManyDashSegments,
+        DashError::MetadataTooLarge => HttpDownloadError::DashMetadataTooLarge,
     }
 }
 
@@ -1860,6 +1974,18 @@ pub enum HttpDownloadError {
     InvalidHlsPadding,
     #[error("HLS AES-128 decryption worker failed: {0}")]
     HlsDecryptionWorker(String),
+    #[error("DASH MPD exceeds the 2 MiB probe limit")]
+    DashManifestTooLarge,
+    #[error("invalid DASH MPD: {0}")]
+    InvalidDashManifest(&'static str),
+    #[error("DASH MPD contains more than 32 Representations")]
+    TooManyDashRepresentations,
+    #[error("DASH MPD expands to too many Segments")]
+    TooManyDashSegments,
+    #[error("DASH presentation metadata exceeds its bounded limits")]
+    DashMetadataTooLarge,
+    #[error("DASH feature is not supported in this transfer slice: {0}")]
+    UnsupportedDashFeature(&'static str),
     #[error("HLS media playlist changed since the durable transfer plan was created")]
     HlsResourceChanged,
     #[error(
@@ -1958,6 +2084,12 @@ impl HttpDownloadError {
             | Self::EmptyHlsSegment
             | Self::HlsDecryptionWorker(_)
             | Self::HlsResourceChanged
+            | Self::DashManifestTooLarge
+            | Self::InvalidDashManifest(_)
+            | Self::TooManyDashRepresentations
+            | Self::TooManyDashSegments
+            | Self::DashMetadataTooLarge
+            | Self::UnsupportedDashFeature(_)
             | Self::SegmentedTransferNeedsKnownLength
             | Self::MissingContentRange
             | Self::MalformedContentRange(_)
@@ -1993,6 +2125,12 @@ impl HttpDownloadError {
             Self::InvalidHlsPadding => "hls_padding_invalid",
             Self::HlsDecryptionWorker(_) => "hls_decryption_worker",
             Self::HlsResourceChanged => "hls_resource_changed",
+            Self::DashManifestTooLarge => "dash_manifest_too_large",
+            Self::InvalidDashManifest(_) => "dash_manifest_invalid",
+            Self::TooManyDashRepresentations => "dash_too_many_representations",
+            Self::TooManyDashSegments => "dash_too_many_segments",
+            Self::DashMetadataTooLarge => "dash_metadata_too_large",
+            Self::UnsupportedDashFeature(_) => "dash_feature_unsupported",
             Self::LengthMismatch { .. } => "length_mismatch",
             Self::SegmentedTransferNeedsKnownLength => "unknown_length",
             Self::RangeNotHonored { .. } => "range_not_honored",

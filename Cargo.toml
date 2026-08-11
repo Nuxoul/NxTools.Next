@@ -33,6 +33,7 @@ imagesize = "0.13.0"
 memmap2 = "0.9.11"
 rayon = "1.12.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "system-proxy"] }
+roxmltree = "0.20.0"
 rusqlite = { version = "0.40.1", features = ["backup", "bundled"] }
 raw-window-handle = "0.6"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -40,7 +41,7 @@ serde_json = "1.0.140"
 sha2 = "0.10.9"
 sysinfo = { version = "0.39.6", default-features = false, features = ["disk"] }
 thiserror = "2.0.12"
-tokio = { version = "1.45.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio = { version = "1.45.1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }

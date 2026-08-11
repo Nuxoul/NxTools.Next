@@ -854,6 +854,31 @@ checkpoint。暂停/取消会中断密钥、网络、限速和本地解密边界
 仍待和前一 HLS 切片一起打包做实际媒体
 文件播放、窗口交互和浏览器传递验收。
 
+2026-08-11 已完成阶段 5 的第一条 DASH 自动化纵向切片，但在随包 FFmpeg 和真实媒体播放验收前
+仍不勾选 DASH/FFmpeg/恢复清单。下载协议升至 v6，Rust 对静态单 Period VOD MPD 实施 2 MiB
+清单、32 个 Representation、每轨 10,000 个 Segment、8 KiB URL/512 B 展示字段和 8 MiB
+展开元数据硬限制；支持 BaseURL 层级、SegmentTemplate 继承、SegmentTimeline 或有限 duration、
+初始化片段及 Number/Time 模板；ISO duration 使用纳秒级整数计算，避免小数时长经毫秒取整后
+多展开一个 Segment。动态 MPD、多 Period、DRM、SegmentList/SegmentBase、负 repeat 和
+未知 token 均类型化拒绝，未实现的 presentation time offset 也不会静默忽略；当前发布链只接受
+`video/mp4` / `audio/mp4`，其他容器类型化拒绝，不能被错误改名为 MP4 或退化为下载 XML。
+
+GPUI 新建下载窗以两列紧凑列表选择视频轨和音频轨并持久化 Representation ID；普通 CLI 或
+浏览器队列请求也会按探测排序自动选择首个视频/音频轨并把决定写回任务，音频轨可显式取消。
+SQLite schema v8
+原子保存选中 MPD 快照及 init/media fragment 检查点，恢复时重新获取 MPD，只在轨道、初始化
+布局、codec、MIME、带宽、分辨率、语言、Number/Time、原始 timescale/duration 完全兼容时刷新 URL 并复用非空
+完成片段。片段下载使用受任务连接数限制的 worker 池、有界重试和聚合进度；单轨严格顺序拼接；双轨分别
+构建轨道文件后用有界 FFmpeg 子进程 `-c copy` 封装，版本输出限制 4 KiB、检测 3 秒、mux 30
+分钟，stdout/stderr 不进入日志，暂停/取消会中断分片、单轨拼接、版本探测和 mux，并终止本进程
+拥有的子进程。真实 loopback、SQLite
+重开、Windows 子进程和 GPUI 点击门禁覆盖单视频、音视频封装、暂停重启不重复请求 init、
+暂停后取消清理计划、连接上限、变化轨道拒绝、CLI/浏览器自动复用、真实 GPUI 提交、FFmpeg
+暂停/取消与超时，以及轨道选择。尚待打包携带受许可约束的 FFmpeg 二进制或让
+用户配置可执行文件，并用真实 DASH 样本做可播放性、长时 mux 取消及浏览器人工验收。
+普通浏览器/CLI 媒体自动接管会把探测得到的 `.mpd` 输出名改为 `.mp4`，把 `.m3u8` 改为 `.ts`；
+用户已经提供的非 manifest 扩展名保持不变。
+
 ### 阶段 6：旧版高级能力与迁移（4–7 天）
 
 - [ ] SHA-256 和用户提供的期望校验值。

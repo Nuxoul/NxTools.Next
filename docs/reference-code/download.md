@@ -1512,6 +1512,63 @@ Implemented and deterministically verified on 2026-08-11:
   key-fetch/local-decrypt/retry pause boundaries, all-padding empty plaintext, and invalid key
   length/padding without final publication or retained `.part` files.
 
+### Stage 5 DASH MPD, track-selection and transfer findings
+
+Reverified on 2026-08-11 before starting the DASH vertical slice:
+
+- AB Download Manager was checked first. Its current source tree has no MPD/DASH downloader or
+  parser entry, so it provides no compatible DASH behavior to migrate. Its existing HLS boundary
+  still supports the general rule that protocol manifests are recognized during probing and are
+  not allowed to fall through to the ordinary HTTP artifact path.
+- Old NxTools owns the product behavior in
+  `Services/DashManifestParser.cs` and
+  `Services/DownloadManagerService.cs::{BuildDownloadProbeInfoAsync,DownloadDashAsync,
+  DownloadDashInitsAsync,DownloadDashSegmentsWithBoundedWorkersAsync,MergeDashAndVerifyAsync}`.
+  It resolves MPD/Period/AdaptationSet/Representation `BaseURL` values, inherits
+  `SegmentTemplate`, expands `$RepresentationID$`, `$Bandwidth$`, `$Number$` and `$Time$`, chooses
+  the strongest video and audio representations, downloads initialization/media fragments with
+  bounded workers, concatenates each track in manifest order and uses FFmpeg stream copy when both
+  audio and video are present.
+- The old implementation is not a safe parser contract: XML and expanded Segment counts are not
+  bounded, a duration template without a timeline is hard-coded to one Segment, negative timeline
+  repetition is coerced to zero, only the first Period is used implicitly, and production logs
+  expose MPD/Segment URLs and local paths. NxTools.Next must not preserve those failures.
+- FluxDown `native/engine/src/dash_downloader.rs` was inspected only as a clean-room behavior and
+  failure-boundary reference. Useful independent findings are hierarchical BaseURL resolution,
+  representation/adaptation template inheritance, duration-derived Segment counts, initialization
+  fragments, separate audio/video track artifacts and FFmpeg mux. Its source, schema, comments and
+  tests are not copied, and silent first-Period fallback or URL-bearing diagnostics are not adopted.
+- The first NxTools.Next DASH slice accepts only bounded static VOD MPDs with exactly one Period,
+  no `ContentProtection`, and HTTP(S) resources described by inherited `SegmentTemplate` plus
+  either a finite `SegmentTimeline` or positive duration with a finite Period/MPD duration.
+  `SegmentList`, `SegmentBase`, dynamic MPDs, multi-Period presentations, negative timeline
+  repetition and unsupported template tokens fail with typed errors rather than producing partial
+  media. The parser caps the XML body, track count, Segment count, individual fields/URLs and total
+  expanded metadata before the probe can cross IPC.
+- The first publication path is deliberately MP4-only (`video/mp4` / `audio/mp4`). WebM and other
+  container families are rejected until their final container and mux policy are designed; they
+  must never be downloaded and merely renamed `.mp4`. Duration templates derive both `$Number$`
+  and `$Time$`; unsupported presentation-time offsets are rejected rather than ignored.
+  Presentation duration math uses bounded integer nanoseconds rather than rounded floating-point
+  milliseconds, so fractional durations cannot create a spurious final Segment.
+- Probe exposes bounded video/audio presentation tracks. GPUI chooses one video and optional audio
+  track explicitly and persists only the manifest URL plus stable representation identities in the
+  typed request. The engine re-fetches and revalidates the MPD before transfer/recovery; compatible
+  refreshed signed URLs may replace stored URLs, but representation, initialization and Segment
+  timeline identity, including raw timescale/duration rather than rounded milliseconds, must remain
+  compatible before a completed fragment can be reused.
+- Rust owns MPD parsing, selection, durable Segment/checkpoint state, bounded transfer and final
+  track layout. GPUI only renders and chooses tracks. FFmpeg is a separately bounded child-process
+  boundary used for audio/video stream-copy mux; no manifest, request Header, Cookie, Referrer,
+  resource URL, local path or child-process output payload may enter production diagnostics.
+- DASH fragment workers reuse the proven HLS stop-aware HTTP seam but have their own durable
+  fragment identity and checkpoint orchestration. The task connection limit bounds all init/media
+  workers, retries clear only non-durable staging, and progress aggregates durable plus active
+  bytes. Recovery compares codec, MIME, bandwidth, resolution, language and timeline identity.
+  Single-track concatenation and FFmpeg version/mux are pause/cancel aware; dual-track publication
+  gives FFmpeg an explicit MP4 muxer (`-f mp4`) because the temporary output suffix is deliberately
+  not a media extension.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

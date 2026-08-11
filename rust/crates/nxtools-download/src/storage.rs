@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::dash::{DashManifest, DashTrackKind};
 use crate::hls::{HlsMediaPlaylist, HlsMediaSegment};
 use crate::{
     DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSchedule,
@@ -16,7 +17,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 7;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 8;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
@@ -68,6 +69,9 @@ impl SqliteDownloadStore {
         }
         if current < 7 {
             connection.execute_batch(SCHEMA_V7)?;
+        }
+        if current < 8 {
+            connection.execute_batch(SCHEMA_V8)?;
         }
 
         Ok(Self {
@@ -904,6 +908,181 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    pub(crate) fn save_dash_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+        manifest: &DashManifest,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let exists = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM download_tasks WHERE task_id = ?1)",
+            [task_id.as_uuid().to_string()],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        transaction.execute(
+            r#"
+            INSERT INTO download_dash_plans(task_id, manifest_json, updated_at_unix_ms)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(task_id) DO UPDATE SET
+                manifest_json = excluded.manifest_json,
+                updated_at_unix_ms = excluded.updated_at_unix_ms
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                serde_json::to_string(manifest)?,
+                now_unix_ms(),
+            ],
+        )?;
+        transaction.execute(
+            "DELETE FROM download_dash_fragments WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+        )?;
+        for track in &manifest.tracks {
+            if track.initialization_url.is_some() {
+                insert_dash_fragment_row(&transaction, task_id, track.kind, -1)?;
+            }
+            for segment in &track.segments {
+                insert_dash_fragment_row(
+                    &transaction,
+                    task_id,
+                    track.kind,
+                    i64::from(segment.index),
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn load_dash_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<Option<StoredDashTransferPlan>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let Some(manifest) = connection
+            .query_row(
+                "SELECT manifest_json FROM download_dash_plans WHERE task_id = ?1",
+                [task_id.as_uuid().to_string()],
+                |row| json_from_text::<DashManifest>(&row.get::<_, String>(0)?, 0),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let mut statement = connection.prepare(
+            r#"
+            SELECT track_kind, fragment_index, downloaded_bytes, state
+            FROM download_dash_fragments
+            WHERE task_id = ?1
+            ORDER BY track_kind, fragment_index
+            "#,
+        )?;
+        let fragments = statement
+            .query_map([task_id.as_uuid().to_string()], |row| {
+                let fragment_index = row.get::<_, i64>(1)?;
+                let segment_index = if fragment_index == -1 {
+                    None
+                } else {
+                    Some(
+                        u32::try_from(nonnegative_u64(fragment_index, 1)?).map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                1,
+                                rusqlite::types::Type::Integer,
+                                Box::new(error),
+                            )
+                        })?,
+                    )
+                };
+                Ok(StoredDashFragment {
+                    kind: enum_from_name(&row.get::<_, String>(0)?, 0)?,
+                    segment_index,
+                    downloaded_bytes: nonnegative_u64(row.get(2)?, 2)?,
+                    state: enum_from_name(&row.get::<_, String>(3)?, 3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(StoredDashTransferPlan {
+            manifest,
+            fragments,
+        }))
+    }
+
+    pub(crate) fn save_dash_fragment_checkpoint(
+        &self,
+        task_id: DownloadTaskId,
+        kind: DashTrackKind,
+        segment_index: Option<u32>,
+        state: DownloadSegmentState,
+        downloaded_bytes: u64,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let fragment_index = segment_index.map_or(-1, i64::from);
+        let updated = connection.execute(
+            r#"
+            UPDATE download_dash_fragments
+            SET downloaded_bytes = ?4, state = ?5, updated_at_unix_ms = ?6
+            WHERE task_id = ?1 AND track_kind = ?2 AND fragment_index = ?3
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                enum_name(&kind)?,
+                fragment_index,
+                i64::try_from(downloaded_bytes)
+                    .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+                enum_name(&state)?,
+                now_unix_ms(),
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DownloadStorageError::DashFragmentNotFound {
+                task_id,
+                track_kind: dash_track_kind_name(kind),
+                segment_index,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn refresh_dash_transfer_plan_manifest(
+        &self,
+        task_id: DownloadTaskId,
+        manifest: &DashManifest,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        let updated = connection.execute(
+            r#"
+            UPDATE download_dash_plans
+            SET manifest_json = ?2, updated_at_unix_ms = ?3
+            WHERE task_id = ?1
+            "#,
+            params![
+                task_id.as_uuid().to_string(),
+                serde_json::to_string(manifest)?,
+                now_unix_ms(),
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DownloadStorageError::TaskNotFound(task_id));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_dash_transfer_plan(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<(), DownloadStorageError> {
+        let connection = self.lock()?;
+        connection.execute(
+            "DELETE FROM download_dash_plans WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn clear_transfer_plan(&self, task_id: DownloadTaskId) -> Result<(), DownloadStorageError> {
         let mut connection = self.lock()?;
         let transaction = connection.transaction()?;
@@ -1288,6 +1467,20 @@ pub(crate) struct StoredHlsSegment {
     pub state: DownloadSegmentState,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct StoredDashTransferPlan {
+    pub manifest: DashManifest,
+    pub fragments: Vec<StoredDashFragment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredDashFragment {
+    pub kind: DashTrackKind,
+    pub segment_index: Option<u32>,
+    pub downloaded_bytes: u64,
+    pub state: DownloadSegmentState,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BrowserHandoffSave {
     Inserted(DownloadTaskId),
@@ -1327,6 +1520,37 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
         ],
     )?;
     Ok(())
+}
+
+fn insert_dash_fragment_row(
+    connection: &Connection,
+    task_id: DownloadTaskId,
+    kind: DashTrackKind,
+    fragment_index: i64,
+) -> Result<(), DownloadStorageError> {
+    connection.execute(
+        r#"
+        INSERT INTO download_dash_fragments(
+            task_id, track_kind, fragment_index, downloaded_bytes, state, updated_at_unix_ms
+        )
+        VALUES (?1, ?2, ?3, 0, ?4, ?5)
+        "#,
+        params![
+            task_id.as_uuid().to_string(),
+            enum_name(&kind)?,
+            fragment_index,
+            enum_name(&DownloadSegmentState::Waiting)?,
+            now_unix_ms(),
+        ],
+    )?;
+    Ok(())
+}
+
+fn dash_track_kind_name(kind: DashTrackKind) -> &'static str {
+    match kind {
+        DashTrackKind::Video => "video",
+        DashTrackKind::Audio => "audio",
+    }
 }
 
 fn append_to_queue_row(
@@ -1655,6 +1879,12 @@ pub enum DownloadStorageError {
         task_id: DownloadTaskId,
         segment_index: u32,
     },
+    #[error("DASH {track_kind:?} fragment {segment_index:?} does not exist for task {task_id:?}")]
+    DashFragmentNotFound {
+        task_id: DownloadTaskId,
+        track_kind: &'static str,
+        segment_index: Option<u32>,
+    },
     #[error("stored download transfer plan is invalid: {0}")]
     InvalidTransferPlan(crate::TransferPlanError),
     #[error("stored download task id is invalid: {0}")]
@@ -1892,6 +2122,32 @@ PRAGMA user_version = 7;
 COMMIT;
 "#;
 
+const SCHEMA_V8: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_dash_plans (
+    task_id TEXT PRIMARY KEY NOT NULL REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    manifest_json TEXT NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL
+);
+
+CREATE TABLE download_dash_fragments (
+    task_id TEXT NOT NULL REFERENCES download_dash_plans(task_id) ON DELETE CASCADE,
+    track_kind TEXT NOT NULL,
+    fragment_index INTEGER NOT NULL CHECK(fragment_index >= -1),
+    downloaded_bytes INTEGER NOT NULL DEFAULT 0 CHECK(downloaded_bytes >= 0),
+    state TEXT NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(task_id, track_kind, fragment_index)
+);
+
+CREATE INDEX download_dash_fragments_task_state_idx
+    ON download_dash_fragments(task_id, state, track_kind, fragment_index);
+
+PRAGMA user_version = 8;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2005,13 +2261,80 @@ mod tests {
     }
 
     #[test]
+    fn dash_transfer_plan_and_fragment_checkpoint_survive_store_reopen() {
+        use crate::dash::{DashManifest, DashSegment, DashTrack, DashTrackKind};
+
+        let directory = tempfile::tempdir().expect("create DASH database directory");
+        let database = directory.path().join("downloads.db");
+        let task = sample_task("movie.mp4");
+        let manifest = DashManifest {
+            final_url: "https://media.example.test/manifest.mpd".into(),
+            tracks: vec![DashTrack {
+                kind: DashTrackKind::Video,
+                representation_id: "v1080".into(),
+                bandwidth: 4_200_000,
+                resolution: Some((1920, 1080)),
+                codecs: "avc1.640028".into(),
+                mime_type: "video/mp4".into(),
+                language: None,
+                initialization_url: Some("https://media.example.test/v1080/init.mp4".into()),
+                segments: vec![DashSegment {
+                    index: 0,
+                    number: 1,
+                    time: Some(0),
+                    url: "https://media.example.test/v1080/0.m4s".into(),
+                    duration_millis: 2_000,
+                    duration_units: 2_000,
+                    timescale: 1_000,
+                }],
+            }],
+        };
+
+        {
+            let store = SqliteDownloadStore::open(&database).expect("open DASH store");
+            store.save_task(&task).expect("save DASH task");
+            store
+                .save_dash_transfer_plan(task.id(), &manifest)
+                .expect("save DASH plan");
+            store
+                .save_dash_fragment_checkpoint(
+                    task.id(),
+                    DashTrackKind::Video,
+                    Some(0),
+                    DownloadSegmentState::Completed,
+                    3,
+                )
+                .expect("save DASH media checkpoint");
+        }
+
+        let reopened = SqliteDownloadStore::open(&database).expect("reopen DASH store");
+        let restored = reopened
+            .load_dash_transfer_plan(task.id())
+            .expect("load DASH plan")
+            .expect("DASH plan exists");
+        assert_eq!(restored.manifest, manifest);
+        assert_eq!(
+            restored.fragments.len(),
+            2,
+            "init and media checkpoints persist"
+        );
+        let media = restored
+            .fragments
+            .iter()
+            .find(|fragment| fragment.segment_index == Some(0))
+            .expect("media checkpoint exists");
+        assert_eq!(media.state, DownloadSegmentState::Completed);
+        assert_eq!(media.downloaded_bytes, 3);
+    }
+
+    #[test]
     fn task_timeline_is_durable_newest_first_and_bounded_to_three_hundred_entries() {
         let directory = tempfile::tempdir().expect("create database directory");
         let database = directory.path().join("downloads.db");
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 7);
+            assert_eq!(store.schema_version().expect("schema version"), 8);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -2067,7 +2390,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 7);
+        assert_eq!(store.schema_version().expect("schema version"), 8);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -2121,7 +2444,7 @@ mod tests {
             .expect("load upgraded HLS plan")
             .expect("upgraded HLS plan exists");
 
-        assert_eq!(store.schema_version().expect("schema version"), 7);
+        assert_eq!(store.schema_version().expect("schema version"), 8);
         assert_eq!(
             restored.segments[0].media.encryption,
             HlsSegmentEncryption::None

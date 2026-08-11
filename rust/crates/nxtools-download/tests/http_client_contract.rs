@@ -52,7 +52,9 @@ async fn probe_resolves_and_orders_hls_master_variants() {
         .probe(&request(&server, "/hls/master.m3u8"))
         .await
         .expect("probe HLS master playlist");
-    let DownloadMediaProbe::Hls(hls) = probe.media.expect("HLS probe metadata");
+    let DownloadMediaProbe::Hls(hls) = probe.media.expect("HLS probe metadata") else {
+        panic!("expected HLS media probe");
+    };
 
     assert!(hls.is_master);
     assert_eq!(hls.variants.len(), 2);
@@ -67,6 +69,31 @@ async fn probe_resolves_and_orders_hls_master_variants() {
     );
     assert_eq!(hls.variants[1].resolution, Some((640, 360)));
     assert_eq!(hls.variants[1].frame_rate_milli, Some(29_970));
+}
+
+#[tokio::test]
+async fn probe_exposes_bounded_dash_video_and_audio_tracks() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let probe = client
+        .probe(&request(&server, "/dash/static.mpd"))
+        .await
+        .expect("probe static DASH MPD");
+    let DownloadMediaProbe::Dash(dash) = probe.media.expect("DASH probe metadata") else {
+        panic!("expected DASH media probe");
+    };
+
+    assert_eq!(dash.video_tracks.len(), 2);
+    assert_eq!(dash.video_tracks[0].representation_id, "v1080");
+    assert_eq!(dash.video_tracks[0].resolution, Some((1920, 1080)));
+    assert_eq!(dash.video_tracks[0].bandwidth, 4_200_000);
+    assert_eq!(dash.video_tracks[0].segment_count, 2);
+    assert_eq!(dash.audio_tracks.len(), 1);
+    assert_eq!(dash.audio_tracks[0].representation_id, "a128");
+    assert_eq!(dash.audio_tracks[0].language.as_deref(), Some("zh"));
+    assert_eq!(dash.audio_tracks[0].segment_count, 2);
 }
 
 #[tokio::test]

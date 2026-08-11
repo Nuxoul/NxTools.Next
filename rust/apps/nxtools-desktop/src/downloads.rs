@@ -4635,6 +4635,8 @@ struct NewDownloadView {
     confirmed_request: Option<DownloadRequest>,
     probe: Option<DownloadProbe>,
     selected_hls_variant: Option<usize>,
+    selected_dash_video_track: Option<usize>,
+    selected_dash_audio_track: Option<usize>,
     probing: bool,
     submitting: bool,
     probe_generation: u64,
@@ -4764,6 +4766,8 @@ impl NewDownloadView {
                 media: None,
             }),
             selected_hls_variant: None,
+            selected_dash_video_track: None,
+            selected_dash_audio_track: None,
             probing: false,
             submitting: false,
             probe_generation: 0,
@@ -4881,7 +4885,7 @@ impl NewDownloadView {
                     DownloadCommandOutcome::Probe(probe) => {
                         let mut confirmed = request;
                         let probe_file_name = resolved_probe_file_name(&probe);
-                        let replace_manifest_name = should_replace_hls_manifest_name(
+                        let replace_manifest_name = should_replace_media_manifest_name(
                             confirmed.file_name.as_deref(),
                             &probe,
                         );
@@ -4898,6 +4902,17 @@ impl NewDownloadView {
                                 }
                                 _ => None,
                             });
+                        if let Some(nxtools_download::DownloadMediaProbe::Dash(dash)) =
+                            probe.media.as_ref()
+                        {
+                            this.selected_dash_video_track =
+                                (!dash.video_tracks.is_empty()).then_some(0);
+                            this.selected_dash_audio_track =
+                                (!dash.audio_tracks.is_empty()).then_some(0);
+                        } else {
+                            this.selected_dash_video_track = None;
+                            this.selected_dash_audio_track = None;
+                        }
                         this.confirmed_request = Some(confirmed);
                         this.probe = Some(probe);
                         this.error = None;
@@ -5007,15 +5022,19 @@ impl NewDownloadView {
             cx.notify();
             return;
         };
-        let media =
-            match selected_download_request_media(self.probe.as_ref(), self.selected_hls_variant) {
-                Ok(media) => media,
-                Err(error) => {
-                    self.error = Some(error);
-                    cx.notify();
-                    return;
-                }
-            };
+        let media = match selected_download_request_media(
+            self.probe.as_ref(),
+            self.selected_hls_variant,
+            self.selected_dash_video_track,
+            self.selected_dash_audio_track,
+        ) {
+            Ok(media) => media,
+            Err(error) => {
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
         let Some(mut request) = merge_confirmed_download_request(confirmed, current) else {
             self.confirmed_request = None;
             self.probe = None;
@@ -5338,7 +5357,7 @@ impl Render for NewDownloadView {
         });
         let body = if let Some(probe) = probe {
             let is_blob = self.external_blob.is_some();
-            let hls_quality_panel = match probe.media.as_ref() {
+            let media_options_panel = match probe.media.as_ref() {
                 Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
                     Some(hls_quality_options(
                         theme,
@@ -5347,6 +5366,13 @@ impl Render for NewDownloadView {
                         cx.entity().downgrade(),
                     ))
                 }
+                Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => Some(dash_track_options(
+                    theme,
+                    dash,
+                    self.selected_dash_video_track,
+                    self.selected_dash_audio_track,
+                    cx.entity().downgrade(),
+                )),
                 _ => None,
             };
             let size = match probe.media.as_ref() {
@@ -5354,6 +5380,11 @@ impl Render for NewDownloadView {
                     format!("{} 个清晰度", hls.variants.len())
                 }
                 Some(nxtools_download::DownloadMediaProbe::Hls(_)) => "HLS 媒体列表".into(),
+                Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => format!(
+                    "{} 视频 · {} 音频",
+                    dash.video_tracks.len(),
+                    dash.audio_tracks.len()
+                ),
                 None => probe
                     .total_bytes
                     .map(format_download_size)
@@ -5446,7 +5477,10 @@ impl Render for NewDownloadView {
                                                 .child(if is_blob {
                                                     "Blob 已接收"
                                                 } else if probe.media.is_some() {
-                                                    "HLS 已解析"
+                                                    match probe.media.as_ref() {
+                                                        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "DASH 已解析",
+                                                        _ => "HLS 已解析",
+                                                    }
                                                 } else {
                                                     "链接可用"
                                                 }),
@@ -5480,6 +5514,11 @@ impl Render for NewDownloadView {
                                             } else {
                                                 "媒体播放列表".into()
                                             }
+                                        } else if matches!(
+                                            probe.media.as_ref(),
+                                            Some(nxtools_download::DownloadMediaProbe::Dash(_))
+                                        ) {
+                                            "请选择视频与音频轨".into()
                                         } else if probe.supports_ranges {
                                             "支持断点续传".into()
                                         } else {
@@ -5488,7 +5527,7 @@ impl Render for NewDownloadView {
                                 ),
                         ),
                 )
-                .when_some(hls_quality_panel, |body, panel| body.child(panel))
+                .when_some(media_options_panel, |body, panel| body.child(panel))
                 .when_some(self.error.clone(), |body, error| {
                     body.child(download_inline_error(theme, error))
                 })
@@ -5742,6 +5781,188 @@ fn hls_quality_options(
         .into_any_element()
 }
 
+fn dash_track_options(
+    theme: Theme,
+    dash: &nxtools_download::DashProbe,
+    selected_video: Option<usize>,
+    selected_audio: Option<usize>,
+    view: gpui::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let video_rows = dash.video_tracks.iter().enumerate().map(|(index, track)| {
+        dash_track_option_row(
+            theme,
+            "video",
+            index,
+            track,
+            selected_video == Some(index),
+            view.clone(),
+        )
+    });
+    let audio_rows = dash.audio_tracks.iter().enumerate().map(|(index, track)| {
+        dash_track_option_row(
+            theme,
+            "audio",
+            index,
+            track,
+            selected_audio == Some(index),
+            view.clone(),
+        )
+    });
+    let column = |label: &'static str, rows: Vec<AnyElement>| {
+        div()
+            .min_w_0()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .text_size(px(9.0))
+                    .text_color(theme.text_muted)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .max_h(px(112.0))
+                    .overflow_y_scrollbar()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .children(rows),
+            )
+    };
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(5.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(9.0))
+                        .text_color(theme.text_muted)
+                        .child("DASH 轨道"),
+                )
+                .child(
+                    div()
+                        .text_size(px(8.5))
+                        .text_color(theme.text_muted)
+                        .child("音频可再次点击取消 · 双轨用 FFmpeg 无损封装"),
+                ),
+        )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .gap(px(8.0))
+                .child(column("视频", video_rows.collect()))
+                .child(column("音频", audio_rows.collect())),
+        )
+        .into_any_element()
+}
+
+fn dash_track_option_row(
+    theme: Theme,
+    kind: &'static str,
+    index: usize,
+    track: &nxtools_download::DashTrackProbe,
+    selected: bool,
+    view: gpui::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let label = if kind == "video" {
+        track.resolution.map_or_else(
+            || "视频轨".into(),
+            |(width, height)| format!("{width}×{height}"),
+        )
+    } else {
+        track.language.clone().unwrap_or_else(|| "默认音轨".into())
+    };
+    let detail = if track.codecs.is_empty() {
+        format!("{:.2} Mbps", track.bandwidth as f64 / 1_000_000.0)
+    } else {
+        format!(
+            "{} · {:.2} Mbps",
+            track.codecs,
+            track.bandwidth as f64 / 1_000_000.0
+        )
+    };
+    let selector = format!("download-dash-{kind}-track-{index}");
+    div()
+        .id((kind, index))
+        .debug_selector(move || selector.clone())
+        .h(px(38.0))
+        .px(px(8.0))
+        .rounded(px(4.0))
+        .border_1()
+        .border_color(if selected {
+            theme.border_active
+        } else {
+            theme.border_subtle
+        })
+        .bg(if selected {
+            theme.accent_soft
+        } else {
+            theme.surface
+        })
+        .cursor_pointer()
+        .flex()
+        .items_center()
+        .gap(px(7.0))
+        .child(
+            div()
+                .size(px(12.0))
+                .rounded_full()
+                .border_1()
+                .border_color(if selected { theme.accent } else { theme.border })
+                .when(selected, |marker| {
+                    marker.child(
+                        div()
+                            .m(px(3.0))
+                            .size(px(4.0))
+                            .rounded_full()
+                            .bg(theme.accent),
+                    )
+                }),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .text_size(px(9.5))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(px(8.0))
+                        .text_color(theme.text_muted)
+                        .child(detail),
+                ),
+        )
+        .on_click(move |_, _, cx| {
+            let _ = view.update(cx, |view, cx| {
+                if kind == "video" {
+                    view.selected_dash_video_track = Some(index);
+                } else {
+                    view.selected_dash_audio_track =
+                        (view.selected_dash_audio_track != Some(index)).then_some(index);
+                }
+                view.error = None;
+                cx.notify();
+            });
+        })
+        .into_any_element()
+}
+
 fn delayed_start_calendar(
     theme: Theme,
     month: NaiveDate,
@@ -5905,62 +6126,99 @@ fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
 }
 
 fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui::Pixels> {
-    if matches!(
-        probe.media.as_ref(),
-        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master
-    ) {
-        size(px(500.0), px(402.0))
-    } else {
-        new_download_window_size(true)
+    match probe.media.as_ref() {
+        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+            size(px(500.0), px(402.0))
+        }
+        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => size(px(500.0), px(430.0)),
+        _ => new_download_window_size(true),
     }
 }
 
 fn selected_download_request_media(
     probe: Option<&DownloadProbe>,
     selected_hls_variant: Option<usize>,
+    selected_dash_video_track: Option<usize>,
+    selected_dash_audio_track: Option<usize>,
 ) -> Result<Option<nxtools_download::DownloadRequestMedia>, String> {
-    let Some(nxtools_download::DownloadMediaProbe::Hls(hls)) =
-        probe.and_then(|probe| probe.media.as_ref())
-    else {
-        return Ok(None);
-    };
-    let playlist_url = if hls.is_master {
-        hls.variants
-            .get(selected_hls_variant.ok_or("请选择 HLS 清晰度")?)
-            .map(|variant| variant.playlist_url.clone())
-            .ok_or("所选 HLS 清晰度已失效，请重新探测")?
-    } else {
-        probe
-            .map(|probe| probe.final_url.clone())
-            .ok_or("HLS 探测结果已失效，请重新探测")?
-    };
-    Ok(Some(nxtools_download::DownloadRequestMedia::Hls(
-        nxtools_download::HlsDownloadRequest { playlist_url },
-    )))
+    match probe.and_then(|probe| probe.media.as_ref()) {
+        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) => {
+            let playlist_url = if hls.is_master {
+                hls.variants
+                    .get(selected_hls_variant.ok_or("请选择 HLS 清晰度")?)
+                    .map(|variant| variant.playlist_url.clone())
+                    .ok_or("所选 HLS 清晰度已失效，请重新探测")?
+            } else {
+                probe
+                    .map(|probe| probe.final_url.clone())
+                    .ok_or("HLS 探测结果已失效，请重新探测")?
+            };
+            Ok(Some(nxtools_download::DownloadRequestMedia::Hls(
+                nxtools_download::HlsDownloadRequest { playlist_url },
+            )))
+        }
+        Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
+            let video_representation_id = selected_dash_video_track
+                .map(|index| {
+                    dash.video_tracks
+                        .get(index)
+                        .map(|track| track.representation_id.clone())
+                        .ok_or("所选 DASH 视频轨已失效，请重新探测")
+                })
+                .transpose()?;
+            let audio_representation_id = selected_dash_audio_track
+                .map(|index| {
+                    dash.audio_tracks
+                        .get(index)
+                        .map(|track| track.representation_id.clone())
+                        .ok_or("所选 DASH 音频轨已失效，请重新探测")
+                })
+                .transpose()?;
+            if video_representation_id.is_none() && audio_representation_id.is_none() {
+                return Err("DASH 至少需要选择一条视频轨或音频轨".into());
+            }
+            Ok(Some(nxtools_download::DownloadRequestMedia::Dash(
+                nxtools_download::DashDownloadRequest {
+                    manifest_url: probe
+                        .map(|probe| probe.final_url.clone())
+                        .ok_or("DASH 探测结果已失效，请重新探测")?,
+                    video_representation_id,
+                    audio_representation_id,
+                },
+            )))
+        }
+        None => Ok(None),
+    }
 }
 
 fn resolved_probe_file_name(probe: &DownloadProbe) -> Option<String> {
     let file_name = probe.file_name.as_deref()?;
-    if !matches!(
-        probe.media,
-        Some(nxtools_download::DownloadMediaProbe::Hls(_))
-    ) {
+    if probe.media.is_none() {
         return Some(file_name.to_owned());
     }
     let stem = Path::new(file_name).file_stem()?.to_string_lossy();
-    (!stem.is_empty()).then(|| format!("{stem}.ts"))
+    (!stem.is_empty()).then(|| match probe.media {
+        Some(nxtools_download::DownloadMediaProbe::Hls(_)) => format!("{stem}.ts"),
+        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => format!("{stem}.mp4"),
+        None => file_name.to_owned(),
+    })
 }
 
-fn should_replace_hls_manifest_name(
+fn should_replace_media_manifest_name(
     current_file_name: Option<&str>,
     probe: &DownloadProbe,
 ) -> bool {
+    let expected_extension = match probe.media.as_ref() {
+        Some(nxtools_download::DownloadMediaProbe::Hls(_)) => "m3u8",
+        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "mpd",
+        None => return false,
+    };
     probe.media.is_some()
         && current_file_name == probe.file_name.as_deref()
         && current_file_name.is_some_and(|file_name| {
             Path::new(file_name)
                 .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(expected_extension))
         })
 }
 
@@ -7610,6 +7868,158 @@ mod tests {
     }
 
     #[gpui::test]
+    fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-dash-tracks");
+        let application_for_window = application.clone();
+        let default_directory = directory.clone();
+        let default_connection_limit =
+            cx.read(|cx| application.read(cx).default_connection_limit());
+        let default_adaptive_segment_policy =
+            cx.read(|cx| application.read(cx).default_adaptive_segment_policy());
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    application_for_window,
+                    default_directory,
+                    default_connection_limit,
+                    default_adaptive_segment_policy,
+                    None,
+                    window,
+                    cx,
+                )
+            });
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = view_slot
+            .borrow()
+            .clone()
+            .expect("new download view mounted");
+        let track = |representation_id: &str, resolution| nxtools_download::DashTrackProbe {
+            representation_id: representation_id.into(),
+            bandwidth: 2_000_000,
+            resolution,
+            codecs: "avc1.640028".into(),
+            mime_type: "video/mp4".into(),
+            language: None,
+            segment_count: 2,
+            has_initialization: true,
+        };
+        let dash = nxtools_download::DashProbe {
+            video_tracks: vec![
+                track("v1080", Some((1920, 1080))),
+                track("v720", Some((1280, 720))),
+            ],
+            audio_tracks: vec![nxtools_download::DashTrackProbe {
+                representation_id: "a128".into(),
+                bandwidth: 128_000,
+                resolution: None,
+                codecs: "mp4a.40.2".into(),
+                mime_type: "audio/mp4".into(),
+                language: Some("zh".into()),
+                segment_count: 2,
+                has_initialization: true,
+            }],
+        };
+        let request = DownloadRequest {
+            source_url: "https://example.test/manifest.mpd".into(),
+            save_directory: directory.clone(),
+            file_name: Some("manifest.mp4".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            connection_limit: Some(default_connection_limit),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+        };
+        window.update(|window, cx| {
+            let url = view.read(cx).url.clone();
+            url.update(cx, |input, cx| {
+                input.set_value("https://example.test/manifest.mpd", window, cx);
+            });
+            window.resize(size(px(500.0), px(430.0)));
+            view.update(cx, |view, cx| {
+                view.confirmed_request = Some(request);
+                view.probe = Some(DownloadProbe {
+                    final_url: "https://example.test/manifest.mpd".into(),
+                    file_name: Some("manifest.mpd".into()),
+                    total_bytes: None,
+                    supports_ranges: false,
+                    content_type: Some("application/dash+xml".into()),
+                    validator: nxtools_download::ResourceValidator::default(),
+                    media: Some(nxtools_download::DownloadMediaProbe::Dash(dash)),
+                });
+                view.selected_dash_video_track = Some(0);
+                view.selected_dash_audio_track = Some(0);
+                cx.notify();
+            });
+        });
+        window.refresh().expect("render DASH track choices");
+        let lower_video = window
+            .debug_bounds("download-dash-video-track-1")
+            .expect("lower DASH video track row");
+        assert!(window.debug_bounds("download-dash-audio-track-0").is_some());
+        window.simulate_click(lower_video.center(), Modifiers::default());
+        window.refresh().expect("render changed DASH selection");
+        assert_eq!(
+            window.read(|cx| view.read(cx).selected_dash_video_track),
+            Some(1)
+        );
+        let audio = window
+            .debug_bounds("download-dash-audio-track-0")
+            .expect("selected DASH audio track row");
+        window.simulate_click(audio.center(), Modifiers::default());
+        window.refresh().expect("render deselected DASH audio");
+        assert_eq!(
+            window.read(|cx| view.read(cx).selected_dash_audio_track),
+            None
+        );
+        let media = window.read(|cx| {
+            let view = view.read(cx);
+            selected_download_request_media(
+                view.probe.as_ref(),
+                view.selected_hls_variant,
+                view.selected_dash_video_track,
+                view.selected_dash_audio_track,
+            )
+            .expect("build typed DASH request")
+        });
+        assert_eq!(
+            media,
+            Some(nxtools_download::DownloadRequestMedia::Dash(
+                nxtools_download::DashDownloadRequest {
+                    manifest_url: "https://example.test/manifest.mpd".into(),
+                    video_representation_id: Some("v720".into()),
+                    audio_representation_id: None,
+                }
+            ))
+        );
+        let add_to_queue = window
+            .debug_bounds("download-add-to-queue")
+            .expect("enabled DASH queue button");
+        window.simulate_click(add_to_queue.center(), Modifiers::default());
+        window.run_until_parked();
+        cx.run_until_parked();
+        let tasks = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .tasks()
+                .expect("read submitted DASH tasks")
+        });
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].task.request().media, media);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn browser_prefilled_download_window_preserves_private_request_context(
         cx: &mut TestAppContext,
     ) {
@@ -8514,9 +8924,12 @@ mod tests {
             resolved_probe_file_name(&probe).as_deref(),
             Some("index.ts")
         );
-        assert!(should_replace_hls_manifest_name(Some("index.m3u8"), &probe));
+        assert!(should_replace_media_manifest_name(
+            Some("index.m3u8"),
+            &probe
+        ));
         assert!(
-            !should_replace_hls_manifest_name(Some("my-custom-name.m3u8"), &probe),
+            !should_replace_media_manifest_name(Some("my-custom-name.m3u8"), &probe),
             "a user-edited manifest-looking name must remain user-owned"
         );
     }

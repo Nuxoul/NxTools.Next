@@ -281,3 +281,35 @@ These events retain only correlation/task identity, fixed source/reason/error ki
 and byte counts, connection count and elapsed time. Manifest text, playlist/segment URLs, local
 paths, file names, headers, cookies, encryption keys and media bytes are never logged. Successful
 segments do not emit per-segment production logs.
+
+## DASH probing and transfer
+
+DASH uses the existing correlated `download.probe.started` and one probe terminal with
+`media_kind=dash` and bounded video/audio track counts. MPD parsing failures use fixed kinds such
+as `dash_manifest_invalid`, `dash_manifest_too_large` or `dash_feature_unsupported`; diagnostics
+never contain XML, MPD/BaseURL/Segment URLs, representation IDs, request context or local paths.
+
+After a typed track selection is submitted, `download.dash_manifest.started` ends in exactly one
+`download.dash_manifest.completed` or `download.dash_manifest.failed`. Durable-plan recovery uses
+`source=network_revalidation`. Plan creation emits `download.dash_transfer_plan.created`; aggregate
+artifact reconciliation emits at most one `download.dash_checkpoints.reconciled`. Transfer emits
+`download.dash_transfer.started` and one `download.dash_transfer.completed`,
+`download.dash_transfer.paused`, `download.dash_transfer.cancelled` or the existing correlated task
+failure. A bounded retry uses `download.dash_fragment_retry.scheduled`; successful fragments do not
+produce per-fragment production logs.
+
+Track concatenation and audio/video mux use `download.dash_finalize.started` followed by one
+`download.dash_finalize.completed` (with fixed `outcome=completed|paused|cancelled`) or
+`download.dash_finalize.failed`. The FFmpeg boundary records
+only a fixed operation kind, version status from
+`not_applicable|not_started|interrupted|detected|unavailable`, child exit code, optional native
+error code and elapsed time.
+Captured stdout/stderr is bounded for failure classification but is not copied into production
+logs. `download.dash_finalize.*.elapsed_ms` measures only finalization; a successful FFmpeg boundary
+also carries `ffmpeg_elapsed_ms`, while `download.dash_transfer.*.elapsed_ms` retains whole-task
+elapsed time. Cancellation terminates the owned child process and removes non-durable mux output; completed
+track fragments remain owned by the durable task until final publication or explicit cancellation.
+Paused/failed cancellation and history removal emit `download.dash_cleanup.started`, followed by
+`download.dash_cleanup.completed`; filesystem failures use `download.dash_cleanup.failed` with the
+same correlation, fixed `reason`, fixed `artifact_kind`, native error code and elapsed time. These
+events never include an MPD/fragment URL or local path.

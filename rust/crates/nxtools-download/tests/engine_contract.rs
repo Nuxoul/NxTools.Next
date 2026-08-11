@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{Datelike, Local, Weekday};
 use nxtools_download::{
-    BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+    BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
     DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine, DownloadEvent,
     DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestMedia,
@@ -32,6 +32,637 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         adaptive_segment_policy: None,
         media: None,
     }
+}
+
+fn write_ffmpeg_fixture(path: &std::path::Path) {
+    std::fs::write(
+        path,
+        r#"@echo off
+if "%~1"=="-version" echo ffmpeg version NxTools-test& exit /b 0
+set "first="
+set "second="
+set "previous="
+:loop
+if "%~1"=="" goto done
+if not "%previous%"=="-i" goto not_input
+if defined first goto set_second
+set "first=%~1"
+goto not_input
+:set_second
+if not defined second set "second=%~1"
+:not_input
+if "%previous%"=="-f" set "format=%~1"
+set "previous=%~1"
+set "output=%~1"
+shift
+goto loop
+:done
+if not "%format%"=="mp4" exit /b 9
+copy /b "%first%"+"%second%" "%output%" >nul
+"#,
+    )
+    .expect("write fake FFmpeg boundary");
+}
+
+fn write_blocking_ffmpeg_fixture(path: &std::path::Path, block_version: bool) {
+    let version_action = if block_version {
+        r#"echo started>"%~dp0ffmpeg.started"
+:wait_version
+ping -n 2 127.0.0.1 >nul
+goto wait_version"#
+    } else {
+        r#"echo ffmpeg version NxTools-test
+exit /b 0"#
+    };
+    std::fs::write(
+        path,
+        format!(
+            r#"@echo off
+if "%~1"=="-version" goto version
+echo started>"%~dp0ffmpeg.started"
+:wait_mux
+ping -n 2 127.0.0.1 >nul
+goto wait_mux
+:version
+{version_action}
+"#
+        ),
+    )
+    .expect("write blocking FFmpeg boundary");
+}
+
+#[tokio::test]
+async fn selected_dash_video_track_downloads_init_and_segments_in_manifest_order() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create DASH engine directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("video.mp4".into());
+    dash_request.connection_limit = Some(2);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit selected DASH video");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for DASH terminal state");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "DASH video failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("video.mp4")).expect("read merged DASH artifact"),
+        b"VINIT|V0|V1"
+    );
+    let observed = server.max_concurrent_range_transfers();
+    assert!(
+        observed >= 2,
+        "expected DASH fragment concurrency, saw {observed}"
+    );
+    assert!(
+        observed <= 2,
+        "DASH exceeded configured connection limit: {observed}"
+    );
+}
+
+#[tokio::test]
+async fn paused_dash_video_reopens_from_durable_fragment_checkpoint() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create resumable DASH directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("resumed-video.mp4".into());
+    dash_request.connection_limit = Some(1);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+    server.hold_dash_first_media(true);
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit resumable DASH video");
+    let initialization = destination
+        .join(format!(".nxtools-dash-{}", task_id.as_uuid()))
+        .join("00000000.fragment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !initialization.exists() || server.dash_first_media_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "DASH initialization did not become durable before the media request"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause DASH video");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for paused DASH video");
+    server.hold_dash_first_media(false);
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    assert!(initialization.exists());
+    drop(engine);
+
+    let reopened = DownloadEngine::open(&database).expect("reopen persistent download engine");
+    reopened
+        .resume(task_id)
+        .expect("resume restored DASH video");
+    let completed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for resumed DASH video");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "resumed DASH failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("resumed-video.mp4")).expect("read resumed DASH artifact"),
+        b"VINIT|V0|V1"
+    );
+    assert_eq!(
+        server.dash_initialization_attempts(),
+        1,
+        "durable DASH initialization must not be requested again after reopen"
+    );
+}
+
+#[tokio::test]
+async fn reopened_dash_video_rejects_changed_track_identity_before_mixing_fragments() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create mutable DASH directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("changed-video.mp4".into());
+    dash_request.connection_limit = Some(1);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+    server.hold_dash_first_media(true);
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit mutable DASH video");
+    let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
+    let durable_initialization = working.join("00000000.fragment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !durable_initialization.exists() || server.dash_first_media_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "DASH initialization did not become durable"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause mutable DASH video");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for mutable DASH pause");
+    server.hold_dash_first_media(false);
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    drop(engine);
+
+    server.advance_resource_revision();
+    let reopened = DownloadEngine::open(&database).expect("reopen mutable DASH engine");
+    reopened.resume(task_id).expect("resume mutable DASH video");
+    let failed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for incompatible DASH terminal state");
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(durable_initialization.exists());
+    assert!(!destination.join("changed-video.mp4").exists());
+}
+
+#[tokio::test]
+async fn reopened_dash_video_rejects_raw_timescale_changes_hidden_by_rounded_duration() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create raw-timescale DASH directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/timescale.mpd", server.address());
+    dash_request.file_name = Some("timescale-video.mp4".into());
+    dash_request.connection_limit = Some(1);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+    server.hold_dash_first_media(true);
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit raw-timescale DASH video");
+    let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
+    let initialization = working.join("00000000.fragment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !initialization.exists() || server.dash_first_media_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "raw-timescale DASH initialization did not become durable"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine
+        .pause(task_id)
+        .expect("pause raw-timescale DASH video");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for raw-timescale DASH pause");
+    server.hold_dash_first_media(false);
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    drop(engine);
+
+    server.advance_resource_revision();
+    let reopened = DownloadEngine::open(&database).expect("reopen raw-timescale DASH engine");
+    reopened
+        .resume(task_id)
+        .expect("resume raw-timescale DASH video");
+    let failed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for raw-timescale incompatibility");
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(initialization.exists());
+    assert!(!destination.join("timescale-video.mp4").exists());
+}
+
+#[tokio::test]
+async fn cancelling_a_paused_dash_task_removes_fragments_and_durable_plan() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create cancellable DASH directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open persistent download engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("cancelled-video.mp4".into());
+    dash_request.connection_limit = Some(1);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+    server.hold_dash_first_media(true);
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit cancellable DASH video");
+    let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !working.join("00000000.fragment").exists() || server.dash_first_media_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "DASH task did not checkpoint"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause DASH task");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for DASH pause");
+    server.hold_dash_first_media(false);
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    engine.cancel(task_id).expect("cancel paused DASH task");
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("load task")
+            .expect("task exists")
+            .task
+            .status(),
+        DownloadStatus::Cancelled
+    );
+    assert!(!working.exists());
+    let connection = rusqlite::Connection::open(&database).expect("open DASH database");
+    let plan_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM download_dash_plans WHERE task_id = ?1",
+            [task_id.as_uuid().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count DASH plans");
+    assert_eq!(plan_count, 0);
+}
+
+#[tokio::test]
+async fn selected_dash_video_and_audio_tracks_are_muxed_by_a_bounded_ffmpeg_process() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create DASH mux directory");
+    let destination = directory.path().join("artifacts");
+    let ffmpeg = directory.path().join("ffmpeg-fixture.cmd");
+    write_ffmpeg_fixture(&ffmpeg);
+    let engine = DownloadEngine::open_in_memory_with_ffmpeg(&ffmpeg)
+        .expect("open download engine with FFmpeg fixture");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("muxed.mp4".into());
+    dash_request.connection_limit = Some(2);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: Some("a128".into()),
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit selected DASH video and audio");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for DASH mux terminal state");
+
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "DASH mux failed: {:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("muxed.mp4")).expect("read muxed DASH artifact"),
+        b"VINIT|V0|V1AINIT|A0|A1"
+    );
+}
+
+#[tokio::test]
+async fn pausing_during_ffmpeg_detection_preserves_dash_fragments_without_publishing_output() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create FFmpeg detection pause directory");
+    let destination = directory.path().join("artifacts");
+    let ffmpeg = directory.path().join("ffmpeg-block-version.cmd");
+    let marker = directory.path().join("ffmpeg.started");
+    write_blocking_ffmpeg_fixture(&ffmpeg, true);
+    let engine = DownloadEngine::open_in_memory_with_ffmpeg(&ffmpeg)
+        .expect("open engine with blocking FFmpeg version fixture");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("paused-mux.mp4".into());
+    dash_request.connection_limit = Some(2);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: Some("a128".into()),
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit FFmpeg detection pause task");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "FFmpeg version process did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause FFmpeg detection");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("FFmpeg detection should be pause-responsive");
+    assert_eq!(
+        paused.task.status(),
+        DownloadStatus::Paused,
+        "FFmpeg detection pause failed: {:?}",
+        paused.error
+    );
+    assert!(
+        destination
+            .join(format!(".nxtools-dash-{}", task_id.as_uuid()))
+            .exists()
+    );
+    assert!(!destination.join("paused-mux.mp4").exists());
+}
+
+#[tokio::test]
+async fn dash_finalize_cleanup_obstruction_fails_instead_of_losing_its_terminal() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create DASH finalize obstruction directory");
+    let destination = directory.path().join("artifacts");
+    let ffmpeg = directory.path().join("ffmpeg-block-cleanup.cmd");
+    let marker = directory.path().join("ffmpeg.started");
+    write_blocking_ffmpeg_fixture(&ffmpeg, true);
+    let engine = DownloadEngine::open_in_memory_with_ffmpeg(&ffmpeg)
+        .expect("open engine with blocked FFmpeg version fixture");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("cleanup-obstructed.mp4".into());
+    dash_request.connection_limit = Some(2);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: Some("a128".into()),
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit DASH cleanup obstruction task");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "FFmpeg version process did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let temporary_path = engine
+        .task(task_id)
+        .expect("read DASH cleanup task")
+        .expect("DASH cleanup task exists")
+        .temporary_path
+        .expect("DASH cleanup task has temporary path");
+    std::fs::create_dir_all(&temporary_path)
+        .expect("obstruct temporary-file cleanup with directory");
+    engine
+        .pause(task_id)
+        .expect("pause obstructed DASH finalization");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("cleanup obstruction should become a terminal failure");
+    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    assert!(temporary_path.is_dir());
+    assert!(!destination.join("cleanup-obstructed.mp4").exists());
+}
+
+#[tokio::test]
+async fn cancelling_during_ffmpeg_mux_removes_dash_staging_and_output() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create FFmpeg mux cancel directory");
+    let destination = directory.path().join("artifacts");
+    let ffmpeg = directory.path().join("ffmpeg-block-mux.cmd");
+    let marker = directory.path().join("ffmpeg.started");
+    write_blocking_ffmpeg_fixture(&ffmpeg, false);
+    let engine = DownloadEngine::open_in_memory_with_ffmpeg(&ffmpeg)
+        .expect("open engine with blocking FFmpeg mux fixture");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("cancelled-mux.mp4".into());
+    dash_request.connection_limit = Some(2);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: Some("a128".into()),
+    }));
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit FFmpeg mux cancel task");
+    let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "FFmpeg mux process did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.cancel(task_id).expect("cancel FFmpeg mux");
+    let cancelled = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("FFmpeg mux should be cancel-responsive");
+    assert_eq!(cancelled.task.status(), DownloadStatus::Cancelled);
+    assert!(!working.exists());
+    assert!(!destination.join("cancelled-mux.mp4").exists());
+}
+
+#[tokio::test]
+async fn cli_dash_url_auto_selects_tracks_and_persists_the_media_request() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create CLI DASH directory");
+    let destination = directory.path().join("artifacts");
+    let ffmpeg = directory.path().join("ffmpeg-fixture.cmd");
+    write_ffmpeg_fixture(&ffmpeg);
+    let engine = DownloadEngine::open_in_memory_with_ffmpeg(&ffmpeg)
+        .expect("open download engine with FFmpeg fixture");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("cli-auto.mp4".into());
+    dash_request.media = None;
+
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Cli)
+        .expect("submit plain DASH URL from CLI");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for CLI DASH terminal state");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "automatic DASH selection failed: {:?}",
+        completed.error
+    );
+    assert!(matches!(
+        completed.task.request().media,
+        Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+            video_representation_id: Some(_),
+            audio_representation_id: Some(_),
+            ..
+        }))
+    ));
+    assert_eq!(
+        std::fs::read(destination.join("cli-auto.mp4")).expect("read automatic DASH artifact"),
+        b"VINIT|V0|V1AINIT|A0|A1"
+    );
+
+    let mut browser_request = request(&server, destination.clone());
+    browser_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    browser_request.file_name = Some("manifest.mpd".into());
+    browser_request.media = None;
+    let browser_task = engine
+        .submit(browser_request, RequestOrigin::Browser)
+        .expect("submit plain DASH URL from browser handoff");
+    let browser_completed = engine
+        .wait_for_terminal(browser_task, Duration::from_secs(5))
+        .await
+        .expect("wait for browser DASH terminal state");
+    assert_eq!(
+        browser_completed.task.status(),
+        DownloadStatus::Completed,
+        "browser automatic DASH selection failed: {:?}",
+        browser_completed.error
+    );
+    assert!(matches!(
+        browser_completed.task.request().media,
+        Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+            video_representation_id: Some(_),
+            audio_representation_id: Some(_),
+            ..
+        }))
+    ));
+    assert_eq!(
+        browser_completed.task.request().file_name.as_deref(),
+        Some("manifest.mp4")
+    );
+    assert_eq!(
+        std::fs::read(destination.join("manifest.mp4"))
+            .expect("read browser automatic DASH artifact"),
+        b"VINIT|V0|V1AINIT|A0|A1"
+    );
+}
+
+#[tokio::test]
+async fn browser_hls_url_auto_selects_media_and_replaces_the_manifest_extension() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create browser HLS directory");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let mut hls_request = request(&server, destination.clone());
+    hls_request.source_url = format!("http://{}/hls/high/index.m3u8", server.address());
+    hls_request.file_name = Some("captured.m3u8".into());
+    hls_request.media = None;
+
+    let task_id = engine
+        .submit(hls_request, RequestOrigin::Browser)
+        .expect("submit plain HLS URL from browser handoff");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .await
+        .expect("wait for automatic browser HLS terminal state");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "automatic browser HLS failed: {:?}",
+        completed.error
+    );
+    assert!(matches!(
+        completed.task.request().media,
+        Some(DownloadRequestMedia::Hls(_))
+    ));
+    assert_eq!(
+        completed.task.request().file_name.as_deref(),
+        Some("captured.ts")
+    );
+    assert_eq!(
+        std::fs::read(destination.join("captured.ts")).expect("read automatic HLS artifact"),
+        b"segment-ten|segment-eleven|segment-twelve"
+    );
 }
 
 #[tokio::test]

@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use nxtools_download::{
-    BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics,
-    DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
-    DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
-    DownloadProbe, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement, DownloadRequest,
-    DownloadRequestHeader, DownloadRequestMedia, DownloadSnapshot, DownloadSubmitMode,
-    DownloadTaskAction, DownloadTaskId, HlsDownloadRequest, RequestOrigin, ResourceValidator,
+    BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
+    DownloadAggregateMetrics, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
+    DownloadCommandOutcome, DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer,
+    DownloadFault, DownloadFaultCode, DownloadProbe, DownloadQueue, DownloadQueueAction,
+    DownloadQueuePlacement, DownloadRequest, DownloadRequestHeader, DownloadRequestMedia,
+    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, HlsDownloadRequest,
+    RequestOrigin, ResourceValidator,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -56,6 +57,36 @@ fn hls_selection_round_trips_as_typed_download_request_state() {
 }
 
 #[test]
+fn dash_track_selection_round_trips_as_typed_download_request_state() {
+    let mut request = request();
+    request.source_url = "https://media.example.test/manifest.mpd".into();
+    request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: "https://cdn.example.test/vod/manifest.mpd?token=fresh".into(),
+        video_representation_id: Some("video-1080".into()),
+        audio_representation_id: Some("audio-zh-128".into()),
+    }));
+    let command = DownloadCommand::Submit {
+        request,
+        mode: DownloadSubmitMode::StartNow,
+    };
+
+    let encoded = serde_json::to_value(&command).expect("serialize typed DASH request");
+    let decoded: DownloadCommand =
+        serde_json::from_value(encoded.clone()).expect("deserialize typed DASH request");
+
+    assert_eq!(encoded["data"]["request"]["media"]["kind"], json!("dash"));
+    assert_eq!(
+        encoded["data"]["request"]["media"]["data"]["video_representation_id"],
+        json!("video-1080")
+    );
+    assert_eq!(
+        encoded["data"]["request"]["media"]["data"]["audio_representation_id"],
+        json!("audio-zh-128")
+    );
+    assert_eq!(decoded, command);
+}
+
+#[test]
 fn queue_and_batch_commands_are_typed_and_preserve_target_order() {
     let first = DownloadTaskId::new();
     let second = DownloadTaskId::new();
@@ -98,7 +129,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(5));
+    assert_eq!(value["protocol_version"], json!(6));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));

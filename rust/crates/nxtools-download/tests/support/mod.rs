@@ -110,6 +110,44 @@ segment-d.ts
 #EXT-X-ENDLIST
 "#;
 const HLS_RATE_LIMITED_VOD: &[u8] = b"#EXTM3U\n#EXTINF:10.0,\nsegment.ts\n#EXT-X-ENDLIST\n";
+const DASH_STATIC_VOD: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S">
+  <BaseURL>media/</BaseURL>
+  <Period duration="PT4S">
+    <AdaptationSet contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentTemplate timescale="1000" initialization="video/$RepresentationID$/init.mp4" media="video/$RepresentationID$/$Time$.m4s">
+        <SegmentTimeline><S t="0" d="2000" r="1"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v720" bandwidth="1800000" width="1280" height="720"/>
+      <Representation id="v1080" bandwidth="4200000" width="1920" height="1080"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="audio" mimeType="audio/mp4" codecs="mp4a.40.2" lang="zh">
+      <SegmentTemplate timescale="48000" initialization="audio/$RepresentationID$/init.mp4" media="audio/$RepresentationID$/$Number%05d$.m4s" startNumber="7" duration="96000"/>
+      <Representation id="a128" bandwidth="128000" audioSamplingRate="48000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>
+"#;
+const DASH_STATIC_VOD_CHANGED: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S">
+  <BaseURL>media/</BaseURL>
+  <Period duration="PT4S">
+    <AdaptationSet contentType="video" mimeType="video/mp4" codecs="avc1.640032">
+      <SegmentTemplate timescale="1000" initialization="video/$RepresentationID$/init.mp4" media="video/$RepresentationID$/$Time$.m4s">
+        <SegmentTimeline><S t="0" d="2000" r="1"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v720" bandwidth="1800000" width="1280" height="720"/>
+      <Representation id="v1080" bandwidth="4200000" width="1920" height="1080"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="audio" mimeType="audio/mp4" codecs="mp4a.40.2" lang="zh">
+      <SegmentTemplate timescale="48000" initialization="audio/$RepresentationID$/init.mp4" media="audio/$RepresentationID$/$Number%05d$.m4s" startNumber="7" duration="96000"/>
+      <Representation id="a128" bandwidth="128000" audioSamplingRate="48000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>
+"#;
+const DASH_TIMESCALE_VOD: &[u8] = br#"<MPD type="static" mediaPresentationDuration="PT2S"><BaseURL>media/</BaseURL><Period><AdaptationSet contentType="video" mimeType="video/mp4" codecs="avc1.4d401f"><SegmentTemplate timescale="1000" initialization="video/$RepresentationID$/init.mp4" media="video/$RepresentationID$/$Time$.m4s"><SegmentTimeline><S t="0" d="2000"/></SegmentTimeline></SegmentTemplate><Representation id="v1080" bandwidth="4200000" width="1920" height="1080"/></AdaptationSet></Period></MPD>"#;
+const DASH_TIMESCALE_VOD_CHANGED: &[u8] = br#"<MPD type="static" mediaPresentationDuration="PT2S"><BaseURL>media/</BaseURL><Period><AdaptationSet contentType="video" mimeType="video/mp4" codecs="avc1.4d401f"><SegmentTemplate timescale="500" initialization="video/$RepresentationID$/init.mp4" media="video/$RepresentationID$/$Time$.m4s"><SegmentTimeline><S t="0" d="1000"/></SegmentTimeline></SegmentTemplate><Representation id="v1080" bandwidth="4200000" width="1920" height="1080"/></AdaptationSet></Period></MPD>"#;
 const CONCURRENT_BODY_LEN: usize = 256 * 1024;
 const IMBALANCED_BODY_LEN: usize = 8 * 1024 * 1024;
 
@@ -265,7 +303,12 @@ impl DeterministicHttpServer {
                     {
                         thread::sleep(Duration::from_millis(2));
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        if listener_shutdown.load(Ordering::Acquire) {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(2));
+                    }
                 }
             }
         });
@@ -331,6 +374,18 @@ impl DeterministicHttpServer {
     }
 
     pub fn hold_hls_aes_second_segment(&self, hold: bool) {
+        self.hold_hls_second_segment(hold);
+    }
+
+    pub fn dash_initialization_attempts(&self) -> u64 {
+        self.hls_first_segment_attempts()
+    }
+
+    pub fn dash_first_media_attempts(&self) -> u64 {
+        self.hls_second_segment_attempts()
+    }
+
+    pub fn hold_dash_first_media(&self, hold: bool) {
         self.hold_hls_second_segment(hold);
     }
 
@@ -508,6 +563,90 @@ fn serve_connection(
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
     match path {
+        "/dash/static.mpd" => {
+            let body = if revision.load(Ordering::Acquire) == 1 {
+                DASH_STATIC_VOD
+            } else {
+                DASH_STATIC_VOD_CHANGED
+            };
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "application/dash+xml")],
+                if method == "HEAD" { b"" } else { body },
+                Some(body.len()),
+            )
+        }
+        "/dash/timescale.mpd" => {
+            let body = if revision.load(Ordering::Acquire) == 1 {
+                DASH_TIMESCALE_VOD
+            } else {
+                DASH_TIMESCALE_VOD_CHANGED
+            };
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[("Content-Type", "application/dash+xml")],
+                if method == "HEAD" { b"" } else { body },
+                Some(body.len()),
+            )
+        }
+        "/dash/media/video/v1080/init.mp4" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"VINIT|",
+            active_range_transfers,
+            max_active_range_transfers,
+            Some(hls_first_segment_attempts),
+            None,
+        ),
+        "/dash/media/video/v1080/0.m4s" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"V0|",
+            active_range_transfers,
+            max_active_range_transfers,
+            Some(hls_second_segment_attempts),
+            Some(hold_hls_second_segment),
+        ),
+        "/dash/media/video/v1080/2000.m4s" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"V1",
+            active_range_transfers,
+            max_active_range_transfers,
+            None,
+            None,
+        ),
+        "/dash/media/audio/a128/init.mp4" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"AINIT|",
+            active_range_transfers,
+            max_active_range_transfers,
+            None,
+            None,
+        ),
+        "/dash/media/audio/a128/00007.m4s" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"A0|",
+            active_range_transfers,
+            max_active_range_transfers,
+            None,
+            None,
+        ),
+        "/dash/media/audio/a128/00008.m4s" => serve_concurrent_hls_segment(
+            &mut stream,
+            method,
+            b"A1",
+            active_range_transfers,
+            max_active_range_transfers,
+            None,
+            None,
+        ),
         "/hls/master.m3u8" => write_response(
             &mut stream,
             200,
