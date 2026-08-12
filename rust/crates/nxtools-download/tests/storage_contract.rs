@@ -11,6 +11,7 @@ fn task(at: i64) -> DownloadTask {
         DownloadRequest {
             source_url: "https://example.test/large.iso".to_owned(),
             save_directory: PathBuf::from(r"D:\Downloads"),
+            save_directory_explicit: false,
             file_name: Some("large.iso".to_owned()),
             headers: vec![DownloadRequestHeader {
                 name: "Authorization".to_owned(),
@@ -25,6 +26,9 @@ fn task(at: i64) -> DownloadTask {
             scheduled_at_unix_ms: Some(5_000),
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         },
         RequestOrigin::Browser,
         at,

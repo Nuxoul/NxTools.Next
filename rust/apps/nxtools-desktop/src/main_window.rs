@@ -3973,7 +3973,10 @@ fn download_task_row(
     let task_id = task.task.id();
     let element_id = task_id.as_uuid().as_u64_pair().0;
     let status = task.task.status();
-    let name = download_task_name(&task).to_owned();
+    let name = task.task.request().category_name.as_ref().map_or_else(
+        || download_task_name(&task).to_owned(),
+        |category| format!("{}  ·  {category}", download_task_name(&task)),
+    );
     let path = task.final_path.as_ref().map_or_else(
         || task.task.request().source_url.clone(),
         |path| path.display().to_string(),
@@ -4617,7 +4620,15 @@ fn download_overview_detail(
                         .map_or_else(|| "立即".into(), format_download_timestamp),
                     theme.text_secondary,
                 ))
-                .child(div().flex_1())
+                .child(download_detail_metric(
+                    theme,
+                    "分类",
+                    request
+                        .category_name
+                        .clone()
+                        .unwrap_or_else(|| "未分类".into()),
+                    theme.text_secondary,
+                ))
                 .child(div().flex_1())
                 .child(div().flex_1()),
         )
@@ -5666,6 +5677,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.com/releases/Zeta.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("Zeta.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -5677,6 +5689,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -5686,6 +5701,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://mirror.invalid/alpha.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("Alpha.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -5697,6 +5713,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -5983,6 +6002,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.com/completed.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("completed.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -5994,6 +6014,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -6286,6 +6309,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.com/first.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("first.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -6297,6 +6321,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -6306,6 +6333,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.com/second.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("second.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -6317,6 +6345,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -6451,6 +6482,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.com/reopen.bin".into(),
                     save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
                     file_name: Some("reopen.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -6462,6 +6494,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )

@@ -14,6 +14,7 @@ mod hls;
 mod http;
 mod media;
 mod message;
+mod organization;
 mod rate_limit;
 mod request_policy;
 mod storage;
@@ -58,6 +59,7 @@ pub use message::{
     HlsProbe, HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use nxtools_network::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
+pub use organization::{DownloadOrganizationPolicy, DownloadOrganizationPolicyError};
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use request_policy::{
     DownloadHttpPolicy, DownloadHttpPolicyError, MAX_DEFAULT_COOKIE_BYTES,
@@ -112,6 +114,15 @@ pub enum DownloadCertificatePolicy {
     AcceptInvalid,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadDuplicateStrategy {
+    #[default]
+    UseDefault,
+    AddNumbered,
+    Reject,
+}
+
 impl DownloadCertificatePolicy {
     const fn is_strict(&self) -> bool {
         matches!(self, Self::Strict)
@@ -158,6 +169,8 @@ impl Default for DownloadAdaptiveSegmentPolicy {
 pub struct DownloadRequest {
     pub source_url: String,
     pub save_directory: PathBuf,
+    #[serde(default)]
+    pub save_directory_explicit: bool,
     pub file_name: Option<String>,
     #[serde(default)]
     pub headers: Vec<DownloadRequestHeader>,
@@ -175,6 +188,12 @@ pub struct DownloadRequest {
     pub adaptive_segment_policy: Option<DownloadAdaptiveSegmentPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<DownloadRequestMedia>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_name: Option<String>,
+    #[serde(default)]
+    pub duplicate_strategy: DownloadDuplicateStrategy,
 }
 
 impl DownloadRequest {
@@ -272,6 +291,21 @@ impl DownloadRequest {
         {
             return Err(DownloadRequestError::InvalidHeader);
         }
+        if (self.category_id.is_none() && self.category_name.is_some())
+            || self.category_id.as_deref().is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > 64
+                    || !value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            })
+            || self
+                .category_name
+                .as_deref()
+                .is_some_and(|value| value.is_empty() || value.len() > 64)
+        {
+            return Err(DownloadRequestError::InvalidCategory);
+        }
         Ok(())
     }
 }
@@ -308,6 +342,8 @@ pub enum DownloadRequestError {
     InvalidMediaSelection,
     #[error("download request contains an invalid header")]
     InvalidHeader,
+    #[error("download category identity is invalid")]
+    InvalidCategory,
 }
 
 pub(crate) fn is_safe_windows_file_name(file_name: &str) -> bool {

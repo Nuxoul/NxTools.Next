@@ -28,7 +28,7 @@ Browser extension
           -> opens NxTools.exe --background only for non-interactive download commands
           -> Blob metadata/capability stays on Native Messaging; Blob bytes use a random-loopback,
              one-time, current-user capability stream with 1 MiB chunks and a 2 GiB total bound
-          -> only a complete staging ID crosses download command protocol v7; the engine owns
+          -> only a complete staging ID crosses download command protocol v8; the engine owns
              confirmation, final artifact import, task persistence and cancellation cleanup
           -> ordinary batch intake is one bounded 1–32 item command with one parent correlation;
              each item has a stable handoff ID and is queue-only to avoid a window storm
@@ -40,9 +40,9 @@ the envelope is versioned so payload encoding can change without blurring proces
 The LocalSystem indexer intentionally remains available across GUI restarts, while BrowserHost
 follows the browser extension connection rather than the GUI lifetime.
 
-Download command protocol v7 retains the bounded HLS/DASH messages from v6 and adds the frozen,
-default-strict download certificate policy to every request crossing the process boundary.
-Rust fetches and parses at most a
+Download command protocol v8 retains the bounded media and frozen request-context messages from v7
+and adds resolved category intent plus the explicit-directory fact required by the central task
+acceptance boundary. Rust fetches and parses at most a
 2 MiB manifest and returns at most 32 presentation-only variants. Each resolved playlist URL is
 limited to 8 KiB and each codec/audio/subtitle presentation field to 512 bytes, keeping the maximum
 serialized HLS probe under a separate 512 KiB aggregate budget and therefore below the 1 MiB IPC
@@ -71,6 +71,11 @@ Clipboard and quick-launch can opt in for future real outbound HTTP operations w
 on the download domain. Local IPC, Native Messaging, indexing, Shell and Windows-adapter traffic do
 not inherit the proxy. The global GPUI settings controller persists canonical config before it
 publishes the next live policy, so a failed save cannot affect a concurrent operation.
+
+Download organization is another Rust-owned acceptance policy. GPUI, CLI and browser adapters carry
+only explicit user intent. The engine resolves the authoritative file name, category, directory and
+non-overwriting conflict strategy under the same serialized gate used for durable task persistence.
+The resolved identity is stored with the task, so settings changes affect only later admissions.
 
 ## C# owns
 

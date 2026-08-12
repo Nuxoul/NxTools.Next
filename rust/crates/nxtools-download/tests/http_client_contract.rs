@@ -17,6 +17,7 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
     DownloadRequest {
         source_url: format!("http://{}{path}", server.address()),
         save_directory: PathBuf::from(r"D:\Downloads"),
+        save_directory_explicit: false,
         file_name: None,
         headers: Vec::new(),
         cookie: None,
@@ -28,6 +29,9 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     }
 }
 
@@ -135,6 +139,7 @@ async fn pause_before_single_stream_preparation_creates_no_files() {
     let request = DownloadRequest {
         source_url: "http://127.0.0.1:9/never-requested".into(),
         save_directory: save_directory.clone(),
+        save_directory_explicit: false,
         file_name: Some("fixture.bin".into()),
         headers: Vec::new(),
         cookie: None,
@@ -146,6 +151,9 @@ async fn pause_before_single_stream_preparation_creates_no_files() {
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     };
     let client = HttpDownloadClient::new().expect("create HTTP client");
     let control = DownloadTransferControl::new();
@@ -176,6 +184,7 @@ async fn cancel_before_single_stream_preparation_creates_no_files() {
     let request = DownloadRequest {
         source_url: "http://127.0.0.1:9/never-requested".into(),
         save_directory: save_directory.clone(),
+        save_directory_explicit: false,
         file_name: Some("fixture.bin".into()),
         headers: Vec::new(),
         cookie: None,
@@ -187,6 +196,9 @@ async fn cancel_before_single_stream_preparation_creates_no_files() {
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     };
     let client = HttpDownloadClient::new().expect("create HTTP client");
     let control = DownloadTransferControl::new();

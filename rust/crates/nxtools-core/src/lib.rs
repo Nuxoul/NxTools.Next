@@ -158,6 +158,12 @@ pub struct DownloadSettings {
     #[serde(default)]
     pub default_directory: String,
     #[serde(default)]
+    pub automatic_categories_enabled: bool,
+    #[serde(default = "default_download_categories")]
+    pub categories: Vec<DownloadCategorySettings>,
+    #[serde(default)]
+    pub duplicate_strategy: DownloadDuplicateStrategySettings,
+    #[serde(default)]
     pub ffmpeg_executable_path: String,
     #[serde(default)]
     pub default_request_headers: String,
@@ -179,6 +185,28 @@ pub struct DownloadSettings {
     pub show_completion_window: bool,
     #[serde(default)]
     pub taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DownloadCategorySettings {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub save_directory: String,
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    #[serde(default)]
+    pub url_patterns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadDuplicateStrategySettings {
+    #[default]
+    AddNumbered,
+    Reject,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -252,6 +280,9 @@ impl Default for DownloadSettings {
     fn default() -> Self {
         Self {
             default_directory: String::new(),
+            automatic_categories_enabled: false,
+            categories: default_download_categories(),
+            duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
             ffmpeg_executable_path: String::new(),
             default_request_headers: String::new(),
             default_cookie: String::new(),
@@ -294,6 +325,14 @@ const fn default_taskbar_overlay_height() -> u32 {
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
+        for category in &mut self.categories {
+            category.id = category.id.trim().to_owned();
+            category.name = category.name.trim().to_owned();
+            category.save_directory = category.save_directory.trim().to_owned();
+            category.extensions = normalize_download_category_values(&category.extensions, true);
+            category.url_patterns =
+                normalize_download_category_values(&category.url_patterns, false);
+        }
         self.ffmpeg_executable_path = self.ffmpeg_executable_path.trim().to_owned();
         self.default_request_headers = self.default_request_headers.trim().to_owned();
         let cookie = self.default_cookie.trim();
@@ -334,6 +373,102 @@ impl DownloadSettings {
             self.taskbar_progress_overlay.height = self.taskbar_progress_overlay.height.max(20);
         }
     }
+}
+
+fn normalize_download_category_values(values: &[String], trim_dot: bool) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let value = value.trim();
+        let value = if trim_dot {
+            value.trim_start_matches('.')
+        } else {
+            value
+        };
+        if value.is_empty()
+            || normalized
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(value))
+        {
+            continue;
+        }
+        normalized.push(if trim_dot {
+            value.to_ascii_lowercase()
+        } else {
+            value.to_owned()
+        });
+    }
+    normalized
+}
+
+fn default_download_categories() -> Vec<DownloadCategorySettings> {
+    fn category(
+        id: &str,
+        name: &str,
+        directory: &str,
+        extensions: &[&str],
+    ) -> DownloadCategorySettings {
+        DownloadCategorySettings {
+            id: id.into(),
+            name: name.into(),
+            enabled: true,
+            save_directory: directory.into(),
+            extensions: extensions.iter().map(|value| (*value).into()).collect(),
+            url_patterns: Vec::new(),
+        }
+    }
+    vec![
+        category(
+            "compressed",
+            "压缩包",
+            "Compressed",
+            &[
+                "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "dmg", "tgz",
+            ],
+        ),
+        category(
+            "programs",
+            "程序",
+            "Programs",
+            &[
+                "apk", "exe", "msi", "bat", "cmd", "sh", "jar", "app", "deb", "rpm", "bin",
+            ],
+        ),
+        category(
+            "videos",
+            "视频",
+            "Videos",
+            &[
+                "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "3gp", "mpeg", "mpg",
+                "ts", "m3u8",
+            ],
+        ),
+        category(
+            "music",
+            "音乐",
+            "Music",
+            &[
+                "mp3", "wav", "aac", "flac", "ogg", "opus", "aiff", "wma", "m4a",
+            ],
+        ),
+        category(
+            "pictures",
+            "图片",
+            "Pictures",
+            &[
+                "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "svg", "webp", "heic", "ico",
+                "raw", "psd",
+            ],
+        ),
+        category(
+            "documents",
+            "文档",
+            "Documents",
+            &[
+                "doc", "docx", "pdf", "txt", "rtf", "odt", "xls", "xlsx", "ppt", "pptx", "csv",
+                "epub", "pages",
+            ],
+        ),
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1152,6 +1287,9 @@ mod tests {
             &path,
             DownloadSettings {
                 default_directory: r"D:\Downloads".into(),
+                automatic_categories_enabled: true,
+                categories: default_download_categories(),
+                duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
                 ffmpeg_executable_path: r"D:\Tools\ffmpeg.exe".into(),
                 default_request_headers: "X-Test: value".into(),
                 default_cookie: "session=test".into(),

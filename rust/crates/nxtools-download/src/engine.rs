@@ -24,9 +24,10 @@ use crate::{
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadDailySchedule, DownloadEvent, DownloadEventEnvelope,
     DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadHttpPolicy,
-    DownloadHttpPolicyError, DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueue,
-    DownloadQueueAction, DownloadQueuePlacement, DownloadRateLimitError, DownloadRateLimiter,
-    DownloadRequest, DownloadRequestError, DownloadRequestMedia, DownloadSchedule, DownloadSegment,
+    DownloadHttpPolicyError, DownloadOrganizationPolicy, DownloadOrganizationPolicyError,
+    DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction,
+    DownloadQueuePlacement, DownloadRateLimitError, DownloadRateLimiter, DownloadRequest,
+    DownloadRequestError, DownloadRequestMedia, DownloadSchedule, DownloadSegment,
     DownloadSegmentError, DownloadSegmentProgress, DownloadSegmentState,
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
     DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
@@ -48,6 +49,7 @@ struct DownloadEngineInner {
     http_template: HttpDownloadClient,
     network_policy: NetworkPolicy,
     download_http_policy: DownloadHttpPolicy,
+    download_organization_policy: DownloadOrganizationPolicy,
     ffmpeg_executable: Mutex<Option<PathBuf>>,
     ffmpeg_install_active: AtomicBool,
     store: SqliteDownloadStore,
@@ -78,11 +80,20 @@ pub struct BrowserDownloadDialogRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BrowserDownloadDialogSource {
-    Download(DownloadRequest),
+    Download(Box<DownloadRequest>),
     Blob {
         blob: BrowserBlob,
         save_directory: PathBuf,
     },
+}
+
+struct BrowserBlobImportRequest {
+    handoff_id: uuid::Uuid,
+    blob: BrowserBlob,
+    save_directory: PathBuf,
+    file_name: String,
+    category_id: Option<String>,
+    save_directory_explicit: bool,
 }
 
 #[derive(Clone)]
@@ -394,6 +405,16 @@ impl DownloadEngine {
         Ok(())
     }
 
+    pub fn update_download_organization_policy(
+        &self,
+        settings: &DownloadSettings,
+    ) -> Result<(), DownloadEngineError> {
+        self.inner
+            .download_organization_policy
+            .update_from_download_settings(settings)?;
+        Ok(())
+    }
+
     #[doc(hidden)]
     pub fn open_in_memory_with_network_policy(
         network_policy: NetworkPolicy,
@@ -522,6 +543,9 @@ impl DownloadEngine {
                 http_template: http,
                 network_policy,
                 download_http_policy,
+                download_organization_policy: DownloadOrganizationPolicy::from_download_settings(
+                    &DownloadSettings::default(),
+                )?,
                 ffmpeg_executable: Mutex::new(ffmpeg_executable),
                 ffmpeg_install_active: AtomicBool::new(false),
                 store,
@@ -838,12 +862,18 @@ impl DownloadEngine {
                 blob,
                 save_directory,
                 file_name,
+                category_id,
+                save_directory_explicit,
             } => {
                 self.import_browser_blob_correlated(
-                    handoff_id,
-                    blob,
-                    save_directory,
-                    file_name,
+                    BrowserBlobImportRequest {
+                        handoff_id,
+                        blob,
+                        save_directory,
+                        file_name,
+                        category_id,
+                        save_directory_explicit,
+                    },
                     request_id,
                 )
                 .map(|(task_id, duplicate)| {
@@ -1645,6 +1675,15 @@ impl DownloadEngine {
             .download_http_policy
             .apply_to_request(&mut request)?;
         request.validate()?;
+        self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let mut tasks = self.inner.lock_tasks()?;
+        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
+        request.validate()?;
         let now = now_unix_ms();
         let delayed_until_due = request
             .scheduled_at_unix_ms
@@ -1654,18 +1693,13 @@ impl DownloadEngine {
         let task_id = task.id();
         let transfer = StoredTransferState::default();
         let control = None;
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
         self.inner.store.save_task_with_transfer_and_queue(
             &task,
             &transfer,
             "default",
             mode == DownloadSubmitMode::StartNow && !delayed_until_due,
         )?;
-        self.inner.lock_tasks()?.insert(
+        tasks.insert(
             task_id,
             EngineTaskState {
                 task,
@@ -1675,6 +1709,7 @@ impl DownloadEngine {
                 transfer_rate: None,
             },
         );
+        drop(tasks);
         self.inner.emit_task(task_id);
 
         if delayed_until_due {
@@ -1700,6 +1735,81 @@ impl DownloadEngine {
         Ok(task_id)
     }
 
+    fn resolve_missing_file_name_before_acceptance(
+        &self,
+        request: &mut DownloadRequest,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        if request.file_name.is_some() {
+            return Ok(());
+        }
+        let started_at = Instant::now();
+        let certificate_policy = request.certificate_policy;
+        let client = self.inner.http_for_operation(certificate_policy);
+        let (proxy_mode, proxy_source) =
+            client.as_ref().map_or(("unavailable", "policy"), |client| {
+                (
+                    proxy_mode_name(client.network_proxy_mode()),
+                    client.network_proxy_source(),
+                )
+            });
+        info!(
+            event = "download.probe.started",
+            %correlation_id,
+            proxy_mode,
+            proxy_source,
+            certificate_policy = certificate_policy_name(certificate_policy),
+            purpose = "acceptance_file_name",
+            "download acceptance file-name probe started"
+        );
+        let probe_request = request.clone();
+        let result = (|| {
+            let client = client?;
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            download_runtime()?.spawn(async move {
+                let _ = sender.send(client.probe(&probe_request).await);
+            });
+            receiver
+                .recv()
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+                .map_err(DownloadEngineError::from)
+        })();
+        let file_name = match result.and_then(|probe| {
+            probe
+                .file_name
+                .ok_or(DownloadRequestError::InvalidFileName.into())
+        }) {
+            Ok(file_name) => file_name,
+            Err(error) => {
+                warn!(
+                    event = "download.probe.failed",
+                    %correlation_id,
+                    proxy_mode,
+                    proxy_source,
+                    certificate_policy = certificate_policy_name(certificate_policy),
+                    error_kind = probe_error_kind(&error),
+                    native_error_code = error.io_error().and_then(std::io::Error::raw_os_error),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    purpose = "acceptance_file_name",
+                    "download acceptance file-name probe failed"
+                );
+                return Err(error);
+            }
+        };
+        request.file_name = Some(file_name);
+        info!(
+            event = "download.probe.completed",
+            %correlation_id,
+            proxy_mode,
+            proxy_source,
+            certificate_policy = certificate_policy_name(certificate_policy),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            purpose = "acceptance_file_name",
+            "download acceptance file-name probe completed"
+        );
+        Ok(())
+    }
+
     fn submit_browser_correlated(
         &self,
         handoff_id: uuid::Uuid,
@@ -1707,9 +1817,38 @@ impl DownloadEngine {
         mode: DownloadSubmitMode,
         correlation_id: uuid::Uuid,
     ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
+            info!(
+                event = "download.browser_handoff.duplicate_accepted",
+                %correlation_id,
+                %handoff_id,
+                ?task_id,
+                "duplicate browser handoff resolved before request replay"
+            );
+            return Ok((task_id, true));
+        }
         self.inner
             .download_http_policy
             .apply_to_request(&mut request)?;
+        request.validate()?;
+        self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
+            info!(
+                event = "download.browser_handoff.duplicate_accepted",
+                %correlation_id,
+                %handoff_id,
+                ?task_id,
+                "duplicate browser handoff resolved to the existing task"
+            );
+            return Ok((task_id, true));
+        }
+        let mut tasks = self.inner.lock_tasks()?;
+        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
         request.validate()?;
         let now = now_unix_ms();
         let task = DownloadTask::new(request, RequestOrigin::Browser, now);
@@ -1718,11 +1857,6 @@ impl DownloadEngine {
             .request()
             .scheduled_at_unix_ms
             .is_some_and(|scheduled_at| scheduled_at > now);
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
         let saved = self.inner.store.save_browser_task_with_transfer_and_queue(
             handoff_id,
             &task,
@@ -1733,6 +1867,7 @@ impl DownloadEngine {
         let task_id = match saved {
             crate::storage::BrowserHandoffSave::Inserted(task_id) => task_id,
             crate::storage::BrowserHandoffSave::Duplicate(task_id) => {
+                drop(tasks);
                 info!(
                     event = "download.browser_handoff.duplicate_accepted",
                     %correlation_id,
@@ -1744,7 +1879,7 @@ impl DownloadEngine {
             }
         };
 
-        self.inner.lock_tasks()?.insert(
+        tasks.insert(
             task_id,
             EngineTaskState {
                 task,
@@ -1754,6 +1889,7 @@ impl DownloadEngine {
                 transfer_rate: None,
             },
         );
+        drop(tasks);
         self.inner.emit_task(task_id);
         if delayed_until_due {
             self.refresh_delayed_schedule_wake()?;
@@ -1851,12 +1987,17 @@ impl DownloadEngine {
 
     fn import_browser_blob_correlated(
         &self,
-        handoff_id: uuid::Uuid,
-        blob: BrowserBlob,
-        save_directory: PathBuf,
-        file_name: String,
+        import: BrowserBlobImportRequest,
         correlation_id: uuid::Uuid,
     ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        let BrowserBlobImportRequest {
+            handoff_id,
+            blob,
+            save_directory,
+            file_name,
+            category_id,
+            save_directory_explicit,
+        } = import;
         let started_at = Instant::now();
         if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
             info!(
@@ -1887,19 +2028,11 @@ impl DownloadEngine {
                 "staged browser Blob size does not match its metadata".into(),
             ));
         }
-        std::fs::create_dir_all(&save_directory)
-            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
-        let final_path = save_directory.join(&file_name);
-        if final_path.exists() {
-            return Err(DownloadEngineError::Runtime(format!(
-                "target artifact already exists: {}",
-                final_path.display()
-            )));
-        }
         let source_url = format!("https://browser-blob.invalid/{}", blob.id);
-        let request = DownloadRequest {
+        let mut request = DownloadRequest {
             source_url: source_url.clone(),
             save_directory,
+            save_directory_explicit,
             file_name: Some(file_name.clone()),
             headers: Vec::new(),
             cookie: None,
@@ -1911,6 +2044,9 @@ impl DownloadEngine {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id,
+            category_name: None,
+            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
         };
         request.validate()?;
         let _scheduler = self
@@ -1921,6 +2057,14 @@ impl DownloadEngine {
         if let Some(task_id) = self.inner.store.browser_handoff_task(handoff_id)? {
             return Ok((task_id, true));
         }
+        let mut tasks = self.inner.lock_tasks()?;
+        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
+        request.validate()?;
+        let resolved_file_name = request
+            .file_name
+            .clone()
+            .ok_or(DownloadRequestError::InvalidFileName)?;
+        let final_path = request.save_directory.join(&resolved_file_name);
         import_blob_artifact(&staged_path, &final_path)?;
         let now = now_unix_ms();
         let mut task = DownloadTask::new(request, RequestOrigin::Browser, now);
@@ -1936,7 +2080,7 @@ impl DownloadEngine {
         let transfer = StoredTransferState {
             probe: Some(DownloadProbe {
                 final_url: source_url,
-                file_name: Some(file_name),
+                file_name: Some(resolved_file_name),
                 total_bytes: Some(blob.size),
                 supports_ranges: false,
                 content_type: blob.media_type,
@@ -1987,7 +2131,7 @@ impl DownloadEngine {
             }
         }
         let task_id = task.id();
-        self.inner.lock_tasks()?.insert(
+        tasks.insert(
             task_id,
             EngineTaskState {
                 task,
@@ -1997,6 +2141,7 @@ impl DownloadEngine {
                 transfer_rate: None,
             },
         );
+        drop(tasks);
         self.inner.emit_task(task_id);
         info!(
             event = "download.browser_blob.imported",
@@ -2067,7 +2212,7 @@ impl DownloadEngine {
         request.validate()?;
         self.open_browser_dialog_source_correlated(
             handoff_id,
-            BrowserDownloadDialogSource::Download(request),
+            BrowserDownloadDialogSource::Download(Box::new(request)),
             correlation_id,
         )
     }
@@ -6835,6 +6980,112 @@ fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask {
     }
 }
 
+fn target_reserved_by_tasks(
+    tasks: &HashMap<DownloadTaskId, EngineTaskState>,
+    candidate: &Path,
+) -> bool {
+    let candidate = windows_target_key(candidate);
+    tasks.values().any(|state| {
+        if state.task.status().is_terminal() {
+            return false;
+        }
+        let Some(file_name) = state.task.request().file_name.as_deref() else {
+            return false;
+        };
+        windows_target_key(&state.task.request().save_directory.join(file_name)) == candidate
+    })
+}
+
+fn windows_target_key(path: &Path) -> String {
+    let resolved = path.parent().map_or_else(
+        || path.to_owned(),
+        |parent| {
+            std::fs::canonicalize(parent)
+                .unwrap_or_else(|_| parent.to_owned())
+                .join(path.file_name().unwrap_or_default())
+        },
+    );
+    crate::organization::windows_path_key(&resolved)
+}
+
+fn apply_organization_to_request(
+    inner: &DownloadEngineInner,
+    request: &mut DownloadRequest,
+    tasks: &HashMap<DownloadTaskId, EngineTaskState>,
+    correlation_id: uuid::Uuid,
+) -> Result<(), DownloadOrganizationPolicyError> {
+    let started_at = Instant::now();
+    let category_was_explicit = request.category_id.is_some();
+    let original_file_name = request.file_name.clone();
+    if let Err(error) = inner
+        .download_organization_policy
+        .apply_to_request(request, |candidate| {
+            target_reserved_by_tasks(tasks, candidate)
+        })
+    {
+        let failure_kind = match &error {
+            DownloadOrganizationPolicyError::TargetOccupied => "target_occupied",
+            DownloadOrganizationPolicyError::NumberedTargetExhausted => "numbering_exhausted",
+            DownloadOrganizationPolicyError::LockPoisoned => "lock",
+            DownloadOrganizationPolicyError::TooManyRules
+            | DownloadOrganizationPolicyError::InvalidCategoryIdentity
+            | DownloadOrganizationPolicyError::InvalidCategoryDirectory
+            | DownloadOrganizationPolicyError::CategoryUnavailable
+            | DownloadOrganizationPolicyError::CategoryTextTooLarge => "invalid_policy",
+            DownloadOrganizationPolicyError::Io(_) => "filesystem",
+        };
+        warn!(
+            event = "download.organization.rejected",
+            %correlation_id,
+            failure_kind,
+            duplicate_strategy = duplicate_strategy_name(request.duplicate_strategy),
+            native_error_code = organization_native_error(&error),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "download organization resolution rejected the task"
+        );
+        return Err(error);
+    }
+    let classification_source = if request.category_id.is_none() {
+        "unclassified"
+    } else if category_was_explicit {
+        "explicit"
+    } else {
+        "automatic"
+    };
+    let conflict_outcome =
+        if original_file_name.is_some() && original_file_name != request.file_name {
+            "numbered"
+        } else {
+            "available"
+        };
+    info!(
+        event = "download.organization.resolved",
+        %correlation_id,
+        classification_source,
+        category_id = request.category_id.as_deref().unwrap_or("none"),
+        duplicate_strategy = duplicate_strategy_name(request.duplicate_strategy),
+        conflict_outcome,
+        elapsed_ms = started_at.elapsed().as_millis(),
+        "download organization resolution completed"
+    );
+    Ok(())
+}
+
+const fn duplicate_strategy_name(strategy: crate::DownloadDuplicateStrategy) -> &'static str {
+    match strategy {
+        crate::DownloadDuplicateStrategy::UseDefault => "use_default",
+        crate::DownloadDuplicateStrategy::AddNumbered => "add_numbered",
+        crate::DownloadDuplicateStrategy::Reject => "reject",
+    }
+}
+
+fn organization_native_error(error: &DownloadOrganizationPolicyError) -> Option<i32> {
+    match error {
+        DownloadOrganizationPolicyError::Io(error) => error.raw_os_error(),
+        _ => None,
+    }
+}
+
 fn remove_task_temporary_artifact(state: &EngineTaskState) {
     if let Some(path) = state.transfer.temporary_path.as_deref() {
         let _ = remove_path_if_exists(path);
@@ -7209,6 +7460,8 @@ pub enum DownloadEngineError {
     #[error(transparent)]
     DownloadHttpPolicy(#[from] DownloadHttpPolicyError),
     #[error(transparent)]
+    DownloadOrganizationPolicy(#[from] DownloadOrganizationPolicyError),
+    #[error(transparent)]
     Segment(#[from] DownloadSegmentError),
     #[error(transparent)]
     TransferPlan(#[from] TransferPlanError),
@@ -7335,6 +7588,19 @@ impl DownloadEngineError {
             Self::Http(_) => (DownloadFaultCode::Protocol, false),
             Self::NetworkPolicy(_) => (DownloadFaultCode::Unavailable, false),
             Self::DownloadHttpPolicy(_) => (DownloadFaultCode::InvalidRequest, false),
+            Self::DownloadOrganizationPolicy(
+                DownloadOrganizationPolicyError::TargetOccupied
+                | DownloadOrganizationPolicyError::NumberedTargetExhausted
+                | DownloadOrganizationPolicyError::TooManyRules
+                | DownloadOrganizationPolicyError::InvalidCategoryIdentity
+                | DownloadOrganizationPolicyError::InvalidCategoryDirectory
+                | DownloadOrganizationPolicyError::CategoryUnavailable
+                | DownloadOrganizationPolicyError::CategoryTextTooLarge,
+            ) => (DownloadFaultCode::InvalidRequest, false),
+            Self::DownloadOrganizationPolicy(
+                DownloadOrganizationPolicyError::LockPoisoned
+                | DownloadOrganizationPolicyError::Io(_),
+            ) => (DownloadFaultCode::Storage, true),
             Self::Runtime(_) | Self::WaitTimeout(_) => (DownloadFaultCode::Unavailable, true),
         };
         DownloadFault {
@@ -7348,6 +7614,9 @@ impl DownloadEngineError {
         match self {
             Self::Io(error) => Some(error),
             Self::Http(error) => error.io_error(),
+            Self::DownloadOrganizationPolicy(DownloadOrganizationPolicyError::Io(error)) => {
+                Some(error)
+            }
             _ => None,
         }
     }
@@ -7456,15 +7725,19 @@ mod tests {
             .expect("inject browser handoff failure");
 
         let result = engine.import_browser_blob_correlated(
-            uuid::Uuid::new_v4(),
-            BrowserBlob {
-                id: blob_id,
+            BrowserBlobImportRequest {
+                handoff_id: uuid::Uuid::new_v4(),
+                blob: BrowserBlob {
+                    id: blob_id,
+                    file_name: "rollback.bin".into(),
+                    media_type: Some("application/octet-stream".into()),
+                    size: 8,
+                },
+                save_directory: destination.clone(),
                 file_name: "rollback.bin".into(),
-                media_type: Some("application/octet-stream".into()),
-                size: 8,
+                category_id: None,
+                save_directory_explicit: false,
             },
-            destination.clone(),
-            "rollback.bin".into(),
             uuid::Uuid::new_v4(),
         );
 
@@ -7603,6 +7876,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/browser-size.bin".into(),
                     save_directory: std::env::temp_dir(),
+                    save_directory_explicit: false,
                     file_name: Some("browser-size.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -7614,6 +7888,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Browser,
             )
@@ -7654,6 +7931,7 @@ mod tests {
                     request: DownloadRequest {
                         source_url: "https://example.test/browser.bin".into(),
                         save_directory: std::env::temp_dir(),
+                        save_directory_explicit: false,
                         file_name: Some("browser.bin".into()),
                         headers: vec![crate::DownloadRequestHeader {
                             name: "X-NxTools-Explicit".into(),
@@ -7668,6 +7946,9 @@ mod tests {
                         scheduled_at_unix_ms: None,
                         adaptive_segment_policy: None,
                         media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
                     },
                 },
             })
@@ -7705,7 +7986,7 @@ mod tests {
             request_id: uuid::Uuid::new_v4(),
             origin: RequestOrigin::Browser,
             command: DownloadCommand::Submit {
-                request: raw_request,
+                request: *raw_request,
                 mode: DownloadSubmitMode::QueueOnly,
             },
         });
@@ -7741,6 +8022,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/detail.bin".into(),
                     save_directory: std::env::temp_dir(),
+                    save_directory_explicit: false,
                     file_name: Some("detail.bin".into()),
                     headers: vec![crate::DownloadRequestHeader {
                         name: "Authorization".into(),
@@ -7755,6 +8037,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -7813,6 +8098,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/rebalanced.bin".into(),
                     save_directory: std::env::temp_dir(),
+                    save_directory_explicit: false,
                     file_name: Some("rebalanced.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -7824,6 +8110,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -7865,6 +8154,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/progress.bin".into(),
                     save_directory: std::env::temp_dir(),
+                    save_directory_explicit: false,
                     file_name: Some("progress.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -7876,6 +8166,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -8037,6 +8330,7 @@ mod tests {
             let request = DownloadRequest {
                 source_url,
                 save_directory: destination.clone(),
+                save_directory_explicit: false,
                 file_name: Some("must-not-exist.bin".into()),
                 headers: Vec::new(),
                 cookie: None,
@@ -8048,6 +8342,9 @@ mod tests {
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
                 media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
             };
 
             let task_id = engine
@@ -8082,6 +8379,7 @@ mod tests {
         let request = DownloadRequest {
             source_url,
             save_directory: destination.clone(),
+            save_directory_explicit: false,
             file_name: Some("must-not-exist.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -8093,6 +8391,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
         };
 
         let task_id = engine
@@ -8120,6 +8421,7 @@ mod tests {
             DownloadRequest {
                 source_url: "https://example.test/final.bin".into(),
                 save_directory: directory.path().to_path_buf(),
+                save_directory_explicit: false,
                 file_name: Some("final.bin".into()),
                 headers: Vec::new(),
                 cookie: None,
@@ -8131,6 +8433,9 @@ mod tests {
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
                 media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
             },
             RequestOrigin::Internal,
             1_000,

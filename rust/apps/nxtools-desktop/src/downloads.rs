@@ -22,7 +22,8 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectState};
 use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
-    AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
+    AppConfig, DownloadCategorySettings, DownloadDuplicateStrategySettings, DownloadSettings,
+    DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
     DownloadTaskbarProgressOverlaySettings, NetworkProxyMode,
 };
 use nxtools_download::{
@@ -142,6 +143,9 @@ pub(crate) enum DownloadDirectoryTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DownloadSettingsDraft {
     default_directory: PathBuf,
+    automatic_categories_enabled: bool,
+    categories: Vec<DownloadCategorySettings>,
+    duplicate_strategy: DownloadDuplicateStrategySettings,
     ffmpeg_executable_path: String,
     default_request_headers: String,
     default_cookie: String,
@@ -276,6 +280,9 @@ fn merge_confirmed_download_request(
     confirmed.connection_limit = current.connection_limit;
     confirmed.adaptive_segment_policy = current.adaptive_segment_policy;
     confirmed.scheduled_at_unix_ms = current.scheduled_at_unix_ms;
+    confirmed.category_id = current.category_id;
+    confirmed.category_name = current.category_name;
+    confirmed.duplicate_strategy = current.duplicate_strategy;
     Some(confirmed)
 }
 
@@ -396,6 +403,13 @@ impl DownloadApplication {
                 error_kind = "download_http_policy",
                 %error,
                 "could not apply configured download HTTP policy"
+            );
+        }
+        if let Err(error) = engine.update_download_organization_policy(&config.download) {
+            warn!(
+                error_kind = "download_organization_policy",
+                %error,
+                "could not apply configured download organization policy"
             );
         }
         let configured_ffmpeg = (!config.download.ffmpeg_executable_path.is_empty())
@@ -660,6 +674,9 @@ impl DownloadApplication {
     fn settings_draft(&self) -> DownloadSettingsDraft {
         DownloadSettingsDraft {
             default_directory: self.default_directory.clone(),
+            automatic_categories_enabled: self.config.download.automatic_categories_enabled,
+            categories: self.config.download.categories.clone(),
+            duplicate_strategy: self.config.download.duplicate_strategy,
             ffmpeg_executable_path: self.config.download.ffmpeg_executable_path.clone(),
             default_request_headers: self.config.download.default_request_headers.clone(),
             default_cookie: self.config.download.default_cookie.clone(),
@@ -744,6 +761,8 @@ impl DownloadApplication {
         context: BrowserBlobDialogContext,
         save_directory: PathBuf,
         file_name: String,
+        category_id: Option<String>,
+        save_directory_explicit: bool,
         cx: &mut Context<Self>,
     ) -> Result<DownloadTaskId, String> {
         let outcome = self.execute_correlated(
@@ -752,6 +771,8 @@ impl DownloadApplication {
                 blob: context.blob,
                 save_directory,
                 file_name,
+                category_id,
+                save_directory_explicit,
             },
             context.correlation_id,
         );
@@ -1761,7 +1782,7 @@ impl DownloadApplication {
         let handoff_id = dialog.handoff_id;
         let source = match dialog.source {
             BrowserDownloadDialogSource::Download(request) => {
-                NewDownloadInitialSource::Download(request)
+                NewDownloadInitialSource::Download(*request)
             }
             BrowserDownloadDialogSource::Blob {
                 blob,
@@ -1807,6 +1828,14 @@ impl DownloadApplication {
         let default_directory = self.default_directory.clone();
         let default_connection_limit = self.default_connection_limit();
         let default_adaptive_segment_policy = self.default_adaptive_segment_policy();
+        let categories = self
+            .config
+            .download
+            .categories
+            .iter()
+            .filter(|category| category.enabled)
+            .cloned()
+            .collect::<Vec<_>>();
         let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
@@ -1831,11 +1860,14 @@ impl DownloadApplication {
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
                 let view = cx.new(|cx| {
                     NewDownloadView::new(
-                        application,
-                        default_directory,
-                        default_connection_limit,
-                        default_adaptive_segment_policy,
-                        initial_source,
+                        NewDownloadViewInit {
+                            application,
+                            default_directory,
+                            default_connection_limit,
+                            default_adaptive_segment_policy,
+                            categories,
+                            initial_source,
+                        },
                         window,
                         cx,
                     )
@@ -2416,6 +2448,9 @@ impl DownloadApplication {
         let previous_speed_limit = self.engine.global_speed_limit();
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
+            automatic_categories_enabled: draft.automatic_categories_enabled,
+            categories: draft.categories.clone(),
+            duplicate_strategy: draft.duplicate_strategy,
             ffmpeg_executable_path: draft.ffmpeg_executable_path.clone(),
             default_request_headers: draft.default_request_headers.clone(),
             default_cookie: draft.default_cookie.clone(),
@@ -2435,6 +2470,11 @@ impl DownloadApplication {
                 "validation",
                 format!("请求 Header / Cookie 设置无效：{error}"),
             );
+        }
+        if let Err(error) = nxtools_download::DownloadOrganizationPolicy::from_download_settings(
+            &next_download_settings,
+        ) {
+            return failed("validation", format!("下载分类设置无效：{error}"));
         }
         if let Err(error) =
             self.set_default_queue_concurrency(draft.max_concurrent_tasks, correlation_id)
@@ -2487,6 +2527,15 @@ impl DownloadApplication {
             return failed(
                 "runtime_sync",
                 format!("下载设置已保存，但无法同步请求策略：{error}"),
+            );
+        }
+        if let Err(error) = self
+            .engine
+            .update_download_organization_policy(&self.config.download)
+        {
+            return failed(
+                "runtime_sync",
+                format!("下载设置已保存，但无法同步分类策略：{error}"),
             );
         }
         let configured_ffmpeg = (!draft.ffmpeg_executable_path.is_empty())
@@ -4215,6 +4264,9 @@ fn parse_download_settings_draft(
     }
     Ok(DownloadSettingsDraft {
         default_directory: PathBuf::from(default_directory),
+        automatic_categories_enabled: false,
+        categories: DownloadSettings::default().categories,
+        duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
         ffmpeg_executable_path: String::new(),
         default_request_headers: String::new(),
         default_cookie: String::new(),
@@ -4245,6 +4297,69 @@ fn parse_download_settings_draft(
     })
 }
 
+struct DownloadCategoryEditor {
+    id: String,
+    enabled: bool,
+    name: Entity<InputState>,
+    save_directory: Entity<InputState>,
+    extensions: Entity<InputState>,
+    url_patterns: Entity<InputState>,
+}
+
+impl DownloadCategoryEditor {
+    fn new(category: DownloadCategorySettings, window: &mut Window, cx: &mut App) -> Self {
+        let name = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(category.name)
+                .placeholder("分类名称")
+        });
+        let save_directory = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(category.save_directory)
+                .placeholder("相对目录，如 Documents")
+        });
+        let extensions = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(category.extensions.join(", "))
+                .placeholder("扩展名，以逗号分隔")
+        });
+        let url_patterns = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(category.url_patterns.join(", "))
+                .placeholder("URL 通配规则，以逗号分隔")
+        });
+        Self {
+            id: category.id,
+            enabled: category.enabled,
+            name,
+            save_directory,
+            extensions,
+            url_patterns,
+        }
+    }
+
+    fn settings(&self, cx: &App) -> DownloadCategorySettings {
+        let values = |input: &Entity<InputState>| {
+            input
+                .read(cx)
+                .value()
+                .split([',', ';', '\n'])
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        };
+        DownloadCategorySettings {
+            id: self.id.clone(),
+            name: self.name.read(cx).value().trim().to_owned(),
+            enabled: self.enabled,
+            save_directory: self.save_directory.read(cx).value().trim().to_owned(),
+            extensions: values(&self.extensions),
+            url_patterns: values(&self.url_patterns),
+        }
+    }
+}
+
 struct DownloadSettingsView {
     theme: Theme,
     application: Entity<DownloadApplication>,
@@ -4267,6 +4382,10 @@ struct DownloadSettingsView {
     scroll: ScrollHandle,
     show_progress_window: bool,
     show_completion_window: bool,
+    automatic_categories_enabled: bool,
+    categories: Vec<DownloadCategoryEditor>,
+    selected_category: Option<usize>,
+    duplicate_strategy: DownloadDuplicateStrategySettings,
     adaptive_segment_scaling_enabled: bool,
     accept_invalid_certificates: bool,
     taskbar_overlay_enabled: bool,
@@ -4322,6 +4441,12 @@ impl DownloadSettingsView {
                 .default_value(snapshot.default_cookie.clone())
                 .placeholder("Cookie: a=b; c=d")
         });
+        let categories = snapshot
+            .categories
+            .iter()
+            .cloned()
+            .map(|category| DownloadCategoryEditor::new(category, window, cx))
+            .collect::<Vec<_>>();
         let ffmpeg_input_subscription = cx.subscribe_in(
             &ffmpeg_executable,
             window,
@@ -4490,6 +4615,10 @@ impl DownloadSettingsView {
             scroll: ScrollHandle::new(),
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
+            automatic_categories_enabled: snapshot.automatic_categories_enabled,
+            selected_category: (!categories.is_empty()).then_some(0),
+            categories,
+            duplicate_strategy: snapshot.duplicate_strategy,
             adaptive_segment_scaling_enabled: snapshot.adaptive_segment_scaling_enabled,
             accept_invalid_certificates: snapshot.accept_invalid_certificates,
             taskbar_overlay_enabled: snapshot.taskbar_progress_overlay.enabled,
@@ -4586,6 +4715,13 @@ impl DownloadSettingsView {
             .to_owned();
         draft.default_cookie = self.default_cookie.read(cx).value().trim().to_owned();
         draft.accept_invalid_certificates = self.accept_invalid_certificates;
+        draft.automatic_categories_enabled = self.automatic_categories_enabled;
+        draft.categories = self
+            .categories
+            .iter()
+            .map(|category| category.settings(cx))
+            .collect();
+        draft.duplicate_strategy = self.duplicate_strategy;
         Ok(draft)
     }
 
@@ -4770,6 +4906,224 @@ impl Render for DownloadSettingsView {
                 cx.notify();
             }),
         );
+        let automatic_categories_toggle = download_settings_toggle(
+            theme,
+            "download-settings-automatic-categories",
+            self.automatic_categories_enabled,
+            cx.listener(|this, _, _, cx| {
+                this.automatic_categories_enabled = !this.automatic_categories_enabled;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        let duplicate_strategy = download_settings_duplicate_strategy(
+            theme,
+            self.duplicate_strategy,
+            cx.listener(|this, _, _, cx| {
+                this.duplicate_strategy = DownloadDuplicateStrategySettings::AddNumbered;
+                this.error = None;
+                cx.notify();
+            }),
+            cx.listener(|this, _, _, cx| {
+                this.duplicate_strategy = DownloadDuplicateStrategySettings::Reject;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        let mut category_rules = self.categories.iter().enumerate().fold(
+            div().w_full().flex().flex_wrap().gap(px(5.0)),
+            |rules, (index, category)| {
+                let enabled = category.enabled;
+                let selected = self.selected_category == Some(index);
+                let name = category.name.read(cx).value().trim().to_owned();
+                let directory = category.save_directory.read(cx).value().trim().to_owned();
+                let label = if directory.is_empty() {
+                    name
+                } else {
+                    format!("{name} · {directory}")
+                };
+                rules.child(
+                    div()
+                        .id(("download-settings-category", index))
+                        .debug_selector(move || format!("download-settings-category-{index}"))
+                        .px(px(7.0))
+                        .h(px(24.0))
+                        .rounded(px(4.0))
+                        .border_1()
+                        .border_color(if selected {
+                            theme.border_active
+                        } else {
+                            theme.border_subtle
+                        })
+                        .bg(if selected {
+                            theme.element_selected
+                        } else {
+                            theme.canvas
+                        })
+                        .text_size(px(9.0))
+                        .text_color(if enabled {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        })
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.selected_category = Some(index);
+                            this.error = None;
+                            cx.notify();
+                        }))
+                        .child(if label.is_empty() {
+                            "未命名分类".to_owned()
+                        } else {
+                            label
+                        })
+                        .when(!enabled, |item| item.opacity(0.55)),
+                )
+            },
+        );
+        category_rules = category_rules.child(
+            div()
+                .debug_selector(|| "download-settings-category-add".into())
+                .child(
+                    Button::new("download-settings-category-add-button")
+                        .label("+ 新增")
+                        .xsmall()
+                        .outline()
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            let mut suffix = this.categories.len() + 1;
+                            let id = loop {
+                                let candidate = format!("custom-{suffix}");
+                                if this
+                                    .categories
+                                    .iter()
+                                    .all(|category| category.id != candidate)
+                                {
+                                    break candidate;
+                                }
+                                suffix += 1;
+                            };
+                            let editor = DownloadCategoryEditor::new(
+                                DownloadCategorySettings {
+                                    id,
+                                    name: "新分类".into(),
+                                    enabled: true,
+                                    save_directory: "NewCategory".into(),
+                                    extensions: Vec::new(),
+                                    url_patterns: Vec::new(),
+                                },
+                                window,
+                                cx,
+                            );
+                            this.categories.push(editor);
+                            this.selected_category = Some(this.categories.len() - 1);
+                            this.error = None;
+                            cx.notify();
+                        })),
+                ),
+        );
+        let category_rules = category_rules.into_any_element();
+        let category_editor = self
+            .selected_category
+            .and_then(|index| self.categories.get(index).map(|category| (index, category)))
+            .map(|(index, category)| {
+                let enabled = category.enabled;
+                let name = category.name.clone();
+                let directory = category.save_directory.clone();
+                let extensions = category.extensions.clone();
+                let url_patterns = category.url_patterns.clone();
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.0))
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .gap(px(5.0))
+                            .child(download_settings_input(theme, &name, px(150.0)))
+                            .child(download_settings_input(theme, &directory, px(180.0)))
+                            .child(
+                                div()
+                                    .debug_selector(|| "download-settings-category-enabled".into())
+                                    .child(
+                                        Button::new("download-settings-category-enabled-button")
+                                            .label(if enabled { "已启用" } else { "已停用" })
+                                            .xsmall()
+                                            .outline()
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                if let Some(category) =
+                                                    this.categories.get_mut(index)
+                                                {
+                                                    category.enabled = !category.enabled;
+                                                }
+                                                cx.notify();
+                                            })),
+                                    ),
+                            )
+                            .child(
+                                Button::new("download-settings-category-up")
+                                    .label("↑")
+                                    .xsmall()
+                                    .ghost()
+                                    .disabled(index == 0)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if index > 0 && index < this.categories.len() {
+                                            this.categories.swap(index, index - 1);
+                                            this.selected_category = Some(index - 1);
+                                            cx.notify();
+                                        }
+                                    })),
+                            )
+                            .child(
+                                Button::new("download-settings-category-down")
+                                    .label("↓")
+                                    .xsmall()
+                                    .ghost()
+                                    .disabled(index + 1 >= self.categories.len())
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if index + 1 < this.categories.len() {
+                                            this.categories.swap(index, index + 1);
+                                            this.selected_category = Some(index + 1);
+                                            cx.notify();
+                                        }
+                                    })),
+                            )
+                            .child(
+                                Button::new("download-settings-category-delete")
+                                    .label("删除")
+                                    .xsmall()
+                                    .ghost()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if index < this.categories.len() {
+                                            this.categories.remove(index);
+                                            this.selected_category = (!this.categories.is_empty())
+                                                .then_some(index.min(this.categories.len() - 1));
+                                            cx.notify();
+                                        }
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .gap(px(5.0))
+                            .child(download_settings_input(theme, &extensions, px(236.0)))
+                            .child(download_settings_input(theme, &url_patterns, px(236.0))),
+                    )
+                    .into_any_element()
+            })
+            .unwrap_or_else(|| {
+                div()
+                    .text_size(px(9.0))
+                    .text_color(theme.text_muted)
+                    .child("暂无分类；可新增自定义规则")
+                    .into_any_element()
+            });
         let current_ffmpeg = self.ffmpeg_executable.read(cx).value().trim().to_owned();
         let ffmpeg_description = match self.ffmpeg_discovery_state {
             FfmpegDiscoveryState::Checking => "正在后台检查用户路径、FFMPEG_PATH 与系统 PATH",
@@ -5187,6 +5541,36 @@ impl Render for DownloadSettingsView {
                             ))
                             .child(download_settings_section(
                                 theme,
+                                "分类与重名",
+                                vec![
+                                    download_settings_row(
+                                        theme,
+                                        "自动分类",
+                                        "仅为仍使用默认保存目录的新任务匹配；手动目录优先",
+                                        automatic_categories_toggle,
+                                    ),
+                                    download_settings_stacked_row(
+                                        theme,
+                                        "分类规则",
+                                        "选择分类后可编辑名称、目录、扩展名和 URL 通配规则",
+                                        category_rules,
+                                    ),
+                                    download_settings_stacked_row(
+                                        theme,
+                                        "规则编辑",
+                                        "扩展名与 URL 规则同时存在时必须同时命中；箭头调整优先顺序",
+                                        category_editor,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "目标已存在",
+                                        "自动编号不会覆盖磁盘文件或活动任务产物；拒绝则不创建任务",
+                                        duplicate_strategy,
+                                    ),
+                                ],
+                            ))
+                            .child(download_settings_section(
+                                theme,
                                 "请求上下文",
                                 vec![
                                     download_settings_stacked_row(
@@ -5600,6 +5984,65 @@ fn download_settings_anchor(
         .into_any_element()
 }
 
+fn download_settings_duplicate_strategy(
+    theme: Theme,
+    selected: DownloadDuplicateStrategySettings,
+    on_numbered: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_reject: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let option = |id: &'static str,
+                  label: &'static str,
+                  active: bool,
+                  on_click: DownloadSettingsClickHandler| {
+        div()
+            .id(id)
+            .debug_selector(move || id.into())
+            .h(px(24.0))
+            .px(px(8.0))
+            .rounded(px(4.0))
+            .border_1()
+            .border_color(if active {
+                theme.border_active
+            } else {
+                theme.border_subtle
+            })
+            .bg(if active {
+                theme.element_selected
+            } else {
+                theme.canvas
+            })
+            .text_size(px(9.5))
+            .text_color(if active {
+                theme.text
+            } else {
+                theme.text_secondary
+            })
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click(on_click)
+            .child(label)
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .child(option(
+            "download-settings-duplicate-numbered",
+            "自动编号",
+            selected == DownloadDuplicateStrategySettings::AddNumbered,
+            Box::new(on_numbered),
+        ))
+        .child(option(
+            "download-settings-duplicate-reject",
+            "拒绝创建",
+            selected == DownloadDuplicateStrategySettings::Reject,
+            Box::new(on_reject),
+        ))
+        .into_any_element()
+}
+
 fn download_settings_progress_mode(
     theme: Theme,
     selected: DownloadTaskbarProgressMode,
@@ -5805,6 +6248,15 @@ enum NewDownloadInitialSource {
     Blob(BrowserBlobDialogContext),
 }
 
+struct NewDownloadViewInit {
+    application: Entity<DownloadApplication>,
+    default_directory: PathBuf,
+    default_connection_limit: u16,
+    default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
+    categories: Vec<DownloadCategorySettings>,
+    initial_source: Option<NewDownloadInitialSource>,
+}
+
 #[derive(Clone)]
 struct BrowserBlobDialogContext {
     correlation_id: uuid::Uuid,
@@ -5818,7 +6270,11 @@ struct NewDownloadView {
     application: Entity<DownloadApplication>,
     url: Entity<InputState>,
     directory: Entity<InputState>,
+    save_directory_explicit: bool,
     file_name: Entity<InputState>,
+    categories: Vec<DownloadCategorySettings>,
+    selected_category_id: Option<String>,
+    category_popover_open: bool,
     scheduled_date: NaiveDate,
     scheduled_month: NaiveDate,
     scheduled_hour: Entity<SelectState<Vec<String>>>,
@@ -5839,18 +6295,19 @@ struct NewDownloadView {
     probe_generation: u64,
     error: Option<String>,
     _subscription: Subscription,
+    _directory_subscription: Subscription,
 }
 
 impl NewDownloadView {
-    fn new(
-        application: Entity<DownloadApplication>,
-        default_directory: PathBuf,
-        default_connection_limit: u16,
-        default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
-        initial_source: Option<NewDownloadInitialSource>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    fn new(init: NewDownloadViewInit, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let NewDownloadViewInit {
+            application,
+            default_directory,
+            default_connection_limit,
+            default_adaptive_segment_policy,
+            categories,
+            initial_source,
+        } = init;
         let external_request = match initial_source.as_ref() {
             Some(NewDownloadInitialSource::Download(request)) => Some(request.clone()),
             _ => None,
@@ -5885,6 +6342,9 @@ impl NewDownloadView {
                     .map(|context| context.blob.file_name.clone())
             })
             .unwrap_or_default();
+        let selected_category_id = external_request
+            .as_ref()
+            .and_then(|request| request.category_id.clone());
         let url = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(initial_url)
@@ -5899,6 +6359,12 @@ impl NewDownloadView {
             InputState::new(window, cx)
                 .default_value(initial_file_name)
                 .placeholder("可选；留空时使用服务器文件名")
+        });
+        let directory_subscription = cx.subscribe(&directory, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.save_directory_explicit = true;
+                cx.notify();
+            }
         });
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
         let scheduled_date = default_scheduled_at.date_naive();
@@ -5941,7 +6407,13 @@ impl NewDownloadView {
             application,
             url,
             directory,
+            save_directory_explicit: external_request
+                .as_ref()
+                .is_some_and(|request| request.save_directory_explicit),
             file_name,
+            categories,
+            selected_category_id,
+            category_popover_open: false,
             scheduled_date,
             scheduled_month,
             scheduled_hour,
@@ -5970,6 +6442,7 @@ impl NewDownloadView {
             probe_generation: 0,
             error: None,
             _subscription: subscription,
+            _directory_subscription: directory_subscription,
         }
     }
 
@@ -5985,6 +6458,7 @@ impl NewDownloadView {
         let mut request = self.external_request.clone().unwrap_or(DownloadRequest {
             source_url: String::new(),
             save_directory: PathBuf::new(),
+            save_directory_explicit: false,
             file_name: None,
             headers: Vec::new(),
             cookie: None,
@@ -5996,10 +6470,16 @@ impl NewDownloadView {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         });
         request.source_url = url;
         request.save_directory = PathBuf::from(directory);
+        request.save_directory_explicit = self.save_directory_explicit;
         request.file_name = (!file_name.is_empty()).then_some(file_name);
+        request.category_id = self.selected_category_id.clone();
+        request.category_name = None;
         request.connection_limit = Some(self.default_connection_limit);
         request.adaptive_segment_policy = Some(self.default_adaptive_segment_policy);
         request.scheduled_at_unix_ms = scheduled_at_unix_ms;
@@ -6171,21 +6651,24 @@ impl NewDownloadView {
                 cx.notify();
                 return;
             }
-            let destination = PathBuf::from(&directory).join(&file_name);
-            if destination.exists() {
-                self.error = Some(format!("目标文件已存在：{}", destination.display()));
-                cx.notify();
-                return;
-            }
             self.submitting = true;
             self.error = None;
             cx.notify();
             let application = self.application.clone();
+            let category_id = self.selected_category_id.clone();
+            let save_directory_explicit = self.save_directory_explicit;
             let source_window = window.window_handle();
             let view = cx.entity().downgrade();
             cx.defer(move |cx| {
                 match application.update(cx, |application, cx| {
-                    application.import_browser_blob(blob, PathBuf::from(directory), file_name, cx)
+                    application.import_browser_blob(
+                        blob,
+                        PathBuf::from(directory),
+                        file_name,
+                        category_id,
+                        save_directory_explicit,
+                        cx,
+                    )
                 }) {
                     Ok(task_id) => {
                         let _ = source_window.update(cx, |_, window, _| window.remove_window());
@@ -6250,17 +6733,6 @@ impl NewDownloadView {
             self.error = Some("保存位置不是文件夹，请重新选择".into());
             cx.notify();
             return;
-        }
-        if let Some(file_name) = request.file_name.as_deref() {
-            let destination = request.save_directory.join(file_name);
-            if destination.exists() {
-                self.error = Some(format!(
-                    "目标文件已存在：{}。请修改文件名或保存目录。",
-                    destination.display()
-                ));
-                cx.notify();
-                return;
-            }
         }
         self.submitting = true;
         self.error = None;
@@ -6498,6 +6970,95 @@ impl Render for NewDownloadView {
                 }))
                 .into_any_element()
         };
+        let selected_category_label = self
+            .selected_category_id
+            .as_deref()
+            .and_then(|selected| {
+                self.categories
+                    .iter()
+                    .find(|category| category.id.eq_ignore_ascii_case(selected))
+            })
+            .map_or_else(|| "自动分类".to_owned(), |category| category.name.clone());
+        let category_view = cx.entity().downgrade();
+        let category_open_view = category_view.clone();
+        let category_menu_view = category_view.clone();
+        let categories = self.categories.clone();
+        let category_control = div()
+            .debug_selector(|| "download-new-category-control".into())
+            .child(
+                Popover::new("download-new-category-popover")
+                    .anchor(Corner::BottomRight)
+                    .open(self.category_popover_open)
+                    .on_open_change(move |open, _, cx| {
+                        let _ = category_open_view.update(cx, |view, cx| {
+                            view.category_popover_open = *open;
+                            cx.notify();
+                        });
+                    })
+                    .trigger(
+                        Button::new("download-new-category-trigger")
+                            .label(selected_category_label)
+                            .small()
+                            .outline(),
+                    )
+                    .content(move |_, _, _| {
+                        let automatic_view = category_menu_view.clone();
+                        categories.iter().enumerate().fold(
+                            div()
+                                .w(px(196.0))
+                                .p(px(5.0))
+                                .flex()
+                                .flex_col()
+                                .gap(px(3.0))
+                                .child(
+                                    Button::new("download-new-category-automatic")
+                                        .label("自动匹配")
+                                        .small()
+                                        .ghost()
+                                        .on_click(move |_, _, cx| {
+                                            let _ = automatic_view.update(cx, |view, cx| {
+                                                view.selected_category_id = None;
+                                                view.category_popover_open = false;
+                                                view.error = None;
+                                                cx.notify();
+                                            });
+                                        }),
+                                ),
+                            |menu, (index, category)| {
+                                let category_id = category.id.clone();
+                                let category_label = if category.save_directory.is_empty() {
+                                    category.name.clone()
+                                } else {
+                                    format!("{} · {}", category.name, category.save_directory)
+                                };
+                                let view = category_menu_view.clone();
+                                menu.child(
+                                    div()
+                                        .debug_selector(move || {
+                                            format!("download-new-category-option-{index}")
+                                        })
+                                        .child(
+                                            Button::new(("download-new-category-option", index))
+                                                .label(category_label)
+                                                .small()
+                                                .ghost()
+                                                .on_click(move |_, _, cx| {
+                                                    let category_id = category_id.clone();
+                                                    let _ = view.update(cx, |view, cx| {
+                                                        view.selected_category_id =
+                                                            Some(category_id);
+                                                        view.category_popover_open = false;
+                                                        view.error = None;
+                                                        cx.notify();
+                                                    });
+                                                }),
+                                        ),
+                                )
+                            },
+                        )
+                    }),
+            )
+            .into_any_element();
         let footer_leading_actions = if confirmed {
             div()
                 .debug_selector(|| "download-new-footer-leading-actions".into())
@@ -6644,7 +7205,36 @@ impl Render for NewDownloadView {
                                                 }),
                                         ),
                                 )
-                                .child(download_input_field(theme, "文件名", &self.file_name)),
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_end()
+                                        .gap(px(6.0))
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .flex_1()
+                                                .child(download_input_field(
+                                                    theme,
+                                                    "文件名",
+                                                    &self.file_name,
+                                                )),
+                                        )
+                                        .child(
+                                                div()
+                                                    .w(px(112.0))
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(3.0))
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(9.0))
+                                                            .text_color(theme.text_muted)
+                                                            .child("分类"),
+                                                    )
+                                                    .child(category_control),
+                                        ),
+                                ),
                         )
                         .child(
                             div()
@@ -8412,6 +9002,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/live.bin".into(),
                     save_directory: std::env::temp_dir(),
+                    save_directory_explicit: false,
                     file_name: Some("live.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -8423,6 +9014,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -8693,6 +9287,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.test/browser.bin".into(),
             save_directory: PathBuf::from(r"C:\Downloads"),
+            save_directory_explicit: false,
             file_name: Some("browser.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -8704,6 +9299,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         assert_eq!(
             initial_new_download_window_size(Some(&NewDownloadInitialSource::Download(request))),
@@ -8740,6 +9338,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "http://127.0.0.1:9/browser.bin".into(),
             save_directory: directory.clone(),
+            save_directory_explicit: false,
             file_name: Some("browser.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -8751,6 +9350,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
 
         cx.update(|cx| {
@@ -8802,11 +9404,14 @@ mod tests {
         let (_root, window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
-                    application_for_window,
-                    default_directory,
-                    default_connection_limit,
-                    default_adaptive_segment_policy,
-                    None,
+                    NewDownloadViewInit {
+                        application: application_for_window,
+                        default_directory,
+                        default_connection_limit,
+                        default_adaptive_segment_policy,
+                        categories: DownloadSettings::default().categories,
+                        initial_source: None,
+                    },
                     window,
                     cx,
                 )
@@ -8824,6 +9429,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.test/file.bin".into(),
             save_directory: directory.clone(),
+            save_directory_explicit: false,
             file_name: Some("file.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -8835,6 +9441,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         window.update(|window, cx| {
             let url = view.read(cx).url.clone();
@@ -8863,6 +9472,33 @@ mod tests {
         window
             .refresh()
             .expect("render resized confirmed new download window");
+
+        let category = window
+            .debug_bounds("download-new-category-control")
+            .expect("new download category control");
+        window.simulate_click(category.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render category popover");
+        let first_category = window
+            .debug_bounds("download-new-category-option-0")
+            .expect("first explicit category option");
+        window.simulate_click(first_category.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render explicit category selection");
+        let selected_category_id = window.read(|cx| {
+            view.read(cx)
+                .categories
+                .first()
+                .expect("default category exists")
+                .id
+                .clone()
+        });
+        assert_eq!(
+            window.read(|cx| view.read(cx).selected_category_id.clone()),
+            Some(selected_category_id.clone())
+        );
 
         let schedule = window
             .debug_bounds("download-new-schedule-control")
@@ -8978,6 +9614,7 @@ mod tests {
             ),
             "submission must continue to use the last confirmed schedule"
         );
+        assert_eq!(request.category_id, Some(selected_category_id));
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -8997,11 +9634,14 @@ mod tests {
         let (_root, window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
-                    application_for_window,
-                    default_directory,
-                    default_connection_limit,
-                    default_adaptive_segment_policy,
-                    None,
+                    NewDownloadViewInit {
+                        application: application_for_window,
+                        default_directory,
+                        default_connection_limit,
+                        default_adaptive_segment_policy,
+                        categories: DownloadSettings::default().categories,
+                        initial_source: None,
+                    },
                     window,
                     cx,
                 )
@@ -9016,6 +9656,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.test/master.m3u8".into(),
             save_directory: directory.clone(),
+            save_directory_explicit: false,
             file_name: Some("master.m3u8".into()),
             headers: Vec::new(),
             cookie: None,
@@ -9027,6 +9668,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         window.update(|window, cx| {
             let url = view.read(cx).url.clone();
@@ -9228,11 +9872,14 @@ mod tests {
         let (_root, window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
-                    application_for_window,
-                    default_directory,
-                    default_connection_limit,
-                    default_adaptive_segment_policy,
-                    None,
+                    NewDownloadViewInit {
+                        application: application_for_window,
+                        default_directory,
+                        default_connection_limit,
+                        default_adaptive_segment_policy,
+                        categories: DownloadSettings::default().categories,
+                        initial_source: None,
+                    },
                     window,
                     cx,
                 )
@@ -9273,6 +9920,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.test/manifest.mpd".into(),
             save_directory: directory.clone(),
+            save_directory_explicit: false,
             file_name: Some("manifest.mp4".into()),
             headers: Vec::new(),
             cookie: None,
@@ -9284,6 +9932,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         window.update(|window, cx| {
             let url = view.read(cx).url.clone();
@@ -9376,6 +10027,7 @@ mod tests {
         let initial = DownloadRequest {
             source_url: "https://example.test/private.bin".into(),
             save_directory: directory.clone(),
+            save_directory_explicit: false,
             file_name: Some("private.bin".into()),
             headers: vec![nxtools_download::DownloadRequestHeader {
                 name: "Authorization".into(),
@@ -9390,6 +10042,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         let expected = initial.clone();
         let default_directory = directory.clone();
@@ -9398,11 +10053,15 @@ mod tests {
         let (_root, _window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
-                    application_for_window,
-                    default_directory,
-                    4,
-                    nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
-                    Some(NewDownloadInitialSource::Download(initial)),
+                    NewDownloadViewInit {
+                        application: application_for_window,
+                        default_directory,
+                        default_connection_limit: 4,
+                        default_adaptive_segment_policy:
+                            nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
+                        categories: DownloadSettings::default().categories,
+                        initial_source: Some(NewDownloadInitialSource::Download(initial)),
+                    },
                     window,
                     cx,
                 )
@@ -9448,21 +10107,27 @@ mod tests {
         let (_root, _window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
-                    application_for_window,
-                    default_directory.clone(),
-                    4,
-                    nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
-                    Some(NewDownloadInitialSource::Blob(BrowserBlobDialogContext {
-                        correlation_id: uuid::Uuid::new_v4(),
-                        handoff_id: uuid::Uuid::new_v4(),
-                        blob: BrowserBlob {
-                            id: blob_id,
-                            file_name: "captured.webm".into(),
-                            media_type: Some("video/webm".into()),
-                            size: 4096,
-                        },
-                        save_directory: default_directory,
-                    })),
+                    NewDownloadViewInit {
+                        application: application_for_window,
+                        default_directory: default_directory.clone(),
+                        default_connection_limit: 4,
+                        default_adaptive_segment_policy:
+                            nxtools_download::DownloadAdaptiveSegmentPolicy::default(),
+                        categories: DownloadSettings::default().categories,
+                        initial_source: Some(NewDownloadInitialSource::Blob(
+                            BrowserBlobDialogContext {
+                                correlation_id: uuid::Uuid::new_v4(),
+                                handoff_id: uuid::Uuid::new_v4(),
+                                blob: BrowserBlob {
+                                    id: blob_id,
+                                    file_name: "captured.webm".into(),
+                                    media_type: Some("video/webm".into()),
+                                    size: 4096,
+                                },
+                                save_directory: default_directory,
+                            },
+                        )),
+                    },
                     window,
                     cx,
                 )
@@ -9688,6 +10353,14 @@ mod tests {
             .refresh()
             .expect("render FFmpeg auto-install settings");
         window.run_until_parked();
+        window.update(|_, cx| {
+            settings.update(cx, |settings, cx| {
+                settings.scroll.scroll_to_top_of_item(3);
+                cx.notify();
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render FFmpeg install section");
         let install = window
             .debug_bounds("download-settings-ffmpeg-install")
             .expect("FFmpeg auto-download button");
@@ -9803,11 +10476,19 @@ mod tests {
         });
         let application_for_window = application.clone();
         let initial = cx.read(|cx| application.read(cx).settings_view_initial());
-        let (_settings, window) = cx.add_window_view(move |window, cx| {
+        let (settings, window) = cx.add_window_view(move |window, cx| {
             DownloadSettingsView::new(application_for_window, initial, window, cx)
         });
         window.refresh().expect("render FFmpeg cancel settings");
         window.run_until_parked();
+        window.update(|_, cx| {
+            settings.update(cx, |settings, cx| {
+                settings.scroll.scroll_to_top_of_item(3);
+                cx.notify();
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render FFmpeg cancel section");
         let install = window
             .debug_bounds("download-settings-ffmpeg-install")
             .expect("FFmpeg auto-download button");
@@ -9896,6 +10577,46 @@ mod tests {
             .debug_bounds("download-settings-accept-invalid-certificates")
             .expect("certificate policy toggle");
         window.simulate_click(certificate_toggle.center(), Modifiers::default());
+        let automatic_categories = window
+            .debug_bounds("download-settings-automatic-categories")
+            .expect("automatic category toggle");
+        window.simulate_click(automatic_categories.center(), Modifiers::default());
+        let reject_duplicates = window
+            .debug_bounds("download-settings-duplicate-reject")
+            .expect("reject duplicate strategy");
+        window.simulate_click(reject_duplicates.center(), Modifiers::default());
+        let first_category_enabled = window
+            .debug_bounds("download-settings-category-enabled")
+            .expect("selected category enable control");
+        window.simulate_click(first_category_enabled.center(), Modifiers::default());
+        let initial_category_count = window.read(|cx| settings.read(cx).categories.len());
+        let add_category = window
+            .debug_bounds("download-settings-category-add")
+            .expect("add category control");
+        window.simulate_click(add_category.center(), Modifiers::default());
+        window.run_until_parked();
+        let custom_category_id = window.read(|cx| {
+            let settings = settings.read(cx);
+            assert_eq!(settings.categories.len(), initial_category_count + 1);
+            settings.categories.last().expect("new category").id.clone()
+        });
+        window.update(|window, cx| {
+            settings.update(cx, |settings, cx| {
+                let category = settings.categories.last().expect("new category editor");
+                category
+                    .name
+                    .update(cx, |input, cx| input.set_value("镜像包", window, cx));
+                category
+                    .save_directory
+                    .update(cx, |input, cx| input.set_value("Mirrors", window, cx));
+                category
+                    .extensions
+                    .update(cx, |input, cx| input.set_value("img, iso", window, cx));
+                category.url_patterns.update(cx, |input, cx| {
+                    input.set_value("https://mirror.example/*", window, cx)
+                });
+            });
+        });
         let original_directory =
             window.read(|cx| settings.read(cx).directory.read(cx).value().to_string());
         window.update(|_, cx| {
@@ -9925,6 +10646,14 @@ mod tests {
             window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
             selected_directory.display().to_string()
         );
+        window.update(|_, cx| {
+            settings.update(cx, |settings, cx| {
+                settings.scroll.scroll_to_top_of_item(3);
+                cx.notify();
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render media tools section");
         let ffmpeg_picker = window
             .debug_bounds("download-settings-pick-ffmpeg")
             .expect("FFmpeg executable picker button");
@@ -10019,16 +10748,17 @@ mod tests {
                 });
             });
         }
-        let completion_toggle = window
-            .debug_bounds("download-settings-completion-window")
-            .expect("completion setting toggle");
-        window.simulate_click(completion_toggle.center(), Modifiers::default());
         window.update(|_, cx| {
             settings.update(cx, |settings, cx| {
                 settings.scroll.scroll_to_bottom();
                 cx.notify();
             });
         });
+        window.run_until_parked();
+        let completion_toggle = window
+            .debug_bounds("download-settings-completion-window")
+            .expect("completion setting toggle");
+        window.simulate_click(completion_toggle.center(), Modifiers::default());
         window.run_until_parked();
         let taskbar_overlay_toggle = window
             .debug_bounds("download-settings-taskbar-overlay")
@@ -10059,6 +10789,22 @@ mod tests {
         );
         assert_eq!(persisted.download.default_cookie, "session=desktop");
         assert!(persisted.download.accept_invalid_certificates);
+        assert!(persisted.download.automatic_categories_enabled);
+        assert_eq!(
+            persisted.download.duplicate_strategy,
+            DownloadDuplicateStrategySettings::Reject
+        );
+        assert!(!persisted.download.categories[0].enabled);
+        let custom_category = persisted
+            .download
+            .categories
+            .iter()
+            .find(|category| category.id == custom_category_id)
+            .expect("custom category persisted");
+        assert_eq!(custom_category.name, "镜像包");
+        assert_eq!(custom_category.save_directory, "Mirrors");
+        assert_eq!(custom_category.extensions, ["img", "iso"]);
+        assert_eq!(custom_category.url_patterns, ["https://mirror.example/*"]);
         assert_eq!(
             engine_for_assertion
                 .ffmpeg_resolution()
@@ -10091,6 +10837,12 @@ mod tests {
             );
             assert_eq!(view.default_cookie.read(cx).value(), "session=desktop");
             assert!(view.accept_invalid_certificates);
+            assert!(view.automatic_categories_enabled);
+            assert_eq!(
+                view.duplicate_strategy,
+                DownloadDuplicateStrategySettings::Reject
+            );
+            assert!(!view.categories[0].enabled);
         });
         let progress_toggle = cancel_window
             .debug_bounds("download-settings-progress-window")
@@ -10146,6 +10898,9 @@ mod tests {
                 application.apply_settings(
                     DownloadSettingsDraft {
                         default_directory: directory.clone(),
+                        automatic_categories_enabled: true,
+                        categories: DownloadSettings::default().categories,
+                        duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
                         ffmpeg_executable_path: String::new(),
                         default_request_headers: "X-NxTools-Policy: tentative".into(),
                         default_cookie: "tentative=1".into(),
@@ -10172,6 +10927,7 @@ mod tests {
                 DownloadRequest {
                     source_url: "https://example.test/file.bin".into(),
                     save_directory: directory.clone(),
+                    save_directory_explicit: false,
                     file_name: Some("policy.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -10183,6 +10939,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 RequestOrigin::Internal,
             )
@@ -10588,6 +11347,7 @@ mod tests {
         let confirmed = DownloadRequest {
             source_url: "https://example.com/original".into(),
             save_directory: PathBuf::from(r"C:\Downloads"),
+            save_directory_explicit: false,
             file_name: Some("server-name.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -10599,10 +11359,16 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         let current = DownloadRequest {
             save_directory: PathBuf::from(r"D:\Archive"),
             file_name: Some("renamed.bin".into()),
+            category_id: Some("documents".into()),
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::Reject,
             ..confirmed.clone()
         };
 
@@ -10611,6 +11377,11 @@ mod tests {
 
         assert_eq!(merged.save_directory, PathBuf::from(r"D:\Archive"));
         assert_eq!(merged.file_name.as_deref(), Some("renamed.bin"));
+        assert_eq!(merged.category_id.as_deref(), Some("documents"));
+        assert_eq!(
+            merged.duplicate_strategy,
+            nxtools_download::DownloadDuplicateStrategy::Reject
+        );
     }
 
     #[test]

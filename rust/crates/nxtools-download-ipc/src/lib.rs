@@ -376,6 +376,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.com/archive.zip".into(),
             save_directory: PathBuf::from(r"C:\Downloads"),
+            save_directory_explicit: false,
             file_name: Some("archive.zip".into()),
             headers: Vec::new(),
             cookie: None,
@@ -387,6 +388,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         let added = client
             .command(command_envelope(DownloadCommand::Submit {
@@ -440,6 +444,7 @@ mod tests {
         let request = DownloadRequest {
             source_url: "https://example.com/watched.bin".into(),
             save_directory: PathBuf::from(r"C:\Downloads"),
+            save_directory_explicit: false,
             file_name: Some("watched.bin".into()),
             headers: Vec::new(),
             cookie: None,
@@ -451,6 +456,9 @@ mod tests {
             scheduled_at_unix_ms: None,
             adaptive_segment_policy: None,
             media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
         };
         actor
             .command(command_envelope(DownloadCommand::Submit {
@@ -531,6 +539,7 @@ mod tests {
                 request: DownloadRequest {
                     source_url: format!("http://{address}/phase-1b.bin"),
                     save_directory: temp.path().to_path_buf(),
+                    save_directory_explicit: false,
                     file_name: Some("phase-1b.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -542,6 +551,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 mode: DownloadSubmitMode::StartNow,
             }))

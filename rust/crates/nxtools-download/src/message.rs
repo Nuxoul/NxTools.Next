@@ -9,7 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 7;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 8;
 
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
@@ -78,6 +78,10 @@ pub enum DownloadCommand {
         blob: BrowserBlob,
         save_directory: std::path::PathBuf,
         file_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category_id: Option<String>,
+        #[serde(default)]
+        save_directory_explicit: bool,
     },
     BrowserDiscardBlob {
         handoff_id: Uuid,

@@ -223,6 +223,9 @@ fn open_download_engine_from_config(
         .context("failed to initialize the download HTTP policy")?;
     let engine =
         DownloadEngine::open_with_policies(database_path, network_policy.clone(), request_policy)?;
+    engine
+        .update_download_organization_policy(&config.download)
+        .context("failed to initialize the download organization policy")?;
     Ok((engine, network_policy))
 }
 
@@ -564,6 +567,7 @@ mod tests {
                 nxtools_download::DownloadRequest {
                     source_url: "https://example.test/file.bin".into(),
                     save_directory: directory.path().join("artifacts"),
+                    save_directory_explicit: false,
                     file_name: Some("file.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -575,6 +579,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
                 nxtools_download::RequestOrigin::Internal,
             )

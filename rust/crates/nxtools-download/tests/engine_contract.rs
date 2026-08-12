@@ -8,16 +8,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Datelike, Local, Weekday};
-use nxtools_core::{DownloadSettings, NetworkProxyMode, NetworkProxySettings, NetworkSettings};
+use nxtools_core::{
+    DownloadCategorySettings, DownloadDuplicateStrategySettings, DownloadSettings,
+    NetworkProxyMode, NetworkProxySettings, NetworkSettings,
+};
 use nxtools_download::{
     BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
     DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCertificatePolicy, DownloadCommand,
-    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
-    DownloadEvent, DownloadHttpPolicy, DownloadQueueAction, DownloadQueuePlacement,
-    DownloadRequest, DownloadRequestHeader, DownloadRequestMedia, DownloadSchedule,
-    DownloadScheduleMoment, DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask,
-    DownloadTaskAction, DownloadWeekday, HlsDownloadRequest, NetworkPolicy, RequestOrigin,
-    SqliteDownloadStore, daily_schedule_window_contains,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
+    DownloadDuplicateStrategy, DownloadEngine, DownloadEvent, DownloadHttpPolicy,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestHeader,
+    DownloadRequestMedia, DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState,
+    DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday,
+    HlsDownloadRequest, NetworkPolicy, RequestOrigin, SqliteDownloadStore,
+    daily_schedule_window_contains,
 };
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
@@ -30,6 +34,7 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
     DownloadRequest {
         source_url: format!("http://{}/range", server.address()),
         save_directory,
+        save_directory_explicit: false,
         file_name: Some("engine-fixture.bin".to_owned()),
         headers: Vec::new(),
         cookie: None,
@@ -41,7 +46,505 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
     }
+}
+
+#[test]
+fn category_directory_and_duplicate_name_are_reserved_atomically_at_acceptance() {
+    let output = tempfile::tempdir().expect("create organization output directory");
+    let documents = output.path().join("Documents");
+    std::fs::create_dir_all(&documents).expect("create category directory");
+    std::fs::write(documents.join("report.pdf"), b"existing").expect("seed occupied target");
+    let settings = DownloadSettings {
+        default_directory: output.path().to_string_lossy().into_owned(),
+        automatic_categories_enabled: true,
+        categories: vec![DownloadCategorySettings {
+            id: "documents".into(),
+            name: "文档".into(),
+            enabled: true,
+            save_directory: "Documents".into(),
+            extensions: vec!["pdf".into()],
+            url_patterns: Vec::new(),
+        }],
+        duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+        ..DownloadSettings::default()
+    };
+    let engine = DownloadEngine::open_in_memory().expect("open organization engine");
+    engine
+        .update_download_organization_policy(&settings)
+        .expect("apply organization settings");
+
+    let make_request = || DownloadRequest {
+        source_url: "https://example.test/report.pdf".into(),
+        save_directory: output.path().to_owned(),
+        save_directory_explicit: false,
+        file_name: Some("report.pdf".into()),
+        headers: Vec::new(),
+        cookie: None,
+        referrer: None,
+        certificate_policy: Default::default(),
+        connection_limit: Some(1),
+        speed_limit_bytes_per_second: None,
+        expected_total_bytes: None,
+        scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
+        media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
+    };
+
+    let barrier = Arc::new(std::sync::Barrier::new(3));
+    let first_engine = engine.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let first_request = make_request();
+    let first_thread = std::thread::spawn(move || {
+        first_barrier.wait();
+        first_engine.enqueue(first_request, RequestOrigin::Ui)
+    });
+    let second_engine = engine.clone();
+    let second_barrier = Arc::clone(&barrier);
+    let second_request = make_request();
+    let second_thread = std::thread::spawn(move || {
+        second_barrier.wait();
+        second_engine.enqueue(second_request, RequestOrigin::Browser)
+    });
+    barrier.wait();
+    let first_id = first_thread
+        .join()
+        .expect("join first concurrent acceptance")
+        .expect("accept first categorized task");
+    let second_id = second_thread
+        .join()
+        .expect("join second concurrent acceptance")
+        .expect("accept second categorized task");
+    let first = engine
+        .task(first_id)
+        .expect("load first categorized task")
+        .expect("first categorized task exists");
+    assert_eq!(first.task.request().save_directory, documents);
+    assert_eq!(
+        first.task.request().category_id.as_deref(),
+        Some("documents")
+    );
+    assert_eq!(first.task.request().category_name.as_deref(), Some("文档"));
+    assert_eq!(
+        first.task.request().duplicate_strategy,
+        DownloadDuplicateStrategy::AddNumbered
+    );
+
+    let second = engine
+        .task(second_id)
+        .expect("load second categorized task")
+        .expect("second categorized task exists");
+    let mut names = [
+        first
+            .task
+            .request()
+            .file_name
+            .as_deref()
+            .unwrap_or_default(),
+        second
+            .task
+            .request()
+            .file_name
+            .as_deref()
+            .unwrap_or_default(),
+    ];
+    names.sort_unstable();
+    assert_eq!(names, ["report (1).pdf", "report (2).pdf"]);
+}
+
+#[tokio::test]
+async fn authoritative_probe_name_is_frozen_before_classification_and_reservation() {
+    let output = tempfile::tempdir().expect("create derived-name directory");
+    let server = DeterministicHttpServer::start();
+    let engine = DownloadEngine::open_in_memory().expect("open derived-name engine");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![DownloadCategorySettings {
+                id: "programs".into(),
+                name: "程序".into(),
+                enabled: true,
+                save_directory: "Programs".into(),
+                extensions: vec!["bin".into()],
+                url_patterns: Vec::new(),
+            }],
+            ..DownloadSettings::default()
+        })
+        .expect("apply derived-name policy");
+    let mut first = request(&server, output.path().to_owned());
+    first.source_url = format!("http://{}/named/from-url.bin", server.address());
+    first.file_name = None;
+    let first_id = engine
+        .submit(first.clone(), RequestOrigin::Cli)
+        .expect("accept first unnamed task");
+    engine
+        .wait_for_terminal(first_id, Duration::from_secs(2))
+        .await
+        .expect("complete first server-named task");
+    let second_id = engine
+        .submit(first, RequestOrigin::Browser)
+        .expect("accept second unnamed task");
+    engine
+        .wait_for_terminal(second_id, Duration::from_secs(2))
+        .await
+        .expect("complete second server-named task");
+    let first = engine
+        .task(first_id)
+        .expect("read first server-named task")
+        .expect("first server-named task exists");
+    let second = engine
+        .task(second_id)
+        .expect("read second server-named task")
+        .expect("second server-named task exists");
+    assert_eq!(
+        first.task.request().category_id.as_deref(),
+        Some("programs")
+    );
+    assert_eq!(
+        first.task.request().file_name.as_deref(),
+        Some("server-name.bin")
+    );
+    assert_eq!(
+        second.task.request().file_name.as_deref(),
+        Some("server-name (1).bin")
+    );
+}
+
+#[test]
+fn reject_duplicate_strategy_does_not_create_a_task() {
+    let output = tempfile::tempdir().expect("create reject output directory");
+    std::fs::write(output.path().join("occupied.bin"), b"existing").expect("seed rejected target");
+    let settings = DownloadSettings {
+        default_directory: output.path().to_string_lossy().into_owned(),
+        duplicate_strategy: DownloadDuplicateStrategySettings::Reject,
+        ..DownloadSettings::default()
+    };
+    let engine = DownloadEngine::open_in_memory().expect("open reject engine");
+    engine
+        .update_download_organization_policy(&settings)
+        .expect("apply reject policy");
+    let mut occupied = request(&DeterministicHttpServer::start(), output.path().to_owned());
+    occupied.file_name = Some("occupied.bin".into());
+
+    let error = engine
+        .enqueue(occupied, RequestOrigin::Cli)
+        .expect_err("occupied target must be rejected");
+    assert!(matches!(
+        error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::TargetOccupied
+        )
+    ));
+    assert!(
+        engine
+            .tasks()
+            .expect("read rejected engine tasks")
+            .is_empty()
+    );
+}
+
+#[test]
+fn manual_directory_wins_and_an_unavailable_explicit_category_is_rejected() {
+    let root = tempfile::tempdir().expect("create explicit category root");
+    let manual = tempfile::tempdir().expect("create manual target root");
+    let engine = DownloadEngine::open_in_memory().expect("open explicit category engine");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: root.path().to_string_lossy().into_owned(),
+            categories: vec![DownloadCategorySettings {
+                id: "documents".into(),
+                name: "文档".into(),
+                enabled: true,
+                save_directory: "Documents".into(),
+                extensions: vec!["pdf".into()],
+                url_patterns: Vec::new(),
+            }],
+            ..DownloadSettings::default()
+        })
+        .expect("apply explicit category policy");
+    let mut selected = request(&DeterministicHttpServer::start(), manual.path().to_owned());
+    selected.file_name = Some("manual.pdf".into());
+    selected.save_directory_explicit = true;
+    selected.category_id = Some("documents".into());
+    let task_id = engine
+        .enqueue(selected, RequestOrigin::Ui)
+        .expect("accept explicit category with manual directory");
+    let task = engine
+        .task(task_id)
+        .expect("read explicitly categorized task")
+        .expect("explicitly categorized task exists");
+    assert_eq!(task.task.request().save_directory, manual.path());
+    assert_eq!(task.task.request().category_name.as_deref(), Some("文档"));
+
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: root.path().to_string_lossy().into_owned(),
+            categories: Vec::new(),
+            ..DownloadSettings::default()
+        })
+        .expect("remove category from later settings");
+    let mut stale = request(&DeterministicHttpServer::start(), root.path().to_owned());
+    stale.category_id = Some("documents".into());
+    let error = engine
+        .enqueue(stale, RequestOrigin::Browser)
+        .expect_err("stale explicit selection must not silently downgrade");
+    assert!(matches!(
+        error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::CategoryUnavailable
+        )
+    ));
+}
+
+#[test]
+fn browser_batch_reserves_same_name_items_in_submission_order() {
+    let server = DeterministicHttpServer::start();
+    let output = tempfile::tempdir().expect("create batch organization directory");
+    let engine = DownloadEngine::open_in_memory().expect("open batch organization engine");
+    let same_name = request(&server, output.path().to_owned());
+    let submissions = vec![
+        BrowserDownloadSubmission {
+            handoff_id: uuid::Uuid::new_v4(),
+            request: same_name.clone(),
+        },
+        BrowserDownloadSubmission {
+            handoff_id: uuid::Uuid::new_v4(),
+            request: same_name,
+        },
+    ];
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserBatchSubmit { submissions },
+    });
+    let DownloadCommandOutcome::BrowserBatchAccepted { results } = result.outcome else {
+        panic!("same-name browser batch was not accepted");
+    };
+    let names = results
+        .into_iter()
+        .map(|result| {
+            let task_id = result.task_id.expect("accepted batch item has task ID");
+            engine
+                .task(task_id)
+                .expect("read batch task")
+                .expect("batch task exists")
+                .task
+                .request()
+                .file_name
+                .clone()
+                .expect("batch task has file name")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, vec!["engine-fixture.bin", "engine-fixture (1).bin"]);
+}
+
+#[test]
+fn resolved_category_destination_survives_restart_and_later_policy_changes() {
+    let output = tempfile::tempdir().expect("create restart organization directory");
+    let database = output.path().join("downloads.sqlite3");
+    let category_a = DownloadCategorySettings {
+        id: "documents-a".into(),
+        name: "文档 A".into(),
+        enabled: true,
+        save_directory: "A".into(),
+        extensions: vec!["pdf".into()],
+        url_patterns: Vec::new(),
+    };
+    let engine = DownloadEngine::open(&database).expect("open organization database");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![category_a],
+            ..DownloadSettings::default()
+        })
+        .expect("apply first category policy");
+    let server = DeterministicHttpServer::start();
+    let mut categorized = request(&server, output.path().to_owned());
+    categorized.file_name = Some("restart.pdf".into());
+    let task_id = engine
+        .enqueue(categorized, RequestOrigin::Cli)
+        .expect("accept categorized restart task");
+    drop(engine);
+
+    let reopened = DownloadEngine::open(&database).expect("reopen organization database");
+    reopened
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![DownloadCategorySettings {
+                id: "documents-b".into(),
+                name: "文档 B".into(),
+                enabled: true,
+                save_directory: "B".into(),
+                extensions: vec!["pdf".into()],
+                url_patterns: Vec::new(),
+            }],
+            ..DownloadSettings::default()
+        })
+        .expect("apply later category policy");
+    let restored = reopened
+        .task(task_id)
+        .expect("read restored categorized task")
+        .expect("restored categorized task exists");
+    assert_eq!(
+        restored.task.request().save_directory,
+        output.path().join("A")
+    );
+    assert_eq!(
+        restored.task.request().category_id.as_deref(),
+        Some("documents-a")
+    );
+}
+
+#[test]
+fn automatic_category_requires_all_configured_rules_and_prefers_url_specific_rule() {
+    let output = tempfile::tempdir().expect("create category precedence directory");
+    let engine = DownloadEngine::open_in_memory().expect("open category precedence engine");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![
+                DownloadCategorySettings {
+                    id: "broad-pdf".into(),
+                    name: "全部 PDF".into(),
+                    enabled: true,
+                    save_directory: "Documents".into(),
+                    extensions: vec!["pdf".into()],
+                    url_patterns: Vec::new(),
+                },
+                DownloadCategorySettings {
+                    id: "wildcard-pdf".into(),
+                    name: "任意来源 PDF".into(),
+                    enabled: true,
+                    save_directory: "Wildcard".into(),
+                    extensions: vec!["pdf".into()],
+                    url_patterns: vec!["*".into()],
+                },
+                DownloadCategorySettings {
+                    id: "secure-pdf".into(),
+                    name: "安全 PDF".into(),
+                    enabled: true,
+                    save_directory: "Secure".into(),
+                    extensions: vec!["pdf".into()],
+                    url_patterns: vec!["https://secure.example.test/*".into()],
+                },
+            ],
+            ..DownloadSettings::default()
+        })
+        .expect("apply category precedence policy");
+    let mut secure = request(&DeterministicHttpServer::start(), output.path().to_owned());
+    secure.source_url = "https://secure.example.test/report.pdf".into();
+    secure.file_name = Some("report.pdf".into());
+    let secure_id = engine
+        .enqueue(secure, RequestOrigin::Browser)
+        .expect("accept URL-specific category task");
+    let secure = engine
+        .task(secure_id)
+        .expect("read URL-specific task")
+        .expect("URL-specific task exists");
+    assert_eq!(
+        secure.task.request().category_id.as_deref(),
+        Some("secure-pdf")
+    );
+
+    let mut ordinary = request(&DeterministicHttpServer::start(), output.path().to_owned());
+    ordinary.source_url = "https://public.example.test/report.pdf".into();
+    ordinary.file_name = Some("public.pdf".into());
+    let ordinary_id = engine
+        .enqueue(ordinary, RequestOrigin::Ui)
+        .expect("accept broad category task");
+    let ordinary = engine
+        .task(ordinary_id)
+        .expect("read broad category task")
+        .expect("broad category task exists");
+    assert_eq!(
+        ordinary.task.request().category_id.as_deref(),
+        Some("wildcard-pdf")
+    );
+}
+
+#[test]
+fn category_relative_directory_cannot_escape_the_selected_download_root() {
+    let output = tempfile::tempdir().expect("create category traversal directory");
+    let engine = DownloadEngine::open_in_memory().expect("open category traversal engine");
+    let error = engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![DownloadCategorySettings {
+                id: "escape".into(),
+                name: "越界".into(),
+                enabled: true,
+                save_directory: r"..\outside".into(),
+                extensions: vec!["bin".into()],
+                url_patterns: Vec::new(),
+            }],
+            ..DownloadSettings::default()
+        })
+        .expect_err("parent traversal category directory must be rejected");
+    assert!(matches!(
+        error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::InvalidCategoryDirectory
+        )
+    ));
+}
+
+#[cfg(windows)]
+#[test]
+fn category_directory_cannot_escape_through_a_real_junction() {
+    let output = tempfile::tempdir().expect("create category junction root");
+    let outside = tempfile::tempdir().expect("create category junction target");
+    let link = output.path().join("Linked");
+    let status = Command::new("cmd")
+        .args([
+            "/c",
+            "mklink",
+            "/J",
+            link.to_string_lossy().as_ref(),
+            outside.path().to_string_lossy().as_ref(),
+        ])
+        .status()
+        .expect("create category junction");
+    assert!(status.success());
+    let engine = DownloadEngine::open_in_memory().expect("open category junction engine");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: output.path().to_string_lossy().into_owned(),
+            automatic_categories_enabled: true,
+            categories: vec![DownloadCategorySettings {
+                id: "junction".into(),
+                name: "链接".into(),
+                enabled: true,
+                save_directory: "Linked\\Nested".into(),
+                extensions: vec!["bin".into()],
+                url_patterns: Vec::new(),
+            }],
+            ..DownloadSettings::default()
+        })
+        .expect("configuration is lexically valid");
+    let mut candidate = request(&DeterministicHttpServer::start(), output.path().to_owned());
+    candidate.file_name = Some("artifact.bin".into());
+    let error = engine
+        .enqueue(candidate, RequestOrigin::Ui)
+        .expect_err("junction escape must be rejected at the real filesystem boundary");
+    assert!(matches!(
+        error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::InvalidCategoryDirectory
+        )
+    ));
+    assert!(!outside.path().join("Nested").exists());
 }
 
 async fn start_self_signed_https_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -153,6 +656,7 @@ async fn download_defaults_merge_at_acceptance_and_explicit_request_context_wins
                     server.address()
                 ),
                 save_directory: output.path().to_owned(),
+                save_directory_explicit: false,
                 file_name: Some("request-context.bin".into()),
                 headers: vec![
                     DownloadRequestHeader {
@@ -173,6 +677,9 @@ async fn download_defaults_merge_at_acceptance_and_explicit_request_context_wins
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
                 media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
             },
             RequestOrigin::Ui,
         )
@@ -225,6 +732,7 @@ async fn certificate_policy_is_strict_by_default_and_explicit_opt_in_is_frozen_i
     let make_request = |file_name: &str| DownloadRequest {
         source_url: source_url.clone(),
         save_directory: output.path().to_owned(),
+        save_directory_explicit: false,
         file_name: Some(file_name.into()),
         headers: Vec::new(),
         cookie: None,
@@ -236,6 +744,9 @@ async fn certificate_policy_is_strict_by_default_and_explicit_opt_in_is_frozen_i
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
     };
 
     let strict_engine = DownloadEngine::open_in_memory().expect("open strict engine");
@@ -1772,6 +2283,8 @@ fn completed_browser_blob_is_imported_once_through_the_engine_artifact_boundary(
     let staging = directory.path().join("browser-blob-staging");
     let destination = directory.path().join("downloads");
     std::fs::create_dir_all(&staging).expect("create Blob staging root");
+    std::fs::create_dir_all(&destination).expect("create Blob destination");
+    std::fs::write(destination.join("report.bin"), b"existing").expect("seed occupied Blob target");
     let blob_id = uuid::Uuid::new_v4();
     let staged_path = staging.join(format!("{blob_id}.blob"));
     std::fs::write(&staged_path, b"browser-blob").expect("stage Blob bytes");
@@ -1791,6 +2304,8 @@ fn completed_browser_blob_is_imported_once_through_the_engine_artifact_boundary(
             },
             save_directory: destination.clone(),
             file_name: "report.bin".into(),
+            category_id: None,
+            save_directory_explicit: false,
         },
     };
 
@@ -1809,8 +2324,12 @@ fn completed_browser_blob_is_imported_once_through_the_engine_artifact_boundary(
     assert_eq!(task.task.status(), DownloadStatus::Completed);
     assert_eq!(task.downloaded_bytes, 12);
     assert_eq!(
-        std::fs::read(destination.join("report.bin")).expect("read imported Blob"),
+        std::fs::read(destination.join("report (1).bin")).expect("read imported Blob"),
         b"browser-blob"
+    );
+    assert_eq!(
+        std::fs::read(destination.join("report.bin")).expect("read preserved existing Blob target"),
+        b"existing"
     );
     assert!(!staged_path.exists());
 
@@ -2094,7 +2613,11 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
             origin: RequestOrigin::Browser,
             command: DownloadCommand::BrowserSubmit {
                 handoff_id,
-                request: request(&server, directory.path().join("ignored")),
+                request: DownloadRequest {
+                    source_url: "http://127.0.0.1:9/must-not-be-probed".into(),
+                    file_name: None,
+                    ..request(&server, directory.path().join("ignored"))
+                },
                 mode: DownloadSubmitMode::QueueOnly,
             },
         });
@@ -2115,7 +2638,11 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
         origin: RequestOrigin::Browser,
         command: DownloadCommand::BrowserSubmit {
             handoff_id,
-            request: request(&server, directory.path().join("ignored-after-restart")),
+            request: DownloadRequest {
+                source_url: "http://127.0.0.1:9/must-not-be-probed-after-restart".into(),
+                file_name: None,
+                ..request(&server, directory.path().join("ignored-after-restart"))
+            },
             mode: DownloadSubmitMode::QueueOnly,
         },
     });
@@ -2250,7 +2777,7 @@ fn browser_dialog_requires_an_attached_gpui_consumer_and_suppresses_duplicates()
     assert_eq!(dialog.handoff_id, handoff_id);
     assert_eq!(
         dialog.source,
-        nxtools_download::BrowserDownloadDialogSource::Download(download_request.clone())
+        nxtools_download::BrowserDownloadDialogSource::Download(Box::new(download_request.clone()))
     );
     dialog
         .completion
@@ -2784,6 +3311,7 @@ fn crash_helper_process() {
             DownloadRequest {
                 source_url,
                 save_directory: destination,
+                save_directory_explicit: false,
                 file_name: Some("forced-exit.bin".into()),
                 headers: Vec::new(),
                 cookie: None,
@@ -2795,6 +3323,9 @@ fn crash_helper_process() {
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
                 media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
             },
             RequestOrigin::Internal,
         )
@@ -3654,6 +4185,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
             DownloadRequest {
                 source_url: "https://example.com/archive.bin".to_owned(),
                 save_directory: directory.path().join("artifacts"),
+                save_directory_explicit: false,
                 file_name: Some("archive.bin".to_owned()),
                 headers: Vec::new(),
                 cookie: None,
@@ -3665,6 +4197,9 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 scheduled_at_unix_ms: None,
                 adaptive_segment_policy: None,
                 media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: DownloadDuplicateStrategy::UseDefault,
             },
             RequestOrigin::Ui,
         )
@@ -4183,7 +4718,7 @@ async fn server_derived_artifact_paths_survive_restart_and_cancel_cleans_the_exa
 }
 
 #[tokio::test]
-async fn an_existing_destination_fails_without_overwriting_the_file() {
+async fn reject_strategy_preserves_an_existing_destination_without_overwriting_it() {
     let server = DeterministicHttpServer::start();
     let directory = tempfile::tempdir().expect("create engine directory");
     let destination = directory.path().join("artifacts");
@@ -4192,15 +4727,18 @@ async fn an_existing_destination_fails_without_overwriting_the_file() {
     std::fs::write(&final_path, b"keep-me").expect("seed destination");
     let engine = DownloadEngine::open_in_memory().expect("open download engine");
 
-    let task_id = engine
-        .submit(request(&server, destination), RequestOrigin::Ui)
-        .expect("submit task");
-    let failed = engine
-        .wait_for_terminal(task_id, Duration::from_secs(2))
-        .await
-        .expect("wait for failure");
-
-    assert_eq!(failed.task.status(), DownloadStatus::Failed);
+    let mut duplicate_request = request(&server, destination);
+    duplicate_request.duplicate_strategy = DownloadDuplicateStrategy::Reject;
+    let error = engine
+        .submit(duplicate_request, RequestOrigin::Ui)
+        .expect_err("occupied target must be rejected before task creation");
+    assert!(matches!(
+        error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::TargetOccupied
+        )
+    ));
+    assert!(engine.tasks().expect("read tasks").is_empty());
     assert_eq!(
         std::fs::read(final_path).expect("read destination"),
         b"keep-me"

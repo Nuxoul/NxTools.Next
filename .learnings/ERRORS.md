@@ -7771,3 +7771,31 @@ for the final low-memory Windows gate.
   wrapper appear failed.
 - Better approach: run negative searches as an inspected diagnostic, or explicitly treat exit 1 as
   success and reserve exit 2 for a search error; do not conflate “not found” with gate failure.
+
+## 2026-08-12 — Scrollable GPUI settings test clicked an offscreen control
+
+**Status**: resolved
+
+- Symptom: after inserting the Stage 6 classification section, the real settings-window test found
+  the completion toggle by selector but clicked its stale/offscreen bounds; the persisted value did
+  not change and the later assertion failed.
+- Better approach: when a settings surface grows, scroll the real viewport to the target section
+  before pointer simulation. A selector proves the element exists, not that it is currently
+  hittable inside a clipped scroll viewport.
+- Resolution: the test now scrolls the owned settings viewport to the lower section before the
+  pointer click; the exact GPUI regression passes.
+
+## 2026-08-12 — New-download constructor re-entered its parent GPUI entity
+
+**Status**: resolved
+
+- Failed approach: the new-download child view read enabled categories from `DownloadApplication`
+  during its own construction. Production opens that child while the parent application entity is
+  already being updated.
+- Symptom: two real GPUI lifecycle tests panicked with “cannot read DownloadApplication while it is
+  already being updated.”
+- Better approach: snapshot child-owned presentation inputs before opening the window and pass them
+  into the constructor. GPUI child views must not synchronously read a parent entity whose current
+  lease created them.
+- Resolution: the parent now passes the enabled category snapshot; the child owns that vector and
+  never reads the parent during construction or render.

@@ -282,6 +282,27 @@ one correlation ID. A settings change affects only a later standalone probe or n
 task; it never mutates an accepted task or active HTTP client. Certificate details, subject names, trust chains and
 TLS payloads are not logged.
 
+## Download classification and target conflicts
+
+The central task-acceptance boundary first performs a bounded HTTP probe when an ordinary request
+intentionally omitted its name. That probe emits `download.probe.started` followed by exactly one
+`download.probe.completed` or `download.probe.failed` with fixed `purpose=acceptance_file_name`.
+Organization resolution begins only after an authoritative name exists; it then emits one
+`download.organization.resolved`, or one `download.organization.rejected` when the category/target
+cannot be accepted. A failed name probe therefore ends at `download.probe.failed` and does not emit
+an organization event. No task identity is created before these terminals. All events reuse the
+command/request correlation ID. The organization success event carries only
+fixed `classification_source=automatic|explicit|unclassified`, concrete
+`duplicate_strategy=add_numbered|reject`, fixed conflict outcome, bounded category ID and elapsed
+time. The rejection event carries the fixed strategy/failure kind, optional native error code and
+elapsed time. Category name, rule text, URL, file name and local directory/final path are never
+logged.
+
+Resolution runs under the same serialized engine admission boundary as durable task persistence.
+An accepted task stores the resolved directory, file name, category identity and concrete duplicate
+strategy; settings changes therefore affect only later tasks. Browser batch items retain one parent
+correlation and do not add per-byte or per-file-path events.
+
 ## HLS probing and transfer
 
 The versioned download command boundary records `download.probe.started` followed by exactly one

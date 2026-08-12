@@ -43,6 +43,7 @@ pub enum CliCommand {
     Add {
         url: String,
         directory: PathBuf,
+        directory_explicit: bool,
         name: Option<String>,
         headers: Vec<DownloadRequestHeader>,
         json: bool,
@@ -288,6 +289,7 @@ fn all_weekdays() -> Vec<DownloadWeekday> {
 fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand, CliError> {
     let mut url = None;
     let mut directory = default_directory;
+    let mut directory_explicit = false;
     let mut name = None;
     let mut headers = Vec::new();
     let mut json = false;
@@ -297,6 +299,7 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
             "--dir" => {
                 index += 1;
                 directory = PathBuf::from(required_value(&args, index, "--dir")?);
+                directory_explicit = true;
             }
             "--name" => {
                 index += 1;
@@ -333,6 +336,7 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
     DownloadRequest {
         source_url: url.clone(),
         save_directory: directory.clone(),
+        save_directory_explicit: directory_explicit,
         file_name: name.clone(),
         headers: headers.clone(),
         cookie: None,
@@ -344,12 +348,16 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     }
     .validate()
     .map_err(|error| CliError::syntax(error.to_string()))?;
     Ok(CliCommand::Add {
         url,
         directory,
+        directory_explicit,
         name,
         headers,
         json,
@@ -491,10 +499,19 @@ pub fn run_with_host_policy(
         CliCommand::Add {
             url,
             directory,
+            directory_explicit,
             name,
             headers,
             json,
-        } => run_add(&mut client, url, directory, name, headers, json),
+        } => run_add(
+            &mut client,
+            url,
+            directory,
+            directory_explicit,
+            name,
+            headers,
+            json,
+        ),
         CliCommand::List { filter, json } => run_list(&mut client, filter, json),
         CliCommand::Show {
             task_id,
@@ -580,6 +597,7 @@ fn run_add(
     client: &mut DownloadIpcClient,
     url: String,
     directory: PathBuf,
+    directory_explicit: bool,
     name: Option<String>,
     headers: Vec<DownloadRequestHeader>,
     json_output: bool,
@@ -587,6 +605,7 @@ fn run_add(
     let request = DownloadRequest {
         source_url: url,
         save_directory: directory,
+        save_directory_explicit: directory_explicit,
         file_name: name,
         headers,
         cookie: None,
@@ -598,6 +617,9 @@ fn run_add(
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     };
     request
         .validate()

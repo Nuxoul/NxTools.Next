@@ -466,6 +466,8 @@ fn commit_blob_upload(
                 blob,
                 save_directory,
                 file_name: payload.file_name,
+                category_id: None,
+                save_directory_explicit: false,
             }
         },
     };
@@ -771,6 +773,7 @@ fn build_browser_download_request(
     let request = DownloadRequest {
         source_url: payload.url,
         save_directory,
+        save_directory_explicit: false,
         file_name: non_empty(payload.file_name),
         headers,
         cookie: non_empty(payload.cookie),
@@ -789,6 +792,9 @@ fn build_browser_download_request(
             min_segment_mib: config.download.adaptive_segment_min_mib,
         }),
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     };
     request.validate()?;
     Ok(request)
@@ -1743,6 +1749,7 @@ mod tests {
                 request: DownloadRequest {
                     source_url: "https://example.invalid/download.bin".into(),
                     save_directory: PathBuf::from(r"C:\Downloads"),
+                    save_directory_explicit: false,
                     file_name: Some("download.bin".into()),
                     headers: Vec::new(),
                     cookie: None,
@@ -1754,6 +1761,9 @@ mod tests {
                     scheduled_at_unix_ms: None,
                     adaptive_segment_policy: None,
                     media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
                 },
             },
         }

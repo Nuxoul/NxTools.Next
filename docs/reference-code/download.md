@@ -1725,6 +1725,51 @@ Reverified on 2026-08-12 before the second Stage 6 vertical slice:
   declare `MIT OR Apache-2.0`. They generate and serve a bounded ephemeral certificate only during
   tests and add no certificate, private key or TLS binary to the packaged product.
 
+### Stage 6 classification, automatic-directory and target-conflict findings
+
+Reverified on 2026-08-12 before the third Stage 6 vertical slice:
+
+- AB Download Manager was inspected first at
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/category/{Category.kt,CategoryManager.kt,DefaultCategories.kt}`,
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/adddownload/single/BaseAddSingleDownloadComponent.kt`,
+  `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/{DownloadManager.kt,utils/FileNameUtil.kt,utils/OnDuplicateStrategy.kt}`
+  and `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/NewDownloadChecker.kt`. Categories
+  are persisted, reorderable rules containing optional file extensions, URL wildcards and an
+  optional save directory. A category with both rule kinds must accept both; URL-constrained and
+  then more-specific rules sort ahead of broad extension-only rules. Default categories cover
+  archives, programs, video, music, pictures and documents under the default download directory.
+  ABDM serializes duplicate admission with a mutex, considers both disk files and destinations
+  reserved by existing tasks, and defaults to a numbered name before the extension.
+- Old NxTools was then inspected at `Models/{AppState.cs,DuplicateDownloadStrategy.cs}`,
+  `ViewModels/{DownloadCategoryViewModel.cs,AddDownloadDialogViewModel.cs,MainWindowViewModel.cs}`
+  and `Services/FileTypeCategoryResolver.cs`. It adds a fallback category, supports user categories,
+  extension and URL wildcard rules, optional category directories, explicit dialog category
+  selection and numbered names of the form `name (1).ext`. Its useful compatibility behavior is
+  that a manual category wins over automatic classification and active task destinations count as
+  occupied. Its `OverrideExistingFile` path deletes the old final file before the replacement is
+  durable; that crash window is an explicit negative reference and is not migrated.
+- NxTools.Next keeps category identity and the resolved category name on the accepted task, but
+  evaluates mutable rules only once at the central task-acceptance boundary. Explicit category or
+  directory choices win; otherwise automatic classification selects the most specific enabled rule
+  and creates its directory before persisting the task. Rules and strings are bounded. Changing
+  settings affects only later accepted tasks; restart and pause/resume use the persisted resolved
+  destination.
+- An ordinary request that intentionally omits its name keeps that absence until the bounded HTTP
+  probe resolves the authoritative `Content-Disposition`/final-URL name. Under the same serialized
+  admission gate, the engine then classifies that real name, resolves disk/nonterminal-task
+  conflicts and persists the final identity before transfer starts. It never lets a weak URL
+  basename or `download.bin` placeholder suppress a server-provided name.
+- Without the user-removed SHA/hash feature, “duplicate” means only that the case-insensitive target
+  path is occupied on disk or reserved by a nonterminal task; it never claims content equality. The
+  safe strategies in this slice are `add_numbered` (default) and `reject`. Admission, disk checks,
+  directory creation, final name selection and task persistence share one engine serialization
+  boundary, so concurrent ordinary, browser, CLI and batch submissions cannot reserve the same
+  artifact. No strategy deletes or replaces an existing final artifact or an active task artifact.
+- Diagnostics carry the acceptance correlation ID, fixed classification/conflict fields, bounded
+  category ID and elapsed time. They do not record URL, file name, category directory or any other
+  path. Organization resolution happens before task identity is created, so these events do not
+  invent or preallocate a task ID.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

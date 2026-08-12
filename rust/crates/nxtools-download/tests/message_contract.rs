@@ -16,6 +16,7 @@ fn request() -> DownloadRequest {
     DownloadRequest {
         source_url: "https://example.test/file.bin".to_owned(),
         save_directory: PathBuf::from(r"D:\Downloads"),
+        save_directory_explicit: false,
         file_name: None,
         headers: vec![DownloadRequestHeader {
             name: "Accept".to_owned(),
@@ -30,6 +31,9 @@ fn request() -> DownloadRequest {
         scheduled_at_unix_ms: None,
         adaptive_segment_policy: None,
         media: None,
+        category_id: None,
+        category_name: None,
+        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     }
 }
 
@@ -130,7 +134,7 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
 
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(7));
+    assert_eq!(value["protocol_version"], json!(8));
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));
