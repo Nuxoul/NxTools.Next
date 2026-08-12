@@ -1786,6 +1786,27 @@ Reverified on 2026-08-12 before the third Stage 6 vertical slice:
   path. Organization resolution happens before task identity is created, so these events do not
   invent or preallocate a task ID.
 
+Reverified on 2026-08-12 after the first Release classification-layout inspection:
+
+- Old NxTools `Views/AddDownloadWindow.axaml:303-338` gives category selection a normal full-width
+  form row instead of a narrow auxiliary button; `AddDownloadDialogViewModel.ApplySelectedCategoryDirectory`
+  resolves the chosen category's directory. NxTools.Next keeps its safer central acceptance rule,
+  but the visible category control must still read as a peer of the file-name field and expose the
+  category directory in its menu without clipping.
+- The persisted `DownloadCategorySettings.save_directory` was already wired into the Next settings
+  draft, but the first GPUI editor rendered it as an unlabeled 180 px input beside the category
+  name. A per-category directory is therefore not discoverable even though the domain supports it.
+  The settings UI must give every selected category an explicit labeled save-directory row, explain
+  that an empty value uses the default directory and that relative values resolve below it, and use
+  the available page width for name, directory, extension and URL-rule editing.
+- Category navigation is an editor list, not a tag cloud: each item must have a readable hit target
+  and show category name plus directory state. Enabled state, ordering and destructive actions stay
+  in the selected-category editor so list selection does not become a row of tiny adjacent controls.
+- The add-download category popover is bounded by the compact native confirmation window rather
+  than only by a nominal popup maximum. It exposes name and directory as two lines, preserves the
+  complete directory in a tooltip, and pages the bounded 32-category domain so the last item remains
+  inside the real client hit-test area.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

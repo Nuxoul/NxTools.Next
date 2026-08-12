@@ -20,6 +20,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectState};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::{
     AppConfig, DownloadCategorySettings, DownloadDuplicateStrategySettings, DownloadSettings,
@@ -349,6 +350,8 @@ pub(crate) struct DownloadApplication {
     )]
     delete_confirmation_windows: HashMap<DownloadTaskId, AnyWindowHandle>,
     new_download_window: Option<AnyWindowHandle>,
+    #[cfg(test)]
+    new_download_view: Option<Entity<NewDownloadView>>,
     schedule_window: Option<AnyWindowHandle>,
     settings_window: Option<AnyWindowHandle>,
     taskbar_overlay_window: Option<AnyWindowHandle>,
@@ -519,6 +522,8 @@ impl DownloadApplication {
             task_window_activation_commands: Rc::new(RefCell::new(Vec::new())),
             delete_confirmation_windows: HashMap::new(),
             new_download_window: None,
+            #[cfg(test)]
+            new_download_view: None,
             schedule_window: None,
             settings_window: None,
             taskbar_overlay_window: None,
@@ -1839,6 +1844,10 @@ impl DownloadApplication {
         let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
+        #[cfg(test)]
+        let view_slot = Rc::new(RefCell::new(None));
+        #[cfg(test)]
+        let opened_view_slot = Rc::clone(&view_slot);
         let window_size = initial_new_download_window_size(initial_source.as_ref());
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -1872,6 +1881,10 @@ impl DownloadApplication {
                         cx,
                     )
                 });
+                #[cfg(test)]
+                {
+                    *opened_view_slot.borrow_mut() = Some(view.clone());
+                }
                 if auto_probe {
                     let view = view.clone();
                     let source_window = window.window_handle();
@@ -1905,6 +1918,10 @@ impl DownloadApplication {
                     correlation_id,
                 );
                 self.new_download_window = Some(window.into());
+                #[cfg(test)]
+                {
+                    self.new_download_view = view_slot.borrow().clone();
+                }
                 if let Some((correlation_id, handoff_id)) = browser_context {
                     match (topmost_result, activation_result) {
                         (Ok(topmost_command_id), Ok(activation_command_id)) => info!(
@@ -4957,25 +4974,26 @@ impl Render for DownloadSettingsView {
                 cx.notify();
             }),
         );
-        let mut category_rules = self.categories.iter().enumerate().fold(
-            div().w_full().flex().flex_wrap().gap(px(5.0)),
-            |rules, (index, category)| {
+        let mut category_list = self.categories.iter().enumerate().fold(
+            div().w(px(218.0)).flex().flex_col().gap(px(5.0)),
+            |list, (index, category)| {
                 let enabled = category.enabled;
                 let selected = self.selected_category == Some(index);
                 let name = category.name.read(cx).value().trim().to_owned();
                 let directory = category.save_directory.read(cx).value().trim().to_owned();
-                let label = if directory.is_empty() {
-                    name
+                let directory_label = if directory.is_empty() {
+                    "使用默认保存目录".to_owned()
                 } else {
-                    format!("{name} · {directory}")
+                    directory
                 };
-                rules.child(
+                list.child(
                     div()
                         .id(("download-settings-category", index))
                         .debug_selector(move || format!("download-settings-category-{index}"))
-                        .px(px(7.0))
-                        .h(px(24.0))
-                        .rounded(px(4.0))
+                        .w_full()
+                        .h(px(42.0))
+                        .px(px(10.0))
+                        .rounded(px(5.0))
                         .border_1()
                         .border_color(if selected {
                             theme.border_active
@@ -4987,12 +5005,6 @@ impl Render for DownloadSettingsView {
                         } else {
                             theme.canvas
                         })
-                        .text_size(px(9.0))
-                        .text_color(if enabled {
-                            theme.text
-                        } else {
-                            theme.text_muted
-                        })
                         .cursor_pointer()
                         .flex()
                         .items_center()
@@ -5001,23 +5013,54 @@ impl Render for DownloadSettingsView {
                             this.error = None;
                             cx.notify();
                         }))
-                        .child(if label.is_empty() {
-                            "未命名分类".to_owned()
-                        } else {
-                            label
-                        })
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .overflow_hidden()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_size(px(10.5))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(if enabled {
+                                            theme.text
+                                        } else {
+                                            theme.text_muted
+                                        })
+                                        .child(if name.is_empty() {
+                                            "未命名分类".to_owned()
+                                        } else {
+                                            name
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_size(px(9.0))
+                                        .text_color(theme.text_muted)
+                                        .child(directory_label),
+                                ),
+                        )
                         .when(!enabled, |item| item.opacity(0.55)),
                 )
             },
         );
-        category_rules = category_rules.child(
+        category_list = category_list.child(
             div()
                 .debug_selector(|| "download-settings-category-add".into())
+                .w_full()
                 .child(
                     Button::new("download-settings-category-add-button")
                         .label("+ 新增")
-                        .xsmall()
+                        .small()
                         .outline()
+                        .w_full()
                         .on_click(cx.listener(|this, _, window, cx| {
                             let mut suffix = this.categories.len() + 1;
                             let id = loop {
@@ -5050,107 +5093,171 @@ impl Render for DownloadSettingsView {
                         })),
                 ),
         );
-        let category_rules = category_rules.into_any_element();
-        let category_editor = self
-            .selected_category
-            .and_then(|index| self.categories.get(index).map(|category| (index, category)))
-            .map(|(index, category)| {
-                let enabled = category.enabled;
-                let name = category.name.clone();
-                let directory = category.save_directory.clone();
-                let extensions = category.extensions.clone();
-                let url_patterns = category.url_patterns.clone();
-                div()
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .gap(px(5.0))
-                    .child(
-                        div()
-                            .w_full()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.0))
-                            .child(download_settings_input(theme, &name, px(150.0)))
-                            .child(download_settings_input(theme, &directory, px(180.0)))
-                            .child(
-                                div()
-                                    .debug_selector(|| "download-settings-category-enabled".into())
-                                    .child(
-                                        Button::new("download-settings-category-enabled-button")
+        let category_list = category_list.into_any_element();
+        let category_editor =
+            self.selected_category
+                .and_then(|index| self.categories.get(index).map(|category| (index, category)))
+                .map(|(index, category)| {
+                    let enabled = category.enabled;
+                    let name = category.name.clone();
+                    let directory = category.save_directory.clone();
+                    let extensions = category.extensions.clone();
+                    let url_patterns = category.url_patterns.clone();
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(10.0))
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(div().min_w_0().flex_1().child(
+                                    download_settings_editor_field(
+                                        theme,
+                                        "分类名称",
+                                        None,
+                                        &name,
+                                        "download-settings-category-name-field",
+                                    ),
+                                ))
+                                .child(
+                                    div()
+                                        .debug_selector(|| {
+                                            "download-settings-category-enabled".into()
+                                        })
+                                        .child(
+                                            Button::new(
+                                                "download-settings-category-enabled-button",
+                                            )
                                             .label(if enabled { "已启用" } else { "已停用" })
                                             .xsmall()
                                             .outline()
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                if let Some(category) =
-                                                    this.categories.get_mut(index)
-                                                {
-                                                    category.enabled = !category.enabled;
-                                                }
-                                                cx.notify();
-                                            })),
+                                            .on_click(
+                                                cx.listener(move |this, _, _, cx| {
+                                                    if let Some(category) =
+                                                        this.categories.get_mut(index)
+                                                    {
+                                                        category.enabled = !category.enabled;
+                                                    }
+                                                    cx.notify();
+                                                }),
+                                            ),
+                                        ),
+                                ),
+                        )
+                        .child(download_settings_editor_field(
+                            theme,
+                            "保存目录",
+                            Some("留空使用默认保存目录；相对路径位于默认目录下，也可填写绝对路径"),
+                            &directory,
+                            "download-settings-category-directory-field",
+                        ))
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .gap(px(8.0))
+                                .child(div().min_w_0().flex_1().child(
+                                    download_settings_editor_field(
+                                        theme,
+                                        "扩展名规则",
+                                        Some("以逗号分隔，例如 zip, 7z, rar"),
+                                        &extensions,
+                                        "download-settings-category-extensions-field",
                                     ),
-                            )
-                            .child(
-                                Button::new("download-settings-category-up")
-                                    .label("↑")
-                                    .xsmall()
-                                    .ghost()
-                                    .disabled(index == 0)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        if index > 0 && index < this.categories.len() {
-                                            this.categories.swap(index, index - 1);
-                                            this.selected_category = Some(index - 1);
-                                            cx.notify();
-                                        }
-                                    })),
-                            )
-                            .child(
-                                Button::new("download-settings-category-down")
-                                    .label("↓")
-                                    .xsmall()
-                                    .ghost()
-                                    .disabled(index + 1 >= self.categories.len())
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        if index + 1 < this.categories.len() {
-                                            this.categories.swap(index, index + 1);
-                                            this.selected_category = Some(index + 1);
-                                            cx.notify();
-                                        }
-                                    })),
-                            )
-                            .child(
-                                Button::new("download-settings-category-delete")
-                                    .label("删除")
-                                    .xsmall()
-                                    .ghost()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        if index < this.categories.len() {
-                                            this.categories.remove(index);
-                                            this.selected_category = (!this.categories.is_empty())
+                                ))
+                                .child(div().min_w_0().flex_1().child(
+                                    download_settings_editor_field(
+                                        theme,
+                                        "URL 通配规则",
+                                        Some("以逗号分隔；与扩展名规则同时存在时必须同时命中"),
+                                        &url_patterns,
+                                        "download-settings-category-url-field",
+                                    ),
+                                )),
+                        )
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .gap(px(5.0))
+                                .child(
+                                    Button::new("download-settings-category-up")
+                                        .label("上移")
+                                        .xsmall()
+                                        .ghost()
+                                        .disabled(index == 0)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            if index > 0 && index < this.categories.len() {
+                                                this.categories.swap(index, index - 1);
+                                                this.selected_category = Some(index - 1);
+                                                cx.notify();
+                                            }
+                                        })),
+                                )
+                                .child(
+                                    Button::new("download-settings-category-down")
+                                        .label("下移")
+                                        .xsmall()
+                                        .ghost()
+                                        .disabled(index + 1 >= self.categories.len())
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            if index + 1 < this.categories.len() {
+                                                this.categories.swap(index, index + 1);
+                                                this.selected_category = Some(index + 1);
+                                                cx.notify();
+                                            }
+                                        })),
+                                )
+                                .child(
+                                    Button::new("download-settings-category-delete")
+                                        .label("删除分类")
+                                        .xsmall()
+                                        .ghost()
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            if index < this.categories.len() {
+                                                this.categories.remove(index);
+                                                this.selected_category = (!this
+                                                    .categories
+                                                    .is_empty())
                                                 .then_some(index.min(this.categories.len() - 1));
-                                            cx.notify();
-                                        }
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .flex()
-                            .gap(px(5.0))
-                            .child(download_settings_input(theme, &extensions, px(236.0)))
-                            .child(download_settings_input(theme, &url_patterns, px(236.0))),
-                    )
-                    .into_any_element()
-            })
-            .unwrap_or_else(|| {
+                                                cx.notify();
+                                            }
+                                        })),
+                                ),
+                        )
+                        .into_any_element()
+                })
+                .unwrap_or_else(|| {
+                    div()
+                        .text_size(px(9.0))
+                        .text_color(theme.text_muted)
+                        .child("暂无分类；可新增自定义规则")
+                        .into_any_element()
+                });
+        let category_management = div()
+            .w_full()
+            .min_h(px(286.0))
+            .flex()
+            .items_start()
+            .gap(px(12.0))
+            .child(category_list)
+            .child(
                 div()
-                    .text_size(px(9.0))
-                    .text_color(theme.text_muted)
-                    .child("暂无分类；可新增自定义规则")
-                    .into_any_element()
-            });
+                    .min_w_0()
+                    .flex_1()
+                    .pl(px(12.0))
+                    .border_l_1()
+                    .border_color(theme.border_subtle)
+                    .child(category_editor),
+            )
+            .into_any_element();
         let current_ffmpeg = self.ffmpeg_executable.read(cx).value().trim().to_owned();
         let ffmpeg_description = match self.ffmpeg_discovery_state {
             FfmpegDiscoveryState::Checking => "正在后台检查用户路径、FFMPEG_PATH 与系统 PATH",
@@ -5572,14 +5679,8 @@ impl Render for DownloadSettingsView {
                         download_settings_stacked_row(
                             theme,
                             "分类规则",
-                            "选择分类后可编辑名称、目录、扩展名和 URL 通配规则",
-                            category_rules,
-                        ),
-                        download_settings_stacked_row(
-                            theme,
-                            "规则编辑",
-                            "扩展名与 URL 规则同时存在时必须同时命中；箭头调整优先顺序",
-                            category_editor,
+                            "选择左侧分类，在右侧编辑名称、独立保存目录和匹配规则",
+                            category_management,
                         ),
                         download_settings_row(
                             theme,
@@ -6028,6 +6129,65 @@ fn download_settings_input(
                 .bordered(false)
                 .focus_bordered(false),
         )
+}
+
+fn download_settings_editor_field(
+    theme: Theme,
+    label: &'static str,
+    description: Option<&'static str>,
+    input: &Entity<InputState>,
+    selector: &'static str,
+) -> AnyElement {
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .child(
+            div()
+                .debug_selector(move || format!("{selector}-label"))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .text_size(px(10.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.text_secondary)
+                        .child(label),
+                )
+                .when_some(description, |row, description| {
+                    row.child(
+                        div()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            .child(description),
+                    )
+                }),
+        )
+        .child(
+            div()
+                .debug_selector(move || selector.into())
+                .w_full()
+                .h(px(32.0))
+                .rounded(px(5.0))
+                .border_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.canvas)
+                .px(px(8.0))
+                .flex()
+                .items_center()
+                .child(
+                    Input::new(input)
+                        .appearance(false)
+                        .bordered(false)
+                        .focus_bordered(false),
+                ),
+        )
+        .into_any_element()
 }
 
 fn download_settings_toggle(
@@ -6522,6 +6682,7 @@ struct NewDownloadView {
     categories: Vec<DownloadCategorySettings>,
     selected_category_id: Option<String>,
     category_popover_open: bool,
+    category_menu_page: usize,
     scheduled_date: NaiveDate,
     scheduled_month: NaiveDate,
     scheduled_hour: Entity<SelectState<Vec<String>>>,
@@ -6661,6 +6822,7 @@ impl NewDownloadView {
             categories,
             selected_category_id,
             category_popover_open: false,
+            category_menu_page: 0,
             scheduled_date,
             scheduled_month,
             scheduled_hour,
@@ -7230,8 +7392,23 @@ impl Render for NewDownloadView {
         let category_open_view = category_view.clone();
         let category_menu_view = category_view.clone();
         let categories = self.categories.clone();
+        const CATEGORY_MENU_PAGE_SIZE: usize = 2;
+        let category_page_count = categories.len().div_ceil(CATEGORY_MENU_PAGE_SIZE).max(1);
+        let category_menu_page = self.category_menu_page.min(category_page_count - 1);
+        let category_page_start = category_menu_page * CATEGORY_MENU_PAGE_SIZE;
+        let visible_category_count = categories
+            .len()
+            .saturating_sub(category_page_start)
+            .min(CATEGORY_MENU_PAGE_SIZE);
+        let category_menu_height = if category_page_count > 1 {
+            222.0
+        } else {
+            52.0 + visible_category_count as f32 * 54.0
+        };
+        let selected_category_id_for_menu = self.selected_category_id.clone();
         let category_control = div()
             .debug_selector(|| "download-new-category-control".into())
+            .w_full()
             .child(
                 Popover::new("download-new-category-popover")
                     .anchor(Corner::BottomRight)
@@ -7239,70 +7416,278 @@ impl Render for NewDownloadView {
                     .on_open_change(move |open, _, cx| {
                         let _ = category_open_view.update(cx, |view, cx| {
                             view.category_popover_open = *open;
+                            if *open {
+                                view.category_menu_page = view
+                                    .selected_category_id
+                                    .as_deref()
+                                    .and_then(|selected| {
+                                        view.categories.iter().position(|category| {
+                                            category.id.eq_ignore_ascii_case(selected)
+                                        })
+                                    })
+                                    .map_or(0, |index| index / CATEGORY_MENU_PAGE_SIZE);
+                            }
                             cx.notify();
                         });
                     })
                     .trigger(
-                        Button::new("download-new-category-trigger")
+                        Button::new("download-new-category-trigger-button")
+                            .debug_selector(|| "download-new-category-trigger".into())
                             .label(selected_category_label)
                             .small()
-                            .outline(),
+                            .outline()
+                            .w_full()
+                            .h(px(30.0)),
                     )
                     .content(move |_, _, _| {
                         let automatic_view = category_menu_view.clone();
-                        categories.iter().enumerate().fold(
+                        let menu = categories.iter().enumerate().fold(
                             div()
-                                .w(px(196.0))
-                                .p(px(5.0))
+                                .w_full()
+                                .p(px(7.0))
                                 .flex()
                                 .flex_col()
-                                .gap(px(3.0))
+                                .gap(px(4.0))
                                 .child(
-                                    Button::new("download-new-category-automatic")
-                                        .label("自动匹配")
-                                        .small()
-                                        .ghost()
+                                    div()
+                                        .id("download-new-category-automatic")
+                                        .w_full()
+                                        .h(px(38.0))
+                                        .px(px(9.0))
+                                        .rounded(px(5.0))
+                                        .bg(if selected_category_id_for_menu.is_none() {
+                                            theme.element_selected
+                                        } else {
+                                            theme.canvas
+                                        })
+                                        .cursor_pointer()
+                                        .flex()
+                                        .flex_col()
+                                        .justify_center()
+                                        .gap(px(1.0))
+                                        .child(
+                                            div()
+                                                .text_size(px(10.5))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(theme.text)
+                                                .child("自动匹配"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(9.0))
+                                                .text_color(theme.text_muted)
+                                                .child("按文件名、扩展名和 URL 规则选择"),
+                                        )
                                         .on_click(move |_, _, cx| {
+                                            let close_view = automatic_view.clone();
                                             let _ = automatic_view.update(cx, |view, cx| {
                                                 view.selected_category_id = None;
-                                                view.category_popover_open = false;
                                                 view.error = None;
                                                 cx.notify();
+                                            });
+                                            cx.defer(move |cx| {
+                                                let _ = close_view.update(cx, |view, cx| {
+                                                    view.category_popover_open = false;
+                                                    cx.notify();
+                                                });
                                             });
                                         }),
                                 ),
                             |menu, (index, category)| {
+                                if index < category_page_start
+                                    || index >= category_page_start + CATEGORY_MENU_PAGE_SIZE
+                                {
+                                    return menu;
+                                }
                                 let category_id = category.id.clone();
-                                let category_label = if category.save_directory.is_empty() {
-                                    category.name.clone()
+                                let selected =
+                                    selected_category_id_for_menu.as_deref().is_some_and(
+                                        |selected| selected.eq_ignore_ascii_case(&category_id),
+                                    );
+                                let category_name = category.name.clone();
+                                let directory_label = if category.save_directory.is_empty() {
+                                    "使用默认保存目录".to_owned()
                                 } else {
-                                    format!("{} · {}", category.name, category.save_directory)
+                                    category.save_directory.clone()
                                 };
+                                let directory_tooltip = directory_label.clone();
                                 let view = category_menu_view.clone();
                                 menu.child(
                                     div()
+                                        .id(("download-new-category-option", index))
                                         .debug_selector(move || {
                                             format!("download-new-category-option-{index}")
                                         })
+                                        .w_full()
+                                        .min_h(px(44.0))
+                                        .px(px(9.0))
+                                        .py(px(5.0))
+                                        .rounded(px(5.0))
+                                        .bg(if selected {
+                                            theme.element_selected
+                                        } else {
+                                            theme.canvas
+                                        })
+                                        .tooltip(move |window, cx| {
+                                            Tooltip::new(directory_tooltip.clone()).build(window, cx)
+                                        })
+                                        .cursor_pointer()
+                                        .flex()
+                                        .flex_col()
+                                        .justify_center()
+                                        .gap(px(1.0))
                                         .child(
-                                            Button::new(("download-new-category-option", index))
-                                                .label(category_label)
-                                                .small()
-                                                .ghost()
-                                                .on_click(move |_, _, cx| {
-                                                    let category_id = category_id.clone();
-                                                    let _ = view.update(cx, |view, cx| {
-                                                        view.selected_category_id =
-                                                            Some(category_id);
-                                                        view.category_popover_open = false;
-                                                        view.error = None;
-                                                        cx.notify();
-                                                    });
-                                                }),
-                                        ),
+                                            div()
+                                                .overflow_hidden()
+                                                .whitespace_nowrap()
+                                                .text_size(px(10.5))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(theme.text)
+                                                .child(category_name),
+                                        )
+                                        .child(
+                                            div()
+                                                .debug_selector(move || {
+                                                    format!(
+                                                        "download-new-category-option-directory-{index}"
+                                                    )
+                                                })
+                                                .line_clamp(2)
+                                                .text_size(px(9.0))
+                                                .text_color(theme.text_muted)
+                                                .child(directory_label),
+                                        )
+                                        .on_click(move |_, _, cx| {
+                                            let category_id = category_id.clone();
+                                            let close_view = view.clone();
+                                            let _ = view.update(cx, |view, cx| {
+                                                view.selected_category_id = Some(category_id);
+                                                view.error = None;
+                                                cx.notify();
+                                            });
+                                            cx.defer(move |cx| {
+                                                let _ = close_view.update(cx, |view, cx| {
+                                                    view.category_popover_open = false;
+                                                    cx.notify();
+                                                });
+                                            });
+                                        }),
                                 )
                             },
-                        )
+                        );
+                        let menu = if category_page_count > 1 {
+                            let previous_view = category_menu_view.clone();
+                            let next_view = category_menu_view.clone();
+                            menu.child(
+                                div()
+                                    .w_full()
+                                    .h(px(42.0))
+                                    .mt(px(2.0))
+                                    .px(px(2.0))
+                                    .border_t_1()
+                                    .border_color(theme.border_subtle)
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .id("download-new-category-previous-page")
+                                            .debug_selector(|| {
+                                                "download-new-category-previous-page".into()
+                                            })
+                                            .w(px(72.0))
+                                            .h(px(30.0))
+                                            .rounded(px(4.0))
+                                            .bg(theme.canvas)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_size(px(9.5))
+                                            .text_color(if category_menu_page == 0 {
+                                                theme.text_muted
+                                            } else {
+                                                theme.text
+                                            })
+                                            .when(category_menu_page > 0, |button| {
+                                                button.cursor_pointer().hover(|button| {
+                                                    button.bg(theme.surface_hover)
+                                                })
+                                            })
+                                            .on_click(move |_, _, cx| {
+                                                if category_menu_page == 0 {
+                                                    return;
+                                                }
+                                                let _ = previous_view.update(cx, |view, cx| {
+                                                    view.category_menu_page =
+                                                        view.category_menu_page.saturating_sub(1);
+                                                    cx.notify();
+                                                });
+                                            })
+                                            .child("上一页"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(9.0))
+                                            .text_color(theme.text_muted)
+                                            .child(format!(
+                                                "{} / {}",
+                                                category_menu_page + 1,
+                                                category_page_count
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("download-new-category-next-page")
+                                            .debug_selector(|| {
+                                                "download-new-category-next-page".into()
+                                            })
+                                            .w(px(72.0))
+                                            .h(px(30.0))
+                                            .rounded(px(4.0))
+                                            .bg(theme.canvas)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_size(px(9.5))
+                                            .text_color(if category_menu_page + 1
+                                                >= category_page_count
+                                            {
+                                                theme.text_muted
+                                            } else {
+                                                theme.text
+                                            })
+                                            .when(
+                                                category_menu_page + 1 < category_page_count,
+                                                |button| {
+                                                    button.cursor_pointer().hover(|button| {
+                                                        button.bg(theme.surface_hover)
+                                                    })
+                                                },
+                                            )
+                                            .on_click(move |_, _, cx| {
+                                                if category_menu_page + 1 >= category_page_count {
+                                                    return;
+                                                }
+                                                let _ = next_view.update(cx, |view, cx| {
+                                                    view.category_menu_page = (view
+                                                        .category_menu_page
+                                                        + 1)
+                                                        .min(category_page_count - 1);
+                                                    cx.notify();
+                                                });
+                                            })
+                                            .child("下一页"),
+                                    ),
+                            )
+                        } else {
+                            menu
+                        };
+                        div()
+                            .debug_selector(|| "download-new-category-popover-content".into())
+                            .w(px(276.0))
+                            .h(px(category_menu_height))
+                            .overflow_hidden()
+                            .child(menu)
                     }),
             )
             .into_any_element();
@@ -7455,10 +7840,13 @@ impl Render for NewDownloadView {
                                 .child(
                                     div()
                                         .flex()
-                                        .items_end()
-                                        .gap(px(6.0))
+                                        .items_start()
+                                        .gap(px(8.0))
                                         .child(
                                             div()
+                                                .debug_selector(|| {
+                                                    "download-new-file-name-field".into()
+                                                })
                                                 .min_w_0()
                                                 .flex_1()
                                                 .child(download_input_field(
@@ -7468,18 +7856,22 @@ impl Render for NewDownloadView {
                                                 )),
                                         )
                                         .child(
-                                                div()
-                                                    .w(px(112.0))
-                                                    .flex()
-                                                    .flex_col()
-                                                    .gap(px(3.0))
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(9.0))
-                                                            .text_color(theme.text_muted)
-                                                            .child("分类"),
-                                                    )
-                                                    .child(category_control),
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-category-field".into()
+                                                })
+                                                .min_w_0()
+                                                .flex_1()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(3.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(9.5))
+                                                        .text_color(theme.text_muted)
+                                                        .child("分类"),
+                                                )
+                                                .child(category_control),
                                         ),
                                 ),
                         )
@@ -8185,9 +8577,9 @@ fn ffmpeg_install_phase_label(phase: FfmpegInstallPhase) -> &'static str {
 
 fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
     if confirmed {
-        size(px(500.0), px(278.0))
+        size(px(560.0), px(278.0))
     } else {
-        size(px(500.0), px(176.0))
+        size(px(560.0), px(176.0))
     }
 }
 
@@ -8195,12 +8587,12 @@ fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui:
     match probe.media.as_ref() {
         Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
             let rows_height = bounded_media_rows_height(hls.variants.len(), 34.0, 4.0, 108.0);
-            size(px(500.0), px(260.0 + 16.0 + rows_height))
+            size(px(560.0), px(260.0 + 16.0 + rows_height))
         }
         Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
             let row_count = dash.video_tracks.len().max(dash.audio_tracks.len());
             let rows_height = bounded_media_rows_height(row_count, 38.0, 4.0, 112.0);
-            size(px(500.0), px(260.0 + 16.0 + 15.0 + rows_height))
+            size(px(560.0), px(260.0 + 16.0 + 15.0 + rows_height))
         }
         _ => new_download_window_size(true),
     }
@@ -9534,6 +9926,160 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[gpui::test]
+    fn production_new_download_category_form_and_bounded_menu_remain_readable(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "production-category-menu");
+        let categories = (0..32)
+            .map(|index| DownloadCategorySettings {
+                id: format!("category-{index}"),
+                name: format!("分类 {index:02}"),
+                enabled: true,
+                save_directory: format!(
+                    r"C:\Users\Administrator\Downloads\Category-{index:02}\A-Long-Readable-Directory"
+                ),
+                extensions: vec![format!("ext{index}")],
+                url_patterns: Vec::new(),
+            })
+            .collect();
+        let (completion, completed) = std::sync::mpsc::sync_channel(1);
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.config.download.categories = categories;
+                application.open_browser_download_dialog(
+                    BrowserDownloadDialogRequest {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        handoff_id: uuid::Uuid::new_v4(),
+                        source: BrowserDownloadDialogSource::Blob {
+                            blob: BrowserBlob {
+                                id: uuid::Uuid::new_v4(),
+                                file_name: "captured.webm".into(),
+                                media_type: Some("video/webm".into()),
+                                size: 4096,
+                            },
+                            save_directory: directory.clone(),
+                        },
+                        completion,
+                    },
+                    cx,
+                );
+            });
+        });
+        assert_eq!(completed.recv().expect("browser dialog completion"), Ok(()));
+        cx.run_until_parked();
+
+        let new_download_window = cx
+            .read(|cx| application.read(cx).new_download_window)
+            .expect("production new-download window");
+        let actual_size = new_download_window
+            .update(cx, |_, window, _| window.bounds().size)
+            .expect("read production new-download bounds");
+        assert_eq!(actual_size, new_download_window_size(true));
+        let mut window = VisualTestContext::from_window(new_download_window, cx);
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render production new-download form");
+
+        let file_name_field = window
+            .debug_bounds("download-new-file-name-field")
+            .expect("production file-name field");
+        let category_field = window
+            .debug_bounds("download-new-category-field")
+            .expect("production category field");
+        assert!(
+            (file_name_field.top().as_f32() - category_field.top().as_f32()).abs() <= 1.0
+                && (file_name_field.bottom().as_f32() - category_field.bottom().as_f32()).abs()
+                    <= 1.0
+                && (file_name_field.size.width.as_f32() - category_field.size.width.as_f32()).abs()
+                    <= 2.0,
+            "production file-name and category fields must share one equal-width form row"
+        );
+        let category_trigger = window
+            .debug_bounds("download-new-category-trigger")
+            .expect("production category trigger");
+        window.simulate_click(category_trigger.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render production category menu");
+        let popover = window
+            .debug_bounds("download-new-category-popover-content")
+            .expect("bounded production category menu");
+        assert!(
+            popover.size.height.as_f32() <= 226.0,
+            "32 categories must stay in a bounded scroll menu, got {}px",
+            popover.size.height.as_f32()
+        );
+        let first_directory = window
+            .debug_bounds("download-new-category-option-directory-0")
+            .expect("wrapped first category directory");
+        assert!(
+            first_directory.size.height.as_f32() >= 18.0,
+            "long category directory should remain readable on two lines"
+        );
+
+        for _ in 0..15 {
+            let next_page = window
+                .debug_bounds("download-new-category-next-page")
+                .expect("category next-page button");
+            assert!(
+                next_page.top() >= popover.top()
+                    && next_page.bottom() <= popover.bottom() + px(1.0),
+                "category pager must stay inside the popover: next={next_page:?}, popover={popover:?}"
+            );
+            window.simulate_click(next_page.center(), Modifiers::default());
+            window.run_until_parked();
+            window.refresh().expect("advance bounded category menu");
+        }
+        assert_eq!(
+            cx.read(|cx| {
+                application
+                    .read(cx)
+                    .new_download_view
+                    .as_ref()
+                    .expect("production new-download view")
+                    .read(cx)
+                    .category_menu_page
+            }),
+            15,
+            "page controls must reach the final bounded category page"
+        );
+        let last_category = window
+            .debug_bounds("download-new-category-option-31")
+            .expect("last category on final page");
+        assert!(
+            last_category.top() >= popover.top() && last_category.bottom() <= popover.bottom(),
+            "the final allowed category must remain inside the bounded menu: last={last_category:?}, popover={popover:?}"
+        );
+        window.simulate_click(
+            gpui::point(
+                last_category.left() + px(4.0),
+                last_category.top() + px(4.0),
+            ),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        window.refresh().expect("select final production category");
+        assert_eq!(
+            cx.read(|cx| {
+                application
+                    .read(cx)
+                    .new_download_view
+                    .as_ref()
+                    .expect("production new-download view")
+                    .read(cx)
+                    .selected_category_id
+                    .clone()
+            }),
+            Some("category-31".into()),
+            "clicking the final scrolled category must reach the production view: last={last_category:?}, popover={popover:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
     #[test]
     fn browser_download_window_starts_at_compact_probe_height() {
         let request = DownloadRequest {
@@ -9653,6 +10199,9 @@ mod tests {
             cx.read(|cx| application.read(cx).default_adaptive_segment_policy());
         let view_slot = Rc::new(RefCell::new(None));
         let opened_view_slot = Rc::clone(&view_slot);
+        let mut categories = DownloadSettings::default().categories;
+        categories[0].save_directory =
+            r"C:\Users\Administrator\Downloads\Archives\Compressed\LongCategoryDirectory".into();
         let (_root, window) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 NewDownloadView::new(
@@ -9661,7 +10210,7 @@ mod tests {
                         default_directory,
                         default_connection_limit,
                         default_adaptive_segment_policy,
-                        categories: DownloadSettings::default().categories,
+                        categories,
                         initial_source: None,
                     },
                     window,
@@ -9725,12 +10274,55 @@ mod tests {
             .refresh()
             .expect("render resized confirmed new download window");
 
+        let file_name_field = window
+            .debug_bounds("download-new-file-name-field")
+            .expect("new download file-name field");
+        let category_field = window
+            .debug_bounds("download-new-category-field")
+            .expect("new download category field");
+        let category_trigger = window
+            .debug_bounds("download-new-category-trigger")
+            .expect("new download category trigger");
+        assert!(
+            (file_name_field.top().as_f32() - category_field.top().as_f32()).abs() <= 1.0
+                && (file_name_field.bottom().as_f32() - category_field.bottom().as_f32()).abs()
+                    <= 1.0,
+            "file name and category must share one form-row baseline"
+        );
+        let field_width_ratio =
+            category_field.size.width.as_f32() / file_name_field.size.width.as_f32();
+        assert!(
+            (0.85..=1.15).contains(&field_width_ratio),
+            "category is still disproportionately narrow: file={}px category={}px",
+            file_name_field.size.width.as_f32(),
+            category_field.size.width.as_f32()
+        );
+        assert!(
+            category_trigger.size.width.as_f32() >= category_field.size.width.as_f32() - 2.0,
+            "category trigger must fill its field instead of remaining a tiny button"
+        );
+
         let category = window
             .debug_bounds("download-new-category-control")
             .expect("new download category control");
         window.simulate_click(category.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render category popover");
+        let category_popover = window
+            .debug_bounds("download-new-category-popover-content")
+            .expect("category popover content");
+        assert!(
+            category_popover.size.width.as_f32() >= 240.0,
+            "category popover remains too narrow at {}px",
+            category_popover.size.width.as_f32()
+        );
+        let category_directory = window
+            .debug_bounds("download-new-category-option-directory-0")
+            .expect("wrapped category directory row");
+        assert!(
+            category_directory.size.height.as_f32() >= 18.0,
+            "long category directories must wrap to a readable second line"
+        );
         let first_category = window
             .debug_bounds("download-new-category-option-0")
             .expect("first explicit category option");
@@ -10838,6 +11430,74 @@ mod tests {
     }
 
     #[gpui::test]
+    fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_editor(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "category-settings-layout");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_settings_window(cx);
+            });
+        });
+        cx.run_until_parked();
+        let settings_window = cx
+            .read(|cx| application.read(cx).settings_window)
+            .expect("production settings window");
+        let mut window = VisualTestContext::from_window(settings_window, cx);
+        window.run_until_parked();
+        window.refresh().expect("render category settings");
+
+        let category_item = window
+            .debug_bounds("download-settings-category-0")
+            .expect("first category item");
+        assert!(
+            category_item.size.height.as_f32() >= 36.0,
+            "category navigation remains a tiny {}px chip",
+            category_item.size.height.as_f32()
+        );
+
+        let name_field = window
+            .debug_bounds("download-settings-category-name-field")
+            .expect("labeled category name field");
+        let directory_label = window
+            .debug_bounds("download-settings-category-directory-field-label")
+            .expect("category directory label");
+        let directory_field = window
+            .debug_bounds("download-settings-category-directory-field")
+            .expect("category directory field");
+        assert!(
+            directory_field.top() > name_field.bottom(),
+            "the category save directory must have its own readable row"
+        );
+        assert!(
+            directory_label.top() >= name_field.bottom(),
+            "the per-category save directory label must be visible"
+        );
+        assert!(
+            directory_field.size.width.as_f32() >= 430.0,
+            "the per-category directory editor is still cramped at {}px",
+            directory_field.size.width.as_f32()
+        );
+
+        let second_category = window
+            .debug_bounds("download-settings-category-1")
+            .expect("second category item");
+        window.simulate_click(second_category.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render second category editor");
+        assert!(
+            window
+                .debug_bounds("download-settings-category-directory-field")
+                .is_some(),
+            "switching categories must keep the selected category's directory editor visible"
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn settings_auto_download_cancel_click_reaches_the_operation_control(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory) =
@@ -11739,11 +12399,11 @@ mod tests {
 
         assert_eq!(
             (initial.width.as_f32(), initial.height.as_f32()),
-            (500.0, 176.0)
+            (560.0, 176.0)
         );
         assert_eq!(
             (confirmed.width.as_f32(), confirmed.height.as_f32()),
-            (500.0, 278.0)
+            (560.0, 278.0)
         );
     }
 

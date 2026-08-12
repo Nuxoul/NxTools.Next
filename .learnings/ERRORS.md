@@ -8148,3 +8148,55 @@ setting separately when early progress output is required.
 ### Resolution
 - **Resolved**: 2026-08-12T00:00:00+08:00
 - **Notes**: Re-ran with a bounded 20-minute execution timeout; all 268 desktop tests passed.
+
+## [ERR-20260812-EXACTFILTER] Used an unqualified exact Cargo test name
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A GPUI regression was first invoked with `--exact` but without its Rust module path, so Cargo ran
+zero tests and produced no red/green evidence.
+
+### Error
+`running 0 tests; 269 filtered out`
+
+### Suggested Fix
+Either pass the fully qualified test path when using `--exact`, or use the unique function-name
+filter and confirm the output reports exactly one executed test.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Re-ran with the unique function-name filter; the pre-fix layout failed at 24 px as intended.
+
+## [ERR-20260812-POPOVERTRIGGER] Wrapped a selectable Popover trigger in a plain GPUI div
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Adding a debug-selector wrapper around the category button changed the Popover trigger type from a
+selectable Button to a plain Div, which does not satisfy gpui-component's `Selectable` contract.
+
+### Error
+`the trait bound gpui::Div: Selectable is not satisfied`
+
+### Suggested Fix
+Keep the Button itself as the Popover trigger and attach layout/debug selector styling directly to
+that selectable element.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Restored Button as the trigger; desktop check and all 269 desktop tests passed.
