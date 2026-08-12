@@ -7799,3 +7799,18 @@ for the final low-memory Windows gate.
   lease created them.
 - Resolution: the parent now passes the enabled category snapshot; the child owns that vector and
   never reads the parent during construction or render.
+
+## 2026-08-12 — Multiline placeholder crashed Windows DirectWrite
+
+**Status**: resolved
+
+- Symptom: the packaged desktop terminated when the user opened download settings; the panic was
+  `end byte index 28 is out of bounds for string of length 15` in GPUI's Windows DirectWrite path.
+- Root cause: `gpui-component 0.5.1` passes the full placeholder `TextRun` to every line when an
+  empty multiline input placeholder contains a newline. The new Header placeholder was 28 bytes in
+  total while its first line was 15 bytes.
+- Better approach: keep multiline-input placeholders on one line until the component boundary is
+  upgraded, while preserving multiline user input. Reproduce native text crashes with a minimal
+  one-frame DirectWrite window and compare exact byte lengths before changing unrelated layout.
+- Resolution: the Header placeholder is now a named one-line invariant; the native reproduction
+  changed from a deterministic panic to a clean exit, and a regression rejects CR/LF reintroduction.

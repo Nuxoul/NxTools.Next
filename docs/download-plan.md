@@ -961,6 +961,13 @@ check、Clippy、下载 UI 与浏览器架构门禁、分类/并发/junction/重
 rebalance 与 HLS concurrent fixture），相应 exact 用例均立即通过；未降低断言或修改生产重试。
 没有启动 GUI、打包或声称人工验收完成。阶段 6 仅剩高级完成后动作切片。
 
+2026-08-12 首次分类切片 Release 人工验收发现点击下载设置会在首帧闪退。根因是
+`gpui-component 0.5.1` 的 Windows 多行空输入会把整个含换行 placeholder 的 28 字节文本 run
+套到第一行 15 字节文本，触发 GPUI DirectWrite UTF-8 区间越界；并非配置或分类数据损坏。
+默认 Header 输入仍保持多行编辑，但 placeholder 改为单行并加入不含 CR/LF 的回归约束。一次性
+原生 DirectWrite 最小窗口在修复前稳定复现同一 `28 -> 15` panic，修复后正常退出；设置窗口首帧
+测试同步推进到 parked 状态。此修复尚待重新打包后的用户点击验收。
+
 ### 阶段 7：性能、恢复与质感收尾（4–7 天）
 
 - [ ] 进度事件按任务合并到 5–10 Hz，完成/失败等关键事件立即发布。

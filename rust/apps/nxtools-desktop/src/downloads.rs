@@ -4406,6 +4406,12 @@ struct DownloadSettingsView {
     _subscriptions: Vec<Subscription>,
 }
 
+// gpui-component 0.5.1 passes the full placeholder run to each rendered line of an empty
+// multiline input on Windows. Keep this placeholder on one line until that native text boundary
+// is upgraded; a newline here can panic DirectWrite before the settings window paints.
+const DEFAULT_REQUEST_HEADERS_PLACEHOLDER: &str =
+    "每行 Name: Value，例如 User-Agent: ... 或 Referer: ...";
+
 impl DownloadSettingsView {
     fn new(
         application: Entity<DownloadApplication>,
@@ -4433,7 +4439,7 @@ impl DownloadSettingsView {
         let default_request_headers = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.default_request_headers.clone())
-                .placeholder("User-Agent: ...\nReferer: ...")
+                .placeholder(DEFAULT_REQUEST_HEADERS_PLACEHOLDER)
                 .multi_line(true)
         });
         let default_cookie = cx.new(|cx| {
@@ -8995,6 +9001,11 @@ mod tests {
     use gpui::{AppContext, Modifiers, TestAppContext};
 
     #[test]
+    fn multiline_header_placeholder_stays_on_one_line_for_windows_directwrite() {
+        assert!(!DEFAULT_REQUEST_HEADERS_PLACEHOLDER.contains(['\r', '\n']));
+    }
+
+    #[test]
     fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let task_id = engine
@@ -10213,6 +10224,7 @@ mod tests {
                 application.open_settings_window(cx);
             });
         });
+        cx.run_until_parked();
 
         assert!(cx.read(|cx| application.read(cx).settings_window.is_some()));
         let _ = std::fs::remove_dir_all(directory);
