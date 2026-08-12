@@ -579,6 +579,38 @@ fn serve_connection(
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
     match path {
+        "/stage6/request-context-redirect" => write_response(
+            &mut stream,
+            302,
+            "Found",
+            &[("Location", "/stage6/request-context")],
+            b"",
+            Some(0),
+        ),
+        "/stage6/request-context" => {
+            let accepted = headers.get("x-nxtools-default").map(String::as_str) == Some("default")
+                && headers.get("x-nxtools-explicit").map(String::as_str) == Some("explicit")
+                && headers.get("x-nxtools-precedence").map(String::as_str) == Some("task")
+                && headers.get("cookie").map(String::as_str) == Some("task-cookie=1")
+                && headers.get("referer").map(String::as_str) == Some("https://task.example/");
+            if accepted {
+                serve_range_with_validator(
+                    &mut stream,
+                    method,
+                    headers.get("range"),
+                    "\"request-context\"",
+                );
+            } else {
+                write_response(
+                    &mut stream,
+                    403,
+                    "Forbidden",
+                    &[],
+                    b"missing request context",
+                    None,
+                );
+            }
+        }
         "/dash/static.mpd" => {
             let body = if revision.load(Ordering::Acquire) == 1 {
                 DASH_STATIC_VOD

@@ -9,7 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 6;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 7;
 
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 

@@ -25,8 +25,6 @@ use nxtools_core::{
     AppConfig, DownloadSettings, DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
     DownloadTaskbarProgressOverlaySettings, NetworkProxyMode,
 };
-#[cfg(test)]
-use nxtools_download::FfmpegInstallSource;
 use nxtools_download::{
     BrowserBlob, BrowserDownloadDialogRequest, BrowserDownloadDialogSource,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
@@ -39,6 +37,8 @@ use nxtools_download::{
     FfmpegInstallPhase, FfmpegInstallProgress, FfmpegInstallation, RequestOrigin,
     resolve_ffmpeg_executable,
 };
+#[cfg(test)]
+use nxtools_download::{DownloadCertificatePolicy, FfmpegInstallSource};
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
@@ -143,6 +143,9 @@ pub(crate) enum DownloadDirectoryTarget {
 struct DownloadSettingsDraft {
     default_directory: PathBuf,
     ffmpeg_executable_path: String,
+    default_request_headers: String,
+    default_cookie: String,
+    accept_invalid_certificates: bool,
     default_connection_limit: u16,
     adaptive_segment_scaling_enabled: bool,
     adaptive_segment_max_segments: u16,
@@ -388,6 +391,13 @@ impl DownloadApplication {
             ffmpeg_install_directory,
         } = runtime;
         config.download.normalize();
+        if let Err(error) = engine.update_download_http_policy(&config.download) {
+            warn!(
+                error_kind = "download_http_policy",
+                %error,
+                "could not apply configured download HTTP policy"
+            );
+        }
         let configured_ffmpeg = (!config.download.ffmpeg_executable_path.is_empty())
             .then(|| PathBuf::from(&config.download.ffmpeg_executable_path));
         if let Err(error) = engine.set_ffmpeg_executable_path(configured_ffmpeg) {
@@ -651,6 +661,9 @@ impl DownloadApplication {
         DownloadSettingsDraft {
             default_directory: self.default_directory.clone(),
             ffmpeg_executable_path: self.config.download.ffmpeg_executable_path.clone(),
+            default_request_headers: self.config.download.default_request_headers.clone(),
+            default_cookie: self.config.download.default_cookie.clone(),
+            accept_invalid_certificates: self.config.download.accept_invalid_certificates,
             default_connection_limit: self.config.download.default_connection_limit,
             adaptive_segment_scaling_enabled: self.config.download.adaptive_segment_scaling_enabled,
             adaptive_segment_max_segments: self.config.download.adaptive_segment_max_segments,
@@ -2368,20 +2381,21 @@ impl DownloadApplication {
             %correlation_id,
             "download settings apply started"
         );
-        let failed = |message: String| {
+        let failed = |error_kind: &'static str, message: String| {
             warn!(
                 event = "download.settings.apply_failed",
                 %correlation_id,
+                error_kind,
                 elapsed_ms = started_at.elapsed().as_millis(),
                 "download settings apply failed"
             );
             Err(message)
         };
         if draft.default_directory.exists() && !draft.default_directory.is_dir() {
-            return failed("默认保存位置不是文件夹".into());
+            return failed("validation", "默认保存位置不是文件夹".into());
         }
         if let Err(error) = std::fs::create_dir_all(&draft.default_directory) {
-            return failed(format!("无法创建默认保存目录：{error}"));
+            return failed("filesystem", format!("无法创建默认保存目录：{error}"));
         }
         let write_probe = draft
             .default_directory
@@ -2391,7 +2405,7 @@ impl DownloadApplication {
             .create_new(true)
             .open(&write_probe)
         {
-            return failed(format!("默认保存目录不可写：{error}"));
+            return failed("filesystem", format!("默认保存目录不可写：{error}"));
         }
         let _ = std::fs::remove_file(&write_probe);
 
@@ -2403,6 +2417,9 @@ impl DownloadApplication {
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
             ffmpeg_executable_path: draft.ffmpeg_executable_path.clone(),
+            default_request_headers: draft.default_request_headers.clone(),
+            default_cookie: draft.default_cookie.clone(),
+            accept_invalid_certificates: draft.accept_invalid_certificates,
             default_connection_limit: draft.default_connection_limit,
             adaptive_segment_scaling_enabled: draft.adaptive_segment_scaling_enabled,
             adaptive_segment_max_segments: draft.adaptive_segment_max_segments,
@@ -2412,18 +2429,27 @@ impl DownloadApplication {
             taskbar_progress_overlay: draft.taskbar_progress_overlay.clone(),
         };
         if let Err(error) =
+            nxtools_download::DownloadHttpPolicy::from_download_settings(&next_download_settings)
+        {
+            return failed(
+                "validation",
+                format!("请求 Header / Cookie 设置无效：{error}"),
+            );
+        }
+        if let Err(error) =
             self.set_default_queue_concurrency(draft.max_concurrent_tasks, correlation_id)
         {
-            return failed(error);
+            return failed("queue", error);
         }
         if let Err(error) =
             self.set_global_speed_limit(draft.global_speed_limit_bytes_per_second, correlation_id)
         {
             return match self.set_default_queue_concurrency(previous_concurrency, correlation_id) {
-                Ok(()) => failed(error),
-                Err(rollback_error) => {
-                    failed(format!("{error}；同时无法回滚队列并发：{rollback_error}"))
-                }
+                Ok(()) => failed("speed_limit", error),
+                Err(rollback_error) => failed(
+                    "rollback",
+                    format!("{error}；同时无法回滚队列并发：{rollback_error}"),
+                ),
             };
         }
 
@@ -2447,14 +2473,29 @@ impl DownloadApplication {
                     } else {
                         format!("；同时无法完整回滚 {}", rollback_errors.join("、"))
                     };
-                    return failed(format!("无法保存下载设置：{error}{rollback}"));
+                    return failed(
+                        "persistence",
+                        format!("无法保存下载设置：{error}{rollback}"),
+                    );
                 }
             };
         self.config = next_config;
+        if let Err(error) = self
+            .engine
+            .update_download_http_policy(&self.config.download)
+        {
+            return failed(
+                "runtime_sync",
+                format!("下载设置已保存，但无法同步请求策略：{error}"),
+            );
+        }
         let configured_ffmpeg = (!draft.ffmpeg_executable_path.is_empty())
             .then(|| PathBuf::from(&draft.ffmpeg_executable_path));
         if let Err(error) = self.engine.set_ffmpeg_executable_path(configured_ffmpeg) {
-            return failed(format!("FFmpeg 路径已保存，但无法同步到下载引擎：{error}"));
+            return failed(
+                "runtime_sync",
+                format!("FFmpeg 路径已保存，但无法同步到下载引擎：{error}"),
+            );
         }
         self.default_directory = draft.default_directory;
         self.show_progress_window = draft.show_progress_window;
@@ -4175,6 +4216,9 @@ fn parse_download_settings_draft(
     Ok(DownloadSettingsDraft {
         default_directory: PathBuf::from(default_directory),
         ffmpeg_executable_path: String::new(),
+        default_request_headers: String::new(),
+        default_cookie: String::new(),
+        accept_invalid_certificates: false,
         default_connection_limit,
         adaptive_segment_scaling_enabled,
         adaptive_segment_max_segments,
@@ -4206,6 +4250,8 @@ struct DownloadSettingsView {
     application: Entity<DownloadApplication>,
     directory: Entity<InputState>,
     ffmpeg_executable: Entity<InputState>,
+    default_request_headers: Entity<InputState>,
+    default_cookie: Entity<InputState>,
     ffmpeg_discovery_state: FfmpegDiscoveryState,
     ffmpeg_discovery_generation: u64,
     ffmpeg_install_state: FfmpegInstallViewState,
@@ -4222,6 +4268,7 @@ struct DownloadSettingsView {
     show_progress_window: bool,
     show_completion_window: bool,
     adaptive_segment_scaling_enabled: bool,
+    accept_invalid_certificates: bool,
     taskbar_overlay_enabled: bool,
     taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
     taskbar_overlay_progress_mode: DownloadTaskbarProgressMode,
@@ -4263,6 +4310,17 @@ impl DownloadSettingsView {
             InputState::new(window, cx)
                 .default_value(snapshot.ffmpeg_executable_path.clone())
                 .placeholder("留空则自动检测 FFMPEG_PATH / PATH")
+        });
+        let default_request_headers = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.default_request_headers.clone())
+                .placeholder("User-Agent: ...\nReferer: ...")
+                .multi_line(true)
+        });
+        let default_cookie = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(snapshot.default_cookie.clone())
+                .placeholder("Cookie: a=b; c=d")
         });
         let ffmpeg_input_subscription = cx.subscribe_in(
             &ffmpeg_executable,
@@ -4415,6 +4473,8 @@ impl DownloadSettingsView {
             application,
             directory,
             ffmpeg_executable,
+            default_request_headers,
+            default_cookie,
             ffmpeg_discovery_state: FfmpegDiscoveryState::Checking,
             ffmpeg_discovery_generation: 0,
             ffmpeg_install_state,
@@ -4431,6 +4491,7 @@ impl DownloadSettingsView {
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
             adaptive_segment_scaling_enabled: snapshot.adaptive_segment_scaling_enabled,
+            accept_invalid_certificates: snapshot.accept_invalid_certificates,
             taskbar_overlay_enabled: snapshot.taskbar_progress_overlay.enabled,
             taskbar_overlay_anchor: snapshot.taskbar_progress_overlay.anchor,
             taskbar_overlay_progress_mode: snapshot.taskbar_progress_overlay.progress_mode,
@@ -4517,6 +4578,14 @@ impl DownloadSettingsView {
             taskbar_overlay_show_transferred_bytes: self.taskbar_overlay_show_transferred_bytes,
         })?;
         draft.ffmpeg_executable_path = self.ffmpeg_executable.read(cx).value().trim().to_owned();
+        draft.default_request_headers = self
+            .default_request_headers
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
+        draft.default_cookie = self.default_cookie.read(cx).value().trim().to_owned();
+        draft.accept_invalid_certificates = self.accept_invalid_certificates;
         Ok(draft)
     }
 
@@ -4604,6 +4673,7 @@ impl DownloadSettingsView {
                 warn!(
                     event = "download.settings.validation_failed",
                     %correlation_id,
+                    error_kind = "validation",
                     "download settings validation failed"
                 );
                 self.error = Some(error);
@@ -4666,6 +4736,40 @@ impl Render for DownloadSettingsView {
                     }),
             )
             .into_any_element();
+        let default_headers_control = div()
+            .debug_selector(|| "download-settings-default-headers".into())
+            .w_full()
+            .h(px(76.0))
+            .rounded(px(4.0))
+            .border_1()
+            .border_color(theme.border_subtle)
+            .bg(theme.canvas)
+            .p(px(6.0))
+            .child(
+                Input::new(&self.default_request_headers)
+                    .appearance(false)
+                    .bordered(false)
+                    .focus_bordered(false),
+            )
+            .into_any_element();
+        let default_cookie_control = div()
+            .debug_selector(|| "download-settings-default-cookie".into())
+            .child(download_settings_input(
+                theme,
+                &self.default_cookie,
+                px(274.0),
+            ))
+            .into_any_element();
+        let certificate_toggle = download_settings_toggle(
+            theme,
+            "download-settings-accept-invalid-certificates",
+            self.accept_invalid_certificates,
+            cx.listener(|this, _, _, cx| {
+                this.accept_invalid_certificates = !this.accept_invalid_certificates;
+                this.error = None;
+                cx.notify();
+            }),
+        );
         let current_ffmpeg = self.ffmpeg_executable.read(cx).value().trim().to_owned();
         let ffmpeg_description = match self.ffmpeg_discovery_state {
             FfmpegDiscoveryState::Checking => "正在后台检查用户路径、FFMPEG_PATH 与系统 PATH",
@@ -5080,6 +5184,30 @@ impl Render for DownloadSettingsView {
                                     "新建任务自动使用，可在单个任务中覆盖",
                                     directory_control,
                                 )],
+                            ))
+                            .child(download_settings_section(
+                                theme,
+                                "请求上下文",
+                                vec![
+                                    download_settings_stacked_row(
+                                        theme,
+                                        "默认 Header",
+                                        "每行 Name: Value，也可写 -H 'Name: Value'；任务或浏览器捕获值优先",
+                                        default_headers_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "默认 Cookie",
+                                        "仅在任务没有 Cookie 时带入；内容不会写入诊断日志",
+                                        default_cookie_control,
+                                    ),
+                                    download_settings_row(
+                                        theme,
+                                        "允许无效证书",
+                                        "默认严格校验证书；仅为确有需要的服务器显式开启",
+                                        certificate_toggle,
+                                    ),
+                                ],
                             ))
                             .child(download_settings_section(
                                 theme,
@@ -5861,6 +5989,7 @@ impl NewDownloadView {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -8287,6 +8416,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: None,
@@ -8567,6 +8697,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(4),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -8613,6 +8744,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(4),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -8696,6 +8828,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -8887,6 +9020,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -9143,6 +9277,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(default_connection_limit),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -9248,6 +9383,7 @@ mod tests {
             }],
             cookie: Some("session=secret".into()),
             referrer: Some("https://example.test/page".into()),
+            certificate_policy: Default::default(),
             connection_limit: Some(4),
             speed_limit_bytes_per_second: Some(512_000),
             expected_total_bytes: Some(8_192),
@@ -9742,6 +9878,24 @@ mod tests {
         window.refresh().expect("render download settings window");
         window.run_until_parked();
         assert!(window.debug_bounds("download-settings-scroll").is_some());
+        window.update(|window, cx| {
+            settings.update(cx, |settings, cx| {
+                settings.default_request_headers.update(cx, |input, cx| {
+                    input.set_value(
+                        "X-NxTools-Default: desktop\nReferer: https://example.test/",
+                        window,
+                        cx,
+                    );
+                });
+                settings.default_cookie.update(cx, |input, cx| {
+                    input.set_value("session=desktop", window, cx);
+                });
+            });
+        });
+        let certificate_toggle = window
+            .debug_bounds("download-settings-accept-invalid-certificates")
+            .expect("certificate policy toggle");
+        window.simulate_click(certificate_toggle.center(), Modifiers::default());
         let original_directory =
             window.read(|cx| settings.read(cx).directory.read(cx).value().to_string());
         window.update(|_, cx| {
@@ -9900,6 +10054,12 @@ mod tests {
             ffmpeg_executable.display().to_string()
         );
         assert_eq!(
+            persisted.download.default_request_headers,
+            "X-NxTools-Default: desktop\nReferer: https://example.test/"
+        );
+        assert_eq!(persisted.download.default_cookie, "session=desktop");
+        assert!(persisted.download.accept_invalid_certificates);
+        assert_eq!(
             engine_for_assertion
                 .ffmpeg_resolution()
                 .expect("resolve applied FFmpeg")
@@ -9922,6 +10082,15 @@ mod tests {
         let cancel_initial = cx.read(|cx| application.read(cx).settings_view_initial());
         let (_cancel_view, cancel_window) = cx.add_window_view(move |window, cx| {
             DownloadSettingsView::new(application_for_cancel, cancel_initial, window, cx)
+        });
+        cancel_window.read(|cx| {
+            let view = _cancel_view.read(cx);
+            assert_eq!(
+                view.default_request_headers.read(cx).value(),
+                "X-NxTools-Default: desktop\nReferer: https://example.test/"
+            );
+            assert_eq!(view.default_cookie.read(cx).value(), "session=desktop");
+            assert!(view.accept_invalid_certificates);
         });
         let progress_toggle = cancel_window
             .debug_bounds("download-settings-progress-window")
@@ -9949,6 +10118,9 @@ mod tests {
         let missing_config = directory.join("missing").join("config.json");
         let engine = DownloadEngine::open_in_memory().expect("open rollback engine");
         let engine_for_assertion = engine.clone();
+        let mut initial_config = AppConfig::default();
+        initial_config.download.default_request_headers = "X-NxTools-Policy: persisted".into();
+        initial_config.download.default_cookie = "persisted=1".into();
         let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let application = cx.update(|cx| {
@@ -9959,7 +10131,7 @@ mod tests {
                     notifications,
                     DownloadRuntimeContext {
                         fallback_default_directory: directory.clone(),
-                        config: AppConfig::default(),
+                        config: initial_config,
                         config_path: missing_config,
                         log_directory: directory.clone(),
                         database_path: directory.join("downloads.sqlite3"),
@@ -9975,6 +10147,9 @@ mod tests {
                     DownloadSettingsDraft {
                         default_directory: directory.clone(),
                         ffmpeg_executable_path: String::new(),
+                        default_request_headers: "X-NxTools-Policy: tentative".into(),
+                        default_cookie: "tentative=1".into(),
+                        accept_invalid_certificates: true,
                         default_connection_limit: 12,
                         adaptive_segment_scaling_enabled: true,
                         adaptive_segment_max_segments: 32,
@@ -9992,6 +10167,41 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(engine_for_assertion.global_speed_limit(), None);
+        let task_id = engine_for_assertion
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/file.bin".into(),
+                    save_directory: directory.clone(),
+                    file_name: Some("policy.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    certificate_policy: Default::default(),
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                    media: None,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("accept request after persistence failure");
+        let accepted = engine_for_assertion
+            .task(task_id)
+            .expect("query accepted policy task")
+            .expect("policy task exists");
+        assert_eq!(
+            accepted.task.request().cookie.as_deref(),
+            Some("persisted=1")
+        );
+        assert_eq!(
+            accepted.task.request().certificate_policy,
+            DownloadCertificatePolicy::Strict
+        );
+        assert!(accepted.task.request().headers.iter().any(|header| {
+            header.name.eq_ignore_ascii_case("x-nxtools-policy") && header.value == "persisted"
+        }));
         let snapshot = engine_for_assertion.handle_command(DownloadCommandEnvelope {
             protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
             request_id: uuid::Uuid::new_v4(),
@@ -10382,6 +10592,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,

@@ -4,6 +4,104 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260812-CARGO-MULTIPLE-FILTERS] cargo_test_rejected_multiple_positional_test_filters
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+`cargo test` accepts one positional test-name filter; supplying two exact names caused an immediate CLI rejection.
+
+### Error
+```
+error: unexpected argument '<second-test-name>' found
+```
+
+### Context
+- No test binary ran and no product process was started.
+- Both regressions need independent exact evidence.
+
+### Suggested Fix
+Invoke each exact test in its own command, or use one intentional shared substring only when it cannot select unrelated tests.
+
+### Metadata
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Verification was split into two independent exact Cargo test invocations.
+
+---
+
+## [ERR-20260812-POWERSHELL-LITERAL-NEWLINE] powershell_bulk_rewrite_wrote_literal_newline_markers
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A PowerShell regex replacement used a single-quoted replacement string, so backtick newline markers were written literally into Rust initializers.
+
+### Error
+```
+referrer: None,`r`n certificate_policy: Default::default(),`r`n
+```
+
+### Context
+- The operation was a bounded mechanical addition of a new serde-defaulted field to existing test and adapter request literals.
+- The exact literal marker was immediately enumerable with `rg -F` and no compiler or formatter ran on the malformed sources.
+
+### Suggested Fix
+For PowerShell bulk rewrites that need newlines, use an actual double-quoted newline value or avoid shell rewriting and generate an `apply_patch`; always scan for literal backtick newline markers immediately afterward.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Rust `DownloadRequest` literal call sites
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Every literal marker was replaced with an actual CRLF using an exact string replacement, and the repository-wide `rg -F` check returned zero matches.
+
+---
+
+## [ERR-20260812-TLS-RUNTIME-STARVATION] self_signed_tls_fixture_starved_on_current_thread_runtime
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A real TLS fixture and a synchronous engine command shared a current-thread Tokio test runtime, so the command blocked the only worker that could serve its request.
+
+### Error
+```
+The exact certificate-policy regression exceeded its 120-second command budget while the test executable remained alive.
+```
+
+### Context
+- The production command intentionally exposes a synchronous IPC boundary while its network future runs on the download runtime.
+- The in-test TLS listener was spawned on the default current-thread `#[tokio::test]` runtime.
+- Calling the synchronous command from that same thread prevented the fixture listener from accepting the connection; no product deadlock was involved.
+
+### Suggested Fix
+Run tests that combine a synchronous public boundary with an async in-process server on a bounded multi-thread Tokio runtime, and retain explicit fixture shutdown.
+
+### Metadata
+- Reproducible: yes
+- Related Files: `rust/crates/nxtools-download/tests/engine_contract.rs`
+- See Also: `ERR-20260728-HTTPFIXTURE`
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: The TLS boundary test now uses two bounded Tokio worker threads; strict rejection and explicit opt-in both complete deterministically, and the fixture task is explicitly aborted and awaited.
+
+---
+
 ## [ERR-20260811-RGWINPATH] powershell_rg_literal_wildcard_path
 
 **Logged**: 2026-08-11T17:02:00+08:00
@@ -7588,3 +7686,88 @@ for the final low-memory Windows gate.
   outer function while logging in the inner source loop; derive boundary metadata in the function
   that owns the terminal event. Likewise, Rust test submodules without `use super::*` need their own
   imports when a constructor gains a new product-level entity type.
+
+## 2026-08-12 — Cargo exact test filter omitted the Rust module path
+
+- Failed approach: invoked a browser-host unit test with `--exact` using only the function name.
+- Symptom: Cargo completed successfully but reported zero executed tests because the real name was
+  `tests::browser_request_drops_transport_owned_headers_before_domain_validation`.
+- Better approach: either pass the fully qualified unit-test name with `--exact`, or first use a
+  substring filter and confirm the result reports the expected non-zero test count.
+
+## 2026-08-12 — Workspace feature unification made rustls provider selection ambiguous
+
+- Failed approach: relied on rustls automatic provider selection in the self-signed TLS boundary
+  test because its targeted package invocation enabled only one crypto provider.
+- Symptom: the full workspace suite unified both supported provider features and rustls panicked
+  before creating the fixture server.
+- Better approach: install the test fixture's selected provider explicitly before constructing
+  `ServerConfig`, so targeted and workspace feature graphs exercise the same deterministic seam.
+  Select the already-enabled `aws-lc-rs` provider; the package-local graph does not enable `ring`,
+  even though another workspace package adds it during full-workspace feature unification.
+
+## 2026-08-12 — PowerShell did not expand a wildcard embedded in an rg path
+
+- Failed approach: passed a Cargo registry path containing `index.crates.io-*` directly to `rg`.
+- Symptom: Windows returned invalid path syntax because `rg` received the literal asterisk.
+- Better approach: resolve the one matching registry directory with `Get-ChildItem -Directory` first,
+  then pass each concrete `Cargo.toml` path to `rg`.
+
+## 2026-08-12 — New negative tests used unwrap_err under the workspace lint policy
+
+- Failed approach: used `Result::unwrap_err()` in request-policy rejection tests.
+- Symptom: workspace Clippy rejected both call sites through the denied `unwrap_used` lint.
+- Better approach: use `expect_err` with the invariant being tested, so an unexpected success has
+  an actionable failure message and remains compliant with the repository lint policy.
+
+## 2026-08-12 — Context-light patch inserted a test fixture into the preceding GPUI test
+
+- Failed approach: added `initial_config` using a nearby `engine_for_assertion` line that occurred
+  in two adjacent settings tests.
+- Symptom: workspace check reported `initial_config` missing in the rollback test while the unused
+  declaration appeared in the preceding window lifecycle test.
+- Better approach: anchor test-fixture patches on the exact test function name and re-open the
+  surrounding block immediately; `DownloadEngine::task` returns `DownloadEngineTask`, so assertions
+  must traverse its public `task` field before calling the domain task's `request()` accessor.
+
+## 2026-08-12 — Real redirect boundary replaced the explicit task Referrer
+
+- Failed approach: assumed reqwest would preserve an explicitly supplied `Referer` unchanged over
+  a same-origin redirect while its automatic referrer behavior remained enabled.
+- Symptom: the new redirect request-context test reached a terminal failure because the redirected
+  request carried the source URL as Referer instead of the task's frozen context.
+- Better approach: disable client-level automatic referrer generation; NxTools owns its explicit,
+  bounded Referrer field and applies it consistently to probe, redirect, range, and resume requests.
+
+## 2026-08-12 — Existing AES key-fetch fixture missed its request deadline once
+
+- Symptom: a full serial workspace run failed only
+  `pausing_during_aes128_key_fetch_leaves_no_segment_staging` because the loopback fixture did not
+  observe the key request within its deadline; the current Stage 6 request-policy tests had passed.
+- Scope: no Stage 6 code path owns HLS key scheduling or its latch. Treat this as the documented
+  Windows loopback timing class: rerun the exact test, then require a clean full serial run before
+  completion rather than weakening the assertion or claiming the failed run passed.
+
+## 2026-08-12 — Browser-dialog regression guessed the command outcome variant name
+
+- Failed approach: wrote `DownloadCommandOutcome::TaskAccepted` from memory in a new engine test.
+- Symptom: compilation pointed to the actual `Accepted` variant.
+- Better approach: inspect the versioned message enum before matching command outcomes; use the
+  repository's exact domain vocabulary rather than inferring a name from surrounding UI terms.
+
+## 2026-08-12 — Existing rebalance loopback test hit a Windows connection abort once
+
+- Symptom: after all 83 serial engine contracts passed, full workspace testing failed only
+  `rebalancing_a_segment_stops_after_a_durable_prefix_without_publishing_completion` with WinSock
+  10053 from its `/range-concurrent` fixture.
+- Scope: the Stage 6 changes do not alter segment rebalance or that fixture. Re-run the exact test,
+  then require another clean full serial workspace run; do not broaden retries in production or
+  weaken its durable-prefix assertion to conceal the transient boundary failure.
+
+## 2026-08-12 — A negative rg verification made a successful wrapper exit 1
+
+- Failed approach: ended a successful test/Clippy wrapper with `rg -F` expecting no matches.
+- Symptom: all gates passed, but `rg` correctly returned exit code 1 for “no matches,” making the
+  wrapper appear failed.
+- Better approach: run negative searches as an inspected diagnostic, or explicitly treat exit 1 as
+  success and reserve exit 2 for a search error; do not conflate “not found” with gate failure.

@@ -22,9 +22,9 @@ use crate::hls::{
     parse_hls_media_playlist, parse_hls_probe, validate_hls_probe_size,
 };
 use crate::{
-    DownloadMediaProbe, DownloadProbe, DownloadRateLimitError, DownloadRateLimiter,
-    DownloadRequest, DownloadRequestError, DownloadSegment, DownloadTaskId, ResourceValidator,
-    SegmentedArtifact, SegmentedArtifactError, is_safe_windows_file_name,
+    DownloadCertificatePolicy, DownloadMediaProbe, DownloadProbe, DownloadRateLimitError,
+    DownloadRateLimiter, DownloadRequest, DownloadRequestError, DownloadSegment, DownloadTaskId,
+    ResourceValidator, SegmentedArtifact, SegmentedArtifactError, is_safe_windows_file_name,
 };
 use crate::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 use nxtools_core::{NetworkProxyMode, NetworkSettings};
@@ -38,6 +38,7 @@ pub struct HttpDownloadClient {
     stall_timeout: Duration,
     network_proxy_mode: NetworkProxyMode,
     network_proxy_source: &'static str,
+    certificate_policy: DownloadCertificatePolicy,
     #[cfg(test)]
     injected_artifact_fault: Option<InjectedArtifactFault>,
 }
@@ -50,28 +51,48 @@ impl HttpDownloadClient {
     pub fn with_stall_timeout(stall_timeout: Duration) -> Result<Self, HttpDownloadError> {
         let policy = NetworkPolicy::new(NetworkSettings::default())?;
         let snapshot = policy.snapshot()?;
-        Self::with_stall_timeout_and_network(stall_timeout, &snapshot)
+        Self::with_stall_timeout_and_network_and_certificate(
+            stall_timeout,
+            &snapshot,
+            DownloadCertificatePolicy::Strict,
+        )
     }
 
     pub fn with_stall_timeout_and_network(
         stall_timeout: Duration,
         network: &NetworkOperationSnapshot,
     ) -> Result<Self, HttpDownloadError> {
+        Self::with_stall_timeout_and_network_and_certificate(
+            stall_timeout,
+            network,
+            DownloadCertificatePolicy::Strict,
+        )
+    }
+
+    pub fn with_stall_timeout_and_network_and_certificate(
+        stall_timeout: Duration,
+        network: &NetworkOperationSnapshot,
+        certificate_policy: DownloadCertificatePolicy,
+    ) -> Result<Self, HttpDownloadError> {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
-        let client = network.build_client(
-            Client::builder()
-                .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
-                .redirect(reqwest::redirect::Policy::limited(10))
-                .read_timeout(stall_timeout)
-                .connect_timeout(stall_timeout),
-        )?;
+        let builder = Client::builder()
+            .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .referer(false)
+            .read_timeout(stall_timeout)
+            .connect_timeout(stall_timeout)
+            .danger_accept_invalid_certs(
+                certificate_policy == DownloadCertificatePolicy::AcceptInvalid,
+            );
+        let client = network.build_client(builder)?;
         Ok(Self {
             client,
             stall_timeout,
             network_proxy_mode: network.mode(),
             network_proxy_source: network.source(),
+            certificate_policy,
             #[cfg(test)]
             injected_artifact_fault: None,
         })
@@ -85,12 +106,21 @@ impl HttpDownloadClient {
         self.network_proxy_source
     }
 
+    pub const fn certificate_policy(&self) -> DownloadCertificatePolicy {
+        self.certificate_policy
+    }
+
     pub(crate) fn for_network_snapshot(
         &self,
         network: &NetworkOperationSnapshot,
+        certificate_policy: DownloadCertificatePolicy,
     ) -> Result<Self, HttpDownloadError> {
         #[allow(unused_mut)]
-        let mut rebuilt = Self::with_stall_timeout_and_network(self.stall_timeout, network)?;
+        let mut rebuilt = Self::with_stall_timeout_and_network_and_certificate(
+            self.stall_timeout,
+            network,
+            certificate_policy,
+        )?;
         #[cfg(test)]
         {
             rebuilt.injected_artifact_fault = self.injected_artifact_fault;

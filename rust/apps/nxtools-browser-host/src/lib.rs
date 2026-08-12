@@ -760,7 +760,11 @@ fn build_browser_download_request(
     let mut headers = payload
         .headers
         .into_iter()
-        .filter(|(name, _)| !name.eq_ignore_ascii_case("cookie"))
+        .filter(|(name, _)| {
+            !name.eq_ignore_ascii_case("cookie")
+                && !name.eq_ignore_ascii_case("referer")
+                && !nxtools_download::is_download_transport_owned_header(name)
+        })
         .map(|(name, value)| DownloadRequestHeader { name, value })
         .collect::<Vec<_>>();
     headers.sort_by(|left, right| left.name.cmp(&right.name));
@@ -771,6 +775,7 @@ fn build_browser_download_request(
         headers,
         cookie: non_empty(payload.cookie),
         referrer,
+        certificate_policy: Default::default(),
         connection_limit: Some(config.download.default_connection_limit),
         speed_limit_bytes_per_second: None,
         expected_total_bytes: (payload.size > 0).then_some(payload.size),
@@ -1599,6 +1604,51 @@ mod tests {
     }
 
     #[test]
+    fn browser_request_drops_transport_owned_headers_before_domain_validation() {
+        let mut headers = BTreeMap::new();
+        headers.insert("Range".into(), "bytes=100-199".into());
+        headers.insert("Host".into(), "untrusted.example".into());
+        headers.insert("Referer".into(), "https://page.example/".into());
+        headers.insert("Authorization".into(), "bounded-test-value".into());
+        let request = build_browser_download_request(
+            BrowserDownloadPayload {
+                handoff_id: Uuid::new_v4().to_string(),
+                url: "https://example.test/file.bin".into(),
+                file_name: "file.bin".into(),
+                headers,
+                cookie: String::new(),
+                referrer: String::new(),
+                size: 0,
+                start_immediately: false,
+                open_dialog: false,
+            },
+            &AppConfig::default(),
+            PathBuf::from(r"C:\Downloads"),
+        )
+        .expect("build browser request");
+
+        assert!(
+            request
+                .headers
+                .iter()
+                .all(|header| !nxtools_download::is_download_transport_owned_header(&header.name))
+        );
+        assert!(
+            request
+                .headers
+                .iter()
+                .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+        );
+        assert_eq!(request.referrer.as_deref(), Some("https://page.example/"));
+        assert!(
+            request
+                .headers
+                .iter()
+                .all(|header| !header.name.eq_ignore_ascii_case("referer"))
+        );
+    }
+
+    #[test]
     fn browser_batch_response_echoes_each_handoff_and_created_task_identity() {
         let handoff_ids = [Uuid::new_v4(), Uuid::new_v4()];
         let task_ids = [DownloadTaskId::new(), DownloadTaskId::new()];
@@ -1697,6 +1747,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: None,

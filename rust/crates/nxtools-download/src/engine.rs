@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
-use nxtools_core::NetworkSettings;
+use nxtools_core::{DownloadSettings, NetworkSettings};
 use nxtools_network::proxy_mode_name;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -23,18 +23,18 @@ use crate::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadDailySchedule, DownloadEvent, DownloadEventEnvelope,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadProbe, DownloadProgress,
-    DownloadQuery, DownloadQueue, DownloadQueueAction, DownloadQueuePlacement,
-    DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
-    DownloadRequestMedia, DownloadSchedule, DownloadSegment, DownloadSegmentError,
-    DownloadSegmentProgress, DownloadSegmentState, DownloadSegmentTransferControl,
-    DownloadSegmentTransferOutcome, DownloadSnapshot, DownloadStatus, DownloadStorageCapacityError,
-    DownloadStorageError, DownloadStorageRequirement, DownloadSubmitMode, DownloadTask,
-    DownloadTaskAction, DownloadTaskDetail, DownloadTaskError, DownloadTaskId,
-    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, FfmpegInstallControl,
-    FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError, MAX_BROWSER_BATCH_ITEMS,
-    NetworkPolicy, NetworkPolicyError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore,
-    TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadHttpPolicy,
+    DownloadHttpPolicyError, DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueue,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRateLimitError, DownloadRateLimiter,
+    DownloadRequest, DownloadRequestError, DownloadRequestMedia, DownloadSchedule, DownloadSegment,
+    DownloadSegmentError, DownloadSegmentProgress, DownloadSegmentState,
+    DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
+    DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
+    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskDetail, DownloadTaskError,
+    DownloadTaskId, DownloadTransferContext, DownloadTransferControl, DownloadWeekday,
+    FfmpegInstallControl, FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError,
+    MAX_BROWSER_BATCH_ITEMS, NetworkPolicy, NetworkPolicyError, RequestOrigin, SegmentedArtifact,
+    SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -47,6 +47,7 @@ pub struct DownloadEngine {
 struct DownloadEngineInner {
     http_template: HttpDownloadClient,
     network_policy: NetworkPolicy,
+    download_http_policy: DownloadHttpPolicy,
     ffmpeg_executable: Mutex<Option<PathBuf>>,
     ffmpeg_install_active: AtomicBool,
     store: SqliteDownloadStore,
@@ -334,6 +335,18 @@ impl DownloadEngine {
         path: impl AsRef<Path>,
         network_policy: NetworkPolicy,
     ) -> Result<Self, DownloadEngineError> {
+        Self::open_with_policies(
+            path,
+            network_policy,
+            DownloadHttpPolicy::from_download_settings(&DownloadSettings::default())?,
+        )
+    }
+
+    pub fn open_with_policies(
+        path: impl AsRef<Path>,
+        network_policy: NetworkPolicy,
+        download_http_policy: DownloadHttpPolicy,
+    ) -> Result<Self, DownloadEngineError> {
         let path = path.as_ref();
         let staging_root = path
             .parent()
@@ -347,11 +360,38 @@ impl DownloadEngine {
             Some(staging_root),
             None,
             network_policy,
+            download_http_policy,
         )
     }
 
     pub fn open_in_memory() -> Result<Self, DownloadEngineError> {
         Self::from_store(SqliteDownloadStore::open_in_memory()?)
+    }
+
+    #[doc(hidden)]
+    pub fn open_in_memory_with_policies(
+        network_policy: NetworkPolicy,
+        download_http_policy: DownloadHttpPolicy,
+    ) -> Result<Self, DownloadEngineError> {
+        Self::from_store_with_http_and_capacity_and_staging_root(
+            SqliteDownloadStore::open_in_memory()?,
+            HttpDownloadClient::new()?,
+            Arc::new(SystemStorageCapacityProbe),
+            None,
+            None,
+            network_policy,
+            download_http_policy,
+        )
+    }
+
+    pub fn update_download_http_policy(
+        &self,
+        settings: &DownloadSettings,
+    ) -> Result<(), DownloadEngineError> {
+        self.inner
+            .download_http_policy
+            .update_from_download_settings(settings)?;
+        Ok(())
     }
 
     #[doc(hidden)]
@@ -365,6 +405,7 @@ impl DownloadEngine {
             None,
             None,
             network_policy,
+            DownloadHttpPolicy::from_download_settings(&DownloadSettings::default())?,
         )
     }
 
@@ -379,6 +420,7 @@ impl DownloadEngine {
             None,
             Some(executable.as_ref().to_owned()),
             NetworkPolicy::new(NetworkSettings::default())?,
+            DownloadHttpPolicy::from_download_settings(&DownloadSettings::default())?,
         )
     }
 
@@ -405,6 +447,7 @@ impl DownloadEngine {
             None,
             None,
             NetworkPolicy::new(NetworkSettings::default())?,
+            DownloadHttpPolicy::from_download_settings(&DownloadSettings::default())?,
         )
     }
 
@@ -415,6 +458,7 @@ impl DownloadEngine {
         browser_blob_staging_root: Option<PathBuf>,
         ffmpeg_executable: Option<PathBuf>,
         network_policy: NetworkPolicy,
+        download_http_policy: DownloadHttpPolicy,
     ) -> Result<Self, DownloadEngineError> {
         let persisted_tasks = store.load_tasks()?;
         let reconciliation_id = uuid::Uuid::new_v4();
@@ -477,6 +521,7 @@ impl DownloadEngine {
             inner: Arc::new(DownloadEngineInner {
                 http_template: http,
                 network_policy,
+                download_http_policy,
                 ffmpeg_executable: Mutex::new(ffmpeg_executable),
                 ffmpeg_install_active: AtomicBool::new(false),
                 store,
@@ -855,11 +900,18 @@ impl DownloadEngine {
 
     fn probe_blocking(
         &self,
-        request: DownloadRequest,
+        mut request: DownloadRequest,
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadCommandOutcome, DownloadEngineError> {
         let started = Instant::now();
-        let client = self.inner.http_for_operation();
+        let policy_result = self
+            .inner
+            .download_http_policy
+            .apply_to_request(&mut request);
+        let certificate_policy = request.certificate_policy;
+        let client = policy_result
+            .map_err(DownloadEngineError::from)
+            .and_then(|()| self.inner.http_for_operation(certificate_policy));
         let (proxy_mode, proxy_source) =
             client.as_ref().map_or(("unavailable", "policy"), |client| {
                 (
@@ -872,6 +924,7 @@ impl DownloadEngine {
             %correlation_id,
             proxy_mode,
             proxy_source,
+            certificate_policy = certificate_policy_name(certificate_policy),
             "download resource probe started"
         );
         let result = (|| {
@@ -903,6 +956,7 @@ impl DownloadEngine {
                     %correlation_id,
                     proxy_mode,
                     proxy_source,
+                    certificate_policy = certificate_policy_name(certificate_policy),
                     media_kind,
                     variant_count,
                     elapsed_ms = started.elapsed().as_millis(),
@@ -916,6 +970,7 @@ impl DownloadEngine {
                     %correlation_id,
                     proxy_mode,
                     proxy_source,
+                    certificate_policy = certificate_policy_name(certificate_policy),
                     error_kind = probe_error_kind(&error),
                     native_error_code = error
                         .io_error()
@@ -1581,11 +1636,14 @@ impl DownloadEngine {
 
     fn submit_with_mode_correlated(
         &self,
-        request: DownloadRequest,
+        mut request: DownloadRequest,
         origin: RequestOrigin,
         mode: DownloadSubmitMode,
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadTaskId, DownloadEngineError> {
+        self.inner
+            .download_http_policy
+            .apply_to_request(&mut request)?;
         request.validate()?;
         let now = now_unix_ms();
         let delayed_until_due = request
@@ -1645,10 +1703,13 @@ impl DownloadEngine {
     fn submit_browser_correlated(
         &self,
         handoff_id: uuid::Uuid,
-        request: DownloadRequest,
+        mut request: DownloadRequest,
         mode: DownloadSubmitMode,
         correlation_id: uuid::Uuid,
     ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        self.inner
+            .download_http_policy
+            .apply_to_request(&mut request)?;
         request.validate()?;
         let now = now_unix_ms();
         let task = DownloadTask::new(request, RequestOrigin::Browser, now);
@@ -1843,6 +1904,7 @@ impl DownloadEngine {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: crate::DownloadCertificatePolicy::Strict,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: Some(blob.size),
@@ -2671,9 +2733,14 @@ impl DownloadEngine {
 }
 
 impl DownloadEngineInner {
-    fn http_for_operation(&self) -> Result<HttpDownloadClient, DownloadEngineError> {
+    fn http_for_operation(
+        &self,
+        certificate_policy: crate::DownloadCertificatePolicy,
+    ) -> Result<HttpDownloadClient, DownloadEngineError> {
         let snapshot = self.network_policy.snapshot()?;
-        Ok(self.http_template.for_network_snapshot(&snapshot)?)
+        Ok(self
+            .http_template
+            .for_network_snapshot(&snapshot, certificate_policy)?)
     }
 
     fn lock_tasks(
@@ -2766,6 +2833,20 @@ const fn download_terminal_name(status: DownloadStatus) -> &'static str {
     }
 }
 
+const fn certificate_policy_name(policy: crate::DownloadCertificatePolicy) -> &'static str {
+    match policy {
+        crate::DownloadCertificatePolicy::Strict => "strict",
+        crate::DownloadCertificatePolicy::AcceptInvalid => "accept_invalid",
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DownloadAttemptDiagnostics {
+    proxy_mode: &'static str,
+    proxy_source: &'static str,
+    certificate_policy: crate::DownloadCertificatePolicy,
+}
+
 fn spawn_download_worker(
     inner: Arc<DownloadEngineInner>,
     queue_id: String,
@@ -2774,7 +2855,16 @@ fn spawn_download_worker(
 ) -> Result<(), DownloadEngineError> {
     download_runtime()?.spawn(async move {
         let started_at = Instant::now();
-        let http = inner.http_for_operation();
+        let certificate_policy = inner
+            .lock_tasks()
+            .ok()
+            .and_then(|tasks| {
+                tasks
+                    .get(&task_id)
+                    .map(|state| state.task.request().certificate_policy)
+            })
+            .unwrap_or_default();
+        let http = inner.http_for_operation(certificate_policy);
         let (proxy_mode, proxy_source) =
             http.as_ref().map_or(("unavailable", "policy"), |client| {
                 (
@@ -2782,12 +2872,18 @@ fn spawn_download_worker(
                     client.network_proxy_source(),
                 )
             });
+        let diagnostics = DownloadAttemptDiagnostics {
+            proxy_mode,
+            proxy_source,
+            certificate_policy,
+        };
         info!(
             event = "download.task.attempt_started",
             %correlation_id,
             ?task_id,
             proxy_mode,
             proxy_source,
+            certificate_policy = certificate_policy_name(certificate_policy),
             "download task attempt started"
         );
         let result = match http {
@@ -2806,8 +2902,9 @@ fn spawn_download_worker(
                     event = "download.task.attempt_completed",
                     %correlation_id,
                     ?task_id,
-                    proxy_mode,
-                    proxy_source,
+                    proxy_mode = diagnostics.proxy_mode,
+                    proxy_source = diagnostics.proxy_source,
+                    certificate_policy = certificate_policy_name(certificate_policy),
                     outcome,
                     elapsed_ms = started_at.elapsed().as_millis(),
                     "download task attempt reached its non-failure terminal"
@@ -2819,8 +2916,7 @@ fn spawn_download_worker(
                     task_id,
                     correlation_id,
                     started_at.elapsed(),
-                    proxy_mode,
-                    proxy_source,
+                    diagnostics,
                     error,
                 );
             }
@@ -2888,6 +2984,7 @@ async fn run_task(
         ?task_id,
         proxy_mode = proxy_mode_name(http.network_proxy_mode()),
         proxy_source = http.network_proxy_source(),
+        certificate_policy = certificate_policy_name(http.certificate_policy()),
         requested_connections = request.connection_limit.unwrap_or(1),
         "download resource probe started"
     );
@@ -2900,6 +2997,7 @@ async fn run_task(
                 ?task_id,
                 proxy_mode = proxy_mode_name(http.network_proxy_mode()),
                 proxy_source = http.network_proxy_source(),
+                certificate_policy = certificate_policy_name(http.certificate_policy()),
                 error_kind = error.kind(),
                 native_error_code = error.io_error().and_then(std::io::Error::raw_os_error),
                 elapsed_ms = probe_started_at.elapsed().as_millis(),
@@ -2933,6 +3031,7 @@ async fn run_task(
         ?task_id,
         proxy_mode = proxy_mode_name(http.network_proxy_mode()),
         proxy_source = http.network_proxy_source(),
+        certificate_policy = certificate_policy_name(http.certificate_policy()),
         media_kind,
         variant_count,
         video_track_count,
@@ -6669,8 +6768,7 @@ fn record_failure(
     task_id: DownloadTaskId,
     correlation_id: uuid::Uuid,
     elapsed: Duration,
-    proxy_mode: &'static str,
-    proxy_source: &'static str,
+    diagnostics: DownloadAttemptDiagnostics,
     error: DownloadEngineError,
 ) {
     let Ok(mut tasks) = inner.tasks.lock() else {
@@ -6684,8 +6782,9 @@ fn record_failure(
         event = "download.task.failed",
         %correlation_id,
         ?task_id,
-        proxy_mode,
-        proxy_source,
+        proxy_mode = diagnostics.proxy_mode,
+        proxy_source = diagnostics.proxy_source,
+        certificate_policy = certificate_policy_name(diagnostics.certificate_policy),
         fault_code = ?fault.code,
         retryable = fault.retryable,
         native_error = error.native_os_error().unwrap_or_default(),
@@ -7108,6 +7207,8 @@ pub enum DownloadEngineError {
     #[error(transparent)]
     NetworkPolicy(#[from] NetworkPolicyError),
     #[error(transparent)]
+    DownloadHttpPolicy(#[from] DownloadHttpPolicyError),
+    #[error(transparent)]
     Segment(#[from] DownloadSegmentError),
     #[error(transparent)]
     TransferPlan(#[from] TransferPlanError),
@@ -7233,6 +7334,7 @@ impl DownloadEngineError {
             Self::ResourceChanged(_) => (DownloadFaultCode::Protocol, false),
             Self::Http(_) => (DownloadFaultCode::Protocol, false),
             Self::NetworkPolicy(_) => (DownloadFaultCode::Unavailable, false),
+            Self::DownloadHttpPolicy(_) => (DownloadFaultCode::InvalidRequest, false),
             Self::Runtime(_) | Self::WaitTimeout(_) => (DownloadFaultCode::Unavailable, true),
         };
         DownloadFault {
@@ -7505,6 +7607,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: Some(12_345),
@@ -7524,6 +7627,113 @@ mod tests {
     }
 
     #[test]
+    fn browser_dialog_keeps_explicit_context_raw_until_one_final_acceptance_snapshot() {
+        let policy_a = DownloadHttpPolicy::from_download_settings(&DownloadSettings {
+            default_request_headers: "X-NxTools-Generation: a".into(),
+            default_cookie: "generation=a".into(),
+            ..DownloadSettings::default()
+        })
+        .expect("create initial browser-dialog policy");
+        let engine = DownloadEngine::open_in_memory_with_policies(
+            NetworkPolicy::new(NetworkSettings::default()).expect("create network policy"),
+            policy_a,
+        )
+        .expect("open browser-dialog engine");
+        let dialogs = engine
+            .take_browser_dialog_receiver()
+            .expect("attach dialog consumer");
+        let command_engine = engine.clone();
+        let handoff_id = uuid::Uuid::new_v4();
+        let dialog_thread = std::thread::spawn(move || {
+            command_engine.handle_command(DownloadCommandEnvelope {
+                protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                request_id: uuid::Uuid::new_v4(),
+                origin: RequestOrigin::Browser,
+                command: DownloadCommand::BrowserOpenDialog {
+                    handoff_id,
+                    request: DownloadRequest {
+                        source_url: "https://example.test/browser.bin".into(),
+                        save_directory: std::env::temp_dir(),
+                        file_name: Some("browser.bin".into()),
+                        headers: vec![crate::DownloadRequestHeader {
+                            name: "X-NxTools-Explicit".into(),
+                            value: "browser".into(),
+                        }],
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: None,
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                    },
+                },
+            })
+        });
+        let dialog = dialogs.recv_blocking().expect("receive browser dialog");
+        let BrowserDownloadDialogSource::Download(raw_request) = dialog.source else {
+            panic!("expected ordinary browser request");
+        };
+        assert!(raw_request.cookie.is_none());
+        assert!(
+            raw_request
+                .headers
+                .iter()
+                .all(|header| !header.name.eq_ignore_ascii_case("x-nxtools-generation"))
+        );
+        dialog
+            .completion
+            .send(Ok(()))
+            .expect("confirm browser dialog");
+        assert!(matches!(
+            dialog_thread.join().expect("join dialog command").outcome,
+            DownloadCommandOutcome::BrowserDialogAccepted { .. }
+        ));
+
+        engine
+            .update_download_http_policy(&DownloadSettings {
+                default_request_headers: "X-NxTools-Generation: b".into(),
+                default_cookie: "generation=b".into(),
+                accept_invalid_certificates: true,
+                ..DownloadSettings::default()
+            })
+            .expect("publish final acceptance policy");
+        let accepted = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::Submit {
+                request: raw_request,
+                mode: DownloadSubmitMode::QueueOnly,
+            },
+        });
+        let DownloadCommandOutcome::Accepted { task_id, .. } = accepted.outcome else {
+            panic!("browser confirmation must create a task");
+        };
+        let task_id = task_id.expect("new browser confirmation creates a task identity");
+        let accepted = engine
+            .task(task_id)
+            .expect("read accepted browser task")
+            .expect("browser task exists");
+        assert_eq!(
+            accepted.task.request().cookie.as_deref(),
+            Some("generation=b")
+        );
+        assert_eq!(
+            accepted.task.request().certificate_policy,
+            crate::DownloadCertificatePolicy::AcceptInvalid
+        );
+        assert!(accepted.task.request().headers.iter().any(|header| {
+            header.name.eq_ignore_ascii_case("x-nxtools-generation") && header.value == "b"
+        }));
+        assert!(accepted.task.request().headers.iter().any(|header| {
+            header.name.eq_ignore_ascii_case("x-nxtools-explicit") && header.value == "browser"
+        }));
+    }
+
+    #[test]
     fn task_detail_command_returns_only_the_selected_tasks_segments_and_bounded_timeline() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let task_id = engine
@@ -7538,6 +7748,7 @@ mod tests {
                     }],
                     cookie: Some("private-cookie".into()),
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: None,
@@ -7606,6 +7817,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: None,
@@ -7657,6 +7869,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
                     expected_total_bytes: None,
@@ -7828,6 +8041,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 expected_total_bytes: None,
@@ -7872,6 +8086,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
             expected_total_bytes: None,
@@ -7909,6 +8124,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 expected_total_bytes: None,

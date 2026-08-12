@@ -159,6 +159,12 @@ pub struct DownloadSettings {
     pub default_directory: String,
     #[serde(default)]
     pub ffmpeg_executable_path: String,
+    #[serde(default)]
+    pub default_request_headers: String,
+    #[serde(default)]
+    pub default_cookie: String,
+    #[serde(default)]
+    pub accept_invalid_certificates: bool,
     #[serde(default = "default_download_connection_limit")]
     pub default_connection_limit: u16,
     #[serde(default = "default_true")]
@@ -247,6 +253,9 @@ impl Default for DownloadSettings {
         Self {
             default_directory: String::new(),
             ffmpeg_executable_path: String::new(),
+            default_request_headers: String::new(),
+            default_cookie: String::new(),
+            accept_invalid_certificates: false,
             default_connection_limit: default_download_connection_limit(),
             adaptive_segment_scaling_enabled: true,
             adaptive_segment_max_segments: default_download_adaptive_max_segments(),
@@ -286,6 +295,16 @@ impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
         self.ffmpeg_executable_path = self.ffmpeg_executable_path.trim().to_owned();
+        self.default_request_headers = self.default_request_headers.trim().to_owned();
+        let cookie = self.default_cookie.trim();
+        self.default_cookie = if cookie
+            .get(.."Cookie:".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Cookie:"))
+        {
+            cookie["Cookie:".len()..].trim().to_owned()
+        } else {
+            cookie.to_owned()
+        };
         self.default_connection_limit = self.default_connection_limit.clamp(1, 64);
         self.adaptive_segment_max_segments = self
             .adaptive_segment_max_segments
@@ -1134,6 +1153,9 @@ mod tests {
             DownloadSettings {
                 default_directory: r"D:\Downloads".into(),
                 ffmpeg_executable_path: r"D:\Tools\ffmpeg.exe".into(),
+                default_request_headers: "X-Test: value".into(),
+                default_cookie: "session=test".into(),
+                accept_invalid_certificates: true,
                 default_connection_limit: 12,
                 adaptive_segment_scaling_enabled: true,
                 adaptive_segment_max_segments: 32,
@@ -1153,6 +1175,9 @@ mod tests {
         assert!(!updated.quick_launch.enabled);
         assert_eq!(updated.clipboard.retention_days, 91);
         assert_eq!(updated.download.default_connection_limit, 12);
+        assert_eq!(updated.download.default_request_headers, "X-Test: value");
+        assert_eq!(updated.download.default_cookie, "session=test");
+        assert!(updated.download.accept_invalid_certificates);
         fs::remove_dir_all(directory).expect("remove settings directory");
     }
 

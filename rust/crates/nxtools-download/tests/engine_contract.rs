@@ -1,22 +1,30 @@
 mod support;
 
 use std::io::{Seek, Write};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Datelike, Local, Weekday};
-use nxtools_core::{NetworkProxyMode, NetworkProxySettings, NetworkSettings};
+use nxtools_core::{DownloadSettings, NetworkProxyMode, NetworkProxySettings, NetworkSettings};
 use nxtools_download::{
     BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
-    DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
-    DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine, DownloadEvent,
-    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestMedia,
-    DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState, DownloadStatus,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday, HlsDownloadRequest,
-    NetworkPolicy, RequestOrigin, SqliteDownloadStore, daily_schedule_window_contains,
+    DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCertificatePolicy, DownloadCommand,
+    DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
+    DownloadEvent, DownloadHttpPolicy, DownloadQueueAction, DownloadQueuePlacement,
+    DownloadRequest, DownloadRequestHeader, DownloadRequestMedia, DownloadSchedule,
+    DownloadScheduleMoment, DownloadSegmentState, DownloadStatus, DownloadSubmitMode, DownloadTask,
+    DownloadTaskAction, DownloadWeekday, HlsDownloadRequest, NetworkPolicy, RequestOrigin,
+    SqliteDownloadStore, daily_schedule_window_contains,
 };
+use rcgen::{CertifiedKey, generate_simple_self_signed};
 use support::{DeterministicHttpServer, concurrent_fixture_bytes, imbalanced_fixture_bytes};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
 fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> DownloadRequest {
     DownloadRequest {
@@ -26,6 +34,7 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
         expected_total_bytes: None,
@@ -33,6 +42,259 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         adaptive_segment_policy: None,
         media: None,
     }
+}
+
+async fn start_self_signed_https_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])
+            .expect("generate self-signed certificate");
+    let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.der().clone()], private_key)
+        .expect("build TLS fixture config");
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind TLS fixture");
+    let address = listener.local_addr().expect("read TLS fixture address");
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let acceptor = acceptor.clone();
+            tokio::spawn(async move {
+                let Ok(mut stream) = acceptor.accept(stream).await else {
+                    return;
+                };
+                let mut request = Vec::new();
+                let mut chunk = [0_u8; 1024];
+                while request.len() < 16 * 1024 {
+                    let Ok(read) = stream.read(&mut chunk).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let request = String::from_utf8_lossy(&request);
+                let method = request.split_whitespace().next().unwrap_or("");
+                let range = request.lines().find_map(|line| {
+                    line.split_once(':').and_then(|(name, value)| {
+                        name.eq_ignore_ascii_case("range")
+                            .then(|| value.trim().to_owned())
+                    })
+                });
+                let (status, extra_headers, body): (&str, String, &[u8]) = match range.as_deref() {
+                    Some("bytes=0-0") => (
+                        "206 Partial Content",
+                        "Content-Range: bytes 0-0/16\r\nAccept-Ranges: bytes\r\n".into(),
+                        b"0",
+                    ),
+                    Some("bytes=0-15") => (
+                        "206 Partial Content",
+                        "Content-Range: bytes 0-15/16\r\nAccept-Ranges: bytes\r\n".into(),
+                        b"0123456789abcdef",
+                    ),
+                    _ => (
+                        "200 OK",
+                        "Accept-Ranges: bytes\r\n".into(),
+                        b"0123456789abcdef",
+                    ),
+                };
+                let response_body = if method == "HEAD" { &[][..] } else { body };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\n{extra_headers}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(response_body).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    (address, task)
+}
+
+#[tokio::test]
+async fn download_defaults_merge_at_acceptance_and_explicit_request_context_wins() {
+    let server = DeterministicHttpServer::start();
+    let output = tempfile::tempdir().expect("create output directory");
+    let database = output.path().join("downloads.sqlite3");
+    let settings = DownloadSettings {
+        default_request_headers: concat!(
+            "-H 'X-NxTools-Default: default'\n",
+            "X-NxTools-Precedence: default\n",
+            "Referer: https://default.example/"
+        )
+        .into(),
+        default_cookie: "default-cookie=1".into(),
+        ..DownloadSettings::default()
+    };
+    let policy =
+        DownloadHttpPolicy::from_download_settings(&settings).expect("parse download HTTP policy");
+    let engine = DownloadEngine::open_with_policies(
+        &database,
+        NetworkPolicy::new(NetworkSettings::default()).expect("create network policy"),
+        policy,
+    )
+    .expect("open engine");
+    let task_id = engine
+        .enqueue(
+            DownloadRequest {
+                source_url: format!(
+                    "http://{}/stage6/request-context-redirect",
+                    server.address()
+                ),
+                save_directory: output.path().to_owned(),
+                file_name: Some("request-context.bin".into()),
+                headers: vec![
+                    DownloadRequestHeader {
+                        name: "X-NxTools-Explicit".into(),
+                        value: "explicit".into(),
+                    },
+                    DownloadRequestHeader {
+                        name: "x-nxtools-precedence".into(),
+                        value: "task".into(),
+                    },
+                ],
+                cookie: Some("task-cookie=1".into()),
+                referrer: Some("https://task.example/".into()),
+                certificate_policy: Default::default(),
+                connection_limit: Some(1),
+                speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
+                scheduled_at_unix_ms: None,
+                adaptive_segment_policy: None,
+                media: None,
+            },
+            RequestOrigin::Ui,
+        )
+        .expect("submit request-context task");
+    let changed_settings = DownloadSettings {
+        default_request_headers: "X-NxTools-Default: changed-after-acceptance".into(),
+        default_cookie: "changed-cookie=1".into(),
+        ..DownloadSettings::default()
+    };
+    drop(engine);
+    let reopened = DownloadEngine::open_with_policies(
+        &database,
+        NetworkPolicy::new(NetworkSettings::default()).expect("recreate network policy"),
+        DownloadHttpPolicy::from_download_settings(&changed_settings)
+            .expect("parse later request defaults"),
+    )
+    .expect("reopen engine with later defaults");
+    reopened
+        .resume(task_id)
+        .expect("resume accepted request-context task after reopen");
+
+    let terminal = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for request-context task");
+    assert_eq!(terminal.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        std::fs::read(output.path().join("request-context.bin")).expect("read artifact"),
+        b"0123456789abcdef"
+    );
+    let persisted = terminal.task.request();
+    assert_eq!(persisted.cookie.as_deref(), Some("task-cookie=1"));
+    assert!(persisted.headers.iter().any(|header| {
+        header.name.eq_ignore_ascii_case("x-nxtools-default") && header.value == "default"
+    }));
+    assert!(
+        persisted
+            .headers
+            .iter()
+            .all(|header| !header.name.eq_ignore_ascii_case("referer"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn certificate_policy_is_strict_by_default_and_explicit_opt_in_is_frozen_into_task() {
+    let (address, server_task) = start_self_signed_https_server().await;
+    let output = tempfile::tempdir().expect("create TLS output directory");
+    let database = output.path().join("tls-downloads.sqlite3");
+    let source_url = format!("https://{address}/fixture.bin");
+    let make_request = |file_name: &str| DownloadRequest {
+        source_url: source_url.clone(),
+        save_directory: output.path().to_owned(),
+        file_name: Some(file_name.into()),
+        headers: Vec::new(),
+        cookie: None,
+        referrer: None,
+        certificate_policy: Default::default(),
+        connection_limit: Some(1),
+        speed_limit_bytes_per_second: None,
+        expected_total_bytes: None,
+        scheduled_at_unix_ms: None,
+        adaptive_segment_policy: None,
+        media: None,
+    };
+
+    let strict_engine = DownloadEngine::open_in_memory().expect("open strict engine");
+    let strict = strict_engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Probe {
+            request: make_request("strict.bin"),
+        },
+    });
+    assert!(
+        matches!(strict.outcome, DownloadCommandOutcome::Rejected { .. }),
+        "strict default unexpectedly trusted a self-signed certificate"
+    );
+
+    let settings = DownloadSettings {
+        accept_invalid_certificates: true,
+        ..DownloadSettings::default()
+    };
+    let permissive_engine = DownloadEngine::open_with_policies(
+        &database,
+        NetworkPolicy::new(NetworkSettings::default()).expect("create network policy"),
+        DownloadHttpPolicy::from_download_settings(&settings).expect("create HTTP policy"),
+    )
+    .expect("open permissive engine");
+    let probe = permissive_engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Probe {
+            request: make_request("permissive.bin"),
+        },
+    });
+    assert!(matches!(probe.outcome, DownloadCommandOutcome::Probe(_)));
+
+    let task_id = permissive_engine
+        .enqueue(make_request("permissive.bin"), RequestOrigin::Ui)
+        .expect("submit permissive TLS task");
+    drop(permissive_engine);
+    let reopened = DownloadEngine::open(&database).expect("reopen task under strict live policy");
+    reopened
+        .resume(task_id)
+        .expect("resume accepted permissive TLS task");
+    let terminal = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for permissive TLS task");
+    assert_eq!(terminal.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        terminal.task.request().certificate_policy,
+        DownloadCertificatePolicy::AcceptInvalid
+    );
+    assert_eq!(
+        std::fs::read(output.path().join("permissive.bin")).expect("read TLS artifact"),
+        b"0123456789abcdef"
+    );
+    server_task.abort();
+    let _ = server_task.await;
 }
 
 fn write_ffmpeg_fixture(path: &std::path::Path) {
@@ -2526,6 +2788,7 @@ fn crash_helper_process() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
                 expected_total_bytes: None,
@@ -3395,6 +3658,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                certificate_policy: Default::default(),
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
                 expected_total_bytes: None,

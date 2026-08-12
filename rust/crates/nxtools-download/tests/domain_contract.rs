@@ -17,6 +17,7 @@ fn request() -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        certificate_policy: Default::default(),
         connection_limit: Some(8),
         speed_limit_bytes_per_second: None,
         expected_total_bytes: None,

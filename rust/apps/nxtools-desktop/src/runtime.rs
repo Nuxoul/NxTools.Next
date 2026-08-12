@@ -13,8 +13,8 @@ use anyhow::{Context, Result};
 use async_channel::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use nxtools_clipboard::ClipboardHistory;
 use nxtools_core::{AppConfig, AppPaths, LogGuard, SingleInstanceGuard, init_file_logging};
-use nxtools_download::DownloadEngine;
 use nxtools_download::DownloadStatus;
+use nxtools_download::{DownloadEngine, DownloadHttpPolicy};
 use nxtools_download_ipc::{DOWNLOAD_PIPE_NAME, DownloadHostActivity, run_download_host};
 use nxtools_finder::{FinderCatalog, default_application_roots};
 use nxtools_ipc::{
@@ -129,13 +129,9 @@ impl DesktopRuntime {
         .context("failed to initialize the application launcher catalog")?;
         let download_database_path = paths.data_dir.join("downloads.sqlite3");
         let ffmpeg_install_directory = paths.data_dir.join("tools").join("ffmpeg");
-        let network_policy = NetworkPolicy::new(config.network.clone())
-            .context("failed to initialize the product network policy")?;
-        let download_engine = DownloadEngine::open_with_network_policy(
-            download_database_path.clone(),
-            network_policy.clone(),
-        )
-        .context("failed to initialize the download engine")?;
+        let (download_engine, network_policy) =
+            open_download_engine_from_config(download_database_path.clone(), &config)
+                .context("failed to initialize the download engine")?;
         start_download_host(download_engine.clone())?;
         let download_default_directory = std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
@@ -175,13 +171,9 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
     let _instance = SingleInstanceGuard::acquire_with_timeout(&paths, "desktop", instance_wait)?;
     let _log_guard = init_file_logging(&paths, "download-host")?;
     let config = AppConfig::load_or_create(&paths)?;
-    let network_policy = NetworkPolicy::new(config.network)
-        .context("failed to initialize the background network policy")?;
-    let engine = DownloadEngine::open_with_network_policy(
-        paths.data_dir.join("downloads.sqlite3"),
-        network_policy,
-    )
-    .context("failed to initialize the background download engine")?;
+    let (engine, _network_policy) =
+        open_download_engine_from_config(paths.data_dir.join("downloads.sqlite3"), &config)
+            .context("failed to initialize the background download engine")?;
     let background_events = engine
         .take_event_receiver()
         .context("failed to attach the background engine event drain")?;
@@ -219,6 +211,19 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
             return Ok(());
         }
     }
+}
+
+fn open_download_engine_from_config(
+    database_path: impl AsRef<Path>,
+    config: &AppConfig,
+) -> Result<(DownloadEngine, NetworkPolicy)> {
+    let network_policy = NetworkPolicy::new(config.network.clone())
+        .context("failed to initialize the product network policy")?;
+    let request_policy = DownloadHttpPolicy::from_download_settings(&config.download)
+        .context("failed to initialize the download HTTP policy")?;
+    let engine =
+        DownloadEngine::open_with_policies(database_path, network_policy.clone(), request_policy)?;
+    Ok((engine, network_policy))
 }
 
 fn start_download_host(engine: DownloadEngine) -> Result<()> {
@@ -543,6 +548,51 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foreground_and_background_engine_factory_applies_download_http_settings_before_intake() {
+        let directory = tempfile::tempdir().expect("create runtime policy fixture");
+        let mut config = AppConfig::default();
+        config.download.default_request_headers = "X-NxTools-Runtime: configured".into();
+        config.download.default_cookie = "runtime=1".into();
+        config.download.accept_invalid_certificates = true;
+        let (engine, _) =
+            open_download_engine_from_config(directory.path().join("downloads.sqlite3"), &config)
+                .expect("open configured download engine");
+        let task_id = engine
+            .enqueue(
+                nxtools_download::DownloadRequest {
+                    source_url: "https://example.test/file.bin".into(),
+                    save_directory: directory.path().join("artifacts"),
+                    file_name: Some("file.bin".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    certificate_policy: Default::default(),
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                    media: None,
+                },
+                nxtools_download::RequestOrigin::Internal,
+            )
+            .expect("accept configured request");
+        let task = engine
+            .task(task_id)
+            .expect("read accepted task")
+            .expect("task exists");
+
+        assert_eq!(task.task.request().cookie.as_deref(), Some("runtime=1"));
+        assert_eq!(
+            task.task.request().certificate_policy,
+            nxtools_download::DownloadCertificatePolicy::AcceptInvalid
+        );
+        assert!(task.task.request().headers.iter().any(|header| {
+            header.name.eq_ignore_ascii_case("x-nxtools-runtime") && header.value == "configured"
+        }));
+    }
 
     #[test]
     fn indexer_commands_are_bounded_and_rejected_while_disconnected() {

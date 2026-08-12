@@ -266,6 +266,22 @@ probe, task and FFmpeg-install events carry only fixed
 `proxy_source=none|system|configured|policy`, plus their bounded failure kind/native-or-HTTP-code
 fields. They never expose the proxy endpoint.
 
+## Download request context and certificate policy
+
+The download-only default Header, Cookie and certificate controls use the existing
+`download.settings.apply_started` followed by exactly one `download.settings.apply_succeeded` or
+`download.settings.apply_failed` lifecycle. Settings validation and persistence events never carry
+Header names, Header values, Cookie, Referrer, URL, path or file name. Invalid transport-owned or
+oversized fields are reported only as a fixed validation failure to diagnostics; the UI may show a
+bounded local explanation.
+
+Each probe and task attempt records the frozen
+`certificate_policy=strict|accept_invalid` beside the already frozen proxy mode/source. Probe
+started/completed/failed and task attempt started/completed/failed keep the same fixed value under
+one correlation ID. A settings change affects only a later standalone probe or newly accepted
+task; it never mutates an accepted task or active HTTP client. Certificate details, subject names, trust chains and
+TLS payloads are not logged.
+
 ## HLS probing and transfer
 
 The versioned download command boundary records `download.probe.started` followed by exactly one

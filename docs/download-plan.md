@@ -916,7 +916,7 @@ Cargo 门禁，没有启动 GUI、全 workspace Cargo 或 Release 打包，也�
 ### 阶段 6：全局网络策略、分类与完成行为（4–7 天）
 
 - [x] 产品级全局代理设置，由下载、剪贴板和速启共享；仅实际联网操作选择使用。
-- [ ] 下载自定义 Header/Cookie 和证书错误策略。
+- [x] 下载自定义 Header/Cookie 和证书错误策略。
 - [ ] 下载分类、自动保存目录和重复文件策略。
 - [ ] 高级完成后动作、通知声音、自动打开目录和安全关机策略。
 
@@ -937,6 +937,17 @@ Cargo 门禁，没有启动 GUI、全 workspace Cargo 或 Release 打包，也�
 真实 loopback 代理、HLS attempt 中途切换、持久化失败不发布、GPUI 窗口打开/复用/关闭门禁、完整
 workspace 串行测试、workspace Clippy、下载 UI lifecycle 架构门禁及 Standards/Spec 双复审均已
 通过；没有启动 GUI 或生成 Release 包。本条据自动化完成勾选，阶段 6 其余三条继续保持未完成。
+
+2026-08-12 阶段 6 第二个纵向切片完成：下载设置新增有界的默认 Header、Cookie 与显式“允许
+无效证书”策略；默认仍严格校验证书。普通、浏览器和批量任务都在接受边界合并并持久化有效请求
+上下文，任务值优先于默认值，后续设置变化不会改写已接受或正在运行的任务。`Host`、`Range`、
+`Content-Length`、连接分帧和内容编码等传输层 Header 由引擎独占，扩展捕获值也会在进域前过滤。
+诊断只记录固定证书策略、关联 ID、结果和耗时，不记录 Header/Cookie/Referrer、URL 或路径。真实
+loopback Header/Cookie、自签名 TLS 严格拒绝与显式放行、浏览器过滤、GPUI 保存/关闭/重开、workspace
+全目标编译、workspace Clippy 及 Standards/Spec 双复审均已通过；完整 workspace 串行门禁曾全绿，
+最终复跑中 83 项 engine 合同全绿，但两个既有 loopback 用例分别出现一次 Windows 本地连接瞬断，
+精确复跑通过，未降低断言或修改生产重试。没有启动 GUI 或生成 Release 包。阶段 6
+分类/目录/重复策略及完成后动作仍未开始。
 
 ### 阶段 7：性能、恢复与质感收尾（4–7 天）
 

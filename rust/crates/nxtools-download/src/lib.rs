@@ -15,6 +15,7 @@ mod http;
 mod media;
 mod message;
 mod rate_limit;
+mod request_policy;
 mod storage;
 
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
@@ -58,6 +59,10 @@ pub use message::{
 };
 pub use nxtools_network::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
+pub use request_policy::{
+    DownloadHttpPolicy, DownloadHttpPolicyError, MAX_DEFAULT_COOKIE_BYTES,
+    MAX_DEFAULT_HEADER_COUNT, MAX_DEFAULT_HEADER_TEXT_BYTES, is_download_transport_owned_header,
+};
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -97,6 +102,20 @@ pub enum RequestOrigin {
 pub struct DownloadRequestHeader {
     pub name: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadCertificatePolicy {
+    #[default]
+    Strict,
+    AcceptInvalid,
+}
+
+impl DownloadCertificatePolicy {
+    const fn is_strict(&self) -> bool {
+        matches!(self, Self::Strict)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +163,8 @@ pub struct DownloadRequest {
     pub headers: Vec<DownloadRequestHeader>,
     pub cookie: Option<String>,
     pub referrer: Option<String>,
+    #[serde(default, skip_serializing_if = "DownloadCertificatePolicy::is_strict")]
+    pub certificate_policy: DownloadCertificatePolicy,
     pub connection_limit: Option<u16>,
     #[serde(default)]
     pub speed_limit_bytes_per_second: Option<u64>,
@@ -229,18 +250,25 @@ impl DownloadRequest {
                 return Err(DownloadRequestError::InvalidMediaSelection);
             }
         }
-        if self.headers.iter().any(|header| {
-            header.name.is_empty()
-                || header.name.contains([':', '\r', '\n'])
-                || header.value.contains(['\r', '\n'])
-        }) || self
-            .cookie
-            .as_deref()
-            .is_some_and(|value| value.contains(['\r', '\n']))
+        if self.headers.len() > MAX_DEFAULT_HEADER_COUNT
             || self
-                .referrer
-                .as_deref()
-                .is_some_and(|value| value.contains(['\r', '\n']))
+                .headers
+                .iter()
+                .map(|header| header.name.len() + header.value.len())
+                .sum::<usize>()
+                > MAX_DEFAULT_HEADER_TEXT_BYTES
+            || self
+                .headers
+                .iter()
+                .any(|header| request_policy::validate_header(&header.name, &header.value).is_err())
+            || self.cookie.as_deref().is_some_and(|value| {
+                value.len() > MAX_DEFAULT_COOKIE_BYTES
+                    || value.contains(['\r', '\n'])
+                    || !request_policy::is_valid_header_value(value)
+            })
+            || self.referrer.as_deref().is_some_and(|value| {
+                value.contains(['\r', '\n']) || !request_policy::is_valid_header_value(value)
+            })
         {
             return Err(DownloadRequestError::InvalidHeader);
         }

@@ -1684,6 +1684,47 @@ Reverified on 2026-08-11 before the first Stage 6 vertical slice:
   explicit HTTP proxy. If later Windows acceptance finds a WinINET/WinHTTP mismatch, that becomes a
   typed C# adapter follow-up rather than a silent fallback to Direct.
 
+### Stage 6 download request-context and certificate-policy findings
+
+Reverified on 2026-08-12 before the second Stage 6 vertical slice:
+
+- AB Download Manager was inspected first at
+  `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/{DownloadSettings.kt,connection/OkHttpHttpDownloaderClient.kt}`,
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/AppSSLFactoryProvider.kt`,
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/perhostsettings/PerHostSettingsItem.kt`
+  and `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/downloaderinui/http/applyHostSettingsToExtraConfig.kt`.
+  ABDM keeps custom request values on the download credentials, applies them after client defaults,
+  and deliberately refuses a caller-supplied `Host` because redirects must derive their own host.
+  Its certificate switch wraps the platform trust manager and is strict unless the user explicitly
+  disables checking. ABDM has per-host username/password/User-Agent settings, but no equivalent
+  application-wide free-form Header/Cookie editor in the inspected path; that negative finding is
+  why NxTools.Next uses the old product only for this compatibility surface.
+- Old NxTools was then inspected at `Services/RequestHeaderParser.cs`,
+  `ViewModels/AddDownloadDialogViewModel.cs`, `Models/AppState.cs`,
+  `Services/DownloadManagerService.cs` and `Views/SettingsWindow.axaml`. It persists default Header
+  text, default Cookie text and an ignore-certificate-errors flag; a new-download dialog copies the
+  two request defaults into the task, and every probe/playlist/segment request reuses that durable
+  task context. Its parser accepts ordinary `Name: value` and curl `-H` lines, lets the dedicated
+  Cookie field replace a Cookie embedded in Header text, and excludes transport-owned
+  `Accept-Encoding`, `Connection`, `Content-Length`, `Host`, `Range` and `Transfer-Encoding`.
+  Certificate policy participates in its HTTP-client cache key, so a task uses one selected policy
+  rather than mutating a live handler mid-transfer.
+- NxTools.Next retains those useful invariants with stricter boundaries: strict certificate
+  validation is the default; accepting invalid certificates is an explicit download-only setting;
+  configured Header/Cookie defaults are bounded and validated before persistence; transport-owned
+  headers cannot be configured; and explicit task/browser request context outranks defaults. The
+  effective context is frozen into a task before its first probe or transfer, persisted with that
+  task, and therefore survives redirects, pause/resume and process restart without reading mutable
+  settings during an active attempt. Redirects keep safe request context while the HTTP stack owns
+  `Host`, `Content-Length`, `Range`, connection framing and content coding.
+- Diagnostics may carry only fixed certificate-policy and outcome/failure fields. They never record
+  Header names or values, Cookie, Referrer, URL, file name or path. Old NxTools' diagnostic strings
+  that include URL, response Header and proxy endpoint are explicit negative examples and are not
+  migrated.
+- The self-signed TLS regression uses test-only `rcgen 0.14.9` and `tokio-rustls 0.26.4`; both
+  declare `MIT OR Apache-2.0`. They generate and serve a bounded ephemeral certificate only during
+  tests and add no certificate, private key or TLS binary to the packaged product.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
