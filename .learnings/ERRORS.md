@@ -8012,3 +8012,139 @@ Read the script parameter block before invoking a new architecture gate and use
 ### Metadata
 - Reproducible: yes
 - Related Files: tests/architecture/desktop-release-subsystem.ps1
+
+## [ERR-20260812-DEBUGBOUNDSSTATIC] GPUI debug selectors require static string references
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A layout regression passed a temporary formatted `String` to `TestWindow::debug_bounds`, whose
+selector reference must be `'static`.
+
+### Error
+`error[E0716]: temporary value dropped while borrowed`
+
+### Suggested Fix
+Use a table of static display labels and static selector literals when querying GPUI debug bounds.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+## [ERR-20260812-LAYOUT1455] GPUI layout regression compile exhausted Windows commit
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The targeted desktop layout regression could not mmap existing GPUI rlibs because Windows commit
+headroom fell below the compiler's requirement after Release packaging.
+
+### Error
+`failed to mmap ... libgpui...rlib: The paging file is too small (os error 1455)`
+
+### Suggested Fix
+Verify no owned Cargo/rustc process survived, shut down owned build servers, wait for commit
+headroom, and rerun the exact targeted test without starting a duplicate build.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Commit headroom recovered to 5.39 GiB; the exact GPUI bounds regression then compiled and passed.
+
+## [ERR-20260812-GPUISTRETCH] Assumed a private GPUI alignment helper was public
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The settings layout used Zed's internal `items_stretch` helper, which is not exposed by this
+workspace's GPUI styled-element API; the first regression closure also held the mutable test window
+borrow across page switches.
+
+### Error
+`no method named items_stretch found` and `two closures require unique access to window`
+
+### Suggested Fix
+Rely on the now-definite full-width page containing block, and use short test macros so each bounds
+query/page click releases its window borrow before the next operation.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+## [ERR-20260812-PSTAIL] Used a Unix alias as a PowerShell command
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A source-inspection command piped `rg` output to `Tail -1`, which is not a PowerShell cmdlet.
+
+### Error
+`The term 'Tail' is not recognized`
+
+### Suggested Fix
+Use `Select-Object -Last 1` for PowerShell-native output selection.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+## [ERR-20260812-CARGOTWOFILTERS] Passed two positional test filters to Cargo
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A targeted verification attempted to pass two independent test names after `cargo test`.
+
+### Error
+`unexpected argument 'download_settings_window_opens_without_reentering_download_application'`
+
+### Suggested Fix
+Use one shared filter or invoke exact tests in separate Cargo commands.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+## [ERR-20260812-SHELLTIMEOUT] Confused command execution timeout with output yield timing
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A full desktop test was first invoked with a one-second shell execution timeout while the intent was
+only to yield output early, so the wrapper terminated a healthy Cargo run before completion.
+
+### Error
+`command timed out after 5068 milliseconds`
+
+### Suggested Fix
+Keep the shell command timeout long enough for the full build/test and use the orchestration yield
+setting separately when early progress output is required.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-12T00:00:00+08:00
+- **Notes**: Re-ran with a bounded 20-minute execution timeout; all 268 desktop tests passed.

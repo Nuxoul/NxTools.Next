@@ -1293,6 +1293,22 @@ Reverified on 2026-07-30 before implementing the remaining user-selected Phase 3
   last position omits `下移` and `移到底部`. Empty action groups never leave leading, trailing or
   repeated separators.
 
+Reverified on 2026-08-12 after the expanded Stage 5/6 settings exposed a layout regression:
+
+- Old NxTools `Views/SettingsWindow.axaml` uses a stable `984 x 612` workspace with a `224 px`
+  navigation rail and one selected settings page. It does not place every unrelated settings group
+  in one content-sized vertical strip.
+- ABDM `DesktopSettingsComponent.kt` likewise owns explicit settings pages and changes the bounded
+  group list when a page is selected. Its layout hierarchy is page first, configurable group
+  second; child controls never determine the width of the entire settings workspace.
+- NxTools.Next must retain one definite-width content column beside a compact navigation rail.
+  Every selected-page section shares that column width; two-column rows may subdivide it but must
+  not be the mechanism that stretches the parent. Configuration, log and database paths stay on
+  separate full-width diagnostic rows so long paths cannot collide across half-width columns.
+- Page switching is local GPUI presentation state. It resets only that page's scroll position and
+  must not mutate the settings draft, start native work, or add diagnostics. Apply/Cancel and the
+  existing directory, FFmpeg and taskbar-edit lifecycles remain unchanged.
+
 ### Phase 3 taskbar-internal aggregate progress findings
 
 Reverified on 2026-07-30 before implementing the user-selected taskbar overlay slice:

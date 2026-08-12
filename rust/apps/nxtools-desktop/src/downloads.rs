@@ -2029,37 +2029,18 @@ impl DownloadApplication {
         }
         let application = cx.entity();
         let initial = self.settings_view_initial();
-        let window_size = size(px(820.0), px(650.0));
-        let window_bounds = WindowBounds::centered(window_size, cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(window_bounds),
-                titlebar: None,
-                focus: true,
-                show: true,
-                kind: WindowKind::Normal,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
-                app_id: Some("NxTools.DownloadSettings".into()),
-                window_min_size: Some(window_size),
-                window_decorations: Some(WindowDecorations::Client),
-                tabbing_identifier: None,
-            },
-            move |window, cx| {
-                let close_application = application.clone();
-                window.on_window_should_close(cx, move |_, cx| {
-                    close_application.update(cx, |application, cx| {
-                        application.handle_settings_window_closed(cx);
-                    });
-                    true
+        let window_options = download_settings_window_options(cx);
+        let opened = cx.open_window(window_options, move |window, cx| {
+            let close_application = application.clone();
+            window.on_window_should_close(cx, move |_, cx| {
+                close_application.update(cx, |application, cx| {
+                    application.handle_settings_window_closed(cx);
                 });
-                let view = cx.new(|cx| DownloadSettingsView::new(application, initial, window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
+                true
+            });
+            let view = cx.new(|cx| DownloadSettingsView::new(application, initial, window, cx));
+            cx.new(|cx| Root::new(view, window, cx))
+        });
         match opened {
             Ok(window) => self.settings_window = Some(window.into()),
             Err(error) => {
@@ -3502,6 +3483,34 @@ impl DownloadApplication {
     }
 }
 
+const DOWNLOAD_SETTINGS_WINDOW_WIDTH: f32 = 984.0;
+const DOWNLOAD_SETTINGS_WINDOW_HEIGHT: f32 = 650.0;
+
+fn download_settings_window_options(cx: &App) -> WindowOptions {
+    // Match the reference settings workspace: a stable navigation rail plus a content column
+    // wide enough for two compact settings rows without relying on child min-width to size it.
+    let window_size = size(
+        px(DOWNLOAD_SETTINGS_WINDOW_WIDTH),
+        px(DOWNLOAD_SETTINGS_WINDOW_HEIGHT),
+    );
+    WindowOptions {
+        window_bounds: Some(WindowBounds::centered(window_size, cx)),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::Normal,
+        is_movable: true,
+        is_resizable: false,
+        is_minimizable: false,
+        display_id: None,
+        window_background: WindowBackgroundAppearance::Opaque,
+        app_id: Some("NxTools.DownloadSettings".into()),
+        window_min_size: Some(window_size),
+        window_decorations: Some(WindowDecorations::Client),
+        tabbing_identifier: None,
+    }
+}
+
 fn task_window_activation_command(window_handle: i64) -> Option<PlatformCommand> {
     (window_handle != 0).then_some(PlatformCommand::ActivateWindow(ActivateWindowCommand {
         window_handle,
@@ -4360,6 +4369,16 @@ impl DownloadCategoryEditor {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DownloadSettingsPage {
+    #[default]
+    General,
+    Request,
+    Transfer,
+    Window,
+    Diagnostics,
+}
+
 struct DownloadSettingsView {
     theme: Theme,
     application: Entity<DownloadApplication>,
@@ -4380,6 +4399,7 @@ struct DownloadSettingsView {
     taskbar_overlay_width: Entity<InputState>,
     taskbar_overlay_height: Entity<InputState>,
     scroll: ScrollHandle,
+    page: DownloadSettingsPage,
     show_progress_window: bool,
     show_completion_window: bool,
     automatic_categories_enabled: bool,
@@ -4619,6 +4639,7 @@ impl DownloadSettingsView {
             taskbar_overlay_width,
             taskbar_overlay_height,
             scroll: ScrollHandle::new(),
+            page: DownloadSettingsPage::General,
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
             automatic_categories_enabled: snapshot.automatic_categories_enabled,
@@ -5521,6 +5542,365 @@ impl Render for DownloadSettingsView {
                 this.toggle_taskbar_overlay_edit(cx);
             }))
             .into_any_element();
+        let page_content = match self.page {
+            DownloadSettingsPage::General => div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(9.0))
+                .child(download_settings_section(
+                    theme,
+                    "保存",
+                    vec![download_settings_row(
+                        theme,
+                        "默认保存目录",
+                        "新建任务自动使用，可在单个任务中覆盖",
+                        directory_control,
+                    )],
+                ))
+                .child(download_settings_section(
+                    theme,
+                    "分类与重名",
+                    vec![
+                        download_settings_row(
+                            theme,
+                            "自动分类",
+                            "仅为仍使用默认保存目录的新任务匹配；手动目录优先",
+                            automatic_categories_toggle,
+                        ),
+                        download_settings_stacked_row(
+                            theme,
+                            "分类规则",
+                            "选择分类后可编辑名称、目录、扩展名和 URL 通配规则",
+                            category_rules,
+                        ),
+                        download_settings_stacked_row(
+                            theme,
+                            "规则编辑",
+                            "扩展名与 URL 规则同时存在时必须同时命中；箭头调整优先顺序",
+                            category_editor,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "目标已存在",
+                            "自动编号不会覆盖磁盘文件或活动任务产物；拒绝则不创建任务",
+                            duplicate_strategy,
+                        ),
+                    ],
+                ))
+                .into_any_element(),
+            DownloadSettingsPage::Request => div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(9.0))
+                .child(download_settings_section(
+                    theme,
+                    "请求上下文",
+                    vec![
+                        download_settings_stacked_row(
+                            theme,
+                            "默认 Header",
+                            "每行 Name: Value，也可写 -H 'Name: Value'；任务或浏览器捕获值优先",
+                            default_headers_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "默认 Cookie",
+                            "仅在任务没有 Cookie 时带入；内容不会写入诊断日志",
+                            default_cookie_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "允许无效证书",
+                            "默认严格校验证书；仅为确有需要的服务器显式开启",
+                            certificate_toggle,
+                        ),
+                    ],
+                ))
+                .into_any_element(),
+            DownloadSettingsPage::Transfer => div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(9.0))
+                .child(download_settings_grid_section(
+                    theme,
+                    "传输",
+                    vec![
+                        download_settings_row(
+                            theme,
+                            "连接上限",
+                            "新任务从开始即使用的最大并行连接数，范围 1–64",
+                            connection_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "动态分段",
+                            "速度稳定时拆分长尾；连接数仍保持在上限内",
+                            adaptive_toggle,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "分段上限",
+                            "动态拆分后的最大分段数，范围为连接数到 256",
+                            adaptive_max_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "最小长尾",
+                            "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
+                            adaptive_min_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "同时下载",
+                            "默认队列允许同时运行的任务数，范围 1–64",
+                            concurrent_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "全局限速",
+                            "单位 KiB/s；填 0 表示不限速",
+                            speed_control,
+                        ),
+                    ],
+                ))
+                .child(
+                    div()
+                        .w_full()
+                        .debug_selector(|| "download-settings-media-tools-section".into())
+                        .child(download_settings_section(
+                            theme,
+                            "媒体工具",
+                            vec![
+                                download_settings_stacked_row(
+                                    theme,
+                                    "FFmpeg 可执行文件",
+                                    ffmpeg_description,
+                                    ffmpeg_control,
+                                ),
+                                download_settings_row(
+                                    theme,
+                                    "自动安装",
+                                    install_description,
+                                    ffmpeg_install_control,
+                                ),
+                                download_settings_row(
+                                    theme,
+                                    "公开下载来源",
+                                    "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
+                                    ffmpeg_source_control,
+                                ),
+                            ],
+                        )),
+                )
+                .into_any_element(),
+            DownloadSettingsPage::Window => div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(9.0))
+                .child(download_settings_grid_section(
+                    theme,
+                    "窗口",
+                    vec![
+                        download_settings_row(
+                            theme,
+                            "自动显示进度",
+                            "任务开始后显示独立进度窗口",
+                            progress_toggle,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "显示完成窗口",
+                            "进度窗已关闭时被动显示完成窗口",
+                            completion_toggle,
+                        ),
+                    ],
+                ))
+                .child(download_settings_grid_section(
+                    theme,
+                    "任务栏进度",
+                    vec![
+                        download_settings_row(
+                            theme,
+                            "任务栏内进度",
+                            "活动下载存在时在任务栏上沿显示总体进度",
+                            taskbar_overlay_toggle,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "布局预览",
+                            "无任务也显示模拟数据；可直接拖动和缩放",
+                            taskbar_edit_control,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "锚点",
+                            "从任务栏左侧或右侧计算 X 偏移",
+                            taskbar_anchor,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "X 偏移",
+                            "逻辑像素；正值向任务栏内部移动",
+                            taskbar_offset_x,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "Y 偏移",
+                            "逻辑像素；0 表示紧贴任务栏上沿",
+                            taskbar_offset_y,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "宽度",
+                            "逻辑像素，范围 72–640",
+                            taskbar_width,
+                        ),
+                        download_settings_row(theme, "高度", "逻辑像素，范围 6–72", taskbar_height),
+                        download_settings_row(
+                            theme,
+                            "进度模式",
+                            "总进度、按任务或按当前任务分段显示",
+                            taskbar_progress_mode,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "进度条",
+                            "显示所选模式的进度槽",
+                            taskbar_progress_info,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "速度",
+                            "显示当前合计下载速度",
+                            taskbar_speed_info,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "剩余时间",
+                            "按当前合计速度估算",
+                            taskbar_remaining_info,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "活动任务数",
+                            "显示当前正在处理的任务数量",
+                            taskbar_task_count_info,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "活动连接数",
+                            "显示所有活动任务的连接合计",
+                            taskbar_connection_info,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "已下载 / 总大小",
+                            "显示活动任务的合计字节数",
+                            taskbar_bytes_info,
+                        ),
+                    ],
+                ))
+                .into_any_element(),
+            DownloadSettingsPage::Diagnostics => div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(9.0))
+                .child(download_settings_section(
+                    theme,
+                    "诊断",
+                    vec![
+                        download_settings_path_row(theme, "配置", self.config_path.clone()),
+                        download_settings_path_row(theme, "日志", self.log_directory.clone()),
+                        download_settings_path_row(theme, "数据", self.database_path.clone()),
+                    ],
+                ))
+                .into_any_element(),
+        };
+        let navigation = div()
+            .w(px(164.0))
+            .h_full()
+            .py(px(10.0))
+            .border_r_1()
+            .border_color(theme.border_subtle)
+            .bg(theme.surface)
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(download_settings_navigation_item(
+                theme,
+                "download-settings-nav-general",
+                "download-settings-nav-general",
+                "常规",
+                "保存位置与分类",
+                self.page == DownloadSettingsPage::General,
+                cx.listener(|this, _, _, cx| {
+                    this.page = DownloadSettingsPage::General;
+                    this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+                    cx.notify();
+                }),
+            ))
+            .child(download_settings_navigation_item(
+                theme,
+                "download-settings-nav-request",
+                "download-settings-nav-request",
+                "请求",
+                "Header、Cookie 与证书",
+                self.page == DownloadSettingsPage::Request,
+                cx.listener(|this, _, _, cx| {
+                    this.page = DownloadSettingsPage::Request;
+                    this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+                    cx.notify();
+                }),
+            ))
+            .child(download_settings_navigation_item(
+                theme,
+                "download-settings-nav-transfer",
+                "download-settings-nav-transfer",
+                "传输",
+                "并发、分段与媒体工具",
+                self.page == DownloadSettingsPage::Transfer,
+                cx.listener(|this, _, _, cx| {
+                    this.page = DownloadSettingsPage::Transfer;
+                    this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+                    cx.notify();
+                }),
+            ))
+            .child(download_settings_navigation_item(
+                theme,
+                "download-settings-nav-window",
+                "download-settings-nav-window",
+                "窗口",
+                "进度窗与任务栏显示",
+                self.page == DownloadSettingsPage::Window,
+                cx.listener(|this, _, _, cx| {
+                    this.page = DownloadSettingsPage::Window;
+                    this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+                    cx.notify();
+                }),
+            ))
+            .child(download_settings_navigation_item(
+                theme,
+                "download-settings-nav-diagnostics",
+                "download-settings-nav-diagnostics",
+                "诊断",
+                "配置、日志与数据位置",
+                self.page == DownloadSettingsPage::Diagnostics,
+                cx.listener(|this, _, _, cx| {
+                    this.page = DownloadSettingsPage::Diagnostics;
+                    this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+                    cx.notify();
+                }),
+            ));
         div()
             .size_full()
             .bg(theme.canvas)
@@ -5534,293 +5914,36 @@ impl Render for DownloadSettingsView {
             ))
             .child(
                 div()
-                    .id("download-settings-viewport")
-                    .relative()
                     .flex_1()
                     .min_h_0()
+                    .min_w_0()
+                    .flex()
+                    .child(navigation)
                     .child(
                         div()
-                            .id("download-settings-scroll")
-                            .debug_selector(|| "download-settings-scroll".into())
-                            .size_full()
-                            .overflow_y_scroll()
-                            .track_scroll(&scroll)
-                            .px(px(14.0))
-                            .py(px(10.0))
-                            .flex()
-                            .flex_col()
-                            .gap(px(9.0))
-                            .child(download_settings_section(
-                                theme,
-                                "保存",
-                                vec![download_settings_row(
-                                    theme,
-                                    "默认保存目录",
-                                    "新建任务自动使用，可在单个任务中覆盖",
-                                    directory_control,
-                                )],
-                            ))
-                            .child(download_settings_section(
-                                theme,
-                                "分类与重名",
-                                vec![
-                                    download_settings_row(
-                                        theme,
-                                        "自动分类",
-                                        "仅为仍使用默认保存目录的新任务匹配；手动目录优先",
-                                        automatic_categories_toggle,
-                                    ),
-                                    download_settings_stacked_row(
-                                        theme,
-                                        "分类规则",
-                                        "选择分类后可编辑名称、目录、扩展名和 URL 通配规则",
-                                        category_rules,
-                                    ),
-                                    download_settings_stacked_row(
-                                        theme,
-                                        "规则编辑",
-                                        "扩展名与 URL 规则同时存在时必须同时命中；箭头调整优先顺序",
-                                        category_editor,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "目标已存在",
-                                        "自动编号不会覆盖磁盘文件或活动任务产物；拒绝则不创建任务",
-                                        duplicate_strategy,
-                                    ),
-                                ],
-                            ))
-                            .child(download_settings_section(
-                                theme,
-                                "请求上下文",
-                                vec![
-                                    download_settings_stacked_row(
-                                        theme,
-                                        "默认 Header",
-                                        "每行 Name: Value，也可写 -H 'Name: Value'；任务或浏览器捕获值优先",
-                                        default_headers_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "默认 Cookie",
-                                        "仅在任务没有 Cookie 时带入；内容不会写入诊断日志",
-                                        default_cookie_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "允许无效证书",
-                                        "默认严格校验证书；仅为确有需要的服务器显式开启",
-                                        certificate_toggle,
-                                    ),
-                                ],
-                            ))
-                            .child(download_settings_grid_section(
-                                theme,
-                                "传输",
-                                vec![
-                                    download_settings_row(
-                                        theme,
-                                        "连接上限",
-                                        "新任务从开始即使用的最大并行连接数，范围 1–64",
-                                        connection_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "动态分段",
-                                        "速度稳定时拆分长尾；连接数仍保持在上限内",
-                                        adaptive_toggle,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "分段上限",
-                                        "动态拆分后的最大分段数，范围为连接数到 256",
-                                        adaptive_max_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "最小长尾",
-                                        "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
-                                        adaptive_min_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "同时下载",
-                                        "默认队列允许同时运行的任务数，范围 1–64",
-                                        concurrent_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "全局限速",
-                                        "单位 KiB/s；填 0 表示不限速",
-                                        speed_control,
-                                    ),
-                                ],
-                            ))
+                            .id("download-settings-viewport")
+                            .relative()
+                            .flex_1()
+                            .min_h_0()
+                            .min_w_0()
                             .child(
                                 div()
-                                    .w_full()
-                                    .debug_selector(|| {
-                                        "download-settings-media-tools-section".into()
-                                    })
-                                    .child(download_settings_section(
-                                        theme,
-                                        "媒体工具",
-                                        vec![
-                                            download_settings_stacked_row(
-                                                theme,
-                                                "FFmpeg 可执行文件",
-                                                ffmpeg_description,
-                                                ffmpeg_control,
-                                            ),
-                                            download_settings_row(
-                                                theme,
-                                                "自动安装",
-                                                install_description,
-                                                ffmpeg_install_control,
-                                            ),
-                                            download_settings_row(
-                                                theme,
-                                                "公开下载来源",
-                                                "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
-                                                ffmpeg_source_control,
-                                            ),
-                                        ],
-                                    )),
+                                    .id("download-settings-scroll")
+                                    .debug_selector(|| "download-settings-scroll".into())
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&scroll)
+                                    .px(px(14.0))
+                                    .py(px(10.0))
+                                    .flex()
+                                    .flex_col()
+                                    .child(page_content)
+                                    .when_some(self.error.clone(), |body, error| {
+                                        body.child(download_inline_error(theme, error))
+                                    }),
                             )
-                            .child(download_settings_grid_section(
-                                theme,
-                                "窗口",
-                                vec![
-                                    download_settings_row(
-                                        theme,
-                                        "自动显示进度",
-                                        "任务开始后显示独立进度窗口",
-                                        progress_toggle,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "显示完成窗口",
-                                        "进度窗已关闭时被动显示完成窗口",
-                                        completion_toggle,
-                                    ),
-                                ],
-                            ))
-                            .child(download_settings_grid_section(
-                                theme,
-                                "任务栏进度",
-                                vec![
-                                    download_settings_row(
-                                        theme,
-                                        "任务栏内进度",
-                                        "活动下载存在时在任务栏上沿显示总体进度",
-                                        taskbar_overlay_toggle,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "布局预览",
-                                        "无任务也显示模拟数据；可直接拖动和缩放",
-                                        taskbar_edit_control,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "锚点",
-                                        "从任务栏左侧或右侧计算 X 偏移",
-                                        taskbar_anchor,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "X 偏移",
-                                        "逻辑像素；正值向任务栏内部移动",
-                                        taskbar_offset_x,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "Y 偏移",
-                                        "逻辑像素；0 表示紧贴任务栏上沿",
-                                        taskbar_offset_y,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "宽度",
-                                        "逻辑像素，范围 72–640",
-                                        taskbar_width,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "高度",
-                                        "逻辑像素，范围 6–72",
-                                        taskbar_height,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "进度模式",
-                                        "总进度、按任务或按当前任务分段显示",
-                                        taskbar_progress_mode,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "进度条",
-                                        "显示所选模式的进度槽",
-                                        taskbar_progress_info,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "速度",
-                                        "显示当前合计下载速度",
-                                        taskbar_speed_info,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "剩余时间",
-                                        "按当前合计速度估算",
-                                        taskbar_remaining_info,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "活动任务数",
-                                        "显示当前正在处理的任务数量",
-                                        taskbar_task_count_info,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "活动连接数",
-                                        "显示所有活动任务的连接合计",
-                                        taskbar_connection_info,
-                                    ),
-                                    download_settings_row(
-                                        theme,
-                                        "已下载 / 总大小",
-                                        "显示活动任务的合计字节数",
-                                        taskbar_bytes_info,
-                                    ),
-                                ],
-                            ))
-                            .child(download_settings_grid_section(
-                                theme,
-                                "诊断",
-                                vec![
-                                    download_settings_path_row(
-                                        theme,
-                                        "配置",
-                                        self.config_path.clone(),
-                                    ),
-                                    download_settings_path_row(
-                                        theme,
-                                        "日志",
-                                        self.log_directory.clone(),
-                                    ),
-                                    download_settings_path_row(
-                                        theme,
-                                        "数据",
-                                        self.database_path.clone(),
-                                    ),
-                                ],
-                            ))
-                            .when_some(self.error.clone(), |body, error| {
-                                body.child(download_inline_error(theme, error))
-                            }),
-                    )
-                    .vertical_scrollbar(&self.scroll),
+                            .vertical_scrollbar(&self.scroll),
+                    ),
             )
             .child(
                 div()
@@ -6136,6 +6259,7 @@ pub(crate) fn download_settings_section(
     rows: Vec<AnyElement>,
 ) -> AnyElement {
     div()
+        .debug_selector(move || format!("download-settings-section-{title}"))
         .w_full()
         .rounded(px(5.0))
         .border_1()
@@ -6166,6 +6290,7 @@ fn download_settings_grid_section(
     rows: Vec<AnyElement>,
 ) -> AnyElement {
     div()
+        .debug_selector(move || format!("download-settings-section-{title}"))
         .w_full()
         .rounded(px(5.0))
         .border_1()
@@ -6187,10 +6312,17 @@ fn download_settings_grid_section(
                 .child(title),
         )
         .child(
-            div().w_full().flex().flex_wrap().children(
-                rows.into_iter()
-                    .map(|row| div().w(gpui::relative(0.5)).min_w(px(350.0)).child(row)),
-            ),
+            div()
+                .w_full()
+                .flex()
+                .flex_wrap()
+                .children(rows.into_iter().enumerate().map(move |(index, row)| {
+                    div()
+                        .debug_selector(move || format!("download-settings-grid-{title}-{index}"))
+                        .w(gpui::relative(0.5))
+                        .min_w(px(350.0))
+                        .child(row)
+                })),
         )
         .into_any_element()
 }
@@ -6272,6 +6404,7 @@ fn download_settings_stacked_row(
 
 fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -> AnyElement {
     div()
+        .debug_selector(move || format!("download-settings-path-{label}"))
         .h(px(30.0))
         .px(px(9.0))
         .border_b_1()
@@ -6295,6 +6428,64 @@ fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -
                 .text_color(theme.text_secondary)
                 .child(path),
         )
+        .into_any_element()
+}
+
+fn download_settings_navigation_item(
+    theme: Theme,
+    id: &'static str,
+    selector: &'static str,
+    title: &'static str,
+    description: &'static str,
+    selected: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    div()
+        .id(id)
+        .debug_selector(move || selector.into())
+        .mx(px(8.0))
+        .min_h(px(48.0))
+        .px(px(10.0))
+        .py(px(7.0))
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(if selected {
+            theme.border_active
+        } else {
+            theme.surface
+        })
+        .bg(if selected {
+            theme.element_selected
+        } else {
+            theme.surface
+        })
+        .cursor_pointer()
+        .flex()
+        .flex_col()
+        .justify_center()
+        .gap(px(2.0))
+        .child(
+            div()
+                .text_size(px(10.5))
+                .font_weight(if selected {
+                    FontWeight::SEMIBOLD
+                } else {
+                    FontWeight::NORMAL
+                })
+                .text_color(if selected {
+                    theme.text
+                } else {
+                    theme.text_secondary
+                })
+                .child(title),
+        )
+        .child(
+            div()
+                .text_size(px(9.0))
+                .text_color(theme.text_muted)
+                .child(description),
+        )
+        .on_click(on_click)
         .into_any_element()
 }
 
@@ -9048,7 +9239,7 @@ fn download_input_field(
 mod tests {
     use super::*;
 
-    use gpui::{AppContext, Modifiers, TestAppContext};
+    use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
 
     #[test]
     fn multiline_header_placeholder_stays_on_one_line_for_windows_directwrite() {
@@ -10276,7 +10467,25 @@ mod tests {
         });
         cx.run_until_parked();
 
-        assert!(cx.read(|cx| application.read(cx).settings_window.is_some()));
+        let settings_window = cx
+            .read(|cx| application.read(cx).settings_window)
+            .expect("production settings window");
+        let actual_size = settings_window
+            .update(cx, |_, window, _| window.bounds().size)
+            .expect("read production settings window bounds");
+        assert_eq!(actual_size.width, px(DOWNLOAD_SETTINGS_WINDOW_WIDTH));
+        assert_eq!(actual_size.height, px(DOWNLOAD_SETTINGS_WINDOW_HEIGHT));
+        cx.read(|cx| {
+            let options = download_settings_window_options(cx);
+            assert!(!options.is_resizable);
+            assert_eq!(
+                options.window_min_size,
+                Some(size(
+                    px(DOWNLOAD_SETTINGS_WINDOW_WIDTH),
+                    px(DOWNLOAD_SETTINGS_WINDOW_HEIGHT)
+                ))
+            );
+        });
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -10415,12 +10624,10 @@ mod tests {
             .refresh()
             .expect("render FFmpeg auto-install settings");
         window.run_until_parked();
-        window.update(|_, cx| {
-            settings.update(cx, |settings, cx| {
-                settings.scroll.scroll_to_top_of_item(3);
-                cx.notify();
-            });
-        });
+        let transfer_navigation = window
+            .debug_bounds("download-settings-nav-transfer")
+            .expect("transfer settings navigation");
+        window.simulate_click(transfer_navigation.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render FFmpeg install section");
         let install = window
@@ -10491,10 +10698,16 @@ mod tests {
         let application_for_window = application.clone();
         let initial = cx.read(|cx| application.read(cx).settings_view_initial());
         let (_settings, window) = cx.add_window_view(move |window, cx| {
-            window.resize(size(px(820.0), px(650.0)));
+            window.resize(size(px(984.0), px(650.0)));
             DownloadSettingsView::new(application_for_window, initial, window, cx)
         });
         window.refresh().expect("render FFmpeg settings layout");
+        let transfer_navigation = window
+            .debug_bounds("download-settings-nav-transfer")
+            .expect("transfer settings navigation");
+        window.simulate_click(transfer_navigation.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render transfer settings layout");
 
         let section = window
             .debug_bounds("download-settings-media-tools-section")
@@ -10509,6 +10722,117 @@ mod tests {
             control.size.width.as_f32(),
             section.size.width.as_f32()
         );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "settings-section-widths");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_settings_window(cx);
+            });
+        });
+        cx.run_until_parked();
+        let settings_window = cx
+            .read(|cx| application.read(cx).settings_window)
+            .expect("production settings window");
+        let mut window = VisualTestContext::from_window(settings_window, cx);
+        window.run_until_parked();
+        window.refresh().expect("render download settings widths");
+
+        let save = window
+            .debug_bounds("download-settings-section-保存")
+            .expect("save section");
+        let expected_left = save.origin.x.as_f32();
+        let expected_width = save.size.width.as_f32();
+        macro_rules! assert_section {
+            ($name:literal, $selector:literal) => {{
+                let bounds = window
+                    .debug_bounds($selector)
+                    .unwrap_or_else(|| panic!("missing {} section", $name));
+                assert!(
+                    (bounds.origin.x.as_f32() - expected_left).abs() <= 1.0,
+                    "{} starts at {}px instead of {expected_left}px",
+                    $name,
+                    bounds.origin.x.as_f32()
+                );
+                assert!(
+                    (bounds.size.width.as_f32() - expected_width).abs() <= 1.0,
+                    "{} is {}px wide instead of the shared {expected_width}px content width",
+                    $name,
+                    bounds.size.width.as_f32()
+                );
+            }};
+        }
+        macro_rules! open_page {
+            ($selector:literal) => {{
+                let navigation = window
+                    .debug_bounds($selector)
+                    .expect("settings page navigation");
+                window.simulate_click(navigation.center(), Modifiers::default());
+                window.run_until_parked();
+                window.refresh().expect("render selected settings page");
+            }};
+        }
+        assert_section!("分类与重名", "download-settings-section-分类与重名");
+        assert!(
+            window
+                .debug_bounds("download-settings-section-传输")
+                .is_none(),
+            "inactive pages must not remain in one oversized scrolling column"
+        );
+        assert!(
+            expected_width >= 760.0,
+            "settings content remains unexpectedly narrow at {expected_width}px"
+        );
+
+        open_page!("download-settings-nav-request");
+        assert_section!("请求上下文", "download-settings-section-请求上下文");
+        open_page!("download-settings-nav-transfer");
+        assert_section!("传输", "download-settings-section-传输");
+        assert_section!("媒体工具", "download-settings-section-媒体工具");
+        let first_transfer_cell = window
+            .debug_bounds("download-settings-grid-传输-0")
+            .expect("first transfer grid cell");
+        let second_transfer_cell = window
+            .debug_bounds("download-settings-grid-传输-1")
+            .expect("second transfer grid cell");
+        assert!(
+            (first_transfer_cell.origin.y.as_f32() - second_transfer_cell.origin.y.as_f32()).abs()
+                <= 1.0,
+            "the first two transfer settings are not in the same grid row"
+        );
+        assert!(
+            (first_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0
+                && (second_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0,
+            "transfer grid cells must each use half of the {expected_width}px content width"
+        );
+        open_page!("download-settings-nav-window");
+        assert_section!("窗口", "download-settings-section-窗口");
+        assert_section!("任务栏进度", "download-settings-section-任务栏进度");
+        open_page!("download-settings-nav-diagnostics");
+        assert_section!("诊断", "download-settings-section-诊断");
+
+        for (label, selector) in [
+            ("配置", "download-settings-path-配置"),
+            ("日志", "download-settings-path-日志"),
+            ("数据", "download-settings-path-数据"),
+        ] {
+            let bounds = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing {label} diagnostic path"));
+            assert!(
+                bounds.size.width.as_f32() >= expected_width - 2.0,
+                "{label} diagnostic row is only {}px inside a {expected_width}px section",
+                bounds.size.width.as_f32()
+            );
+        }
 
         let _ = std::fs::remove_dir_all(directory);
     }
@@ -10538,17 +10862,15 @@ mod tests {
         });
         let application_for_window = application.clone();
         let initial = cx.read(|cx| application.read(cx).settings_view_initial());
-        let (settings, window) = cx.add_window_view(move |window, cx| {
+        let (_settings, window) = cx.add_window_view(move |window, cx| {
             DownloadSettingsView::new(application_for_window, initial, window, cx)
         });
         window.refresh().expect("render FFmpeg cancel settings");
         window.run_until_parked();
-        window.update(|_, cx| {
-            settings.update(cx, |settings, cx| {
-                settings.scroll.scroll_to_top_of_item(3);
-                cx.notify();
-            });
-        });
+        let transfer_navigation = window
+            .debug_bounds("download-settings-nav-transfer")
+            .expect("transfer settings navigation");
+        window.simulate_click(transfer_navigation.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render FFmpeg cancel section");
         let install = window
@@ -10635,10 +10957,20 @@ mod tests {
                 });
             });
         });
+        let request_navigation = window
+            .debug_bounds("download-settings-nav-request")
+            .expect("request settings navigation");
+        window.simulate_click(request_navigation.center(), Modifiers::default());
+        window.run_until_parked();
         let certificate_toggle = window
             .debug_bounds("download-settings-accept-invalid-certificates")
             .expect("certificate policy toggle");
         window.simulate_click(certificate_toggle.center(), Modifiers::default());
+        let general_navigation = window
+            .debug_bounds("download-settings-nav-general")
+            .expect("general settings navigation");
+        window.simulate_click(general_navigation.center(), Modifiers::default());
+        window.run_until_parked();
         let automatic_categories = window
             .debug_bounds("download-settings-automatic-categories")
             .expect("automatic category toggle");
@@ -10708,12 +11040,10 @@ mod tests {
             window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
             selected_directory.display().to_string()
         );
-        window.update(|_, cx| {
-            settings.update(cx, |settings, cx| {
-                settings.scroll.scroll_to_top_of_item(3);
-                cx.notify();
-            });
-        });
+        let transfer_navigation = window
+            .debug_bounds("download-settings-nav-transfer")
+            .expect("transfer settings navigation");
+        window.simulate_click(transfer_navigation.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render media tools section");
         let ffmpeg_picker = window
@@ -10810,6 +11140,11 @@ mod tests {
                 });
             });
         }
+        let window_navigation = window
+            .debug_bounds("download-settings-nav-window")
+            .expect("window settings navigation");
+        window.simulate_click(window_navigation.center(), Modifiers::default());
+        window.run_until_parked();
         window.update(|_, cx| {
             settings.update(cx, |settings, cx| {
                 settings.scroll.scroll_to_bottom();
@@ -10906,6 +11241,14 @@ mod tests {
             );
             assert!(!view.categories[0].enabled);
         });
+        cancel_window
+            .refresh()
+            .expect("render cancelled settings draft");
+        let window_navigation = cancel_window
+            .debug_bounds("download-settings-nav-window")
+            .expect("window settings navigation");
+        cancel_window.simulate_click(window_navigation.center(), Modifiers::default());
+        cancel_window.run_until_parked();
         let progress_toggle = cancel_window
             .debug_bounds("download-settings-progress-window")
             .expect("progress setting toggle");
