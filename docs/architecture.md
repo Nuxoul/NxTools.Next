@@ -83,6 +83,7 @@ The resolved identity is stored with the task, so settings changes affect only l
 - semantic-to-Win32 hotkey mapping, registration and low-level user-session hooks;
 - foreground process/window/caret and keyboard modifier state;
 - Shell/COM operations, Explorer integration and file-dialog adaptation;
+- current-user startup registration, notification-area icon/menu and native main-window shell operations;
 - screenshot and window enumeration adapters.
 
 ## Boundary rules
@@ -244,6 +245,17 @@ matched to the pipe generation, so normal index status events cannot repeatedly 
 Fatal COM/UIA timeouts are carried in the helper response: both the helper process and the client
 connection are retired immediately, so the next summon uses a fresh bounded process rather than a
 stale pipe or a late side-effect thread.
+
+## Product shell and notification area
+
+`AppConfig.system` is the canonical Rust-owned policy for current-user silent startup and ordinary
+main-window close behavior. GPUI renders and persists that policy, keeps the main-window entity
+alive while hidden, and maps title-bar/tray intents to typed operations. The C# PlatformHost alone
+touches the HKCU Run key, owns the WinForms `NotifyIcon` and menu, and performs native HWND
+show/hide/activate/move operations. It receives booleans and window handles, never decides whether
+the product should remain resident. `--silent-start` creates the ordinary product runtime with a
+hidden, unfocused main window; notification-area restore reuses that same window. Explicit tray
+Exit is the only tray path that quits the GPUI application and disposes PlatformHost resources.
 
 ## Quick-launch phase-2 tracer bullet
 

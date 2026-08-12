@@ -388,6 +388,7 @@ rollback emits `download.ffmpeg_install.rollback_failed` with the same correlati
 while the engine may still reference it.
 Windows picker or system-browser launch failures also carry an optional native error code. Error
 messages are reserved for the UI and are not copied into these structured events.
+
 Both platform operations own bounded pending state. A picker result is capped at ten minutes and a
 page-open result at fifteen seconds; timeout uses the same correlated failed terminal and releases
 the pending operation so a disconnected PlatformHost cannot permanently block Browse or grow state.
@@ -400,3 +401,33 @@ Paused/failed cancellation and history removal emit `download.dash_cleanup.start
 `download.dash_cleanup.completed`; filesystem failures use `download.dash_cleanup.failed` with the
 same correlation, fixed `reason`, fixed `artifact_kind`, native error code and elapsed time. These
 events never include an MPD/fragment URL or local path.
+
+## Product shell settings and notification area
+
+Saving product-global settings uses one `network.settings.apply_started` and exactly one
+`network.settings.apply_succeeded` or `network.settings.apply_failed` correlation because network
+and system-shell policy share one canonical config publication. The versioned
+`configure_desktop_shell` platform command then has the same operation correlation and the normal
+platform-command request/result lifecycle. It carries only booleans for current-user silent startup
+and notification-area visibility. Registry value text, executable paths and user profile paths are
+never logged.
+
+Notification-area interactions arrive as the bounded `tray_action_requested` event with a new
+correlation ID and only the fixed action `open|exit`. Rust records one
+`product.shell.tray_action_started` and exactly one `completed|failed` terminal with that identity,
+fixed action/failure kind and elapsed time. Restore reuses the correlation for typed window
+visibility and activation commands and completes only after both Windows results; ordinary
+close-to-tray uses typed visibility. Native failures retain the operation correlation and optional
+Win32 error code. Mouse movement and notification-area hover do not emit production diagnostics.
+
+On PlatformHost connection/reconnection, persisted shell intent uses one bounded
+`product.shell.reconcile_started` → `completed|failed` lifecycle. Close-to-tray becomes active in
+the desktop only after the matching Windows success result; a failed tray/startup configuration
+therefore disables the live close-to-tray policy without changing the persisted desired setting,
+so it cannot hide the last usable UI. A later successful reconciliation can activate it again.
+Reconciliation logs booleans only indirectly as fixed
+outcomes and never copy registry data or executable paths.
+`--silent-start` separately records `product.shell.silent_startup_started` and exactly one
+`completed|failed` terminal while waiting at most ten seconds for the first PlatformHost
+connection. A timeout exits the hidden desktop instead of leaving an inaccessible background GUI;
+later shell reconciliation has its own correlation and deadline.

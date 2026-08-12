@@ -106,6 +106,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueueQuickLaunchHotKeyRecording(command, cancellationToken);
 
+    public Task<WindowsCommandResult> ConfigureDesktopShellAsync(
+        ConfigureDesktopShellCommand command,
+        CancellationToken cancellationToken)
+        => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueueDesktopShellConfiguration(command, cancellationToken);
+
     public Task<WindowsCommandResult> PasteTextAsync(
         PasteTextCommand command,
         Guid correlationId,
@@ -401,8 +407,22 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         return result;
     }
 
+    public WindowsCommandResult ToggleWindowMaximized(ToggleWindowMaximizedCommand command) =>
+        NativeMethods.ToggleWindowMaximized(new IntPtr(command.WindowHandle));
+
+    internal static WindowsCommandResult SetNativeWindowMaximizedForTest(
+        long windowHandle,
+        bool maximized) =>
+        NativeMethods.SetWindowMaximized(new IntPtr(windowHandle), maximized);
+
+    internal static WindowsCommandResult ToggleNativeWindowMaximizedForTest(long windowHandle) =>
+        NativeMethods.ToggleWindowMaximized(new IntPtr(windowHandle));
+
     internal static WindowsCommandResult MinimizeNativeWindowForTest(long windowHandle) =>
         NativeMethods.SetWindowMinimized(new IntPtr(windowHandle));
+
+    internal static WindowsCommandResult BeginNativeWindowMoveForTest(long windowHandle) =>
+        NativeMethods.BeginWindowMove(new IntPtr(windowHandle));
 
     private void LogWindowPresentation(
         string eventName,
@@ -575,6 +595,113 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         Guid correlationId) =>
         BrowserNativeMessagingRegistrar.Ensure(command, _log, correlationId);
 
+    internal static WindowsCommandResult ApplyStartupRegistration(
+        RegistryKey runKey,
+        string desktopExecutable,
+        bool enabled)
+    {
+        try
+        {
+            if (enabled)
+            {
+                if (!File.Exists(desktopExecutable))
+                {
+                    return new WindowsCommandResult(
+                        false,
+                        "Packaged NxTools desktop executable is unavailable.");
+                }
+                runKey.SetValue("NxTools.Next", $"\"{desktopExecutable}\" --silent-start");
+            }
+            else
+            {
+                runKey.DeleteValue("NxTools.Next", throwOnMissingValue: false);
+            }
+            return new WindowsCommandResult(true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return new WindowsCommandResult(false, error.Message, NativeErrorCode: error.HResult);
+        }
+    }
+
+    internal static NotifyIcon CreateTrayIcon(
+        string desktopExecutable,
+        Action open,
+        Action exit,
+        out Icon? ownedIcon)
+        => CreateTrayIconCore(
+            () => File.Exists(desktopExecutable)
+                ? Icon.ExtractAssociatedIcon(desktopExecutable)
+                : null,
+            () => new ContextMenuStrip(),
+            () => new NotifyIcon(),
+            open,
+            exit,
+            out ownedIcon);
+
+    internal static NotifyIcon CreateTrayIconForTest(
+        Func<ContextMenuStrip> createMenu,
+        Func<NotifyIcon> createTrayIcon,
+        out Icon? ownedIcon)
+        => CreateTrayIconCore(
+            () => null,
+            createMenu,
+            createTrayIcon,
+            () => { },
+            () => { },
+            out ownedIcon);
+
+    private static NotifyIcon CreateTrayIconCore(
+        Func<Icon?> createIcon,
+        Func<ContextMenuStrip> createMenu,
+        Func<NotifyIcon> createTrayIcon,
+        Action open,
+        Action exit,
+        out Icon? ownedIcon)
+    {
+        Icon? icon = null;
+        ContextMenuStrip? menu = null;
+        NotifyIcon? trayIcon = null;
+        ownedIcon = null;
+        try
+        {
+            icon = createIcon();
+            menu = createMenu();
+            menu.Items.Add("打开 NxTools", null, (_, _) => open());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("退出", null, (_, _) => exit());
+            trayIcon = createTrayIcon();
+            trayIcon.Text = "NxTools";
+            trayIcon.Icon = icon ?? SystemIcons.Application;
+            trayIcon.ContextMenuStrip = menu;
+            trayIcon.MouseClick += (_, eventArgs) =>
+            {
+                if (eventArgs.Button == MouseButtons.Left)
+                {
+                    open();
+                }
+            };
+            ownedIcon = icon;
+            return trayIcon;
+        }
+        catch
+        {
+            DisposeTrayCandidateWithoutThrowing(trayIcon, menu, icon);
+            ownedIcon = null;
+            throw;
+        }
+    }
+
+    private static void DisposeTrayCandidateWithoutThrowing(
+        NotifyIcon? trayIcon,
+        ContextMenuStrip? menu,
+        Icon? icon)
+    {
+        try { trayIcon?.Dispose(); } catch { }
+        try { menu?.Dispose(); } catch { }
+        try { icon?.Dispose(); } catch { }
+    }
+
     internal static bool IsQuickLaunchContextRequestCurrent(
         long requestedAtUnixMs,
         long nowUnixMs) =>
@@ -641,6 +768,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private const int WmFileDialogStructureChanged = 0x8008;
         private const int WmFileDialogGeometryChanged = 0x8009;
         private const int WmTaskbarOverlayChanged = 0x800A;
+        private const int WmConfigureDesktopShell = 0x800B;
         private const int WmSettingChange = 0x001A;
         private const int WmDisplayChange = 0x007E;
         private const uint EventSystemForeground = 0x0003;
@@ -687,6 +815,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private readonly ConcurrentQueue<ClipboardHotKeyRecordingRequest> _hotKeyRecordingRequests = new();
         private readonly ConcurrentQueue<QuickLaunchConfigurationRequest> _quickLaunchConfigurationRequests = new();
         private readonly ConcurrentQueue<QuickLaunchHotKeyRecordingRequest> _quickLaunchHotKeyRecordingRequests = new();
+        private readonly ConcurrentQueue<DesktopShellConfigurationRequest> _desktopShellConfigurationRequests = new();
         private readonly ConcurrentQueue<(long WindowHandle, string Directory, string DisplayName)>
             _resolvedDirectorySources = new();
         private readonly NativeMethods.WinEventDelegate _foregroundCallback;
@@ -732,6 +861,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         private string? _taskbarOverlayAppliedBounds;
         private ClipboardCaptureExclusions _captureExclusions = ClipboardCaptureExclusions.Create(
             ["KeePass.exe", "1Password.exe", "Bitwarden.exe"]);
+        private readonly DesktopTrayController _desktopTray = new();
 
         public bool ClipboardHotKeyAvailable => _hotKeyRegistration?.IsAvailable == true;
         public bool QuickLaunchHotKeyAvailable => _quickLaunchTriggerEnabled && !_quickLaunchRecording &&
@@ -906,6 +1036,24 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             _ = NativeMethods.PostMessage(Handle, WmClose, IntPtr.Zero, IntPtr.Zero);
         }
 
+        public Task<WindowsCommandResult> EnqueueDesktopShellConfiguration(
+            ConfigureDesktopShellCommand command,
+            CancellationToken cancellationToken)
+        {
+            var completion = new TaskCompletionSource<WindowsCommandResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _desktopShellConfigurationRequests.Enqueue(new DesktopShellConfigurationRequest(
+                command, cancellationToken, completion));
+            if (!NativeMethods.PostMessage(Handle, WmConfigureDesktopShell, IntPtr.Zero, IntPtr.Zero))
+            {
+                completion.TrySetResult(new WindowsCommandResult(
+                    false,
+                    "Failed to schedule desktop-shell configuration on the Windows thread.",
+                    NativeErrorCode: Marshal.GetLastWin32Error()));
+            }
+            return completion.Task;
+        }
+
         public void TrackFileDialogSearchPlacement(
             PlaceFileDialogSearchWindowCommand command)
         {
@@ -1016,6 +1164,9 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     return;
                 case WmSetQuickLaunchHotKeyRecording:
                     DrainQuickLaunchHotKeyRecordingRequests();
+                    return;
+                case WmConfigureDesktopShell:
+                    DrainDesktopShellConfigurationRequests();
                     return;
                 case WmQuickLaunchGesture:
                     PublishQuickLaunchPanelRequest();
@@ -2231,6 +2382,59 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             }
         }
 
+        private void DrainDesktopShellConfigurationRequests()
+        {
+            while (_desktopShellConfigurationRequests.TryDequeue(out var request))
+            {
+                if (request.CancellationToken.IsCancellationRequested)
+                {
+                    request.Completion.TrySetCanceled(request.CancellationToken);
+                    continue;
+                }
+                request.Completion.TrySetResult(ApplyDesktopShellConfiguration(request.Command));
+            }
+        }
+
+        private WindowsCommandResult ApplyDesktopShellConfiguration(ConfigureDesktopShellCommand command)
+        {
+            try
+            {
+                var desktopExecutable = Path.Combine(AppContext.BaseDirectory, "NxTools.exe");
+                using (var runKey = Registry.CurrentUser.CreateSubKey(
+                           @"Software\Microsoft\Windows\CurrentVersion\Run",
+                           writable: true))
+                {
+                    if (runKey is null)
+                    {
+                        return new WindowsCommandResult(false, "Windows startup registry is unavailable.");
+                    }
+                    var startup = ApplyStartupRegistration(
+                        runKey,
+                        desktopExecutable,
+                        command.StartOnLoginSilently);
+                    if (!startup.Success)
+                    {
+                        return startup;
+                    }
+                }
+
+                return ConfigureTrayIcon(command.TrayIconVisible, desktopExecutable);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                return new WindowsCommandResult(false, error.Message, NativeErrorCode: error.HResult);
+            }
+        }
+
+        private WindowsCommandResult ConfigureTrayIcon(bool visible, string desktopExecutable)
+        {
+            return _desktopTray.Configure(
+                visible,
+                desktopExecutable,
+                () => _events.TryWrite(new TrayActionRequestedEvent(Guid.NewGuid(), "open")),
+                () => _events.TryWrite(new TrayActionRequestedEvent(Guid.NewGuid(), "exit")));
+        }
+
         private WindowsCommandResult ApplyQuickLaunchConfiguration(ConfigureQuickLaunchCommand command)
         {
             _autoQuickSwitchEnabled = command.Enabled && command.AutoQuickSwitchEnabled;
@@ -2468,6 +2672,7 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
         private void Stop()
         {
+            ConfigureTrayIcon(false, string.Empty);
             SystemEvents.DisplaySettingsChanged -= OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
@@ -2538,6 +2743,11 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 request.Completion.TrySetResult(new WindowsCommandResult(
                     false, "Windows adapter is stopping."));
             }
+            while (_desktopShellConfigurationRequests.TryDequeue(out var request))
+            {
+                request.Completion.TrySetResult(new WindowsCommandResult(
+                    false, "Windows adapter is stopping."));
+            }
             DestroyHandle();
             Application.ExitThread();
         }
@@ -2582,11 +2792,17 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 
+    private sealed record DesktopShellConfigurationRequest(
+        ConfigureDesktopShellCommand Command,
+        CancellationToken CancellationToken,
+        TaskCompletionSource<WindowsCommandResult> Completion);
+
     private static class NativeMethods
     {
         internal static int InputSize => Marshal.SizeOf<Input>();
 
         private const int SwRestore = 9;
+        private const int SwMaximize = 3;
         private const uint InputKeyboard = 1;
         private const uint KeyeventfKeyup = 0x0002;
         private const ushort VkControl = 0x11;
@@ -2763,6 +2979,10 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool IsIconic(IntPtr window);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsZoomed(IntPtr window);
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -3084,6 +3304,27 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             return new WindowsCommandResult(
                 false,
                 "Windows did not show the requested GPUI window minimized without activation.");
+        }
+
+        internal static WindowsCommandResult SetWindowMaximized(IntPtr window, bool maximized)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            _ = ShowWindow(window, maximized ? SwMaximize : SwRestore);
+            return IsZoomed(window) == maximized
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(false, "Windows did not apply the requested maximized state.");
+        }
+
+        internal static WindowsCommandResult ToggleWindowMaximized(IntPtr window)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            return SetWindowMaximized(window, !IsZoomed(window));
         }
 
         internal static NativeWindowPresentationState CaptureWindowPresentation(IntPtr window)

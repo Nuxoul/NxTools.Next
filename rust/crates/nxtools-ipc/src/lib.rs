@@ -55,6 +55,31 @@ pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoi
     )
 }
 
+impl PlatformServerEndpoint {
+    /// In-memory lifecycle seam used by GPUI/native-boundary contract tests.
+    #[doc(hidden)]
+    pub fn set_connected_for_contract_test(&self, connected: bool) {
+        self.connected.store(connected, Ordering::Release);
+    }
+
+    /// Receives one command from the in-memory side of the bounded platform transport.
+    #[doc(hidden)]
+    pub fn try_receive_command_for_contract_test(&self) -> Result<Envelope, String> {
+        self.commands.try_recv().map_err(|error| error.to_string())
+    }
+
+    /// Publishes one observed notification through the same bounded transport as PlatformHost.
+    #[doc(hidden)]
+    pub fn send_notification_for_contract_test(
+        &self,
+        notification: PlatformNotification,
+    ) -> Result<(), String> {
+        self.notifications
+            .try_send(notification)
+            .map_err(|error| error.to_string())
+    }
+}
+
 impl PlatformBridge {
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)
@@ -117,7 +142,7 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 28] = [
+            const SUPPORTED_CAPABILITIES: [&str; 30] = [
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
@@ -146,6 +171,8 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
                 "file_dialog_search",
                 "window_activation",
                 "indexer_service_management",
+                "desktop_shell",
+                "tray_events",
             ];
             let accepted_capabilities = hello
                 .capabilities

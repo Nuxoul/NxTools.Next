@@ -32,6 +32,8 @@ internal static class PlatformCapabilities
     public const string WindowActivation = "window_activation";
     public const string IndexerServiceManagement = "indexer_service_management";
     public const string BrowserNativeMessaging = "browser_native_messaging";
+    public const string DesktopShell = "desktop_shell";
+    public const string TrayEvents = "tray_events";
 
     public static string[] Create(bool clipboardHotKeyAvailable, bool quickLaunchHotKeyAvailable = false)
     {
@@ -64,7 +66,9 @@ internal static class PlatformCapabilities
             FileDialogSearch,
             WindowActivation,
             IndexerServiceManagement,
-            BrowserNativeMessaging
+            BrowserNativeMessaging,
+            DesktopShell,
+            TrayEvents
         };
         if (clipboardHotKeyAvailable)
         {

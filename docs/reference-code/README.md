@@ -20,6 +20,7 @@ keyword search.
 | Clipboard capture, image compatibility and paste | [clipboard.md](clipboard.md) | Indexed |
 | Download manager | [download.md](download.md) | Indexed; phase 0 contracts and test fixture complete |
 | Quick Launch / Finder | [quick-launch-research.md](quick-launch-research.md) | Investigation in progress |
+| Product shell, startup and notification area | [system-shell.md](system-shell.md) | Indexed |
 | Floating assistant | `assistant.md` | Not inspected for the current slice |
 | GPUI/Zed rendering patterns | `gpui.md` | Not inspected for the current slice |
 

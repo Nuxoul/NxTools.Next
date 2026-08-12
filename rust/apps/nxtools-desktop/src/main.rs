@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod assets;
 mod clipboard;
 mod download_taskbar_overlay;
@@ -24,11 +26,13 @@ use gpui::{
     WindowDecorations, WindowKind, WindowOptions, px, size, transparent_black,
 };
 use gpui_component::{Root, Theme, ThemeMode};
-use main_window::MainWindow;
+use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
+use nxtools_core::SystemSettings;
 use platform_events::{
-    BrowserStartupWindow, PlatformEventDispatcher, PlatformEventDispatcherGlobal,
+    BrowserStartupWindow, PlatformApplicationTargets, PlatformEventDispatcher,
+    PlatformEventDispatcherGlobal,
 };
 use quick_launch::QuickLaunchApplication;
 use runtime::DesktopRuntime;
@@ -47,6 +51,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DesktopLaunchMode {
     Normal,
+    SilentStart,
     BrowserDialog { correlation_id: Uuid },
     Background,
 }
@@ -55,14 +60,25 @@ impl DesktopLaunchMode {
     fn from_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Self> {
         let arguments = arguments.into_iter().collect::<Vec<_>>();
         let background = arguments.iter().any(|argument| argument == "--background");
+        let silent_start = arguments
+            .iter()
+            .any(|argument| argument == "--silent-start");
         let browser_dialog = arguments
             .iter()
             .any(|argument| argument == "--browser-dialog");
-        if background && browser_dialog {
+        if [background, browser_dialog, silent_start]
+            .into_iter()
+            .filter(|enabled| *enabled)
+            .count()
+            > 1
+        {
             anyhow::bail!("desktop startup modes --background and --browser-dialog conflict");
         }
         if background {
             return Ok(Self::Background);
+        }
+        if silent_start {
+            return Ok(Self::SilentStart);
         }
         if !browser_dialog {
             return Ok(Self::Normal);
@@ -79,17 +95,17 @@ impl DesktopLaunchMode {
     }
 
     const fn main_window_focus(self) -> bool {
-        !matches!(self, Self::BrowserDialog { .. })
+        !matches!(self, Self::BrowserDialog { .. } | Self::SilentStart)
     }
 
     const fn main_window_show(self) -> bool {
-        !matches!(self, Self::BrowserDialog { .. })
+        !matches!(self, Self::BrowserDialog { .. } | Self::SilentStart)
     }
 
     const fn correlation_id(self) -> Option<Uuid> {
         match self {
             Self::BrowserDialog { correlation_id } => Some(correlation_id),
-            Self::Normal | Self::Background => None,
+            Self::Normal | Self::SilentStart | Self::Background => None,
         }
     }
 }
@@ -138,6 +154,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let clear = transparent_black();
             let visual_theme = crate::theme::Theme::zed_dark();
             let component_theme = Theme::global_mut(cx);
+            component_theme.font_family = "Microsoft YaHei UI".into();
+            component_theme.mono_font_family = "Consolas".into();
+            component_theme.font_size = px(12.0);
+            component_theme.mono_font_size = px(11.0);
             component_theme.colors.background = clear;
             component_theme.colors.window_border = clear;
             component_theme.colors.foreground = visual_theme.text.into();
@@ -161,15 +181,25 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             component_theme.colors.scrollbar_thumb_hover = visual_theme.text_muted.into();
 
             let notifications = cx.new(|_| NotificationCenter::default());
+            let platform_bridge = Rc::new(platform_bridge);
+            // Close-to-tray is an active platform capability, not merely a persisted preference.
+            // Keep it disabled until PlatformHost confirms that the tray icon and startup adapter
+            // were configured, otherwise a failed tray creation could hide the only UI surface.
+            let system_settings = Rc::new(std::cell::RefCell::new(SystemSettings {
+                start_on_login_silently: false,
+                close_to_tray: false,
+            }));
             let network_settings = cx.new(|_| {
                 NetworkSettingsApplication::new(
                     network_policy,
                     app_config.clone(),
                     config_path.clone(),
                     notifications.clone(),
+                    Some(Rc::clone(&platform_bridge)),
+                    Rc::clone(&system_settings),
+                    matches!(launch_mode, DesktopLaunchMode::SilentStart),
                 )
             });
-            let platform_bridge = Rc::new(platform_bridge);
             let indexer_bridge = Rc::new(indexer_bridge);
             let quick_launch = cx.new(|_| {
                 QuickLaunchApplication::new(
@@ -232,7 +262,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let clipboard_for_window = clipboard.downgrade();
             let quick_launch_for_window = quick_launch.downgrade();
             let downloads_for_window = downloads.downgrade();
-            let network_settings_for_window = network_settings.downgrade();
+            let network_settings_for_window = Some(network_settings.clone());
+            let platform_bridge_for_window = Rc::clone(&platform_bridge);
+            let close_platform = Rc::clone(&platform_bridge);
+            let close_behavior = Rc::clone(&system_settings);
             let startup_started_at = Instant::now();
             let window = cx.open_window(
                 WindowOptions {
@@ -256,12 +289,34 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                     tabbing_identifier: None,
                 },
                 move |window, cx| {
+                    let close_platform = Rc::clone(&close_platform);
+                    let close_behavior = Rc::clone(&close_behavior);
+                    let native_window_handle =
+                        crate::ui::native_window_handle(window).unwrap_or_default();
+                    window.on_window_should_close(cx, move |_, _| {
+                        if !close_behavior.borrow().close_to_tray || native_window_handle == 0 {
+                            return true;
+                        }
+                        let hidden = close_platform.send_command(
+                            nxtools_protocol::PlatformCommand::SetWindowVisibility(
+                                nxtools_protocol::SetWindowVisibilityCommand {
+                                    window_handle: native_window_handle,
+                                    visible: false,
+                                },
+                            ),
+                        );
+                        hidden.is_err()
+                    });
                     let main_window = cx.new(|cx| {
                         MainWindow::new(
                             clipboard_for_window,
                             quick_launch_for_window,
                             downloads_for_window,
-                            network_settings_for_window,
+                            MainWindowShellContext {
+                                settings: network_settings_for_window,
+                                platform: Some(Rc::clone(&platform_bridge_for_window)),
+                                system_settings: Rc::clone(&system_settings),
+                            },
                             notifications.clone(),
                             window,
                             cx,
@@ -300,13 +355,28 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                 cx.quit();
                 return;
             }
+            let main_window_handle = window
+                .as_ref()
+                .ok()
+                .and_then(|window| {
+                    window
+                        .update(cx, |_, window, _| crate::ui::native_window_handle(window))
+                        .ok()
+                        .flatten()
+                })
+                .unwrap_or_default();
             let dispatcher = cx.new(|cx| {
                 PlatformEventDispatcher::new(
                     Rc::clone(&platform_bridge),
                     browser_startup_window,
-                    clipboard.downgrade(),
-                    quick_launch,
-                    downloads,
+                    main_window_handle,
+                    matches!(launch_mode, DesktopLaunchMode::SilentStart),
+                    PlatformApplicationTargets {
+                        clipboard: clipboard.downgrade(),
+                        quick_launch,
+                        downloads,
+                        global_settings: network_settings,
+                    },
                     cx,
                 )
             });
@@ -350,7 +420,9 @@ fn main() {
     let result = match launch_mode {
         DesktopLaunchMode::Background => runtime::run_background_download_host(instance_wait)
             .context("background download host startup failed"),
-        DesktopLaunchMode::Normal | DesktopLaunchMode::BrowserDialog { .. } => {
+        DesktopLaunchMode::Normal
+        | DesktopLaunchMode::SilentStart
+        | DesktopLaunchMode::BrowserDialog { .. } => {
             run(instance_wait, launch_mode).context("desktop startup failed")
         }
     };
@@ -518,6 +590,19 @@ mod protected_desktop_tests {
         assert!(normal.main_window_focus());
         assert!(normal.main_window_show());
         assert_eq!(background, DesktopLaunchMode::Background);
+    }
+
+    #[test]
+    fn silent_start_creates_the_product_runtime_without_showing_or_focusing_main() {
+        let silent = DesktopLaunchMode::from_arguments([
+            "NxTools.exe".to_string(),
+            "--silent-start".to_string(),
+        ])
+        .expect("silent startup intent");
+
+        assert_eq!(silent, DesktopLaunchMode::SilentStart);
+        assert!(!silent.main_window_focus());
+        assert!(!silent.main_window_show());
     }
 
     #[test]

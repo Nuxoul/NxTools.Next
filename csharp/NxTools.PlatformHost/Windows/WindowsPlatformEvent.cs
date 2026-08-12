@@ -4,6 +4,8 @@ using NxTools.PlatformHost.Protocol;
 
 internal abstract record WindowsPlatformEvent;
 
+internal sealed record TrayActionRequestedEvent(Guid CorrelationId, string Action) : WindowsPlatformEvent;
+
 internal sealed record ForegroundChangedEvent(ForegroundContext Context) : WindowsPlatformEvent;
 
 internal sealed record GlobalPointerPressedEvent(

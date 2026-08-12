@@ -2029,7 +2029,8 @@ impl ClipboardApplication {
                     });
                 });
             }
-            PlatformEvent::QuickLaunchPanelRequested(_)
+            PlatformEvent::TrayActionRequested(_)
+            | PlatformEvent::QuickLaunchPanelRequested(_)
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
             | PlatformEvent::QuickLaunchAutoSwitchRequested(_)
             | PlatformEvent::QuickLaunchFileDialogSearchHostChanged(_)

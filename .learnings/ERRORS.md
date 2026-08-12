@@ -7814,3 +7814,201 @@ for the final low-memory Windows gate.
   one-frame DirectWrite window and compare exact byte lengths before changing unrelated layout.
 - Resolution: the Header placeholder is now a named one-line invariant; the native reproduction
   changed from a deterministic panic to a clean exit, and a regression rejects CR/LF reintroduction.
+
+## 2026-08-12 — GPUI debug bounds require an explicit debug selector
+
+**Status**: resolved
+
+- Failed approach: a real titlebar-click test tried to locate a stateful `div` by its element ID.
+- Symptom: `debug_bounds("global-network-settings")` returned `None` even though the element was
+  rendered; repeated builds looked like a layout failure.
+- Better approach: GPUI test lookup is populated by `debug_selector`, not by production `id` alone.
+  Add a stable debug selector to lifecycle boundaries that tests must click.
+- Resolution: the titlebar and global-settings trigger expose explicit debug selectors, and the
+  production click-through regression now passes.
+
+## [ERR-20260812-CARGO] cargo test accepts one positional name filter
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Passing two exact Rust test names to one `cargo test` command is rejected before any test runs.
+
+### Error
+`error: unexpected argument '<second-test-name>' found`
+
+### Context
+- Attempted to run two unrelated exact desktop regressions in one Cargo invocation.
+- Cargo accepts one positional `TESTNAME` filter; additional filters are test-binary arguments.
+
+### Suggested Fix
+Run each exact test in its own Cargo command, or use one shared substring filter when appropriate.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs, rust/apps/nxtools-desktop/src/main_window.rs
+
+## [ERR-20260812-PEPARAM] Release subsystem gate parameter name
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The PE subsystem gate was invoked manually with a guessed parameter name.
+
+### Error
+`A parameter cannot be found that matches parameter name 'ExecutablePath'.`
+
+### Context
+- The script contract is `-DesktopExecutable`; the packaging wrapper already uses it correctly.
+
+### Suggested Fix
+Read a PowerShell gate's parameter block before invoking it outside its owning wrapper.
+
+### Metadata
+- Reproducible: yes
+- Related Files: tests/architecture/desktop-release-subsystem.ps1, scripts/package.ps1
+
+## [ERR-20260812-COMMIT] Windows commit exhaustion blocked a Rust metadata mapping
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: infra
+
+### Summary
+An otherwise incremental desktop test could not map GPUI metadata because Windows commit space was low.
+
+### Error
+`failed to mmap ... 页面文件太小，无法完成操作。 (os error 1455)`
+
+### Context
+- Required low-memory Cargo variables and one build job were already active.
+- Windows reported about 3.62 GiB free virtual memory; an editor process retained unusually high private commit.
+- No user process was terminated or modified.
+
+### Suggested Fix
+Retry after compiler exit; before Release packaging, close the high-commit application or increase the page file. Working-set trimming alone does not release private commit.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/theme.rs, scripts/package.ps1
+
+## [ERR-20260812-WORKDIR] Mixed Rust and .NET wrapper used the Rust subdirectory
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A combined verification command resolved the repository-relative C# project from `rust/`.
+
+### Error
+`MSB1009: 项目文件不存在`
+
+### Context
+- `cargo fmt` succeeded; only the following .NET command failed before build.
+
+### Suggested Fix
+Run mixed-language wrappers from the repository root and pass `--manifest-path rust/Cargo.toml` to Cargo, or use separate commands with explicit working directories.
+
+### Metadata
+- Reproducible: yes
+- Related Files: csharp/NxTools.PlatformHost.Tests/NxTools.PlatformHost.Tests.csproj
+
+## [ERR-20260812-ENTITYUPDATE] GPUI strong Entity update returns the closure value
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+An `on_window_should_close` callback treated a strong `Entity::update` result like a weak-entity `Result`.
+
+### Error
+`no method named unwrap_or found for type bool`
+
+### Context
+- The strong entity is lifetime-owned by the window; its update directly returns the closure's bool.
+
+### Suggested Fix
+Use the returned bool directly. Reserve Result fallback handling for `WeakEntity::update` and fallible window handles.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/network_settings.rs
+
+## [ERR-20260812-GPUIZOOM] GPUI test platform does not implement native zoom
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A caption interaction regression attempted to execute `Window::zoom_window` in `TestAppContext`.
+
+### Error
+`gpui ... platform/test/window.rs: not implemented`
+
+### Context
+- The same test successfully reached the typed move transport before the native zoom call.
+- GPUI's synthetic platform cannot validate Windows maximize/minimize behavior.
+
+### Suggested Fix
+Keep GPUI tests on click/typed-command/entity-lifetime seams and validate native HWND operations in the PlatformHost real-window suite.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs, csharp/NxTools.PlatformHost.Tests/Program.cs
+
+## [ERR-20260812-CSHARPSLN] Assumed a C# solution file that the repository does not contain
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A verification command targeted `csharp/NxTools.PlatformHost.sln`, but this repository exposes only
+the individual PlatformHost project files.
+
+### Error
+`MSBUILD : error MSB1009: Project file does not exist.`
+
+### Suggested Fix
+Use `rg --files csharp | rg "(sln|csproj)$"` before selecting the build entry, then build the
+PlatformHost and test `.csproj` files directly.
+
+### Metadata
+- Reproducible: yes
+- Related Files: csharp/NxTools.PlatformHost/NxTools.PlatformHost.csproj, csharp/NxTools.PlatformHost.Tests/NxTools.PlatformHost.Tests.csproj
+
+## [ERR-20260812-PESUBSYSTEMPARAM] Used the wrong Release subsystem gate parameter
+
+**Logged**: 2026-08-12T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The Release PE gate was invoked with `-ExecutablePath`, while its declared parameter is
+`-DesktopExecutable`.
+
+### Error
+`A parameter cannot be found that matches parameter name 'ExecutablePath'.`
+
+### Suggested Fix
+Read the script parameter block before invoking a new architecture gate and use
+`-DesktopExecutable <path>`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: tests/architecture/desktop-release-subsystem.ps1

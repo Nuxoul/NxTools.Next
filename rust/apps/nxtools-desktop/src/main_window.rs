@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,8 +9,8 @@ use chrono::{DateTime, Local};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Corner, Entity, FocusHandle, IntoElement,
     KeyDownEvent, MouseButton, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
-    Subscription, UniformListScrollHandle, Window, WindowControlArea, div, ease_in_out, point,
-    prelude::*, px, uniform_list,
+    Subscription, UniformListScrollHandle, Window, div, ease_in_out, point, prelude::*, px,
+    uniform_list,
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -18,12 +20,17 @@ use gpui_component::{Disableable, Icon, PixelsExt, Sizable};
 use nxtools_clipboard::ClipboardHistoryCounts;
 use nxtools_core::{
     ClipboardClickAction, ClipboardClickModifier, ClipboardHotKey, ClipboardHotKeyModifier,
-    ClipboardSettings, CustomCommandSettings,
+    ClipboardSettings, CustomCommandSettings, SystemSettings,
 };
 use nxtools_download::{
     DownloadBatchAction, DownloadEngineTask, DownloadProgress, DownloadQueuePlacement,
     DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskDetail, DownloadTaskId,
     DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, RequestOrigin,
+};
+use nxtools_ipc::PlatformBridge;
+use nxtools_protocol::{
+    BeginWindowMoveCommand, PlatformCommand, SetWindowMinimizedCommand, SetWindowVisibilityCommand,
+    ToggleWindowMaximizedCommand,
 };
 use nxtools_protocol::{IndexPhase, IndexStatus, ShellOpenAction};
 use tracing::info;
@@ -81,7 +88,10 @@ pub(crate) struct MainWindow {
     clipboard: gpui::WeakEntity<ClipboardApplication>,
     quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
     downloads: gpui::WeakEntity<DownloadApplication>,
-    network_settings: gpui::WeakEntity<NetworkSettingsApplication>,
+    network_settings: Option<Entity<NetworkSettingsApplication>>,
+    platform: Option<Rc<PlatformBridge>>,
+    native_window_handle: i64,
+    system_settings: Rc<RefCell<SystemSettings>>,
     notifications: Entity<NotificationCenter>,
     download_search_input: gpui::Entity<InputState>,
     exclusions_input: gpui::Entity<InputState>,
@@ -109,6 +119,12 @@ pub(crate) struct MainWindow {
     hotkey_focus: FocusHandle,
     recording_hotkey: Option<HotkeyRecordingTarget>,
     _subscriptions: Vec<Subscription>,
+}
+
+pub(crate) struct MainWindowShellContext {
+    pub(crate) settings: Option<Entity<NetworkSettingsApplication>>,
+    pub(crate) platform: Option<Rc<PlatformBridge>>,
+    pub(crate) system_settings: Rc<RefCell<SystemSettings>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -867,7 +883,7 @@ impl MainWindow {
         clipboard: gpui::WeakEntity<ClipboardApplication>,
         quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
         downloads: gpui::WeakEntity<DownloadApplication>,
-        network_settings: gpui::WeakEntity<NetworkSettingsApplication>,
+        shell_context: MainWindowShellContext,
         notifications: Entity<NotificationCenter>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1040,7 +1056,10 @@ impl MainWindow {
             clipboard,
             quick_launch,
             downloads,
-            network_settings,
+            network_settings: shell_context.settings,
+            platform: shell_context.platform,
+            native_window_handle: crate::ui::native_window_handle(window).unwrap_or_default(),
+            system_settings: shell_context.system_settings,
             notifications,
             download_search_input,
             exclusions_input,
@@ -1282,7 +1301,7 @@ impl MainWindow {
                                 .w_full()
                                 .whitespace_normal()
                                 .line_clamp(2)
-                                .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+                                .font_family("Consolas")
                                 .text_size(px(9.5))
                                 .text_color(theme.text_secondary)
                                 .child(detail.value),
@@ -1519,7 +1538,7 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_size(px(11.0))
-                    .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+                    .font_family("Consolas")
                     .child(value.to_string()),
             )
             .child(
@@ -1641,6 +1660,8 @@ impl MainWindow {
     fn render_titlebar(&self, window: &Window) -> AnyElement {
         let theme = self.theme;
         div()
+            .id("main-titlebar")
+            .debug_selector(|| "main-titlebar".into())
             .h(px(36.0))
             .w_full()
             .flex()
@@ -1650,9 +1671,25 @@ impl MainWindow {
             .bg(theme.canvas)
             .child(
                 div()
+                    .id("main-titlebar-drag-region")
+                    .debug_selector(|| "main-titlebar-drag-region".into())
                     .h_full()
                     .flex_1()
-                    .window_control_area(WindowControlArea::Drag)
+                    .on_mouse_down(MouseButton::Left, {
+                        let platform = self.platform.clone();
+                        let window_handle = self.native_window_handle;
+                        move |_, _, cx| {
+                            if window_handle == 0 {
+                                return;
+                            }
+                            if let Some(platform) = platform.as_ref() {
+                                let _ = platform.send_command(PlatformCommand::BeginWindowMove(
+                                    BeginWindowMoveCommand { window_handle },
+                                ));
+                            }
+                            cx.stop_propagation();
+                        }
+                    })
                     .flex()
                     .items_center()
                     .gap(px(9.0))
@@ -1686,29 +1723,88 @@ impl MainWindow {
                             .child(format!("· {}", self.shell.active_module().label())),
                     ),
             )
-            .child(window_control(
-                "\u{e921}",
-                WindowControlArea::Min,
-                false,
-                theme,
-            ))
-            .child(window_control(
+            .child(
+                div()
+                    .id("global-network-settings")
+                    .debug_selector(|| "global-network-settings".into())
+                    .on_click({
+                        let network_settings = self.network_settings.clone();
+                        move |_, _, cx| {
+                            let Some(network_settings) = network_settings.clone() else {
+                                return;
+                            };
+                            cx.defer(move |cx| {
+                                network_settings.update(cx, |application, cx| {
+                                    application.open_window(cx);
+                                });
+                            });
+                        }
+                    })
+                    .child(
+                        Button::new("global-network-settings-button")
+                            .icon(Icon::new(MaterialIcon::Settings))
+                            .label("全局设置")
+                            .small()
+                            .compact()
+                            .ghost(),
+                    ),
+            )
+            .child(self.window_control(MainWindowControl::Minimize, theme))
+            .child(self.window_control(
                 if window.is_maximized() {
-                    "\u{e923}"
+                    MainWindowControl::Restore
                 } else {
-                    "\u{e922}"
+                    MainWindowControl::Maximize
                 },
-                WindowControlArea::Max,
-                false,
                 theme,
             ))
-            .child(window_control(
-                "\u{e8bb}",
-                WindowControlArea::Close,
-                true,
-                theme,
-            ))
+            .child(self.window_control(MainWindowControl::Close, theme))
             .into_any_element()
+    }
+
+    fn window_control(&self, control: MainWindowControl, theme: Theme) -> AnyElement {
+        let platform = self.platform.clone();
+        let window_handle = self.native_window_handle;
+        let system_settings = Rc::clone(&self.system_settings);
+        window_control(control, theme, move |_, window, cx| match control {
+            MainWindowControl::Minimize if window_handle != 0 => {
+                if let Some(platform) = platform.as_ref() {
+                    let _ = platform.send_command(PlatformCommand::SetWindowMinimized(
+                        SetWindowMinimizedCommand { window_handle },
+                    ));
+                }
+            }
+            MainWindowControl::Maximize | MainWindowControl::Restore if window_handle != 0 => {
+                if let Some(platform) = platform.as_ref() {
+                    let _ = platform.send_command(PlatformCommand::ToggleWindowMaximized(
+                        ToggleWindowMaximizedCommand { window_handle },
+                    ));
+                }
+            }
+            MainWindowControl::Minimize => window.minimize_window(),
+            MainWindowControl::Maximize | MainWindowControl::Restore => window.zoom_window(),
+            MainWindowControl::Close
+                if system_settings.borrow().close_to_tray && window_handle != 0 =>
+            {
+                if let Some(platform) = platform.as_ref() {
+                    if platform
+                        .send_command(PlatformCommand::SetWindowVisibility(
+                            SetWindowVisibilityCommand {
+                                window_handle,
+                                visible: false,
+                            },
+                        ))
+                        .is_err()
+                    {
+                        cx.quit();
+                    }
+                } else {
+                    cx.quit();
+                }
+            }
+            MainWindowControl::Close => cx.quit(),
+        })
+        .into_any_element()
     }
 
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -1798,25 +1894,6 @@ impl MainWindow {
             )
             .child(modules)
             .child(div().flex_1())
-            .child(
-                Button::new("global-network-settings")
-                    .icon(Icon::new(MaterialIcon::Settings))
-                    .label("全局设置")
-                    .small()
-                    .compact()
-                    .ghost()
-                    .on_click({
-                        let network_settings = self.network_settings.clone();
-                        move |_, _, cx| {
-                            let network_settings = network_settings.clone();
-                            cx.defer(move |cx| {
-                                let _ = network_settings.update(cx, |application, cx| {
-                                    application.open_window(cx);
-                                });
-                            });
-                        }
-                    }),
-            )
             .into_any_element()
     }
 
@@ -2314,7 +2391,7 @@ impl MainWindow {
             .flex()
             .items_center()
             .justify_center()
-            .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+            .font_family("Consolas")
             .text_size(px(10.5))
             .text_color(if recording_quick {
                 theme.accent_text
@@ -2697,7 +2774,7 @@ impl MainWindow {
                             .child(
                                 div()
                                     .truncate()
-                                    .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+                                    .font_family("Consolas")
                                     .text_size(px(9.0))
                                     .text_color(theme.text_muted)
                                     .child(if command.keyword.is_empty() {
@@ -3294,7 +3371,7 @@ impl MainWindow {
             .flex()
             .items_center()
             .justify_center()
-            .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+            .font_family("Consolas")
             .text_size(px(10.5))
             .text_color(if recording_clipboard {
                 theme.accent_text
@@ -3547,7 +3624,7 @@ impl MainWindow {
                     .child(
                         div()
                             .text_size(px(10.0))
-                            .font_family("JetBrains Mono, Cascadia Mono, Consolas")
+                            .font_family("Consolas")
                             .text_color(theme.text_muted)
                             .child(format!(
                                 "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
@@ -3612,7 +3689,7 @@ impl Render for MainWindow {
             .on_key_down(cx.listener(|this, event, _window, cx| {
                 this.handle_hotkey_recording(event, cx);
             }))
-            .font_family("Inter, Microsoft YaHei UI, Segoe UI")
+            .font_family("Microsoft YaHei UI")
             .bg(self.theme.canvas)
             .text_color(self.theme.text)
             .flex()
@@ -3875,22 +3952,48 @@ fn compact_group(theme: Theme, title: &'static str, rows: Vec<AnyElement>) -> An
         .into_any_element()
 }
 
+#[derive(Clone, Copy)]
+enum MainWindowControl {
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
+}
+
 fn window_control(
-    glyph: &'static str,
-    control: WindowControlArea,
-    close: bool,
+    control: MainWindowControl,
     theme: Theme,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    let close = matches!(control, MainWindowControl::Close);
+    let id = match control {
+        MainWindowControl::Minimize => "window-control-minimize",
+        MainWindowControl::Maximize => "window-control-maximize",
+        MainWindowControl::Restore => "window-control-restore",
+        MainWindowControl::Close => "window-control-close",
+    };
+    let icon = match control {
+        MainWindowControl::Minimize => div().w(px(10.)).h(px(1.)).bg(theme.text_secondary),
+        MainWindowControl::Maximize => div()
+            .w(px(9.))
+            .h(px(9.))
+            .border_1()
+            .border_color(theme.text_secondary),
+        MainWindowControl::Restore => div()
+            .w(px(9.))
+            .h(px(9.))
+            .border_1()
+            .border_color(theme.text_secondary),
+        MainWindowControl::Close => div().text_size(px(15.)).child("×"),
+    };
     div()
-        .id(gpui::SharedString::from(format!("window-control-{glyph}")))
+        .id(id)
+        .debug_selector(move || id.into())
         .w(px(42.0))
         .h_full()
-        .window_control_area(control)
         .flex()
         .items_center()
         .justify_center()
-        .font_family("Segoe Fluent Icons, Segoe MDL2 Assets")
-        .text_size(px(10.0))
         .text_color(theme.text_secondary)
         .hover(move |style| {
             if close {
@@ -3899,7 +4002,8 @@ fn window_control(
                 style.bg(theme.surface_hover).text_color(theme.text)
             }
         })
-        .child(glyph)
+        .on_click(on_click)
+        .child(icon)
 }
 
 fn page_header(
@@ -5421,20 +5525,26 @@ fn empty_state(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::collections::HashSet;
+    use std::rc::Rc;
 
     use gpui::{
         AppContext, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
         TestAppContext, px, size,
     };
     use gpui_component::PixelsExt;
-    use nxtools_core::{AppConfig, ClipboardHotKeyModifier};
+    use nxtools_core::{AppConfig, ClipboardHotKeyModifier, SystemSettings};
     use nxtools_download::{
         DownloadEngine, DownloadRequest, DownloadSegment, DownloadSegmentState, DownloadStatus,
         DownloadTaskId, RequestOrigin,
     };
+    use nxtools_network::NetworkPolicy;
 
-    use nxtools_protocol::{ActivateWindowCommand, IndexPhase, IndexStatus, PlatformCommand};
+    use nxtools_ipc::platform_bridge;
+    use nxtools_protocol::{
+        ActivateWindowCommand, IndexPhase, IndexStatus, Message, PlatformCommand,
+    };
 
     use crate::clipboard::ClipboardApplication;
     use crate::downloads::{DownloadApplication, DownloadRuntimeContext};
@@ -5442,6 +5552,170 @@ mod tests {
     use crate::notifications::NotificationCenter;
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
+
+    #[gpui::test]
+    fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let config = std::rc::Rc::new(std::cell::RefCell::new(AppConfig::default()));
+        let config_path = std::env::temp_dir().join(format!(
+            "nxtools-global-settings-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let network_settings = cx.update(|cx| {
+            cx.new(|_| {
+                NetworkSettingsApplication::new(
+                    NetworkPolicy::new(config.borrow().network.clone())
+                        .expect("create network policy"),
+                    config.borrow().clone(),
+                    config_path,
+                    notifications.clone(),
+                    None,
+                    Rc::new(RefCell::new(SystemSettings::default())),
+                    false,
+                )
+            })
+        });
+        let settings_observer = network_settings.downgrade();
+        let settings_for_window = Some(network_settings.clone());
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: settings_for_window,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            )
+        });
+        drop(network_settings);
+
+        window.refresh().expect("render main title bar");
+        assert!(
+            window.debug_bounds("main-titlebar").is_some(),
+            "main title bar must render"
+        );
+        let settings = window
+            .debug_bounds("global-network-settings")
+            .expect("global settings trigger");
+        window.simulate_click(settings.center(), Modifiers::default());
+        window.run_until_parked();
+
+        assert!(
+            settings_observer
+                .update(cx, |application, _| application.window_is_open())
+                .expect("main window must strongly own global settings")
+        );
+    }
+
+    #[gpui::test]
+    fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let (platform, endpoint) = platform_bridge(8);
+        endpoint.set_connected_for_contract_test(true);
+        let platform = Rc::new(platform);
+        let platform_for_window = Rc::clone(&platform);
+        let system_settings = Rc::new(RefCell::new(SystemSettings {
+            start_on_login_silently: false,
+            close_to_tray: true,
+        }));
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: Some(platform_for_window),
+                    system_settings,
+                },
+                notifications,
+                window,
+                cx,
+            )
+        });
+        window.update(|_, cx| {
+            main_window.update(cx, |main_window, _| {
+                // TestAppContext has no Windows HWND; inject the opaque value that the real
+                // native boundary supplies, then verify it survives the typed transport.
+                main_window.native_window_handle = 42;
+            });
+        });
+        window.refresh().expect("render real main titlebar");
+
+        let titlebar = window
+            .debug_bounds("main-titlebar-drag-region")
+            .expect("titlebar drag bounds");
+        window.simulate_mouse_down(titlebar.center(), MouseButton::Left, Modifiers::default());
+        let move_envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed move command");
+        assert!(matches!(
+            move_envelope.message,
+            Message::PlatformCommand(PlatformCommand::BeginWindowMove(_))
+        ));
+
+        let minimize = window
+            .debug_bounds("window-control-minimize")
+            .expect("minimize control");
+        window.simulate_click(minimize.center(), Modifiers::default());
+        let minimize_envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed minimize command");
+        assert!(matches!(
+            minimize_envelope.message,
+            Message::PlatformCommand(PlatformCommand::SetWindowMinimized(_))
+        ));
+
+        let maximize = window
+            .debug_bounds("window-control-maximize")
+            .expect("maximize control");
+        window.simulate_click(maximize.center(), Modifiers::default());
+        let maximize_envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed maximize command");
+        assert!(matches!(
+            maximize_envelope.message,
+            Message::PlatformCommand(PlatformCommand::ToggleWindowMaximized(_))
+        ));
+        let restore = window
+            .debug_bounds("window-control-maximize")
+            .expect("maximize/restore toggle control");
+        window.simulate_click(restore.center(), Modifiers::default());
+        let restore_envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed restore envelope");
+        assert!(matches!(
+            restore_envelope.message,
+            Message::PlatformCommand(PlatformCommand::ToggleWindowMaximized(_))
+        ));
+
+        let close = window
+            .debug_bounds("window-control-close")
+            .expect("close control");
+        window.simulate_click(close.center(), Modifiers::default());
+        let close_envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed close-to-tray command");
+        assert!(matches!(
+            close_envelope.message,
+            Message::PlatformCommand(PlatformCommand::SetWindowVisibility(ref command))
+                if !command.visible
+        ));
+        window.update(|window, cx| {
+            main_window.update(cx, |_, _| ());
+            window.activate_window();
+            main_window.update(cx, |_, _| ());
+        });
+    }
 
     #[test]
     fn download_multi_selection_matches_windows_ctrl_and_shift_conventions() {
@@ -5504,8 +5778,8 @@ mod tests {
         DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT,
         DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
         DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
-        DownloadTaskFilter, MainWindow, download_context_capabilities, download_context_menu_plan,
-        download_filter_counts, download_queue_placement_capabilities,
+        DownloadTaskFilter, MainWindow, MainWindowShellContext, download_context_capabilities,
+        download_context_menu_plan, download_filter_counts, download_queue_placement_capabilities,
         download_segment_strip_cells, download_tasks_for_view, file_index_summary,
         format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
         notification_transition, prepare_download_context_selection, quick_find_scroll_step,
@@ -6070,7 +6344,11 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
-                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
                 notifications,
                 window,
                 cx,
@@ -6225,7 +6503,11 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 gpui::WeakEntity::<DownloadApplication>::new_invalid(),
-                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
                 notifications,
                 window,
                 cx,
@@ -6275,7 +6557,11 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 gpui::WeakEntity::<DownloadApplication>::new_invalid(),
-                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
                 notifications,
                 window,
                 cx,
@@ -6380,7 +6666,11 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
-                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
                 notifications,
                 window,
                 cx,
@@ -6534,7 +6824,11 @@ mod tests {
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
                 downloads_for_window,
-                gpui::WeakEntity::<NetworkSettingsApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
                 notifications,
                 window,
                 cx,

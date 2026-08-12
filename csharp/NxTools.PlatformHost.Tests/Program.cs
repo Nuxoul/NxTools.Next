@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 using NxTools.PlatformHost.Windows;
@@ -11,7 +12,7 @@ namespace NxTools.PlatformHost.Tests;
 
 internal static class Program
 {
-    public static async Task<int> Main()
+    public static async Task<int> Main(string[] args)
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
@@ -83,6 +84,11 @@ internal static class Program
             ("anchored window follow reuses calibrated frame insets", AnchoredWindowFollowReusesCalibratedInsets),
             ("file-dialog search host preserves physical placement and visibility", FileDialogSearchHostPreservesPlacement),
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
+            ("desktop shell and tray contracts preserve bounded intent", DesktopShellAndTrayContractsRoundTrip),
+            ("startup registration and tray actions use real Windows boundaries", DesktopShellUsesRealWindowsBoundaries),
+            ("tray factory failure disposes partially created resources", TrayFactoryFailureDisposesPartialResources),
+            ("titlebar move reaches the real native window boundary", TitlebarMoveUsesRealNativeWindow),
+            ("titlebar maximize toggle reaches the real native window boundary", TitlebarMaximizeToggleUsesRealNativeWindow),
             ("window position, resize and shell commands preserve payload", WindowPositionResizeAndShellCommandsPreservePayload),
             ("typed process launch preserves arguments and Windows flags", TypedProcessLaunchPreservesArgumentsAndFlags),
             ("shell action session commands preserve payload", ShellActionSessionCommandsPreservePayload),
@@ -131,7 +137,11 @@ internal static class Program
             ("indexer service registration requires service arguments", IndexerServiceRegistrationRequiresServiceArguments)
         };
 
-        foreach (var test in tests)
+        var selectedTests = args.Length == 0
+            ? tests
+            : tests.Where(test => args.Any(filter =>
+                test.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))).ToArray();
+        foreach (var test in selectedTests)
         {
             try
             {
@@ -2513,6 +2523,10 @@ internal static class Program
     private static extern bool IsIconic(IntPtr windowHandle);
 
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsZoomed(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     private static readonly WindowProcedure TestWindowProcedure = DefWindowProc;
@@ -2659,6 +2673,143 @@ internal static class Program
         var command = PlatformCommandParser.ParseSetWindowVisibility(envelope);
         Assert(command.WindowHandle == 778L);
         Assert(!command.Visible);
+        return Task.CompletedTask;
+    }
+
+    private static Task DesktopShellAndTrayContractsRoundTrip()
+    {
+        var commandEnvelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "configure_desktop_shell",
+            Data = new
+            {
+                StartOnLoginSilently = true,
+                TrayIconVisible = true
+            }
+        });
+        var command = PlatformCommandParser.ParseConfigureDesktopShell(commandEnvelope);
+        Assert(command.StartOnLoginSilently);
+        Assert(command.TrayIconVisible);
+
+        var correlationId = Guid.NewGuid();
+        var eventEnvelope = PlatformEventEnvelopeFactory.Create(
+            new TrayActionRequestedEvent(correlationId, "open"));
+        var json = JsonSerializer.Serialize(eventEnvelope, JsonDefaults.Options);
+        Assert(json.Contains("\"event\":\"tray_action_requested\"", StringComparison.Ordinal));
+        Assert(json.Contains("\"action\":\"open\"", StringComparison.Ordinal));
+        Assert(eventEnvelope.CorrelationId == correlationId);
+        return Task.CompletedTask;
+    }
+
+    private static Task DesktopShellUsesRealWindowsBoundaries()
+    {
+        var keyName = $@"Software\NxTools\Tests\DesktopShell\{Guid.NewGuid():N}";
+        using var runKey = Registry.CurrentUser.CreateSubKey(keyName, writable: true)
+            ?? throw new InvalidOperationException("Could not create isolated startup registry key.");
+        try
+        {
+            var executable = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Test executable path is unavailable.");
+            var enabled = WindowsPlatformAdapter.ApplyStartupRegistration(runKey, executable, true);
+            Assert(enabled.Success);
+            Assert((string?)runKey.GetValue("NxTools.Next") == $"\"{executable}\" --silent-start");
+            var disabled = WindowsPlatformAdapter.ApplyStartupRegistration(runKey, executable, false);
+            Assert(disabled.Success);
+            Assert(runKey.GetValue("NxTools.Next") is null);
+
+            var opened = 0;
+            var exited = 0;
+            using var controller = new DesktopTrayController();
+            controller.Configure(true, executable, () => opened++, () => exited++);
+            var tray = controller.TrayIcon ?? throw new InvalidOperationException("tray missing");
+            var firstMenu = tray.ContextMenuStrip
+                ?? throw new InvalidOperationException("tray menu missing");
+            Assert(firstMenu.Items.Count == 3);
+            Assert(tray.Visible);
+
+            controller.Configure(true, executable, () => opened++, () => exited++);
+            Assert(ReferenceEquals(tray, controller.TrayIcon));
+
+            var mouseClick = typeof(NotifyIcon).GetMethod(
+                "OnMouseClick",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("NotifyIcon mouse boundary unavailable");
+            mouseClick.Invoke(tray, [new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0)]);
+            firstMenu.Items[0].PerformClick();
+            firstMenu.Items[2].PerformClick();
+            Assert(opened == 2);
+            Assert(exited == 1);
+
+            controller.Configure(false, executable, () => opened++, () => exited++);
+            Assert(controller.TrayIcon is null);
+            Assert(firstMenu.IsDisposed);
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(keyName, throwOnMissingSubKey: false);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task TrayFactoryFailureDisposesPartialResources()
+    {
+        ContextMenuStrip? menu = null;
+        try
+        {
+            _ = WindowsPlatformAdapter.CreateTrayIconForTest(
+                () => menu = new ContextMenuStrip(),
+                () => throw new InvalidOperationException("injected tray construction failure"),
+                out _);
+            throw new InvalidOperationException("Tray factory unexpectedly accepted an injected failure.");
+        }
+        catch (InvalidOperationException error) when (
+            error.Message == "injected tray construction failure")
+        {
+            Assert(menu is not null && menu.IsDisposed);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task TitlebarMoveUsesRealNativeWindow()
+    {
+        const uint wsOverlappedWindow = 0x00CF0000;
+        var instance = GetModuleHandle(null);
+        var window = CreateWindowEx(
+            0, "#32770", "NxTools titlebar move test", wsOverlappedWindow,
+            0, 0, 320, 200, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            var result = WindowsPlatformAdapter.BeginNativeWindowMoveForTest(window.ToInt64());
+            Assert(result.Success);
+            Assert(!WindowsPlatformAdapter.BeginNativeWindowMoveForTest(0).Success);
+        }
+        finally
+        {
+            _ = DestroyWindow(window);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task TitlebarMaximizeToggleUsesRealNativeWindow()
+    {
+        const uint wsOverlappedWindow = 0x00CF0000;
+        var instance = GetModuleHandle(null);
+        var window = CreateWindowEx(
+            0, "#32770", "NxTools maximize test", wsOverlappedWindow,
+            0, 0, 320, 200, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            Assert(WindowsPlatformAdapter.ToggleNativeWindowMaximizedForTest(window.ToInt64()).Success);
+            Assert(IsZoomed(window));
+            Assert(WindowsPlatformAdapter.ToggleNativeWindowMaximizedForTest(window.ToInt64()).Success);
+            Assert(!IsZoomed(window));
+        }
+        finally
+        {
+            _ = DestroyWindow(window);
+        }
         return Task.CompletedTask;
     }
 
@@ -2983,6 +3134,13 @@ internal static class Program
             Data = new { WindowHandle = 780L }
         });
         Assert(PlatformCommandParser.ParseBeginWindowMove(moveEnvelope).WindowHandle == 780L);
+
+        var maximizeEnvelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "toggle_window_maximized",
+            Data = new { WindowHandle = 780L }
+        });
+        Assert(PlatformCommandParser.ParseToggleWindowMaximized(maximizeEnvelope).WindowHandle == 780L);
 
         var openEnvelope = ProtocolEnvelope.Create("platform_command", new
         {

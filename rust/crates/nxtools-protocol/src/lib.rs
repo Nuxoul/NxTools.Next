@@ -104,6 +104,7 @@ pub struct Pong {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum PlatformEvent {
+    TrayActionRequested(TrayActionRequest),
     ForegroundChanged(ForegroundContext),
     GlobalPointerPressed(PointerPressContext),
     ClipboardCaptured(ClipboardCapture),
@@ -114,6 +115,19 @@ pub enum PlatformEvent {
     QuickLaunchFileDialogSearchHostChanged(QuickLaunchFileDialogSearchHost),
     TaskbarOverlayEditGestureFinished(TaskbarOverlayEditGesture),
     ElevatedDirectoryHelperRequested(ElevatedDirectoryHelperRequest),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrayActionRequest {
+    pub correlation_id: uuid::Uuid,
+    pub action: TrayAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayAction {
+    Open,
+    Exit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -345,6 +359,7 @@ pub struct IndexSearchItem {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub enum PlatformCommand {
+    ConfigureDesktopShell(ConfigureDesktopShellCommand),
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),
@@ -362,6 +377,7 @@ pub enum PlatformCommand {
     PlaceFileDialogSearchWindow(PlaceFileDialogSearchWindowCommand),
     SetWindowOwner(SetWindowOwnerCommand),
     SetWindowMinimized(SetWindowMinimizedCommand),
+    ToggleWindowMaximized(ToggleWindowMaximizedCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
     SetWindowPosition(SetWindowPositionCommand),
     ActivateWindow(ActivateWindowCommand),
@@ -382,6 +398,12 @@ pub enum PlatformCommand {
     PickProgram(PickProgramCommand),
     EnsureIndexerService,
     EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigureDesktopShellCommand {
+    pub start_on_login_silently: bool,
+    pub tray_icon_visible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -570,6 +592,11 @@ pub struct SetWindowOwnerCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetWindowMinimizedCommand {
+    pub window_handle: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToggleWindowMaximizedCommand {
     pub window_handle: i64,
 }
 
@@ -1117,6 +1144,9 @@ mod tests {
                 owner_window_handle: 77,
             }),
             PlatformCommand::SetWindowMinimized(SetWindowMinimizedCommand { window_handle: 778 }),
+            PlatformCommand::ToggleWindowMaximized(ToggleWindowMaximizedCommand {
+                window_handle: 778,
+            }),
             PlatformCommand::ActivateWindow(ActivateWindowCommand { window_handle: 778 }),
             PlatformCommand::BeginWindowResize(BeginWindowResizeCommand { window_handle: 779 }),
             PlatformCommand::BeginWindowMove(BeginWindowMoveCommand { window_handle: 780 }),
@@ -1158,6 +1188,35 @@ mod tests {
             let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
                 .expect("platform command must decode");
             assert_eq!(decoded, envelope);
+        }
+    }
+
+    #[test]
+    fn desktop_shell_command_and_tray_events_round_trip() {
+        let command = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::ConfigureDesktopShell(ConfigureDesktopShellCommand {
+                start_on_login_silently: true,
+                tray_icon_visible: true,
+            }),
+        ));
+        assert_eq!(
+            Envelope::decode_line(&command.encode_line().expect("encode shell command"))
+                .expect("decode shell command"),
+            command
+        );
+
+        for action in [TrayAction::Open, TrayAction::Exit] {
+            let event = Envelope::new(Message::PlatformEvent(PlatformEvent::TrayActionRequested(
+                TrayActionRequest {
+                    correlation_id: uuid::Uuid::new_v4(),
+                    action,
+                },
+            )));
+            assert_eq!(
+                Envelope::decode_line(&event.encode_line().expect("encode tray event"))
+                    .expect("decode tray event"),
+                event
+            );
         }
     }
 

@@ -51,6 +51,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub network: NetworkSettings,
     #[serde(default)]
+    pub system: SystemSettings,
+    #[serde(default)]
     pub clipboard_panel: ClipboardPanelSize,
     #[serde(default)]
     pub clipboard: ClipboardSettings,
@@ -66,12 +68,34 @@ impl Default for AppConfig {
             theme: ThemePreference::Dark,
             platform_pipe_name: "nxtools-next-platform-v1".into(),
             network: NetworkSettings::default(),
+            system: SystemSettings::default(),
             clipboard_panel: ClipboardPanelSize::default(),
             clipboard: ClipboardSettings::default(),
             quick_launch: QuickLaunchSettings::default(),
             download: DownloadSettings::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SystemSettings {
+    #[serde(default)]
+    pub start_on_login_silently: bool,
+    #[serde(default = "default_close_to_tray")]
+    pub close_to_tray: bool,
+}
+
+impl Default for SystemSettings {
+    fn default() -> Self {
+        Self {
+            start_on_login_silently: false,
+            close_to_tray: default_close_to_tray(),
+        }
+    }
+}
+
+const fn default_close_to_tray() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -899,6 +923,27 @@ impl AppConfig {
         config.save_to(path)?;
         Ok(config)
     }
+
+    pub fn update_system_settings(path: &Path, settings: SystemSettings) -> Result<Self> {
+        let mut config = Self::load_from(path)?;
+        config.system = settings;
+        config.save_to(path)?;
+        Ok(config)
+    }
+
+    pub fn update_global_settings(
+        path: &Path,
+        mut network: NetworkSettings,
+        system: SystemSettings,
+    ) -> Result<Self> {
+        network.normalize();
+        network.validate().map_err(anyhow::Error::msg)?;
+        let mut config = Self::load_from(path)?;
+        config.network = network;
+        config.system = system;
+        config.save_to(path)?;
+        Ok(config)
+    }
 }
 
 impl QuickLaunchSettings {
@@ -1203,6 +1248,44 @@ mod tests {
         assert_eq!(config.network.proxy.mode, NetworkProxyMode::Direct);
         assert!(config.network.proxy.host.is_empty());
         assert_eq!(config.network.proxy.port, 8080);
+        assert!(!config.system.start_on_login_silently);
+        assert!(config.system.close_to_tray);
+    }
+
+    #[test]
+    fn global_settings_update_persists_shell_and_network_without_losing_modules() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-global-settings-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("create global settings directory");
+        let path = directory.join("config.json");
+        let mut original = AppConfig::default();
+        original.quick_launch.enabled = false;
+        original.save_to(&path).expect("save original config");
+
+        let updated = AppConfig::update_global_settings(
+            &path,
+            NetworkSettings::default(),
+            SystemSettings {
+                start_on_login_silently: true,
+                close_to_tray: false,
+            },
+        )
+        .expect("update global settings");
+
+        assert!(updated.system.start_on_login_silently);
+        assert!(!updated.system.close_to_tray);
+        assert!(!updated.quick_launch.enabled);
+        assert_eq!(
+            AppConfig::load_from(&path).expect("reload").system,
+            updated.system
+        );
+        fs::remove_dir_all(directory).expect("remove settings directory");
     }
 
     #[test]

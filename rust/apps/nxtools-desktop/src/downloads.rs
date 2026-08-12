@@ -2029,7 +2029,7 @@ impl DownloadApplication {
         }
         let application = cx.entity();
         let initial = self.settings_view_initial();
-        let window_size = size(px(520.0), px(486.0));
+        let window_size = size(px(820.0), px(650.0));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -3955,7 +3955,7 @@ fn schedule_trigger_row(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(9.5))
+                .text_size(px(10.5))
                 .text_color(if enabled {
                     theme.accent_text
                 } else {
@@ -5151,14 +5151,29 @@ impl Render for DownloadSettingsView {
         let ffmpeg_control = div()
             .debug_selector(|| "download-settings-ffmpeg-control".into())
             .w_full()
+            .min_w(px(350.0))
             .flex()
             .items_center()
             .gap(px(5.0))
-            .child(download_settings_input(
-                theme,
-                &self.ffmpeg_executable,
-                px(236.0),
-            ))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(28.0))
+                    .rounded(px(4.0))
+                    .border_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.canvas)
+                    .px(px(6.0))
+                    .flex()
+                    .items_center()
+                    .child(
+                        Input::new(&self.ffmpeg_executable)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false),
+                    ),
+            )
             .child(
                 div()
                     .debug_selector(|| "download-settings-pick-ffmpeg".into())
@@ -5599,7 +5614,7 @@ impl Render for DownloadSettingsView {
                                     ),
                                 ],
                             ))
-                            .child(download_settings_section(
+                            .child(download_settings_grid_section(
                                 theme,
                                 "传输",
                                 vec![
@@ -5672,7 +5687,7 @@ impl Render for DownloadSettingsView {
                                         ],
                                     )),
                             )
-                            .child(download_settings_section(
+                            .child(download_settings_grid_section(
                                 theme,
                                 "窗口",
                                 vec![
@@ -5690,7 +5705,7 @@ impl Render for DownloadSettingsView {
                                     ),
                                 ],
                             ))
-                            .child(download_settings_section(
+                            .child(download_settings_grid_section(
                                 theme,
                                 "任务栏进度",
                                 vec![
@@ -5780,7 +5795,7 @@ impl Render for DownloadSettingsView {
                                     ),
                                 ],
                             ))
-                            .child(download_settings_section(
+                            .child(download_settings_grid_section(
                                 theme,
                                 "诊断",
                                 vec![
@@ -6136,12 +6151,47 @@ pub(crate) fn download_settings_section(
                 .border_color(theme.border_subtle)
                 .flex()
                 .items_center()
-                .text_size(px(9.5))
+                .text_size(px(10.5))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child(title),
         )
         .children(rows)
+        .into_any_element()
+}
+
+fn download_settings_grid_section(
+    theme: Theme,
+    title: &'static str,
+    rows: Vec<AnyElement>,
+) -> AnyElement {
+    div()
+        .w_full()
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .h(px(28.0))
+                .px(px(10.0))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .flex()
+                .items_center()
+                .text_size(px(10.5))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(title),
+        )
+        .child(
+            div().w_full().flex().flex_wrap().children(
+                rows.into_iter()
+                    .map(|row| div().w(gpui::relative(0.5)).min_w(px(350.0)).child(row)),
+            ),
+        )
         .into_any_element()
 }
 
@@ -6170,7 +6220,7 @@ pub(crate) fn download_settings_row(
                 .child(div().text_size(px(10.5)).child(title))
                 .child(
                     div()
-                        .text_size(px(8.8))
+                        .text_size(px(9.5))
                         .text_color(theme.text_muted)
                         .child(description),
                 ),
@@ -6211,12 +6261,12 @@ fn download_settings_stacked_row(
                         .min_w_0()
                         .flex_1()
                         .truncate()
-                        .text_size(px(8.8))
+                        .text_size(px(9.5))
                         .text_color(theme.text_muted)
                         .child(description.into()),
                 ),
         )
-        .child(control)
+        .child(div().w_full().flex().child(control))
         .into_any_element()
 }
 
@@ -10441,7 +10491,7 @@ mod tests {
         let application_for_window = application.clone();
         let initial = cx.read(|cx| application.read(cx).settings_view_initial());
         let (_settings, window) = cx.add_window_view(move |window, cx| {
-            window.resize(size(px(520.0), px(486.0)));
+            window.resize(size(px(820.0), px(650.0)));
             DownloadSettingsView::new(application_for_window, initial, window, cx)
         });
         window.refresh().expect("render FFmpeg settings layout");

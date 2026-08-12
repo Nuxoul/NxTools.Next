@@ -208,6 +208,9 @@ internal sealed class PlatformPipeClient(
                             await platformAdapter.SetQuickLaunchHotKeyRecordingAsync(
                                 PlatformCommandParser.ParseSetQuickLaunchHotKeyRecording(envelope),
                                 cancellationToken),
+                        "configure_desktop_shell" => await platformAdapter.ConfigureDesktopShellAsync(
+                            PlatformCommandParser.ParseConfigureDesktopShell(envelope),
+                            cancellationToken),
                         "set_window_topmost" => platformAdapter.SetWindowTopmost(
                             PlatformCommandParser.ParseSetWindowTopmost(envelope)),
                         "set_window_no_activate" => platformAdapter.SetWindowNoActivate(
@@ -233,6 +236,8 @@ internal sealed class PlatformPipeClient(
                         "set_window_minimized" => platformAdapter.SetWindowMinimized(
                             PlatformCommandParser.ParseSetWindowMinimized(envelope),
                             diagnosticCorrelationId),
+                        "toggle_window_maximized" => platformAdapter.ToggleWindowMaximized(
+                            PlatformCommandParser.ParseToggleWindowMaximized(envelope)),
                         "set_window_visibility" => platformAdapter.SetWindowVisibility(
                             PlatformCommandParser.ParseSetWindowVisibility(envelope)),
                         "set_window_position" => platformAdapter.SetWindowPosition(

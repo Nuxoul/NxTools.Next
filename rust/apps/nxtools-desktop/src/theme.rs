@@ -1,7 +1,7 @@
 use gpui::{Rgba, hsla, rgb};
 
-pub(crate) const UI_FONT_FAMILY: &str = "Inter, Microsoft YaHei UI, Segoe UI";
-pub(crate) const UI_MONO_FONT_FAMILY: &str = "JetBrains Mono, Cascadia Mono, Microsoft YaHei UI";
+pub(crate) const UI_FONT_FAMILY: &str = "Microsoft YaHei UI";
+pub(crate) const UI_MONO_FONT_FAMILY: &str = "Consolas";
 pub(crate) const SEARCH_TEXT_SIZE: f32 = 13.5;
 pub(crate) const RESULT_TITLE_SIZE: f32 = 13.0;
 pub(crate) const RESULT_DETAIL_SIZE: f32 = 10.5;

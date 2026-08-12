@@ -44,6 +44,9 @@ internal sealed record ConfigureQuickLaunchCommand(
     bool AutoQuickSwitchEnabled = true,
     bool FileDialogSearchEnabled = true);
 internal sealed record SetQuickLaunchHotKeyRecordingCommand(bool Recording);
+internal sealed record ConfigureDesktopShellCommand(
+    bool StartOnLoginSilently,
+    bool TrayIconVisible);
 
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
@@ -74,6 +77,7 @@ internal sealed record PlaceFileDialogSearchWindowCommand(
     int BottomOverlap);
 internal sealed record SetWindowOwnerCommand(long WindowHandle, long OwnerWindowHandle);
 internal sealed record SetWindowMinimizedCommand(long WindowHandle);
+internal sealed record ToggleWindowMaximizedCommand(long WindowHandle);
 internal sealed record SetWindowVisibilityCommand(long WindowHandle, bool Visible);
 internal sealed record SetWindowPositionCommand(long WindowHandle, int X, int Y);
 internal sealed record ActivateWindowCommand(long WindowHandle);
@@ -194,6 +198,12 @@ internal static class PlatformCommandParser
         return parsed ?? throw new InvalidDataException("Topmost command payload was empty.");
     }
 
+    public static ConfigureDesktopShellCommand ParseConfigureDesktopShell(ProtocolEnvelope envelope) =>
+        Parse<ConfigureDesktopShellCommand>(
+            envelope,
+            "configure_desktop_shell",
+            "Desktop-shell command payload was empty.");
+
     public static SetWindowVisibilityCommand ParseSetWindowVisibility(ProtocolEnvelope envelope)
     {
         var command = GetCommandName(envelope);
@@ -257,6 +267,12 @@ internal static class PlatformCommandParser
             envelope,
             "set_window_minimized",
             "Window-minimized command payload was empty.");
+
+    public static ToggleWindowMaximizedCommand ParseToggleWindowMaximized(ProtocolEnvelope envelope) =>
+        Parse<ToggleWindowMaximizedCommand>(
+            envelope,
+            "toggle_window_maximized",
+            "Window maximize-toggle command payload was empty.");
 
     public static BeginWindowResizeCommand ParseBeginWindowResize(ProtocolEnvelope envelope) =>
         Parse<BeginWindowResizeCommand>(envelope, "begin_window_resize", "Resize command payload was empty.");

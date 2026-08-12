@@ -7,6 +7,11 @@ internal static class PlatformEventEnvelopeFactory
     public static ProtocolEnvelope Create(WindowsPlatformEvent platformEvent) =>
         platformEvent switch
         {
+            TrayActionRequestedEvent tray => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "tray_action_requested",
+                Data = new { tray.CorrelationId, tray.Action }
+            }, tray.CorrelationId),
             ForegroundChangedEvent foreground => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "foreground_changed",

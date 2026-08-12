@@ -25,6 +25,7 @@ Push-Location $root
 try {
     & '.\tests\architecture\quick-launch-lifecycle.ps1'
     & '.\tests\architecture\indexer-lifecycle.ps1'
+    & '.\tests\architecture\desktop-shell-lifecycle.ps1'
 
     cargo fmt --all --check
     Assert-NativeSuccess 'cargo fmt'
