@@ -1397,3 +1397,40 @@ operation is actually required.
 - **Notes**: Switched the active publication flow to plain Git.
 
 ---
+
+## [LRN-20260812-DENSITYBASELINE] correction
+
+**Logged**: 2026-08-12T18:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Field reachability and non-clipping do not establish visual consistency; compare new GPUI surfaces
+against the accepted in-product workspace before declaring a layout slice complete.
+
+### Details
+The first classification layout made every field reachable but mixed 20 px icon buttons, xsmall
+ghost text, small primary actions and a low-density two-item pager. The user identified the
+clipboard workspace as the correct NxTools/Zed baseline. Its comfort comes from a single explicit
+control rhythm, stable row hierarchy and framed secondary actions, not from maximizing whitespace.
+
+### Suggested Action
+Before a visual slice, record the accepted sibling surface's action height, label size, row spacing,
+border treatment and primary/secondary hierarchy. Add production-window geometry assertions for
+those values, not only bounds and click reachability.
+
+### Metadata
+- Source: user_feedback
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs, rust/apps/nxtools-desktop/src/main_window.rs
+- Tags: gpui, zed, density, visual-consistency
+- Pattern-Key: ui.compare_accepted_sibling_baseline
+- Recurrence-Count: 1
+- First-Seen: 2026-08-12
+- Last-Seen: 2026-08-12
+
+### Resolution
+- **Resolved**: 2026-08-12T18:20:00+08:00
+- **Notes**: Added clipboard/Zed control-scale reference notes and production geometry regressions before applying the download UI fix.
+
+---

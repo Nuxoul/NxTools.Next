@@ -8200,3 +8200,32 @@ that selectable element.
 ### Resolution
 - **Resolved**: 2026-08-12T00:00:00+08:00
 - **Notes**: Restored Button as the trigger; desktop check and all 269 desktop tests passed.
+
+## [ERR-20260812-GPUISELECTORLIFETIME] Built a GPUI geometry assertion from a temporary selector
+
+**Logged**: 2026-08-12T18:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A production-window regression passed `&format!(...)` to `VisualTestContext::debug_bounds`, whose
+selector contract is static, the first patch left one nested `on_click` closure terminated outside
+its Button expression, and a later clickable status card omitted the element ID needed to expose
+`Div::on_click`.
+
+### Error
+`temporary value dropped while borrowed (E0716)`, `closure bodies that contain statements must be surrounded by braces`, and `no method named on_click found for gpui::Div`
+
+### Suggested Fix
+Use a fixed array of static debug-selector literals in geometry tests, give custom clickable Divs a
+stable `.id(...)`, and run `cargo fmt` before the first compiled regression whenever a nested GPUI
+builder callback is introduced.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-12T18:12:00+08:00
+- **Notes**: Replaced the temporary selector with four static literals, fixed the callback boundary, added the status-card ID, and reran the red-capable production tests.

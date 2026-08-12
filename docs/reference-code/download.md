@@ -1807,6 +1807,26 @@ Reverified on 2026-08-12 after the first Release classification-layout inspectio
   complete directory in a tooltip, and pages the bounded 32-category domain so the last item remains
   inside the real client hit-test area.
 
+Reverified on 2026-08-12 after comparing the packaged download surfaces with the accepted clipboard
+workspace and Zed's control scale:
+
+- The current clipboard workspace is the in-product visual baseline: its ordinary actions use a
+  consistent 26 px control height, 10.5 px labels, a subtle border and a raised surface. Controls
+  remain compact, but they do not collapse into unframed 9 px text. Download settings had mixed
+  `xsmall`, `small`, ghost and icon-only defaults in the same row, so equally important operations
+  appeared to have unrelated hit targets.
+- Zed `crates/ui/src/components/button/button_like.rs::ButtonSize::rems` defines an explicit scale
+  (18 compact, 22 default, 28 medium and 32 large) instead of allowing every caller to invent a
+  height. NxTools.Next uses the clipboard-compatible 28 px action tier for download forms and keeps
+  30–32 px inputs; compactness comes from predictable rows and spacing, not from illegible labels.
+- A bounded category menu must also be information-dense. Rendering only two 44 px categories per
+  page creates 16 pages for the supported 32-category limit. The confirmation window can fit four
+  34–36 px two-line rows plus one compact pager; the full directory remains available through the
+  existing tooltip, and the last category must still pass the native hit-test regression.
+- New-download and settings footers keep one stable bar, but every visible action inside the bar
+  shares the same 28 px rhythm. Icon-only pick/refresh actions are square; text actions have explicit
+  horizontal padding and visible secondary/primary hierarchy.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
