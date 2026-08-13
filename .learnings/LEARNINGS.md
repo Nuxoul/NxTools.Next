@@ -6,6 +6,46 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260813-UIDOCHANDOFF] correction
+
+**Logged**: 2026-08-13T13:59:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: docs
+
+### Summary
+
+When a repository UI scan is intended to guide later implementation, persist the remediation table
+as a versioned project document instead of delivering it only as chat text.
+
+### Details
+
+The source-level UI scan was complete, but its first delivery existed only in the conversation. That
+made the priorities, implementation batches and acceptance matrix unavailable to later sessions and
+review gates. The user correctly requested a Markdown artifact in the repository.
+
+### Suggested Action
+
+For architecture, migration or cross-module remediation scans, create or update the canonical plan
+document before the final handoff, then link that file in the response.
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: docs/ui-remediation-plan.md
+- Tags: ui, audit, documentation, handoff
+- Pattern-Key: docs.persist_cross_module_remediation_scan
+- Recurrence-Count: 1
+- First-Seen: 2026-08-13
+- Last-Seen: 2026-08-13
+
+### Resolution
+
+- **Resolved**: 2026-08-13T13:59:00+08:00
+- **Notes**: Created `docs/ui-remediation-plan.md` with the full scope, priorities, batches and acceptance gates.
+
+---
+
 ## [LRN-20260811-STAGE6SCOPE] correction
 
 **Logged**: 2026-08-11T17:02:00+08:00

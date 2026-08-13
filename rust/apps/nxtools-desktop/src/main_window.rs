@@ -8,8 +8,8 @@ use std::time::Duration;
 use chrono::{DateTime, Local};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Corner, Entity, FocusHandle, IntoElement,
-    KeyDownEvent, MouseButton, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
-    Subscription, UniformListScrollHandle, Window, div, ease_in_out, point, prelude::*, px,
+    KeyDownEvent, MouseButton, ObjectFit, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
+    Subscription, UniformListScrollHandle, Window, div, ease_in_out, img, point, prelude::*, px,
     uniform_list,
 };
 use gpui_component::button::{Button, ButtonVariants};
@@ -45,6 +45,9 @@ use crate::quick_launch::{
 };
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
+use crate::ui::foundation::{
+    TEXT_BODY, TEXT_LABEL, TITLEBAR_HEIGHT, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY, icon_action_button,
+};
 
 const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
 const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
@@ -1301,7 +1304,7 @@ impl MainWindow {
                                 .w_full()
                                 .whitespace_normal()
                                 .line_clamp(2)
-                                .font_family("Consolas")
+                                .font_family(UI_MONO_FONT_FAMILY)
                                 .text_size(px(9.5))
                                 .text_color(theme.text_secondary)
                                 .child(detail.value),
@@ -1538,7 +1541,7 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_size(px(11.0))
-                    .font_family("Consolas")
+                    .font_family(UI_MONO_FONT_FAMILY)
                     .child(value.to_string()),
             )
             .child(
@@ -1662,7 +1665,7 @@ impl MainWindow {
         div()
             .id("main-titlebar")
             .debug_selector(|| "main-titlebar".into())
-            .h(px(36.0))
+            .h(px(TITLEBAR_HEIGHT))
             .w_full()
             .flex()
             .items_center()
@@ -1696,29 +1699,29 @@ impl MainWindow {
                     .pl(px(12.0))
                     .child(
                         div()
+                            .id("main-brand-icon")
+                            .debug_selector(|| "main-brand-icon".into())
                             .size(px(18.0))
                             .rounded(px(4.0))
-                            .bg(theme.surface_raised)
-                            .border_1()
-                            .border_color(theme.border)
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(9.0))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(theme.accent)
-                            .child("NX"),
+                            .child(
+                                img("brand/nxtools.png")
+                                    .size(px(18.0))
+                                    .object_fit(ObjectFit::Contain),
+                            ),
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(TEXT_BODY))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.text_secondary)
                             .child("NxTools"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(px(TEXT_LABEL))
                             .text_color(theme.text_muted)
                             .child(format!("· {}", self.shell.active_module().label())),
                     ),
@@ -1741,12 +1744,12 @@ impl MainWindow {
                         }
                     })
                     .child(
-                        Button::new("global-network-settings-button")
-                            .icon(Icon::new(MaterialIcon::Settings))
-                            .label("全局设置")
-                            .small()
-                            .compact()
-                            .ghost(),
+                        icon_action_button(
+                            "global-network-settings-button",
+                            MaterialIcon::Settings,
+                            "全局设置",
+                        )
+                        .ghost(),
                     ),
             )
             .child(self.window_control(MainWindowControl::Minimize, theme))
@@ -2391,7 +2394,7 @@ impl MainWindow {
             .flex()
             .items_center()
             .justify_center()
-            .font_family("Consolas")
+            .font_family(UI_MONO_FONT_FAMILY)
             .text_size(px(10.5))
             .text_color(if recording_quick {
                 theme.accent_text
@@ -2774,7 +2777,7 @@ impl MainWindow {
                             .child(
                                 div()
                                     .truncate()
-                                    .font_family("Consolas")
+                                    .font_family(UI_MONO_FONT_FAMILY)
                                     .text_size(px(9.0))
                                     .text_color(theme.text_muted)
                                     .child(if command.keyword.is_empty() {
@@ -3371,7 +3374,7 @@ impl MainWindow {
             .flex()
             .items_center()
             .justify_center()
-            .font_family("Consolas")
+            .font_family(UI_MONO_FONT_FAMILY)
             .text_size(px(10.5))
             .text_color(if recording_clipboard {
                 theme.accent_text
@@ -3624,7 +3627,7 @@ impl MainWindow {
                     .child(
                         div()
                             .text_size(px(10.0))
-                            .font_family("Consolas")
+                            .font_family(UI_MONO_FONT_FAMILY)
                             .text_color(theme.text_muted)
                             .child(format!(
                                 "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
@@ -3689,7 +3692,7 @@ impl Render for MainWindow {
             .on_key_down(cx.listener(|this, event, _window, cx| {
                 this.handle_hotkey_recording(event, cx);
             }))
-            .font_family("Microsoft YaHei UI")
+            .font_family(UI_FONT_FAMILY)
             .bg(self.theme.canvas)
             .text_color(self.theme.text)
             .flex()
@@ -5650,6 +5653,19 @@ mod tests {
             });
         });
         window.refresh().expect("render real main titlebar");
+
+        let titlebar_shell = window
+            .debug_bounds("main-titlebar")
+            .expect("main titlebar shell");
+        assert_eq!(titlebar_shell.size.height, px(36.0));
+        let brand_icon = window
+            .debug_bounds("main-brand-icon")
+            .expect("real NxTools brand icon");
+        assert_eq!(brand_icon.size, gpui::size(px(18.0), px(18.0)));
+        let global_settings = window
+            .debug_bounds("global-network-settings")
+            .expect("global settings action");
+        assert_eq!(global_settings.size.height, px(28.0));
 
         let titlebar = window
             .debug_bounds("main-titlebar-drag-region")

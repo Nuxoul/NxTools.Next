@@ -1,3 +1,4 @@
+pub(crate) mod foundation;
 mod history;
 mod preview;
 

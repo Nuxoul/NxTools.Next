@@ -78,3 +78,19 @@ tray Exit
 - Tray adapter creates one icon, maps left click/Open/Exit to typed events and disposes it at shutdown.
 - Close-to-tray keeps the GPUI window entity alive; restore reuses it; explicit Exit terminates.
 - Release subsystem is `windows`, while tests/debug builds retain ordinary diagnostic behavior.
+
+## 2026-08-13 P0 visual-foundation verification
+
+- The product font boundary is now centralized: normal UI uses the single installed Windows CJK
+  family and diagnostic values use the single monospace family. Migrated shell surfaces do not
+  repeat font-family literals.
+- The title-bar density contract is 36 px high; ordinary form actions are 28 px and switches are
+  40×22 px. These are presentation tokens only and do not change the typed native window-command
+  lifecycle above.
+- The main title bar renders the existing NxTools extension icon as an embedded PNG asset. It no
+  longer constructs a brand mark from styled text.
+- `MaterialIcon` has an enum-driven asset gate. Every enum member, including Settings and Terminal,
+  must resolve through `NxToolsAssets`.
+- The product-global settings surface consumes shared setting section, row, toggle and action
+  primitives rather than importing helpers named for the download module. Its Apply path and
+  PlatformHost confirmation lifecycle remain unchanged.

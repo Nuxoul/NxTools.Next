@@ -19,11 +19,12 @@ use nxtools_network::{NetworkPolicy, proxy_mode_name};
 use nxtools_protocol::{ConfigureDesktopShellCommand, PlatformCommand};
 use tracing::{info, warn};
 
-use crate::downloads::{
-    download_primary_button_variant, download_settings_row, download_settings_section,
-};
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
+use crate::ui::foundation::{
+    CONTROL_HEIGHT_ACTION, TEXT_LABEL, TITLEBAR_HEIGHT, UI_FONT_FAMILY, action_button,
+    primary_button_variant, settings_row, settings_section, settings_toggle,
+};
 
 pub(crate) struct NetworkSettingsApplication {
     policy: NetworkPolicy,
@@ -598,7 +599,8 @@ fn network_settings_titlebar(
     application: Entity<NetworkSettingsApplication>,
 ) -> impl IntoElement {
     div()
-        .h(px(34.0))
+        .debug_selector(|| "network-settings-titlebar".into())
+        .h(px(TITLEBAR_HEIGHT))
         .pl(px(14.0))
         .border_b_1()
         .border_color(theme.border_subtle)
@@ -609,7 +611,7 @@ fn network_settings_titlebar(
         .child(
             div()
                 .flex_1()
-                .text_size(px(12.0))
+                .text_size(px(TEXT_LABEL))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child("全局设置"),
         )
@@ -650,8 +652,9 @@ impl Render for NetworkSettingsView {
                     .label(label)
                     .small()
                     .compact()
+                    .h(px(CONTROL_HEIGHT_ACTION))
                     .when(self.mode == mode, |button| {
-                        button.custom(download_primary_button_variant(theme, cx))
+                        button.custom(primary_button_variant(theme, cx))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.mode = mode;
@@ -666,6 +669,7 @@ impl Render for NetworkSettingsView {
         div()
             .size_full()
             .bg(theme.canvas)
+            .font_family(UI_FONT_FAMILY)
             .text_color(theme.text)
             .flex()
             .flex_col()
@@ -678,15 +682,16 @@ impl Render for NetworkSettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(10.0))
-                    .child(download_settings_section(
+                    .child(settings_section(
                         theme,
+                        "network-settings-general-section",
                         "常规",
                         vec![
-                            download_settings_row(
+                            settings_row(
                                 theme,
                                 "开机静默启动",
                                 "登录 Windows 后在后台启动，不主动弹出主窗口",
-                                global_settings_toggle(
+                                settings_toggle(
                                     theme,
                                     "system-start-on-login",
                                     start_on_login_silently,
@@ -697,11 +702,11 @@ impl Render for NetworkSettingsView {
                                     }),
                                 ),
                             ),
-                            download_settings_row(
+                            settings_row(
                                 theme,
                                 "关闭到托盘",
                                 "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出",
-                                global_settings_toggle(
+                                settings_toggle(
                                     theme,
                                     "system-close-to-tray",
                                     close_to_tray,
@@ -713,17 +718,18 @@ impl Render for NetworkSettingsView {
                             ),
                         ],
                     ))
-                    .child(download_settings_section(
+                    .child(settings_section(
                         theme,
+                        "network-settings-network-section",
                         "网络与代理",
                         vec![
-                            download_settings_row(
+                            settings_row(
                                 theme,
                                 "代理模式",
                                 "下载、剪贴板和速启中的实际联网操作共享；本地 IPC 与索引不使用",
                                 mode_buttons.into_any_element(),
                             ),
-                            download_settings_row(
+                            settings_row(
                                 theme,
                                 "代理服务器",
                                 if manual {
@@ -791,9 +797,7 @@ impl Render for NetworkSettingsView {
                     .justify_end()
                     .gap(px(8.0))
                     .child(
-                        Button::new("network-settings-cancel")
-                            .label("取消")
-                            .small()
+                        action_button("network-settings-cancel", "取消")
                             .ghost()
                             .on_click({
                                 let application = self.application.clone();
@@ -811,58 +815,25 @@ impl Render for NetworkSettingsView {
                         div()
                             .debug_selector(|| "network-settings-save".into())
                             .child(
-                                Button::new("network-settings-save-button")
-                                    .label(if self.saving {
+                                action_button(
+                                    "network-settings-save-button",
+                                    if self.saving {
                                         "正在应用…"
                                     } else {
                                         "应用"
-                                    })
-                                    .small()
-                                    .disabled(self.saving)
-                                    .custom(download_primary_button_variant(theme, cx))
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                    },
+                                )
+                                .disabled(self.saving)
+                                .custom(primary_button_variant(theme, cx))
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
                                         this.save(window, cx);
-                                    })),
+                                    },
+                                )),
                             ),
                     ),
             )
     }
-}
-
-fn global_settings_toggle(
-    theme: Theme,
-    id: &'static str,
-    enabled: bool,
-    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-) -> gpui::AnyElement {
-    div()
-        .id(id)
-        .debug_selector(move || id.into())
-        .w(px(46.0))
-        .h(px(22.0))
-        .p(px(2.0))
-        .rounded(px(11.0))
-        .border_1()
-        .border_color(if enabled {
-            theme.border_active
-        } else {
-            theme.border_subtle
-        })
-        .bg(if enabled {
-            theme.accent_soft
-        } else {
-            theme.canvas
-        })
-        .cursor_pointer()
-        .flex()
-        .when(enabled, |toggle| toggle.justify_end())
-        .on_click(on_toggle)
-        .child(div().size(px(16.0)).rounded(px(8.0)).bg(if enabled {
-            theme.accent
-        } else {
-            theme.text_muted
-        }))
-        .into_any_element()
 }
 
 fn parse_network_settings(
@@ -965,6 +936,21 @@ mod tests {
             });
         });
         window.refresh().expect("render network settings");
+        let titlebar = window
+            .debug_bounds("network-settings-titlebar")
+            .expect("shared settings titlebar");
+        assert_eq!(titlebar.size.height, px(36.0));
+        let general_section = window
+            .debug_bounds("network-settings-general-section")
+            .expect("shared settings section");
+        let network_section = window
+            .debug_bounds("network-settings-network-section")
+            .expect("shared network section");
+        assert_eq!(general_section.size.width, network_section.size.width);
+        let start_toggle = window
+            .debug_bounds("system-start-on-login")
+            .expect("shared settings toggle");
+        assert_eq!(start_toggle.size, size(px(40.0), px(22.0)));
         let save = window
             .debug_bounds("network-settings-save")
             .expect("network settings save button");

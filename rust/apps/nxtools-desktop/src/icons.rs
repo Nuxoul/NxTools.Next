@@ -76,3 +76,41 @@ impl IconNamed for MaterialIcon {
         .into()
     }
 }
+
+#[cfg(test)]
+impl MaterialIcon {
+    pub(crate) const ALL: [Self; 32] = [
+        Self::Calculate,
+        Self::DataObject,
+        Self::Language,
+        Self::Terminal,
+        Self::Dashboard,
+        Self::Star,
+        Self::TextFields,
+        Self::Image,
+        Self::Folder,
+        Self::Add,
+        Self::Edit,
+        Self::Keep,
+        Self::Delete,
+        Self::ArrowUpward,
+        Self::Undo,
+        Self::OpenInFull,
+        Self::Search,
+        Self::Settings,
+        Self::History,
+        Self::ManageSearch,
+        Self::OpenInNew,
+        Self::Download,
+        Self::ContentCopy,
+        Self::ContentPaste,
+        Self::Check,
+        Self::Close,
+        Self::Info,
+        Self::ProgressActivity,
+        Self::CalendarMonth,
+        Self::ChevronLeft,
+        Self::ChevronRight,
+        Self::Cancel,
+    ];
+}
