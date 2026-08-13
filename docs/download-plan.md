@@ -1013,7 +1013,10 @@ desktop 测试及 workspace Clippy 均通过；workspace 串行测试唯一失�
 `engine_contract` 瞬断，该目标随后 92/92 精确复跑通过。C# 全量测试在五分钟外层期限内无失败
 输出但未结束，本功能筛选门禁通过。最终 Standards/Spec 双复审还补齐了 Alt+F4 原生关闭、极速
 终态新任务取消、陈旧 arm 点击和关机命令 pending 所有权竞态，四条真实/策略回归通过且两轴
-remaining blocking count 均为 0。尚未生成 Release 包，也未把本项勾选为人工验收完成。
+remaining blocking count 均为 0。随后按用户明确授权把 Release commit 余量门槛从 6 GiB 临时
+覆盖为 0 GiB，在实际余量约 2.74 GiB、单 Cargo job、关闭增量编译的条件下成功生成 2026-08-13
+Release 原子包；Cargo、C# publish 与桌面 PE subsystem 门禁均完成，没有出现 OS 1455 或链接
+失败。当前进入用户人工验收，仍不提前勾选本项完成。
 
 ### 阶段 7：性能、恢复与质感收尾（4–7 天）
 
