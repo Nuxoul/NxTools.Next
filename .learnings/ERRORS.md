@@ -4,6 +4,166 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260813-MCL] shared_menu_constant_assertion
+
+**Logged**: 2026-08-13T16:58:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Strict all-target Clippy rejected a runtime assertion whose operands were compile-time menu constants.
+
+### Error
+`clippy::assertions_on_constants` was promoted to an error by `-D warnings`.
+
+### Context
+- Production desktop check and production Clippy already passed.
+- The redundant assertion lived only in the new shared-menu metric unit test.
+
+### Suggested Fix
+Keep explicit metric equality gates and remove constant relational assertions that add no runtime
+evidence.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/menu.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:58:00+08:00
+- **Notes**: Removed the redundant assertion and reran strict all-target Clippy.
+
+---
+
+## [ERR-20260813-TMO] desktop_test_wrapper_timeout
+
+**Logged**: 2026-08-13T16:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The desktop full-suite wrapper was given a one-second command timeout.
+
+### Error
+The shell wrapper terminated the Cargo invocation after its minimum effective timeout of about five
+seconds, before tests could report a result.
+
+### Context
+- This was an orchestration timeout, not a test failure or memory failure.
+- A read-only process check confirmed no Cargo or rustc process remained.
+
+### Suggested Fix
+Use a normal bounded command timeout (120 seconds here) and rely on yielded execution only when the
+tool actually returns a running cell ID.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:50:00+08:00
+- **Notes**: Reissued the same serial suite with the correct outer timeout.
+
+---
+
+## [ERR-20260813-POP] category_popover_outside_click_fixture
+
+**Logged**: 2026-08-13T16:42:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Two Popover outside-click regressions clicked fixed coordinates that moved inside widened
+production Popovers.
+
+### Error
+The category and delayed-start production regressions failed because their controlled open state
+correctly stayed open when the supposed outside click actually landed inside the surface.
+
+### Context
+- The prior migrations widened the production category and delayed-start surfaces to 320 and 304 px.
+- Both tests used the same fixed titlebar x-coordinate without proving it was outside the rendered
+  Popover.
+
+### Suggested Fix
+Derive the click point from production bounds and assert it is outside the Popover before clicking.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- Recurrence-Count: 2
+
+### Resolution
+- **Resolved**: 2026-08-13T16:42:00+08:00
+- **Notes**: Both regressions now derive and verify a point outside their production Popover.
+
+---
+
+## [ERR-20260813-CTF] cargo_test_multiple_filters
+
+**Logged**: 2026-08-13T16:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+One Cargo test invocation passed two positional test-name filters.
+
+### Error
+`cargo test` rejected the second filter as an unexpected argument.
+
+### Context
+- Cargo accepts one positional `TESTNAME` substring per invocation.
+- The intended checks all contain `menu`, so one broader filter covers them without another build.
+
+### Suggested Fix
+Use one shared substring, a test module path, or separate sequential invocations.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs,
+  rust/apps/nxtools-desktop/src/ui/components/menu.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:35:00+08:00
+- **Notes**: Replaced the invalid invocation with one `menu` filter.
+
+---
+
+## [ERR-20260813-MEN] gpui_component_menu_source_lookup
+
+**Logged**: 2026-08-13T16:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The first GPUI menu source lookup assumed both a flat module and a fixed Cargo registry hash.
+
+### Error
+`Get-Content` returned a path-not-found error for the assumed flat menu module.
+
+### Context
+- The cached `gpui-component` crate organizes menu code under `src/menu/popup_menu.rs` and the
+  registry source directory hash is environment-specific.
+- The failure happened while preparing the P0 download task context-menu migration.
+
+### Suggested Fix
+Use `rg --files $registry | rg 'gpui-component-<version>[/\\]src[/\\]menu[/\\]popup_menu\.rs$'`
+before opening dependency implementation files; never hard-code the registry hash.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:15:00+08:00
+- **Notes**: Located and inspected the actual `src/menu/popup_menu.rs` implementation.
+
+---
+
 ## [ERR-20260813-P0LISTBOXOOM] cargo_test_desktop_category_listbox
 
 **Logged**: 2026-08-13T12:10:00+08:00

@@ -20,6 +20,7 @@ Root: `D:\Code\zed-main`
 | `crates/ui/src/components/list/list_item.rs` | Selectable list rows use a continuous surface, neutral hover/active/selected backgrounds and one accessible actionable node; rounding is optional rather than mandatory per row. |
 | `crates/ui/src/components/list/list.rs` | A List owns one full-width child stack and a real empty state instead of pagination chrome; item semantics remain in ListItem. |
 | `crates/ui/src/components/popover.rs` | Popover is an elevated surface attached to its trigger rather than to the pointer. It provides the bounded presentation shell while the caller owns the selection model. |
+| `crates/ui/src/components/context_menu.rs` | ContextMenu keeps one focused menu surface, real selectable descendants, fixed icon/title slots and separators between capability groups. A confirmed handler runs before the menu emits dismissal; action dispatch has its own short selected-state delay. Escape or dismissal returns control to the invoking context. |
 | `crates/ui/src/components/notification/alert_modal.rs` | Dialog content and footer are separate regions; the footer groups secondary and primary actions rather than scattering actions through content. |
 
 ## NxTools.Next P0 invariants
@@ -44,6 +45,10 @@ Root: `D:\Code\zed-main`
 - Non-list overlays such as the delayed-start calendar reuse the same Popover shell and shared
   action tier; their domain-specific content remains owned by the caller rather than by the visual
   wrapper.
+- Context menus reuse the dependency's keyboard/dismiss/focus lifecycle while NxTools.Next owns one
+  shared 28 px item presentation, a stable icon slot, 12 px labels and normal/danger tones. Their
+  shell stays between 176 and 240 px; destructive rows use danger text/hover semantics rather than
+  a permanent filled background.
 - GPUI entity callbacks update their own draft synchronously and defer any cross-entity operation to
   the next application turn.
 
@@ -54,5 +59,7 @@ Root: `D:\Code\zed-main`
 - Apply and Cancel continue through the existing production callbacks; component extraction must not
   replace those lifecycle gates with component-only unit tests.
 - Long inline error text remains inside the settings content width and above the fixed footer.
+- A production task row opens the real context menu, proves the shared width/row geometry and
+  capability omissions, and Escape dismisses it while returning focus to the invoking surface.
 - Asset, tooltip or list presentation must not add Header, Cookie, path or other sensitive values to
   diagnostics.

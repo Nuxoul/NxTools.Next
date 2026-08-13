@@ -46,6 +46,7 @@ use crate::quick_launch::{
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
 use crate::ui::components::action::labelled_icon_action;
+use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::TITLEBAR_HEIGHT;
 use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
@@ -4197,7 +4198,8 @@ fn download_task_row(
                 })
                 .unwrap_or_default();
             download_task_context_menu(
-                menu,
+                theme,
+                menu.action_context(context_main_window.read(cx).hotkey_focus.clone()),
                 context_application.clone(),
                 ordered_task_ids,
                 capabilities,
@@ -4318,24 +4320,17 @@ fn download_task_row(
 }
 
 fn download_popup_item(
-    _selector: &'static str,
+    theme: Theme,
+    selector: &'static str,
     label: &'static str,
     icon: MaterialIcon,
+    tone: MenuTone,
 ) -> PopupMenuItem {
-    let item = if cfg!(test) {
-        PopupMenuItem::element(move |_window, _cx| {
-            div()
-                .w_full()
-                .debug_selector(move || _selector.into())
-                .child(label)
-        })
-    } else {
-        PopupMenuItem::new(label)
-    };
-    item.icon(Icon::new(icon))
+    context_menu_item(theme, selector, label, icon, tone)
 }
 
 fn download_task_context_menu(
+    theme: Theme,
     menu: PopupMenu,
     application: gpui::WeakEntity<DownloadApplication>,
     task_ids: Vec<DownloadTaskId>,
@@ -4349,11 +4344,17 @@ fn download_task_context_menu(
                       icon: MaterialIcon,
                       targets: Vec<DownloadTaskId>| {
         let application = application.clone();
-        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
-            let _ = application.update(cx, |application, cx| {
-                application.batch_action(targets.clone(), action, cx);
-            });
-        })
+        download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click(
+            move |_event, _window, cx| {
+                let application = application.clone();
+                let targets = targets.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.batch_action(targets, action, cx);
+                    });
+                });
+            },
+        )
     };
     let queue_item = |selector: &'static str,
                       label: &'static str,
@@ -4361,11 +4362,17 @@ fn download_task_context_menu(
                       icon: MaterialIcon| {
         let application = application.clone();
         let task_ids = task_ids.clone();
-        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
-            let _ = application.update(cx, |application, cx| {
-                application.move_queue_tasks(task_ids.clone(), placement, cx);
-            });
-        })
+        download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click(
+            move |_event, _window, cx| {
+                let application = application.clone();
+                let task_ids = task_ids.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.move_queue_tasks(task_ids, placement, cx);
+                    });
+                });
+            },
+        )
     };
     let artifact_item = |task_id: DownloadTaskId,
                          selector: &'static str,
@@ -4373,16 +4380,21 @@ fn download_task_context_menu(
                          action: ShellOpenAction,
                          icon: MaterialIcon| {
         let application = application.clone();
-        download_popup_item(selector, label, icon).on_click(move |_event, _window, cx| {
-            let _ = application.update(cx, |application, cx| {
-                application.open_task_artifact(task_id, action, cx);
-            });
-        })
+        download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click(
+            move |_event, _window, cx| {
+                let application = application.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.open_task_artifact(task_id, action, cx);
+                    });
+                });
+            },
+        )
     };
     let progress_application = application.clone();
     let progress_task = (task_ids.len() == 1).then(|| task_ids[0]);
     let delete_application = application.clone();
-    let mut menu = menu.min_w(px(0.0));
+    let mut menu = context_menu_shell(menu);
     let mut has_visible_items = false;
 
     if plan.artifact {
@@ -4407,15 +4419,21 @@ fn download_task_context_menu(
     if plan.task_window {
         let task_id = progress_task.expect("task-window menu plan requires one selected task");
         menu = menu.item(
-            download_popup_item("download-menu-task-window", "任务窗口", MaterialIcon::Info)
-                .on_click(move |_event, _window, cx| {
-                    let application = progress_application.clone();
-                    cx.defer(move |cx| {
-                        let _ = application.update(cx, |application, cx| {
-                            application.request_task_window(task_id, cx);
-                        });
+            download_popup_item(
+                theme,
+                "download-menu-task-window",
+                "任务窗口",
+                MaterialIcon::Info,
+                MenuTone::Normal,
+            )
+            .on_click(move |_event, _window, cx| {
+                let application = progress_application.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.request_task_window(task_id, cx);
                     });
-                }),
+                });
+            }),
         );
         has_visible_items = true;
     }
@@ -4497,26 +4515,43 @@ fn download_task_context_menu(
         let task_id = artifact_task.expect("delete-file menu plan requires one completed artifact");
         menu = menu.item(
             download_popup_item(
+                theme,
                 "download-menu-delete-file",
                 "删除文件",
                 MaterialIcon::Delete,
+                MenuTone::Danger,
             )
             .on_click(move |_event, _window, cx| {
-                let _ = delete_application.update(cx, |application, cx| {
-                    application.request_delete_confirmation(task_id, cx);
+                let application = delete_application.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.request_delete_confirmation(task_id, cx);
+                    });
                 });
             }),
         );
         has_visible_items = true;
     }
     if plan.remove {
-        menu = menu.item(batch_item(
-            "download-menu-remove",
-            "从列表移除",
-            DownloadBatchAction::Remove,
-            MaterialIcon::Close,
-            task_ids,
-        ));
+        let application = application.clone();
+        menu = menu.item(
+            download_popup_item(
+                theme,
+                "download-menu-remove",
+                "从列表移除",
+                MaterialIcon::Close,
+                MenuTone::Danger,
+            )
+            .on_click(move |_event, _window, cx| {
+                let application = application.clone();
+                let task_ids = task_ids.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.batch_action(task_ids, DownloadBatchAction::Remove, cx);
+                    });
+                });
+            }),
+        );
         has_visible_items = true;
     }
     debug_assert!(
@@ -6332,7 +6367,7 @@ mod tests {
         completed.final_path = Some(r"C:\Downloads\completed.bin".into());
         completed.queue_eligible = true;
 
-        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let (platform, platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let downloads = cx.update(|cx| {
             cx.new(|cx| {
@@ -6355,7 +6390,7 @@ mod tests {
             })
         });
         let downloads_for_window = downloads.downgrade();
-        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
             let mut main_window = MainWindow::new(
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
@@ -6392,17 +6427,39 @@ mod tests {
             .expect("refresh completed task context menu");
         window.run_until_parked();
 
-        for selector in [
+        let visible_selectors = [
             "download-menu-open-file",
             "download-menu-reveal-file",
             "download-menu-task-window",
             "download-menu-delete-file",
             "download-menu-remove",
-        ] {
-            assert!(
-                window.debug_bounds(selector).is_some(),
-                "completed task menu must render {selector}"
+        ];
+        let mut item_width = None;
+        let mut open_file_bounds = None;
+        for selector in visible_selectors {
+            let bounds = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("completed task menu must render {selector}"));
+            assert_eq!(
+                bounds.size.height,
+                px(28.0),
+                "shared menu actions must keep the 28 px action rhythm: {selector}"
             );
+            assert!(
+                (px(160.0)..=px(216.0)).contains(&bounds.size.width),
+                "the bounded 192–240 px menu shell must leave a stable content width: {selector}={bounds:?}"
+            );
+            if let Some(expected) = item_width {
+                assert_eq!(
+                    bounds.size.width, expected,
+                    "all shared menu actions must use one icon/text grid"
+                );
+            } else {
+                item_width = Some(bounds.size.width);
+            }
+            if selector == "download-menu-open-file" {
+                open_file_bounds = Some(bounds);
+            }
         }
         for selector in [
             "download-menu-resume",
@@ -6418,6 +6475,39 @@ mod tests {
                 "completed task menu must omit {selector}"
             );
         }
+
+        window.simulate_keystrokes("escape");
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("refresh dismissed completed task context menu");
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("settle dismissed completed task context menu");
+        window.update(|window, cx| {
+            assert!(
+                main_window.read(cx).hotkey_focus.is_focused(window),
+                "dismissal must return keyboard focus to the invoking workspace"
+            );
+        });
+        while platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+        window.simulate_click(
+            open_file_bounds
+                .expect("open-file action bounds before dismissal")
+                .center(),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "the old menu hit target must not dispatch after Escape dismissal"
+        );
     }
 
     #[test]

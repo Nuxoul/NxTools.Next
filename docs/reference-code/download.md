@@ -1858,6 +1858,24 @@ Reverified on 2026-08-13 for the P0 Popover/ListBox migration:
   continues to show name plus directory state, with the full bounded directory in a tooltip; no
   query, directory or category text enters diagnostics.
 
+Reverified on 2026-08-13 for the P0 task-context-menu migration:
+
+- ABDM first: its download list treats the secondary gesture as a selection-aware operation; an
+  unselected row becomes the target, while an existing multi-selection remains the batch target.
+  Old NxTools next: `MainWindow.axaml.cs::TaskRow_ContextRequested` applies the same selection rule
+  before `BuildTaskContextMenu`, then groups artifact, queue, transfer and removal actions with
+  separators. NxTools.Next retains the safer capability plan: unavailable actions are omitted and
+  queue-edge moves are calculated from the authoritative order.
+- The menu is one bounded 176–240 px elevated surface. Each selectable action uses the shared 28 px
+  action rhythm, a fixed 14 px icon slot and 12 px body text; only file deletion and list removal
+  use the danger tone. Separators describe capability groups rather than decorating every row.
+- The pinned `gpui-component` PopupMenu remains responsible for Up/Down/Enter/Escape, outside-click
+  dismissal and focus return. NxTools.Next supplies only presentation and domain callbacks; every
+  callback defers cross-entity DownloadApplication work to the next application turn.
+- The production task-row regression opens the real menu and verifies its geometry, capability
+  omissions and Escape lifecycle. Diagnostics continue to record only bounded selected count,
+  fixed action kind and correlation ID—never URL, task name, artifact path, Header or Cookie.
+
 Reverified on 2026-08-13 for the final Stage 6 completion-action slice:
 
 - ABDM first: `shared/app/.../ondownloadcompletion/OnDownloadCompletionActionRunner.kt` observes

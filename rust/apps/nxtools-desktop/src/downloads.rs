@@ -11434,10 +11434,12 @@ mod tests {
         let titlebar = window
             .debug_bounds("download-new-titlebar")
             .expect("production new-download titlebar");
-        window.simulate_click(
-            gpui::point(titlebar.left() + px(180.0), titlebar.center().y),
-            Modifiers::default(),
+        let outside_popover = gpui::point(titlebar.left() + px(24.0), titlebar.center().y);
+        assert!(
+            !popover.contains(&outside_popover),
+            "the outside-click fixture must remain outside the production Popover"
         );
+        window.simulate_click(outside_popover, Modifiers::default());
         window.run_until_parked();
         window
             .refresh()
@@ -11732,10 +11734,12 @@ mod tests {
         let titlebar = window
             .debug_bounds("download-new-titlebar")
             .expect("production new-download titlebar");
-        window.simulate_click(
-            gpui::point(titlebar.left() + px(180.0), titlebar.center().y),
-            Modifiers::default(),
+        let outside_popover = gpui::point(titlebar.right() - px(80.0), titlebar.center().y);
+        assert!(
+            !shell.contains(&outside_popover),
+            "the outside-click fixture must remain outside the production schedule Popover"
         );
+        window.simulate_click(outside_popover, Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("dismiss production schedule draft");
         assert!(!window.read(|cx| view.read(cx).schedule_popover_open));
