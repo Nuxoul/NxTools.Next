@@ -951,6 +951,14 @@ mod tests {
             .debug_bounds("system-start-on-login")
             .expect("shared settings toggle");
         assert_eq!(start_toggle.size, size(px(40.0), px(22.0)));
+        window.simulate_click(start_toggle.center(), Modifiers::default());
+        window.run_until_parked();
+        window.update(|_, cx| {
+            assert!(
+                view.read(cx).start_on_login_silently,
+                "the production shared toggle must mutate the settings draft"
+            );
+        });
         let save = window
             .debug_bounds("network-settings-save")
             .expect("network settings save button");

@@ -21,12 +21,13 @@ pub(crate) const SETTINGS_ROW_MIN_HEIGHT: f32 = 42.0;
 pub(crate) const TEXT_TITLE: f32 = 14.0;
 pub(crate) const TEXT_BODY: f32 = 12.0;
 pub(crate) const TEXT_LABEL: f32 = 11.0;
+#[allow(dead_code)] // Reserved for actual metadata, never ordinary Chinese descriptions.
 pub(crate) const TEXT_META: f32 = 10.0;
 #[allow(dead_code)] // Reserved for shared dialog/module titles.
 pub(crate) const LINE_HEIGHT_TITLE: f32 = 20.0;
-#[allow(dead_code)] // Reserved for body copy as later surfaces migrate.
 pub(crate) const LINE_HEIGHT_BODY: f32 = 18.0;
 pub(crate) const LINE_HEIGHT_LABEL: f32 = 16.0;
+#[allow(dead_code)] // Reserved for actual metadata.
 pub(crate) const LINE_HEIGHT_META: f32 = 14.0;
 
 #[allow(dead_code)] // Shared motion token for subsequent surface migrations.
@@ -37,15 +38,17 @@ pub(crate) const MOTION_RESIZE_MS: u64 = 160;
 pub(crate) const RADIUS_CONTROL: f32 = 4.0;
 #[allow(dead_code)] // Reserved for popovers and menus.
 pub(crate) const RADIUS_FLOATING: f32 = 6.0;
+pub(crate) const SPACING_2: f32 = 2.0;
 #[allow(dead_code)]
-pub(crate) const SPACE_1: f32 = 4.0;
+pub(crate) const SPACING_4: f32 = 4.0;
 #[allow(dead_code)]
-pub(crate) const SPACE_2: f32 = 8.0;
-pub(crate) const SPACE_3: f32 = 12.0;
+pub(crate) const SPACING_6: f32 = 6.0;
+pub(crate) const SPACING_8: f32 = 8.0;
+pub(crate) const SPACING_12: f32 = 12.0;
 #[allow(dead_code)]
-pub(crate) const SPACE_4: f32 = 16.0;
+pub(crate) const SPACING_16: f32 = 16.0;
 #[allow(dead_code)]
-pub(crate) const SPACE_6: f32 = 24.0;
+pub(crate) const SPACING_24: f32 = 24.0;
 
 pub(crate) fn primary_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
     ButtonCustomVariant::new(cx)
@@ -61,7 +64,7 @@ pub(crate) fn action_button(id: &'static str, label: &'static str) -> Button {
         .label(label)
         .small()
         .h(px(CONTROL_HEIGHT_ACTION))
-        .px(px(10.0))
+        .px(px(SPACING_8))
         .rounded(px(RADIUS_CONTROL))
 }
 
@@ -91,7 +94,7 @@ pub(crate) fn settings_section(
         .child(
             div()
                 .h(px(26.0))
-                .px(px(10.0))
+                .px(px(SPACING_8))
                 .border_b_1()
                 .border_color(theme.border_subtle)
                 .flex()
@@ -114,24 +117,29 @@ pub(crate) fn settings_row(
 ) -> AnyElement {
     div()
         .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
-        .px(px(10.0))
+        .px(px(SPACING_8))
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .items_center()
-        .gap(px(SPACE_3))
+        .gap(px(SPACING_12))
         .child(
             div()
                 .min_w_0()
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
-                .child(div().text_size(px(TEXT_LABEL)).child(title))
+                .gap(px(SPACING_2))
                 .child(
                     div()
-                        .text_size(px(TEXT_META))
-                        .line_height(px(LINE_HEIGHT_META))
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child(description.into()),
                 ),
@@ -191,8 +199,10 @@ mod tests {
         assert_eq!(RADIUS_CONTROL, 4.0);
         assert_eq!(RADIUS_FLOATING, 6.0);
         assert_eq!(
-            [SPACE_1, SPACE_2, SPACE_3, SPACE_4, SPACE_6],
-            [4.0, 8.0, 12.0, 16.0, 24.0]
+            [
+                SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16, SPACING_24,
+            ],
+            [2.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0]
         );
         assert_eq!(
             [TEXT_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_META],

@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn all_material_symbols_are_embedded() {
-        for icon in MaterialIcon::ALL {
+        for &icon in MaterialIcon::ALL {
             let path = icon.path();
             assert!(
                 NxToolsAssets
