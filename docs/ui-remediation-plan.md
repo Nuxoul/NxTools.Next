@@ -282,6 +282,10 @@ rust/apps/nxtools-desktop/src/ui/
 - 真实 GPUI 门禁覆盖 36 px 主标题栏、18 px 品牌图标、28 px 全局设置操作、
   36 px 设置标题栏、同宽 Section、40×22 px Toggle，以及原有标题栏/Apply 点击生命周期。
 - 本切片没有启动 GUI，也没有冒领 100/125/150% DPI 和 Release 截图人工验收。
+- 自动化验证：desktop 281 项、targeted Clippy、资产/标题栏/设置交互门禁通过；workspace
+  全量曾完整通过一次。最终复核时既有 HLS 带宽暂停时序用例出现 `HLS task did not start`
+  瞬断，随后两次 exact 复跑为一次通过、一次同样瞬断；本切片未修改下载引擎，未把该结果
+  误报为全绿。
 
 ### 批次 2：主壳层与全局设置
 
