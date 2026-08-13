@@ -49,6 +49,11 @@ Root: `D:\Code\zed-main`
   shared 28 px item presentation, a stable icon slot, 12 px labels and normal/danger tones. Their
   shell stays between 176 and 240 px; destructive rows use danger text/hover semantics rather than
   a permanent filled background.
+- Dense task tables keep a flexible two-line identity column beside fixed numeric columns. Live
+  values reuse the owning application's bounded presentation snapshot; rendering does not create a
+  second polling or diagnostic lifecycle. Ordinary file names use Body typography and paths/errors
+  use Label typography, with full clipped failures available through an existing detail surface or
+  tooltip.
 - GPUI entity callbacks update their own draft synchronously and defer any cross-entity operation to
   the next application turn.
 

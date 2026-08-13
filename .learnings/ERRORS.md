@@ -8574,3 +8574,99 @@ workspace run as all-green unless the original full invocation passed.
 ### Resolution
 - **Resolved**: 2026-08-13T15:04:00+08:00
 - **Notes**: The exact test passed immediately (1/1); the full-run transient remains documented.
+
+---
+
+## [ERR-20260813-GPUI] gpui_test_exact_filter_matched_zero_tests
+
+**Logged**: 2026-08-13T16:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Using `--exact` with an unqualified GPUI test function name compiled the suite but executed zero
+tests.
+
+### Error
+`running 0 tests` with all 288 desktop tests filtered out.
+
+### Context
+- Command used the unique function name after `--exact`, but Rust's harness exact match requires the
+  fully qualified module path.
+- This is dangerous because the command exits successfully despite providing no regression evidence.
+
+### Suggested Fix
+Use the unique substring without `--exact`, or first list tests and copy the fully qualified name.
+Always reject a `0 tests` result as a missing gate.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:10:00+08:00
+- **Notes**: Replaced the invocation with a unique non-exact test filter.
+
+---
+
+## [ERR-20260813-TOOLTIP] gpui_div_has_no_tooltip_method
+
+**Logged**: 2026-08-13T16:18:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A tooltip was attached to a plain GPUI `Div`, but the tooltip extension is available only after the
+element has a stable identity.
+
+### Error
+`no method named tooltip found for struct gpui::Div`
+
+### Context
+- The download failure auxiliary line needed to expose its full clipped error message.
+- Existing production examples attach tooltips to stateful elements.
+
+### Suggested Fix
+Assign a stable row-scoped element ID before calling `.tooltip(...)`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:18:00+08:00
+- **Notes**: Added a task-ID-scoped identity to the secondary line before the tooltip modifier.
+
+---
+
+## [ERR-20260813-GPUI-BOUNDARY] tooltip_scroll_and_test_clock_api_mismatch
+
+**Logged**: 2026-08-13T16:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The bounded-tooltip regression used a newer-looking scroll method name and borrowed the test
+context again after creating a `VisualTestContext`.
+
+### Error
+`overflow_y_scroll` was unavailable; the test also hit Rust E0502 when advancing the clock.
+
+### Context
+- NxTools.Next pins GPUI 0.2.2 / gpui-component 0.5.1.
+- Tooltip hover requires the deterministic 500 ms test clock.
+
+### Suggested Fix
+Use `overflow_y_scrollbar()` and clone the executor before opening the visual test window.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T16:35:00+08:00
+- **Notes**: Updated the pinned API call, reused a pre-window executor clone, and routed later
+  entity updates through `VisualTestContext::update` instead of reborrowing the parent context.

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
 use gpui_component::scroll::{ScrollableElement, Scrollbar};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{Disableable, Icon, PixelsExt, Sizable};
 use nxtools_clipboard::ClipboardHistoryCounts;
 use nxtools_core::{
@@ -48,7 +49,10 @@ use crate::theme::Theme;
 use crate::ui::components::action::labelled_icon_action;
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::TITLEBAR_HEIGHT;
-use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+use crate::ui::typography::{
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY,
+    UI_MONO_FONT_FAMILY,
+};
 
 const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
 const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
@@ -61,7 +65,16 @@ const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
 const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
 const DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY: Duration = Duration::from_millis(250);
-const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = 154.0;
+const DOWNLOAD_TRANSFERRED_COLUMN_WIDTH: f32 = 90.0;
+const DOWNLOAD_SPEED_COLUMN_WIDTH: f32 = 54.0;
+const DOWNLOAD_REMAINING_COLUMN_WIDTH: f32 = 36.0;
+const DOWNLOAD_ERROR_TOOLTIP_WIDTH: f32 = 320.0;
+const DOWNLOAD_ERROR_TOOLTIP_MAX_HEIGHT: f32 = 144.0;
+const DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_WIDTH: f32 = 340.0;
+const DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_HEIGHT: f32 = 170.0;
+const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = DOWNLOAD_TRANSFERRED_COLUMN_WIDTH
+    + DOWNLOAD_SPEED_COLUMN_WIDTH
+    + DOWNLOAD_REMAINING_COLUMN_WIDTH;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
 
 fn quick_find_scroll_target(current: f32, previous_target: f32, maximum: f32, delta: f32) -> f32 {
@@ -191,6 +204,68 @@ impl DownloadDetailTab {
 struct DownloadRowSelection {
     selected: bool,
     visible_task_ids: Arc<Vec<DownloadTaskId>>,
+}
+
+#[derive(Debug, PartialEq)]
+struct DownloadRowTransferPresentation {
+    fraction: f32,
+    transferred: String,
+    speed: String,
+    remaining: String,
+}
+
+fn download_row_transfer_presentation(
+    status: DownloadStatus,
+    durable_downloaded_bytes: u64,
+    durable_total_bytes: Option<u64>,
+    live_progress: Option<&DownloadProgress>,
+) -> DownloadRowTransferPresentation {
+    let use_live_progress = matches!(
+        status,
+        DownloadStatus::Probing
+            | DownloadStatus::Downloading
+            | DownloadStatus::Finalizing
+            | DownloadStatus::Verifying
+    );
+    let live_progress = use_live_progress.then_some(live_progress).flatten();
+    let downloaded_bytes = live_progress.map_or(durable_downloaded_bytes, |progress| {
+        progress.downloaded_bytes
+    });
+    let total_bytes = live_progress
+        .and_then(|progress| progress.total_bytes)
+        .or(durable_total_bytes);
+    let fraction = total_bytes.filter(|total| *total > 0).map_or(0.0, |total| {
+        (downloaded_bytes as f32 / total as f32).clamp(0.0, 1.0)
+    });
+    let transferred = total_bytes.map_or_else(
+        || format_download_bytes(downloaded_bytes),
+        |total| format_download_transfer(downloaded_bytes, total),
+    );
+    let bytes_per_second = if status == DownloadStatus::Downloading {
+        live_progress.map_or(0, |progress| progress.bytes_per_second)
+    } else {
+        0
+    };
+    let speed = if bytes_per_second == 0 {
+        "—".into()
+    } else {
+        format_download_rate(bytes_per_second)
+    };
+    let remaining = total_bytes
+        .filter(|_| bytes_per_second > 0)
+        .map(|total| {
+            total
+                .saturating_sub(downloaded_bytes)
+                .div_ceil(bytes_per_second)
+        })
+        .filter(|remaining| *remaining > 0)
+        .map_or_else(|| "—".into(), format_download_remaining);
+    DownloadRowTransferPresentation {
+        fraction,
+        transferred,
+        speed,
+        remaining,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -1909,20 +1984,32 @@ impl MainWindow {
             .value()
             .trim()
             .to_owned();
-        let (total_count, counts, visible_tasks) = self
+        let (total_count, counts, visible_tasks, visible_progress) = self
             .downloads
             .upgrade()
             .map(|application| {
-                let tasks = application.read(cx).tasks();
+                let application = application.read(cx);
+                let tasks = application.tasks();
+                let visible_tasks = download_tasks_for_view(
+                    tasks,
+                    self.download_filter,
+                    &search_query,
+                    self.download_sort,
+                );
+                let visible_progress = visible_tasks
+                    .iter()
+                    .filter_map(|task| {
+                        application
+                            .progress(task.task.id())
+                            .cloned()
+                            .map(|progress| (task.task.id(), progress))
+                    })
+                    .collect::<HashMap<_, _>>();
                 (
                     tasks.len(),
                     download_filter_counts(tasks.iter().map(|task| task.task.status())),
-                    download_tasks_for_view(
-                        tasks,
-                        self.download_filter,
-                        &search_query,
-                        self.download_sort,
-                    ),
+                    visible_tasks,
+                    visible_progress,
                 )
             })
             .unwrap_or_default();
@@ -1944,18 +2031,20 @@ impl MainWindow {
         let selected_task = selected_task_id
             .and_then(|task_id| visible_tasks.iter().find(|task| task.task.id() == task_id))
             .cloned();
-        let (detail_snapshot, detail_error, selected_progress) = selected_task_id
+        let (detail_snapshot, detail_error) = selected_task_id
             .and_then(|task_id| {
                 self.downloads.upgrade().map(|application| {
                     let application = application.read(cx);
                     (
                         application.task_detail(task_id).cloned(),
                         application.task_detail_error(task_id).map(str::to_owned),
-                        application.progress(task_id).cloned(),
                     )
                 })
             })
             .unwrap_or_default();
+        let selected_progress = selected_task_id
+            .and_then(|task_id| visible_progress.get(&task_id))
+            .cloned();
         if let Some(task_id) = selected_task_id {
             if detail_snapshot.is_some() {
                 self.requested_download_detail = Some(task_id);
@@ -1996,6 +2085,7 @@ impl MainWindow {
         let visible_count = visible_tasks.len();
         let virtual_tasks = Arc::new(visible_tasks);
         let virtual_task_ids = Arc::new(visible_task_ids);
+        let virtual_progress = Arc::new(visible_progress);
         let virtual_main_window = main_window.clone();
         let task_list = uniform_list(
             "download-task-list",
@@ -2004,6 +2094,7 @@ impl MainWindow {
                 range
                     .filter_map(|index| virtual_tasks.get(index).cloned())
                     .map(|task| {
+                        let progress = virtual_progress.get(&task.task.id()).cloned();
                         download_task_row(
                             theme,
                             this.downloads.clone(),
@@ -2013,6 +2104,7 @@ impl MainWindow {
                                 visible_task_ids: virtual_task_ids.clone(),
                             },
                             task,
+                            progress,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -4073,6 +4165,7 @@ fn download_task_row(
     main_window: Entity<MainWindow>,
     selection: DownloadRowSelection,
     task: DownloadEngineTask,
+    live_progress: Option<DownloadProgress>,
 ) -> AnyElement {
     let DownloadRowSelection {
         selected,
@@ -4090,24 +4183,18 @@ fn download_task_row(
         |path| path.display().to_string(),
     );
     let (status_label, status_color) = download_status_presentation(theme, status);
-    let progress = task
-        .total_bytes
-        .filter(|total| *total > 0)
-        .map_or(0.0, |total| {
-            (task.downloaded_bytes as f32 / total as f32).clamp(0.0, 1.0)
-        });
-    let progress_text = match task.total_bytes {
-        Some(total) => format!(
-            "{} / {}",
-            format_download_bytes(task.downloaded_bytes),
-            format_download_bytes(total)
-        ),
-        None => format_download_bytes(task.downloaded_bytes),
-    };
+    let transfer = download_row_transfer_presentation(
+        status,
+        task.downloaded_bytes,
+        task.total_bytes,
+        live_progress.as_ref(),
+    );
+    let failed = task.error.is_some();
     let (secondary_text, secondary_color) = task.error.as_ref().map_or_else(
         || (path, theme.text_muted),
         |error| (error.message.clone(), theme.danger),
     );
+    let error_tooltip = task.error.as_ref().map(|error| error.message.clone());
     let row_open_application = application.clone();
     let context_application = application;
     let click_main_window = main_window.clone();
@@ -4208,7 +4295,8 @@ fn download_task_row(
         .child(
             div()
                 .size_full()
-                .px(px(8.0))
+                .pl(px(8.0))
+                .pr(px(10.0))
                 .border_l_2()
                 .border_color(if selected {
                     theme.accent
@@ -4254,23 +4342,57 @@ fn download_task_row(
                                 })
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(11.5))
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
                                 .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(theme.text)
                                 .child(name),
                         )
                         .child(
                             div()
+                                .id(("download-task-secondary", element_id))
                                 .when(selected, |text| {
                                     text.debug_selector(|| {
                                         "download-task-path-text-selected".into()
                                     })
                                 })
+                                .when(failed, |text| {
+                                    text.debug_selector(|| "download-task-error-text".into())
+                                })
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(9.0))
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
                                 .text_color(secondary_color)
-                                .child(secondary_text),
+                                .child(secondary_text)
+                                .when_some(error_tooltip, |line, message| {
+                                    line.tooltip(move |window, cx| {
+                                        Tooltip::element({
+                                            let message = message.clone();
+                                            move |_window, _cx| {
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "download-task-error-tooltip".into()
+                                                    })
+                                                    .w(px(DOWNLOAD_ERROR_TOOLTIP_WIDTH))
+                                                    .h(px(DOWNLOAD_ERROR_TOOLTIP_MAX_HEIGHT))
+                                                    .flex_none()
+                                                    .overflow_hidden()
+                                                    .child(
+                                                        div()
+                                                            .size_full()
+                                                            .overflow_y_scrollbar()
+                                                            .text_size(px(TEXT_LABEL))
+                                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                                            .child(message.clone()),
+                                                    )
+                                            }
+                                        })
+                                        .max_w(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_WIDTH))
+                                        .max_h(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_HEIGHT))
+                                        .build(window, cx)
+                                    })
+                                }),
                         ),
                 )
                 .child(
@@ -4282,22 +4404,69 @@ fn download_task_row(
                         .flex_none()
                         .flex()
                         .flex_col()
-                        .gap(px(5.0))
+                        .gap(px(4.0))
                         .child(
                             div()
-                                .text_size(px(9.0))
+                                .h(px(15.0))
+                                .flex()
+                                .items_center()
+                                .font_family(UI_MONO_FONT_FAMILY)
+                                .text_size(px(TEXT_META))
                                 .text_color(theme.text_muted)
-                                .child(progress_text),
+                                .child(
+                                    div()
+                                        .when(selected, |value| {
+                                            value.debug_selector(|| {
+                                                "download-task-transferred-selected".into()
+                                            })
+                                        })
+                                        .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+                                        .flex_none()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .child(transfer.transferred),
+                                )
+                                .child(
+                                    div()
+                                        .when(selected, |value| {
+                                            value.debug_selector(|| {
+                                                "download-task-speed-selected".into()
+                                            })
+                                        })
+                                        .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                                        .flex_none()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .child(transfer.speed),
+                                )
+                                .child(
+                                    div()
+                                        .when(selected, |value| {
+                                            value.debug_selector(|| {
+                                                "download-task-remaining-selected".into()
+                                            })
+                                        })
+                                        .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                                        .flex_none()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .child(transfer.remaining),
+                                ),
                         )
                         .child(
                             div()
+                                .when(selected, |track| {
+                                    track.debug_selector(|| {
+                                        "download-task-progress-track-selected".into()
+                                    })
+                                })
                                 .w_full()
                                 .h(px(3.0))
                                 .rounded(px(2.0))
                                 .bg(theme.surface_raised)
                                 .child(
                                     div()
-                                        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH * progress))
+                                        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH * transfer.fraction))
                                         .h_full()
                                         .rounded(px(2.0))
                                         .bg(status_color),
@@ -4311,7 +4480,8 @@ fn download_task_row(
                         })
                         .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
                         .flex_none()
-                        .text_size(px(9.5))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(status_color)
                         .child(status_label),
                 ),
@@ -4774,12 +4944,6 @@ fn download_overview_detail(
                 .child(div().flex_1())
                 .child(div().flex_1()),
         )
-        .child(download_detail_line(
-            theme,
-            "URL",
-            request.source_url.clone(),
-        ))
-        .child(download_detail_line(theme, "文件", final_path))
         .when_some(task.error.as_ref(), |content, error| {
             content.child(download_detail_line_with_color(
                 theme,
@@ -4788,6 +4952,12 @@ fn download_overview_detail(
                 theme.danger,
             ))
         })
+        .child(download_detail_line(
+            theme,
+            "URL",
+            request.source_url.clone(),
+        ))
+        .child(download_detail_line(theme, "文件", final_path))
         .into_any_element()
 }
 
@@ -5172,6 +5342,9 @@ fn download_detail_line_with_color(
     value_color: gpui::Rgba,
 ) -> AnyElement {
     div()
+        .when(label == "错误", |line| {
+            line.debug_selector(|| "download-task-detail-error".into())
+        })
         .min_h(px(19.0))
         .flex()
         .items_start()
@@ -5373,6 +5546,71 @@ fn format_download_bytes(bytes: u64) -> String {
     }
 }
 
+fn format_download_transfer(downloaded: u64, total: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * KIB;
+    const GIB: f64 = 1024.0 * MIB;
+    let downloaded = downloaded as f64;
+    let total = total as f64;
+    if total >= GIB {
+        format!(
+            "{}/{} GB",
+            format_compact_transfer_value(downloaded / GIB),
+            format_compact_transfer_value(total / GIB)
+        )
+    } else if total >= MIB {
+        format!(
+            "{}/{} MB",
+            format_compact_transfer_value(downloaded / MIB),
+            format_compact_transfer_value(total / MIB)
+        )
+    } else if total >= KIB {
+        format!(
+            "{}/{} KB",
+            format_compact_transfer_value(downloaded / KIB),
+            format_compact_transfer_value(total / KIB)
+        )
+    } else {
+        format!("{}/{} B", downloaded as u64, total as u64)
+    }
+}
+
+fn format_download_rate(bytes_per_second: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * KIB;
+    const GIB: f64 = 1024.0 * MIB;
+    let rate = bytes_per_second as f64;
+    if rate >= GIB {
+        format!("{} GB/s", format_compact_transfer_value(rate / GIB))
+    } else if rate >= MIB {
+        format!("{} MB/s", format_compact_transfer_value(rate / MIB))
+    } else if rate >= KIB {
+        format!("{} KB/s", format_compact_transfer_value(rate / KIB))
+    } else {
+        format!("{bytes_per_second} B/s")
+    }
+}
+
+fn format_download_remaining(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    if hours == 0 {
+        format!("{minutes:02}:{:02}", seconds % 60)
+    } else if hours < 100 {
+        format!("{hours}h{minutes:02}m")
+    } else {
+        "99h+".into()
+    }
+}
+
+fn format_compact_transfer_value(value: f64) -> String {
+    if value >= 100.0 || value.fract().abs() < 0.05 {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.1}")
+    }
+}
+
 fn download_table_header(
     theme: Theme,
     sort: DownloadSortState,
@@ -5388,15 +5626,37 @@ fn download_table_header(
     .min_w_0()
     .flex_1()
     .pl(px(36.0));
-    let progress_header = download_sort_header_cell(
-        theme,
-        "进度",
-        DownloadSortKey::Progress,
-        sort,
-        main_window.clone(),
-    )
-    .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
-    .flex_none();
+    let progress_header = div()
+        .debug_selector(|| "download-transfer-header".into())
+        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+        .flex_none()
+        .flex()
+        .items_center()
+        .child(
+            download_sort_header_cell(
+                theme,
+                "进度",
+                DownloadSortKey::Progress,
+                sort,
+                main_window.clone(),
+            )
+            .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+            .flex_none(),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-speed-header".into())
+                .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                .flex_none()
+                .child("速度"),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-remaining-header".into())
+                .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                .flex_none()
+                .child("剩余"),
+        );
     let status_header =
         download_sort_header_cell(theme, "状态", DownloadSortKey::Status, sort, main_window)
             .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
@@ -5412,7 +5672,7 @@ fn download_table_header(
         .flex()
         .items_center()
         .gap(px(10.0))
-        .text_size(px(9.5))
+        .text_size(px(TEXT_META))
         .font_weight(gpui::FontWeight::MEDIUM)
         .text_color(theme.text_muted)
         .child(name_header)
@@ -5566,6 +5826,7 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::HashSet;
     use std::rc::Rc;
+    use std::time::Duration;
 
     use gpui::{
         AppContext, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
@@ -5574,8 +5835,8 @@ mod tests {
     use gpui_component::PixelsExt;
     use nxtools_core::{AppConfig, ClipboardHotKeyModifier, SystemSettings};
     use nxtools_download::{
-        DownloadEngine, DownloadRequest, DownloadSegment, DownloadSegmentState, DownloadStatus,
-        DownloadTaskId, RequestOrigin,
+        DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
+        DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskId, RequestOrigin,
     };
     use nxtools_network::NetworkPolicy;
 
@@ -5590,6 +5851,46 @@ mod tests {
     use crate::notifications::NotificationCenter;
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
+
+    #[test]
+    fn download_row_transfer_uses_live_values_only_for_active_tasks() {
+        let task_id = DownloadTaskId::new();
+        let progress = DownloadProgress {
+            task_id,
+            downloaded_bytes: 25 * 1024 * 1024,
+            total_bytes: Some(100 * 1024 * 1024),
+            bytes_per_second: 5 * 1024 * 1024,
+            active_connections: 4,
+            segments: Vec::new(),
+        };
+        let active = super::download_row_transfer_presentation(
+            DownloadStatus::Downloading,
+            20 * 1024 * 1024,
+            Some(100 * 1024 * 1024),
+            Some(&progress),
+        );
+        assert_eq!(active.fraction, 0.25);
+        assert_eq!(active.transferred, "25/100 MB");
+        assert_eq!(active.speed, "5 MB/s");
+        assert_eq!(active.remaining, "00:15");
+
+        let completed = super::download_row_transfer_presentation(
+            DownloadStatus::Completed,
+            100 * 1024 * 1024,
+            Some(100 * 1024 * 1024),
+            Some(&progress),
+        );
+        assert_eq!(completed.fraction, 1.0);
+        assert_eq!(completed.transferred, "100/100 MB");
+        assert_eq!(completed.speed, "—");
+        assert_eq!(completed.remaining, "—");
+
+        assert_eq!(super::format_download_rate(1023 * 1024 * 1024), "1023 MB/s");
+        assert_eq!(super::format_download_rate(1024 * 1024 * 1024), "1 GB/s");
+        assert_eq!(super::format_download_remaining(3_600), "1h00m");
+        assert_eq!(super::format_download_remaining(359_999), "99h59m");
+        assert_eq!(super::format_download_remaining(360_000), "99h+");
+    }
 
     #[gpui::test]
     fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppContext) {
@@ -6695,6 +6996,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.update(gpui_component::init);
+        let executor = cx.executor();
         let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
         let first_task = engine
             .enqueue(
@@ -6744,6 +7046,18 @@ mod tests {
                 RequestOrigin::Internal,
             )
             .expect("enqueue second task");
+        let failure_message =
+            "server returned a bounded but deliberately long failure message ".repeat(12);
+        let mut task_snapshots = engine.tasks().expect("read task snapshots");
+        task_snapshots
+            .iter_mut()
+            .find(|task| task.task.id() == first_task)
+            .expect("first task snapshot")
+            .error = Some(DownloadFault {
+            code: DownloadFaultCode::Protocol,
+            message: failure_message.clone(),
+            retryable: false,
+        });
         let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let downloads = cx.update(|cx| {
@@ -6767,6 +7081,10 @@ mod tests {
             })
         });
         let downloads_for_window = downloads.downgrade();
+        let failed_task_snapshots = task_snapshots.clone();
+        downloads.update(cx, |application, _| {
+            application.replace_tasks_for_test(task_snapshots);
+        });
         let (main_window, window) = cx.add_window_view(move |window, cx| {
             let mut main_window = MainWindow::new(
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
@@ -6820,6 +7138,14 @@ mod tests {
             DOWNLOAD_TASK_ROW_HEIGHT,
             "the main table must keep its compact row density"
         );
+        window.update(|_, cx| {
+            downloads.update(cx, |application, _| {
+                application.replace_tasks_for_test(failed_task_snapshots);
+            });
+            main_window.update(cx, |window, _| {
+                window.requested_download_detail = Some(selected_task);
+            });
+        });
         window.simulate_click(selected_row.center(), Modifiers::default());
         assert_eq!(
             window.read(|cx| main_window.read(cx).selected_download_task),
@@ -6829,6 +7155,9 @@ mod tests {
             window.read(|cx| main_window.read(cx).selected_download_tasks.clone()),
             HashSet::from([selected_task])
         );
+        let detail_error = window
+            .debug_bounds("download-task-detail-error")
+            .expect("selected failure detail bounds");
 
         let segment_tab = window
             .debug_bounds("download-detail-tab-segments")
@@ -6845,15 +7174,45 @@ mod tests {
         let name_text = window
             .debug_bounds("download-task-name-text-selected")
             .expect("selected file-name text bounds");
-        let path_text = window
-            .debug_bounds("download-task-path-text-selected")
-            .expect("selected path text bounds");
+        let failure_text = window
+            .debug_bounds("download-task-error-text")
+            .expect("failed task must replace the auxiliary path line");
+        assert!(
+            window
+                .debug_bounds("download-task-path-text-selected")
+                .is_none(),
+            "a failed task must not leave the ordinary path presentation active"
+        );
         let progress = window
             .debug_bounds("download-task-progress-selected")
             .expect("selected progress column bounds");
+        let transferred = window
+            .debug_bounds("download-task-transferred-selected")
+            .expect("selected downloaded/total subcolumn bounds");
+        let speed = window
+            .debug_bounds("download-task-speed-selected")
+            .expect("selected speed subcolumn bounds");
+        let remaining = window
+            .debug_bounds("download-task-remaining-selected")
+            .expect("selected remaining-time subcolumn bounds");
+        let progress_track = window
+            .debug_bounds("download-task-progress-track-selected")
+            .expect("selected progress track bounds");
         let status = window
             .debug_bounds("download-task-status-selected")
             .expect("selected status column bounds");
+        let transfer_header = window
+            .debug_bounds("download-transfer-header")
+            .expect("transfer header bounds");
+        let speed_header = window
+            .debug_bounds("download-speed-header")
+            .expect("speed header bounds");
+        let remaining_header = window
+            .debug_bounds("download-remaining-header")
+            .expect("remaining header bounds");
+        let status_header = window
+            .debug_bounds("download-sort-header-status")
+            .expect("status header bounds");
         let detail = window
             .debug_bounds("download-task-detail")
             .expect("production detail dock bounds");
@@ -6862,11 +7221,36 @@ mod tests {
             "the file-name column must retain enough width to render its content"
         );
         assert_eq!(name_text.size.width, name.size.width);
-        assert_eq!(path_text.size.width, name.size.width);
+        assert_eq!(failure_text.size.width, name.size.width);
+        assert!(failure_text.size.height.as_f32() >= 16.0);
         assert!(name.right() <= progress.left());
+        assert_eq!(transferred.left(), progress.left());
+        assert_eq!(transferred.right(), speed.left());
+        assert_eq!(speed.right(), remaining.left());
+        assert_eq!(remaining.right(), progress.right());
+        assert_eq!(progress_track.left(), progress.left());
+        assert_eq!(progress_track.right(), progress.right());
+        assert_eq!(progress_track.size.height.as_f32(), 3.0);
+        assert_eq!(transfer_header.left(), progress.left());
+        assert_eq!(speed_header.left(), speed.left());
+        assert_eq!(remaining_header.left(), remaining.left());
+        assert_eq!(status_header.left(), status.left());
         assert!(progress.right() <= status.left());
         assert!(detail.size.width.as_f32() > 0.0);
         assert_eq!(detail.size.height.as_f32(), DOWNLOAD_DETAIL_HEIGHT);
+        assert!(detail_error.size.width.as_f32() > 0.0);
+
+        window.simulate_mouse_move(failure_text.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        window.run_until_parked();
+        let error_tooltip = window
+            .debug_bounds("download-task-error-tooltip")
+            .expect("bounded failure tooltip after hovering the auxiliary line");
+        assert_eq!(
+            error_tooltip.size.width.as_f32(),
+            super::DOWNLOAD_ERROR_TOOLTIP_WIDTH
+        );
+        assert!(error_tooltip.size.height.as_f32() <= super::DOWNLOAD_ERROR_TOOLTIP_MAX_HEIGHT);
     }
 
     #[gpui::test]

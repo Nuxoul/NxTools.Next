@@ -943,6 +943,23 @@ Reverified on 2026-07-28 after inspecting the first packaged flat-table layout:
 - The table header exposes only columns backed by visible row data. After removing inline actions,
   it contains Name, Progress and Status; no empty or inert operation header remains.
 
+Reverified on 2026-08-13 for the P0 task-table refinement:
+
+- ABDM's optional Speed and Time Left columns are meaningful only when they remain vertically
+  stable across every row. NxTools.Next keeps the same invariant in one bounded transfer region:
+  downloaded/total, live speed and estimated remaining time use fixed subcolumns above the existing
+  3 px progress track. Missing live values render as an em dash instead of changing the row shape.
+- The task snapshot remains authoritative for durable downloaded/total values, while the desktop's
+  already-bounded `DownloadProgress` cache supplies live bytes, rate and remaining time. The list
+  must not invent a second sampler, timer or per-byte diagnostic path.
+- The 46 px row remains two-line: 12 px file name and 11 px path/error. A failure replaces only the
+  auxiliary line with danger text; the complete bounded message remains available through the
+  selected detail dock and a 320×144 px scrollable content viewport inside a tooltip surface bounded
+  to 340×170 px, so it cannot compress the primary name or transfer columns.
+- At the compact production window width the flexible name column yields before the fixed transfer
+  and status columns, but retains enough width for useful file identity. Header and row geometry are
+  verified through the production download workspace rather than a component-only fixture.
+
 ### Phase 1A new-download presentation invariants
 
 Reverified on 2026-07-27 after the first packaged interaction pass:
