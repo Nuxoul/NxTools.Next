@@ -4,13 +4,13 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-    AnyWindowHandle, Context, Entity, FontWeight, IntoElement, MouseButton, Render, WeakEntity,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations,
-    WindowKind, WindowOptions, div, prelude::*, px, size,
+    AnyWindowHandle, Context, Entity, IntoElement, Render, WeakEntity, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
+    prelude::*, px, size,
 };
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::ButtonVariants;
 use gpui_component::input::{Input, InputState};
-use gpui_component::{Disableable, Icon, Root, Sizable};
+use gpui_component::{Disableable, Root, Sizable};
 use nxtools_core::{
     AppConfig, NetworkProxyMode, NetworkProxySettings, NetworkSettings, SystemSettings,
 };
@@ -21,10 +21,17 @@ use tracing::{info, warn};
 
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
-use crate::ui::foundation::{
-    CONTROL_HEIGHT_ACTION, TEXT_LABEL, TITLEBAR_HEIGHT, UI_FONT_FAMILY, action_button,
-    primary_button_variant, settings_row, settings_section, settings_toggle,
+use crate::ui::components::action::{
+    SegmentedOption, action_button, primary_button_variant, segmented_control,
 };
+use crate::ui::components::field::{field_shell, inline_error};
+use crate::ui::components::settings::{
+    SettingsShellIds, dialog_footer, settings_row, settings_section, settings_shell,
+    settings_toggle,
+};
+use crate::ui::components::titlebar::client_titlebar;
+use crate::ui::metrics::{SPACING_6, SPACING_8, SPACING_12};
+use crate::ui::typography::TEXT_LABEL;
 
 pub(crate) struct NetworkSettingsApplication {
     policy: NetworkPolicy,
@@ -34,6 +41,8 @@ pub(crate) struct NetworkSettingsApplication {
     platform: Option<Rc<PlatformBridge>>,
     system_settings: Rc<RefCell<SystemSettings>>,
     window: Option<AnyWindowHandle>,
+    #[cfg(test)]
+    settings_view: Option<Entity<NetworkSettingsView>>,
     pending_apply: Option<PendingGlobalSettingsApply>,
     hidden_startup: bool,
 }
@@ -72,6 +81,8 @@ impl NetworkSettingsApplication {
             platform,
             system_settings,
             window: None,
+            #[cfg(test)]
+            settings_view: None,
             pending_apply: None,
             hidden_startup,
         }
@@ -94,6 +105,10 @@ impl NetworkSettingsApplication {
         let application = cx.entity();
         let settings = self.config.network.clone();
         let system = self.config.system.clone();
+        #[cfg(test)]
+        let view_slot = Rc::new(RefCell::new(None));
+        #[cfg(test)]
+        let opened_view_slot = Rc::clone(&view_slot);
         let window_size = size(px(560.0), px(430.0));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -121,17 +136,29 @@ impl NetworkSettingsApplication {
                             false
                         } else {
                             application.window = None;
+                            #[cfg(test)]
+                            {
+                                application.settings_view = None;
+                            }
                             true
                         }
                     })
                 });
                 let view = cx
                     .new(|cx| NetworkSettingsView::new(application, settings, system, window, cx));
+                #[cfg(test)]
+                opened_view_slot.borrow_mut().replace(view.clone());
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
         match opened {
-            Ok(window) => self.window = Some(window.into()),
+            Ok(window) => {
+                self.window = Some(window.into());
+                #[cfg(test)]
+                {
+                    self.settings_view = view_slot.borrow_mut().take();
+                }
+            }
             Err(error) => self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
                     "network-settings-window",
@@ -150,6 +177,10 @@ impl NetworkSettingsApplication {
         let Some(window) = self.window.take() else {
             return;
         };
+        #[cfg(test)]
+        {
+            self.settings_view = None;
+        }
         let _ = window.update(cx, |_, window, _| window.remove_window());
     }
 
@@ -594,245 +625,207 @@ impl NetworkSettingsView {
     }
 }
 
-fn network_settings_titlebar(
-    theme: Theme,
-    application: Entity<NetworkSettingsApplication>,
-) -> impl IntoElement {
-    div()
-        .debug_selector(|| "network-settings-titlebar".into())
-        .h(px(TITLEBAR_HEIGHT))
-        .pl(px(14.0))
-        .border_b_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
-        .window_control_area(WindowControlArea::Drag)
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .flex_1()
-                .text_size(px(TEXT_LABEL))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child("全局设置"),
-        )
-        .child(
-            div()
-                .id("network-settings-close")
-                .w(px(38.0))
-                .h_full()
-                .cursor_pointer()
-                .flex()
-                .items_center()
-                .justify_center()
-                .hover(move |style| style.bg(theme.danger).text_color(gpui::white()))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(move |_, _, cx| {
-                    let application = application.clone();
-                    cx.defer(move |cx| {
-                        application.update(cx, |application, cx| application.close_window(cx));
-                    });
-                })
-                .child(Icon::new(crate::icons::MaterialIcon::Close).size(px(15.0))),
-        )
-}
-
 impl Render for NetworkSettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let manual = self.mode == NetworkProxyMode::ManualHttp;
-        let mode_buttons = [
-            (NetworkProxyMode::Direct, "直连"),
-            (NetworkProxyMode::System, "系统代理"),
-            (NetworkProxyMode::ManualHttp, "手动 HTTP"),
-        ]
-        .into_iter()
-        .fold(div().flex().gap(px(6.0)), |row, (mode, label)| {
-            row.child(
-                Button::new(gpui::SharedString::from(format!("network-mode-{mode:?}")))
-                    .label(label)
-                    .small()
-                    .compact()
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .when(self.mode == mode, |button| {
-                        button.custom(primary_button_variant(theme, cx))
-                    })
-                    .on_click(cx.listener(move |this, _, _, cx| {
+        let mode_buttons = segmented_control(
+            theme,
+            "network-settings-proxy-mode",
+            [
+                (
+                    "network-settings-proxy-mode-direct",
+                    NetworkProxyMode::Direct,
+                    "直连",
+                ),
+                (
+                    "network-settings-proxy-mode-system",
+                    NetworkProxyMode::System,
+                    "系统代理",
+                ),
+                (
+                    "network-settings-proxy-mode-manual",
+                    NetworkProxyMode::ManualHttp,
+                    "手动 HTTP",
+                ),
+            ]
+            .into_iter()
+            .map(|(id, mode, label)| {
+                SegmentedOption::new(
+                    id,
+                    label,
+                    self.mode == mode,
+                    cx.listener(move |this, _, _, cx| {
                         this.mode = mode;
                         this.error = None;
                         cx.notify();
-                    })),
-            )
-        });
+                    }),
+                )
+            })
+            .collect(),
+            cx,
+        );
         let error = self.error.clone();
         let start_on_login_silently = self.start_on_login_silently;
         let close_to_tray = self.close_to_tray;
-        div()
-            .size_full()
-            .bg(theme.canvas)
-            .font_family(UI_FONT_FAMILY)
-            .text_color(theme.text)
+        let application = self.application.clone();
+        let titlebar = client_titlebar(
+            theme,
+            "network-settings-titlebar",
+            "network-settings-close",
+            "全局设置",
+            move |_, _, cx| {
+                let application = application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| application.close_window(cx));
+                });
+            },
+        );
+        let content = div()
+            .w_full()
+            .p(px(SPACING_12))
             .flex()
             .flex_col()
-            .child(network_settings_titlebar(theme, self.application.clone()))
+            .gap(px(SPACING_8))
+            .child(settings_section(
+                theme,
+                "network-settings-general-section",
+                "常规",
+                vec![
+                    settings_row(
+                        theme,
+                        "开机静默启动",
+                        "登录 Windows 后在后台启动，不主动弹出主窗口",
+                        settings_toggle(
+                            theme,
+                            "system-start-on-login",
+                            start_on_login_silently,
+                            cx.listener(|this, _, _, cx| {
+                                this.start_on_login_silently = !this.start_on_login_silently;
+                                cx.notify();
+                            }),
+                        ),
+                    ),
+                    settings_row(
+                        theme,
+                        "关闭到托盘",
+                        "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出",
+                        settings_toggle(
+                            theme,
+                            "system-close-to-tray",
+                            close_to_tray,
+                            cx.listener(|this, _, _, cx| {
+                                this.close_to_tray = !this.close_to_tray;
+                                cx.notify();
+                            }),
+                        ),
+                    ),
+                ],
+            ))
+            .child(settings_section(
+                theme,
+                "network-settings-network-section",
+                "网络与代理",
+                vec![
+                    settings_row(
+                        theme,
+                        "代理模式",
+                        "下载、剪贴板和速启中的实际联网操作共享；本地 IPC 与索引不使用",
+                        mode_buttons,
+                    ),
+                    settings_row(
+                        theme,
+                        "代理服务器",
+                        if manual {
+                            "仅支持 HTTP 代理；修改只影响新开始或重新继续的操作"
+                        } else {
+                            "选择手动 HTTP 后填写地址和端口"
+                        },
+                        div()
+                            .w(px(274.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(SPACING_6))
+                            .child(
+                                div().flex_1().min_w_0().child(field_shell(
+                                    "network-settings-proxy-host-field",
+                                    Input::new(&self.host)
+                                        .appearance(false)
+                                        .bordered(true)
+                                        .disabled(!manual)
+                                        .small()
+                                        .into_any_element(),
+                                )),
+                            )
+                            .child(
+                                div().w(px(82.0)).child(field_shell(
+                                    "network-settings-proxy-port-field",
+                                    Input::new(&self.port)
+                                        .appearance(false)
+                                        .bordered(true)
+                                        .disabled(!manual)
+                                        .small()
+                                        .into_any_element(),
+                                )),
+                            )
+                            .into_any_element(),
+                    ),
+                ],
+            ))
             .child(
                 div()
-                    .flex_1()
-                    .min_h_0()
-                    .p(px(14.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.0))
-                    .child(settings_section(
-                        theme,
-                        "network-settings-general-section",
-                        "常规",
-                        vec![
-                            settings_row(
-                                theme,
-                                "开机静默启动",
-                                "登录 Windows 后在后台启动，不主动弹出主窗口",
-                                settings_toggle(
-                                    theme,
-                                    "system-start-on-login",
-                                    start_on_login_silently,
-                                    cx.listener(|this, _, _, cx| {
-                                        this.start_on_login_silently =
-                                            !this.start_on_login_silently;
-                                        cx.notify();
-                                    }),
-                                ),
-                            ),
-                            settings_row(
-                                theme,
-                                "关闭到托盘",
-                                "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出",
-                                settings_toggle(
-                                    theme,
-                                    "system-close-to-tray",
-                                    close_to_tray,
-                                    cx.listener(|this, _, _, cx| {
-                                        this.close_to_tray = !this.close_to_tray;
-                                        cx.notify();
-                                    }),
-                                ),
-                            ),
-                        ],
-                    ))
-                    .child(settings_section(
-                        theme,
-                        "network-settings-network-section",
-                        "网络与代理",
-                        vec![
-                            settings_row(
-                                theme,
-                                "代理模式",
-                                "下载、剪贴板和速启中的实际联网操作共享；本地 IPC 与索引不使用",
-                                mode_buttons.into_any_element(),
-                            ),
-                            settings_row(
-                                theme,
-                                "代理服务器",
-                                if manual {
-                                    "仅支持 HTTP 代理；修改只影响新开始或重新继续的操作"
-                                } else {
-                                    "选择手动 HTTP 后填写地址和端口"
-                                },
-                                div()
-                                    .w(px(274.0))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(6.0))
-                                    .child(
-                                        div().flex_1().child(
-                                            Input::new(&self.host)
-                                                .appearance(false)
-                                                .bordered(true)
-                                                .disabled(!manual)
-                                                .small(),
-                                        ),
-                                    )
-                                    .child(
-                                        div().w(px(82.0)).child(
-                                            Input::new(&self.port)
-                                                .appearance(false)
-                                                .bordered(true)
-                                                .disabled(!manual)
-                                                .small(),
-                                        ),
-                                    )
-                                    .into_any_element(),
-                            ),
-                        ],
-                    ))
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .text_color(theme.text_muted)
-                            .child(
-                                "当前切片不提供 PAC 或代理密码输入；不会把敏感凭据明文写入配置。",
-                            ),
-                    )
-                    .when_some(error, |panel, error| {
-                        panel.child(
-                            div()
-                                .rounded(px(4.0))
-                                .bg(theme.danger_soft)
-                                .px(px(9.0))
-                                .py(px(7.0))
-                                .text_size(px(10.0))
-                                .text_color(theme.danger)
-                                .child(error),
-                        )
+                    .text_size(px(TEXT_LABEL))
+                    .text_color(theme.text_muted)
+                    .child("当前切片不提供 PAC 或代理密码输入；不会把敏感凭据明文写入配置。"),
+            )
+            .when_some(error, |panel, error| {
+                panel.child(inline_error(theme, "network-settings-inline-error", error))
+            })
+            .into_any_element();
+        let footer_application = self.application.clone();
+        let footer_actions = div()
+            .flex()
+            .items_center()
+            .gap(px(SPACING_8))
+            .child(
+                action_button("network-settings-cancel", "取消")
+                    .ghost()
+                    .on_click(move |_, _, cx| {
+                        let application = footer_application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| application.close_window(cx));
+                        });
                     }),
             )
             .child(
                 div()
-                    .h(px(48.0))
-                    .px(px(14.0))
-                    .border_t_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(8.0))
+                    .debug_selector(|| "network-settings-save".into())
                     .child(
-                        action_button("network-settings-cancel", "取消")
-                            .ghost()
-                            .on_click({
-                                let application = self.application.clone();
-                                move |_, _, cx| {
-                                    let application = application.clone();
-                                    cx.defer(move |cx| {
-                                        application.update(cx, |application, cx| {
-                                            application.close_window(cx);
-                                        });
-                                    });
-                                }
-                            }),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "network-settings-save".into())
-                            .child(
-                                action_button(
-                                    "network-settings-save-button",
-                                    if self.saving {
-                                        "正在应用…"
-                                    } else {
-                                        "应用"
-                                    },
-                                )
-                                .disabled(self.saving)
-                                .custom(primary_button_variant(theme, cx))
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| {
-                                        this.save(window, cx);
-                                    },
-                                )),
-                            ),
+                        action_button(
+                            "network-settings-save-button",
+                            if self.saving {
+                                "正在应用…"
+                            } else {
+                                "应用"
+                            },
+                        )
+                        .disabled(self.saving)
+                        .custom(primary_button_variant(theme, cx))
+                        .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
             )
+            .into_any_element();
+        settings_shell(
+            theme,
+            SettingsShellIds {
+                root: "network-settings-shell",
+                content: "network-settings-content",
+                footer: "network-settings-footer",
+            },
+            titlebar,
+            content,
+            dialog_footer(footer_actions),
+        )
     }
 }
 
@@ -862,7 +855,7 @@ fn parse_network_settings(
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext, Modifiers, TestAppContext};
+    use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
 
     use super::*;
 
@@ -914,19 +907,24 @@ mod tests {
     fn save_persists_before_publishing_the_shared_policy(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory, policy) = application_fixture(cx, "save");
-        let application_for_window = application.clone();
-        let (view, window) = cx.add_window_view(move |window, cx| {
-            NetworkSettingsView::new(
-                application_for_window,
-                NetworkSettings::default(),
-                SystemSettings::default(),
-                window,
-                cx,
+        cx.update(|cx| {
+            application.update(cx, |application, cx| application.open_window(cx));
+        });
+        cx.run_until_parked();
+        let (window_handle, view) = cx.read(|cx| {
+            let application = application.read(cx);
+            (
+                application.window.expect("production settings window"),
+                application
+                    .settings_view
+                    .clone()
+                    .expect("production settings view"),
             )
         });
+        let mut window = VisualTestContext::from_window(window_handle, cx);
+        window.run_until_parked();
         window.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.mode = NetworkProxyMode::ManualHttp;
                 view.host.update(cx, |input, cx| {
                     input.set_value("127.0.0.1", window, cx);
                 });
@@ -936,10 +934,22 @@ mod tests {
             });
         });
         window.refresh().expect("render network settings");
+        let shell = window
+            .debug_bounds("network-settings-shell")
+            .expect("shared settings shell");
         let titlebar = window
             .debug_bounds("network-settings-titlebar")
             .expect("shared settings titlebar");
         assert_eq!(titlebar.size.height, px(36.0));
+        let content = window
+            .debug_bounds("network-settings-content")
+            .expect("shared settings content");
+        let footer = window
+            .debug_bounds("network-settings-footer")
+            .expect("shared settings footer");
+        assert_eq!(shell.size.width, content.size.width);
+        assert_eq!(shell.size.width, footer.size.width);
+        assert!(content.bottom() <= footer.top());
         let general_section = window
             .debug_bounds("network-settings-general-section")
             .expect("shared settings section");
@@ -959,6 +969,23 @@ mod tests {
                 "the production shared toggle must mutate the settings draft"
             );
         });
+        let manual_mode = window
+            .debug_bounds("network-settings-proxy-mode-manual")
+            .expect("shared segmented manual proxy option");
+        assert_eq!(manual_mode.size.height, px(28.0));
+        window.simulate_click(manual_mode.center(), Modifiers::default());
+        window.run_until_parked();
+        window.update(|_, cx| {
+            assert_eq!(view.read(cx).mode, NetworkProxyMode::ManualHttp);
+        });
+        let host_field = window
+            .debug_bounds("network-settings-proxy-host-field")
+            .expect("shared proxy host field");
+        let port_field = window
+            .debug_bounds("network-settings-proxy-port-field")
+            .expect("shared proxy port field");
+        assert_eq!(host_field.size.height, px(32.0));
+        assert_eq!(port_field.size.height, px(32.0));
         let save = window
             .debug_bounds("network-settings-save")
             .expect("network settings save button");
@@ -972,6 +999,61 @@ mod tests {
             policy.snapshot().expect("live snapshot").mode(),
             NetworkProxyMode::ManualHttp
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn invalid_proxy_uses_inline_error_above_the_fixed_footer(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory, _policy) = application_fixture(cx, "inline-error");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| application.open_window(cx));
+        });
+        cx.run_until_parked();
+        let (window_handle, view) = cx.read(|cx| {
+            let application = application.read(cx);
+            (
+                application.window.expect("production settings window"),
+                application
+                    .settings_view
+                    .clone()
+                    .expect("production settings view"),
+            )
+        });
+        let mut window = VisualTestContext::from_window(window_handle, cx);
+        window.run_until_parked();
+        window.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.mode = NetworkProxyMode::ManualHttp;
+                view.host.update(cx, |input, cx| {
+                    input.set_value("", window, cx);
+                });
+                view.port.update(cx, |input, cx| {
+                    input.set_value("0", window, cx);
+                });
+            });
+        });
+        window.refresh().expect("render invalid settings draft");
+        let save = window
+            .debug_bounds("network-settings-save")
+            .expect("settings save action");
+        window.simulate_click(save.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render inline validation error");
+
+        let content = window
+            .debug_bounds("network-settings-content")
+            .expect("settings content");
+        let inline_error = window
+            .debug_bounds("network-settings-inline-error")
+            .expect("shared inline error");
+        let footer = window
+            .debug_bounds("network-settings-footer")
+            .expect("fixed settings footer");
+        assert!(inline_error.left() >= content.left());
+        assert!(inline_error.right() <= content.right());
+        assert!(inline_error.bottom() <= footer.top());
+        window.update(|_, cx| assert!(view.read(cx).error.is_some()));
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -1140,8 +1222,15 @@ mod tests {
             .expect("reused settings window");
         assert!(first == second, "opening twice must reuse one owned window");
 
-        cx.update(|cx| application.update(cx, |application, cx| application.close_window(cx)));
-        cx.run_until_parked();
+        let mut window = VisualTestContext::from_window(first, cx);
+        window.run_until_parked();
+        window.refresh().expect("render shared client titlebar");
+        let close = window
+            .debug_bounds("network-settings-close")
+            .expect("shared titlebar close action");
+        assert_eq!(close.size, size(px(28.0), px(28.0)));
+        window.simulate_click(close.center(), Modifiers::default());
+        window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
         assert!(
             cx.update(|cx| first.update(cx, |_, _, _| ())).is_err(),

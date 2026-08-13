@@ -22,7 +22,7 @@ keyword search.
 | Quick Launch / Finder | [quick-launch-research.md](quick-launch-research.md) | Investigation in progress |
 | Product shell, startup and notification area | [system-shell.md](system-shell.md) | Indexed |
 | Floating assistant | `assistant.md` | Not inspected for the current slice |
-| GPUI/Zed rendering patterns | `gpui.md` | Not inspected for the current slice |
+| GPUI/Zed rendering patterns | [gpui.md](gpui.md) | Indexed for P0 visual components |
 
 ## Entry format
 

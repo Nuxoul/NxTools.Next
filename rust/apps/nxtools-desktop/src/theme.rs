@@ -1,6 +1,6 @@
 use gpui::{Rgba, hsla, rgb};
 
-pub(crate) use crate::ui::foundation::{UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+pub(crate) use crate::ui::typography::{UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 pub(crate) const SEARCH_TEXT_SIZE: f32 = 13.5;
 pub(crate) const RESULT_TITLE_SIZE: f32 = 13.0;
 pub(crate) const RESULT_DETAIL_SIZE: f32 = 10.5;

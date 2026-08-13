@@ -45,9 +45,9 @@ use crate::quick_launch::{
 };
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
-use crate::ui::foundation::{
-    TEXT_BODY, TEXT_LABEL, TITLEBAR_HEIGHT, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY, icon_action_button,
-};
+use crate::ui::components::action::labelled_icon_action;
+use crate::ui::metrics::TITLEBAR_HEIGHT;
+use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
 const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
 const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
@@ -1744,7 +1744,7 @@ impl MainWindow {
                         }
                     })
                     .child(
-                        icon_action_button(
+                        labelled_icon_action(
                             "global-network-settings-button",
                             MaterialIcon::Settings,
                             "全局设置",

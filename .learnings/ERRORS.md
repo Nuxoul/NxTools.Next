@@ -8314,3 +8314,68 @@ adding a backward-compatible field.
 - **Notes**: Core/protocol/desktop and architecture gates passed; the C# completion-action filter
   passed. The full C# timeout is documented rather than claimed as a pass, and only its known PIDs
   were stopped.
+
+---
+
+## [ERR-20260813-P0C] cargo_clippy_shared_ui_component
+
+**Logged**: 2026-08-13T15:00:25+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Strict Clippy rejected an unnecessary clone in the new shared segmented-control renderer.
+
+### Error
+`ButtonCustomVariant` implements `Copy`; `clone()` triggered `clippy::clone_on_copy` under
+`-D warnings`.
+
+### Context
+- Command: `cargo clippy -p nxtools-desktop --all-targets -- -D warnings`
+- The value is captured by a render iterator and can be copied directly into each selected button.
+
+### Suggested Fix
+Run strict Clippy immediately after introducing shared component APIs and pass small Copy style
+descriptors by value.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/action.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T15:00:25+08:00
+- **Notes**: Removed the redundant clone; strict Clippy is rerun as part of this slice.
+
+---
+
+## [ERR-20260813-HLS] workspace_hls_reopen_loopback_transient
+
+**Logged**: 2026-08-13T15:04:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The workspace run hit one transient loopback request failure in an existing HLS reopen test.
+
+### Error
+`paused_hls_vod_resumes_after_engine_reopen_from_durable_segment_checkpoint` reached `Failed`
+after a request to its local `127.0.0.1` fixture could not be sent.
+
+### Context
+- Command: `cargo test --workspace -- --test-threads=1`
+- The current slice changes desktop GPUI components only; it does not modify the download engine or
+  HLS fixtures.
+
+### Suggested Fix
+Keep the full-run result visible, rerun the exact real-boundary test once, and do not describe the
+workspace run as all-green unless the original full invocation passed.
+
+### Metadata
+- Reproducible: no
+- Related Files: rust/crates/nxtools-download/tests/engine_contract.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T15:04:00+08:00
+- **Notes**: The exact test passed immediately (1/1); the full-run transient remains documented.

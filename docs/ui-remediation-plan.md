@@ -287,11 +287,33 @@ rust/apps/nxtools-desktop/src/ui/
   瞬断，随后两次 exact 复跑为一次通过、一次同样瞬断；本切片未修改下载引擎，未把该结果
   误报为全绿。
 
+第二个 P0 纵向切片（2026-08-13）：
+
+- 原先过宽的单文件 `ui/foundation.rs` 已拆为 `typography.rs`、`metrics.rs`、`motion.rs`
+  与 `ui/components/*`，避免令牌、窗口骨架和业务控件继续堆在同一模块。
+- 已建立并实际使用 Action/IconAction、SegmentedControl、Field、InlineError、
+  ClientTitlebar、SettingsShell、SettingsSection、SettingsRow、Toggle 与 DialogFooter；
+  CompactListRow、EmptyState、StatusBadge、Popover/ListBox 先建立受限 API，待首个真实业务表面
+  迁移和门禁完成后再把 DS-10/DS-12 勾为完成。
+- 全局设置窗口已迁移到共享 SettingsShell；代理模式、Header-like 输入、系统设置 Toggle、
+  错误提示、Apply/Cancel 与原生关闭继续复用原 persistence/IPC 生命周期，没有把业务策略
+  搬进组件层。
+- 真实生产窗口门禁覆盖 titlebar/content/fixed-footer 几何、同宽 section、28 px segmented
+  option、32 px field、40×22 px toggle、inline error 位于 footer 上方，以及共享关闭按钮销毁
+  原窗口实体。
+- NxTools.Next 当前固定的 GPUI 0.2.2 / gpui-component 0.5.1 尚未暴露 Zed 新版使用的
+  accessibility role/label builder；IconAction 已提供可见 Tooltip，但 DS-08 不会在这个缺口
+  关闭前提前勾完。
+- 自动化验证：全局设置 7 项、desktop 284 项和 targeted Clippy 全部通过。workspace 全量
+  仅既有 HLS 重启恢复 loopback 用例出现一次本地请求瞬断；该 exact 用例随即 1/1 通过，
+  因此如实记录为全量非全绿、精确门禁通过。本切片未启动 GUI、未打包、未冒领 DPI/截图
+  人工验收。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
 - [ ] 主标题栏、侧栏、模块页头和通知统一；
-- [ ] 全局设置迁移到 SettingsShell。
+- [x] 全局设置迁移到 SettingsShell。
 
 ### 批次 3：下载全套界面
 

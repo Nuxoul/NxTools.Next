@@ -1,6 +1,9 @@
-pub(crate) mod foundation;
+pub(crate) mod components;
 mod history;
+pub(crate) mod metrics;
+pub(crate) mod motion;
 mod preview;
+pub(crate) mod typography;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
