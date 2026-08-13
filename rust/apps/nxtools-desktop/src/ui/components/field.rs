@@ -1,18 +1,25 @@
-use gpui::{AnyElement, IntoElement, div, prelude::*, px};
+use gpui::{AnyElement, IntoElement, Styled, div, prelude::*, px, relative};
+use gpui_component::input::Input;
 
 use crate::theme::Theme;
 use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_6, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL};
 
-pub(crate) fn field_shell(selector: &'static str, control: AnyElement) -> AnyElement {
+pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) -> AnyElement {
+    let control = Styled::h(control, relative(1.0));
     div()
         .debug_selector(move || selector.into())
         .h(px(CONTROL_HEIGHT_INPUT))
         .w_full()
         .min_w_0()
+        .rounded(px(RADIUS_CONTROL))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.canvas)
+        .overflow_hidden()
         .flex()
         .items_center()
-        .child(div().w_full().min_w_0().child(control))
+        .child(div().size_full().min_w_0().child(control))
         .into_any_element()
 }
 
@@ -36,8 +43,12 @@ pub(crate) fn path_picker_shell(
 }
 
 #[allow(dead_code)] // Numeric settings migrate without changing their parsing owner.
-pub(crate) fn numeric_field_shell(selector: &'static str, control: AnyElement) -> AnyElement {
-    field_shell(selector, control)
+pub(crate) fn numeric_field_shell(
+    theme: Theme,
+    selector: &'static str,
+    control: Input,
+) -> AnyElement {
+    field_shell(theme, selector, control)
 }
 
 pub(crate) fn inline_error(

@@ -295,7 +295,7 @@ rust/apps/nxtools-desktop/src/ui/
   ClientTitlebar、SettingsShell、SettingsSection、SettingsRow、Toggle 与 DialogFooter；
   CompactListRow、EmptyState、StatusBadge、Popover/ListBox 先建立受限 API，待首个真实业务表面
   迁移和门禁完成后再把 DS-10/DS-12 勾为完成。
-- 全局设置窗口已迁移到共享 SettingsShell；代理模式、Header-like 输入、系统设置 Toggle、
+- 全局设置窗口已迁移到共享 SettingsShell；代理地址/端口输入、代理模式、系统设置 Toggle、
   错误提示、Apply/Cancel 与原生关闭继续复用原 persistence/IPC 生命周期，没有把业务策略
   搬进组件层。
 - 真实生产窗口门禁覆盖 titlebar/content/fixed-footer 几何、同宽 section、28 px segmented

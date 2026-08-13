@@ -1,7 +1,7 @@
 use gpui::{AnyElement, IntoElement, div, prelude::*, px};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{SPACING_6, SPACING_8};
+use crate::ui::metrics::{CONTROL_HEIGHT_DEFAULT, SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 #[allow(dead_code)]
@@ -28,9 +28,9 @@ pub(crate) fn status_badge(
         StatusTone::Danger => theme.danger,
     };
     div()
-        .h(px(22.0))
+        .h(px(CONTROL_HEIGHT_DEFAULT))
         .px(px(SPACING_8))
-        .rounded(px(11.0))
+        .rounded(px(CONTROL_HEIGHT_DEFAULT / 2.0))
         .border_1()
         .border_color(theme.border_subtle)
         .text_size(px(TEXT_LABEL))
@@ -50,7 +50,7 @@ pub(crate) fn compact_list_row(
 ) -> AnyElement {
     div()
         .w_full()
-        .min_h(px(42.0))
+        .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
         .px(px(SPACING_8))
         .py(px(SPACING_6))
         .flex()

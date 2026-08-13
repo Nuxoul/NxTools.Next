@@ -11,7 +11,6 @@ pub(crate) type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut A
 pub(crate) struct SegmentedOption {
     pub id: &'static str,
     pub label: &'static str,
-    pub selected: bool,
     pub on_click: ClickHandler,
 }
 
@@ -19,13 +18,11 @@ impl SegmentedOption {
     pub(crate) fn new(
         id: &'static str,
         label: &'static str,
-        selected: bool,
         on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             id,
             label,
-            selected,
             on_click: Box::new(on_click),
         }
     }
@@ -73,26 +70,43 @@ pub(crate) fn icon_action(
 pub(crate) fn segmented_control(
     theme: Theme,
     selector: &'static str,
+    selected_id: &'static str,
     options: Vec<SegmentedOption>,
     cx: &App,
 ) -> AnyElement {
-    let selected_variant = primary_button_variant(theme, cx);
+    assert_eq!(
+        options
+            .iter()
+            .filter(|option| option.id == selected_id)
+            .count(),
+        1,
+        "a segmented control must have exactly one selected option"
+    );
+    let selected_variant = ButtonCustomVariant::new(cx)
+        .color(theme.accent_soft.into())
+        .foreground(theme.text.into())
+        .border(gpui::transparent_black())
+        .hover(theme.surface_hover.into())
+        .active(theme.element_selected.into());
     div()
         .debug_selector(move || selector.into())
         .h(px(CONTROL_HEIGHT_ACTION))
         .rounded(px(RADIUS_CONTROL))
+        .border_1()
+        .border_color(theme.border_subtle)
         .overflow_hidden()
         .flex()
         .children(options.into_iter().map(move |option| {
+            let selected = option.id == selected_id;
             let button = Button::new(option.id)
                 .label(option.label)
                 .small()
                 .h_full()
                 .w_full()
                 .rounded(px(0.0))
-                .selected(option.selected)
-                .when(option.selected, |button| button.custom(selected_variant))
-                .when(!option.selected, |button| button.ghost())
+                .selected(selected)
+                .when(selected, |button| button.custom(selected_variant))
+                .when(!selected, |button| button.ghost())
                 .on_click(option.on_click);
             div()
                 .debug_selector(move || option.id.into())

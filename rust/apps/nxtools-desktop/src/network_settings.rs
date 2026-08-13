@@ -629,9 +629,15 @@ impl Render for NetworkSettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let manual = self.mode == NetworkProxyMode::ManualHttp;
+        let selected_mode_id = match self.mode {
+            NetworkProxyMode::Direct => "network-settings-proxy-mode-direct",
+            NetworkProxyMode::System => "network-settings-proxy-mode-system",
+            NetworkProxyMode::ManualHttp => "network-settings-proxy-mode-manual",
+        };
         let mode_buttons = segmented_control(
             theme,
             "network-settings-proxy-mode",
+            selected_mode_id,
             [
                 (
                     "network-settings-proxy-mode-direct",
@@ -654,7 +660,6 @@ impl Render for NetworkSettingsView {
                 SegmentedOption::new(
                     id,
                     label,
-                    self.mode == mode,
                     cx.listener(move |this, _, _, cx| {
                         this.mode = mode;
                         this.error = None;
@@ -748,24 +753,24 @@ impl Render for NetworkSettingsView {
                             .gap(px(SPACING_6))
                             .child(
                                 div().flex_1().min_w_0().child(field_shell(
+                                    theme,
                                     "network-settings-proxy-host-field",
                                     Input::new(&self.host)
                                         .appearance(false)
                                         .bordered(true)
                                         .disabled(!manual)
-                                        .small()
-                                        .into_any_element(),
+                                        .small(),
                                 )),
                             )
                             .child(
                                 div().w(px(82.0)).child(field_shell(
+                                    theme,
                                     "network-settings-proxy-port-field",
                                     Input::new(&self.port)
                                         .appearance(false)
                                         .bordered(true)
                                         .disabled(!manual)
-                                        .small()
-                                        .into_any_element(),
+                                        .small(),
                                 )),
                             )
                             .into_any_element(),
@@ -788,14 +793,20 @@ impl Render for NetworkSettingsView {
             .items_center()
             .gap(px(SPACING_8))
             .child(
-                action_button("network-settings-cancel", "取消")
-                    .ghost()
-                    .on_click(move |_, _, cx| {
-                        let application = footer_application.clone();
-                        cx.defer(move |cx| {
-                            application.update(cx, |application, cx| application.close_window(cx));
-                        });
-                    }),
+                div()
+                    .debug_selector(|| "network-settings-cancel".into())
+                    .child(
+                        action_button("network-settings-cancel-button", "取消")
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = footer_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.close_window(cx);
+                                    });
+                                });
+                            }),
+                    ),
             )
             .child(
                 div()
@@ -969,10 +980,27 @@ mod tests {
                 "the production shared toggle must mutate the settings draft"
             );
         });
+        let mode_group = window
+            .debug_bounds("network-settings-proxy-mode")
+            .expect("shared segmented proxy mode");
+        assert_eq!(mode_group.size.height, px(28.0));
+        let direct_mode = window
+            .debug_bounds("network-settings-proxy-mode-direct")
+            .expect("shared segmented direct option");
+        let system_mode = window
+            .debug_bounds("network-settings-proxy-mode-system")
+            .expect("shared segmented system option");
         let manual_mode = window
             .debug_bounds("network-settings-proxy-mode-manual")
             .expect("shared segmented manual proxy option");
-        assert_eq!(manual_mode.size.height, px(28.0));
+        assert_eq!(direct_mode.size.height, system_mode.size.height);
+        assert_eq!(system_mode.size.height, manual_mode.size.height);
+        assert!((direct_mode.size.width - system_mode.size.width).abs() <= px(1.0));
+        assert!((system_mode.size.width - manual_mode.size.width).abs() <= px(1.0));
+        assert!(manual_mode.top() >= mode_group.top());
+        assert!(manual_mode.bottom() <= mode_group.bottom());
+        assert!(manual_mode.left() >= mode_group.left());
+        assert!(manual_mode.right() <= mode_group.right());
         window.simulate_click(manual_mode.center(), Modifiers::default());
         window.run_until_parked();
         window.update(|_, cx| {
@@ -1208,7 +1236,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn window_open_reuses_and_close_releases_the_owned_window(cx: &mut TestAppContext) {
+    fn cancel_and_titlebar_close_release_the_owned_production_window(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory, _policy) = application_fixture(cx, "lifecycle");
         cx.update(|cx| application.update(cx, |application, cx| application.open_window(cx)));
@@ -1224,6 +1252,25 @@ mod tests {
 
         let mut window = VisualTestContext::from_window(first, cx);
         window.run_until_parked();
+        window.refresh().expect("render shared settings shell");
+        let cancel = window
+            .debug_bounds("network-settings-cancel")
+            .expect("production Cancel action");
+        assert_eq!(cancel.size.height, px(28.0));
+        window.simulate_click(cancel.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(cx.read(|cx| application.read(cx).window.is_none()));
+        assert!(
+            cx.update(|cx| first.update(cx, |_, _, _| ())).is_err(),
+            "Cancel must destroy the owned production window"
+        );
+
+        cx.update(|cx| application.update(cx, |application, cx| application.open_window(cx)));
+        let reopened = cx
+            .read(|cx| application.read(cx).window)
+            .expect("reopened settings window");
+        let mut window = VisualTestContext::from_window(reopened, cx);
+        window.run_until_parked();
         window.refresh().expect("render shared client titlebar");
         let close = window
             .debug_bounds("network-settings-close")
@@ -1233,8 +1280,8 @@ mod tests {
         window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
         assert!(
-            cx.update(|cx| first.update(cx, |_, _, _| ())).is_err(),
-            "the owned window must be destroyed, not only forgotten"
+            cx.update(|cx| reopened.update(cx, |_, _, _| ())).is_err(),
+            "the titlebar close must destroy the owned window, not only forget it"
         );
         let _ = std::fs::remove_dir_all(directory);
     }
