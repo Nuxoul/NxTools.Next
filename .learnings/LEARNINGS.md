@@ -6,6 +6,43 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260813-001] best_practice
+
+**Logged**: 2026-08-13T12:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+An externally observed GPUI list must use the same `ScrollHandle` for content tracking and its visible scrollbar.
+
+### Details
+`gpui-component`'s convenience `overflow_y_scrollbar()` builder owns an internal scroll handle.
+Combining it with a separately supplied `track_scroll(&handle)` renders a scrollable list, but the
+external handle continues to report a zero maximum offset. This made the production category-list
+regression fail even though the surface appeared scrollable. The working boundary is
+`track_scroll(&handle) + overflow_y_scroll() + vertical_scrollbar(&handle)`.
+
+### Suggested Action
+For shared bounded ListBox components, accept one caller-owned `ScrollHandle` and pass that exact
+handle to both content tracking and scrollbar rendering. Assert a positive `max_offset` in a real
+production window when the domain exceeds the viewport.
+
+### Metadata
+- Source: error
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/popover.rs, rust/apps/nxtools-desktop/src/downloads.rs
+- Tags: gpui, scroll, listbox, regression
+- Pattern-Key: gpui.shared_scroll_handle
+- Recurrence-Count: 1
+- First-Seen: 2026-08-13
+- Last-Seen: 2026-08-13
+
+### Resolution
+- **Resolved**: 2026-08-13T12:00:00+08:00
+- **Notes**: The shared ListBox now renders overflow and its scrollbar from one caller-owned handle; the production-window test proves non-zero scroll range.
+
+---
+
 ## [LRN-20260813-UIDOCHANDOFF] correction
 
 **Logged**: 2026-08-13T13:59:00+08:00

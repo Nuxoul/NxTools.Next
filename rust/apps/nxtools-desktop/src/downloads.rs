@@ -10,8 +10,8 @@ use chrono::{
     Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, TimeZone, Timelike,
 };
 use gpui::{
-    AnyElement, AnyWindowHandle, App, Context, Corner, Entity, EventEmitter, FontWeight,
-    IntoElement, MouseButton, Render, ScrollHandle, Subscription, Task, Window,
+    AnyElement, AnyWindowHandle, App, Context, Corner, Entity, EventEmitter, Focusable, FontWeight,
+    IntoElement, MouseButton, Render, Rgba, ScrollHandle, Subscription, Task, Window,
     WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations, WindowKind,
     WindowOptions, div, prelude::*, px, size,
 };
@@ -65,7 +65,11 @@ use crate::download_window_lifecycle::{
 use crate::icons::MaterialIcon;
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
+use crate::ui::components::field::field_shell;
+use crate::ui::components::popover::{list_box, popover_shell};
+use crate::ui::metrics::{SPACING_4, SPACING_6, SPACING_8};
 use crate::ui::native_window_handle;
+use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
@@ -7801,6 +7805,45 @@ struct BrowserBlobDialogContext {
     save_directory: PathBuf,
 }
 
+fn category_matches_query(category: &DownloadCategorySettings, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    category.name.to_lowercase().contains(query)
+        || category.save_directory.to_lowercase().contains(query)
+        || category
+            .extensions
+            .iter()
+            .any(|extension| extension.to_lowercase().contains(query))
+}
+
+fn category_choice_ids(
+    categories: &[DownloadCategorySettings],
+    query: &str,
+) -> Vec<Option<String>> {
+    let mut choices = Vec::with_capacity(categories.len() + usize::from(query.is_empty()));
+    if query.is_empty() {
+        choices.push(None);
+    }
+    choices.extend(
+        categories
+            .iter()
+            .filter(|category| category_matches_query(category, query))
+            .map(|category| Some(category.id.clone())),
+    );
+    choices
+}
+
+fn category_choice_background(theme: Theme, selected: bool, highlighted: bool) -> Rgba {
+    if highlighted {
+        theme.element_selected
+    } else if selected {
+        theme.accent_soft
+    } else {
+        theme.canvas
+    }
+}
+
 struct NewDownloadView {
     theme: Theme,
     application: Entity<DownloadApplication>,
@@ -7811,7 +7854,9 @@ struct NewDownloadView {
     categories: Vec<DownloadCategorySettings>,
     selected_category_id: Option<String>,
     category_popover_open: bool,
-    category_menu_page: usize,
+    category_search: Entity<InputState>,
+    category_highlighted_index: usize,
+    category_scroll: ScrollHandle,
     scheduled_date: NaiveDate,
     scheduled_month: NaiveDate,
     scheduled_hour: Entity<SelectState<Vec<String>>>,
@@ -7833,6 +7878,8 @@ struct NewDownloadView {
     error: Option<String>,
     _subscription: Subscription,
     _directory_subscription: Subscription,
+    _category_search_subscription: Subscription,
+    _category_key_subscription: Subscription,
 }
 
 impl NewDownloadView {
@@ -7897,12 +7944,62 @@ impl NewDownloadView {
                 .default_value(initial_file_name)
                 .placeholder("可选；留空时使用服务器文件名")
         });
+        let category_search =
+            cx.new(|cx| InputState::new(window, cx).placeholder("搜索分类名称、目录或扩展名"));
         let directory_subscription = cx.subscribe(&directory, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.save_directory_explicit = true;
                 cx.notify();
             }
         });
+        let category_search_subscription =
+            cx.subscribe(&category_search, |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.category_highlighted_index = 0;
+                    this.category_scroll.scroll_to_item(0);
+                    cx.notify();
+                }
+            });
+        let category_key_listener =
+            cx.listener(|this, event: &gpui::KeystrokeEvent, window, cx| {
+                if !this.category_popover_open || event.keystroke.modifiers.modified() {
+                    return;
+                }
+                let choices = this.category_choice_ids(cx);
+                let key = event.keystroke.key.as_str();
+                let handled = if key.eq_ignore_ascii_case("down") {
+                    if !choices.is_empty() {
+                        this.category_highlighted_index = (this.category_highlighted_index + 1)
+                            .min(choices.len().saturating_sub(1));
+                        this.category_scroll
+                            .scroll_to_item(this.category_highlighted_index);
+                    }
+                    true
+                } else if key.eq_ignore_ascii_case("up") {
+                    this.category_highlighted_index =
+                        this.category_highlighted_index.saturating_sub(1);
+                    this.category_scroll
+                        .scroll_to_item(this.category_highlighted_index);
+                    true
+                } else if key.eq_ignore_ascii_case("enter") {
+                    if let Some(choice) = choices.get(this.category_highlighted_index).cloned() {
+                        this.select_category_choice(choice);
+                        this.file_name.focus_handle(cx).focus(window);
+                    }
+                    true
+                } else if key.eq_ignore_ascii_case("escape") {
+                    this.category_popover_open = false;
+                    this.file_name.focus_handle(cx).focus(window);
+                    true
+                } else {
+                    false
+                };
+                if handled {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            });
+        let category_key_subscription = cx.intercept_keystrokes(category_key_listener);
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
         let scheduled_date = default_scheduled_at.date_naive();
         let scheduled_month = calendar_month_start(scheduled_date);
@@ -7951,7 +8048,9 @@ impl NewDownloadView {
             categories,
             selected_category_id,
             category_popover_open: false,
-            category_menu_page: 0,
+            category_search,
+            category_highlighted_index: 0,
+            category_scroll: ScrollHandle::new(),
             scheduled_date,
             scheduled_month,
             scheduled_hour,
@@ -7981,7 +8080,20 @@ impl NewDownloadView {
             error: None,
             _subscription: subscription,
             _directory_subscription: directory_subscription,
+            _category_search_subscription: category_search_subscription,
+            _category_key_subscription: category_key_subscription,
         }
+    }
+
+    fn category_choice_ids(&self, cx: &App) -> Vec<Option<String>> {
+        let query = self.category_search.read(cx).value().trim().to_lowercase();
+        category_choice_ids(&self.categories, &query)
+    }
+
+    fn select_category_choice(&mut self, choice: Option<String>) {
+        self.selected_category_id = choice;
+        self.category_popover_open = false;
+        self.error = None;
     }
 
     fn request(&self, cx: &App) -> Result<DownloadRequest, String> {
@@ -8539,19 +8651,13 @@ impl Render for NewDownloadView {
         let category_open_view = category_view.clone();
         let category_menu_view = category_view.clone();
         let categories = self.categories.clone();
-        const CATEGORY_MENU_PAGE_SIZE: usize = 4;
-        let category_page_count = categories.len().div_ceil(CATEGORY_MENU_PAGE_SIZE).max(1);
-        let category_menu_page = self.category_menu_page.min(category_page_count - 1);
-        let category_page_start = category_menu_page * CATEGORY_MENU_PAGE_SIZE;
-        let visible_category_count = categories
-            .len()
-            .saturating_sub(category_page_start)
-            .min(CATEGORY_MENU_PAGE_SIZE);
-        let category_menu_height = if category_page_count > 1 {
-            232.0
-        } else {
-            46.0 + visible_category_count as f32 * 37.0
-        };
+        let category_search = self.category_search.clone();
+        let category_search_focus = self.category_search.focus_handle(cx);
+        let category_return_focus = self.file_name.focus_handle(cx);
+        let category_close_focus = category_return_focus.clone();
+        let category_query = self.category_search.read(cx).value().trim().to_lowercase();
+        let category_highlighted_index = self.category_highlighted_index;
+        let category_scroll = self.category_scroll.clone();
         let selected_category_id_for_menu = self.selected_category_id.clone();
         let category_control = div()
             .debug_selector(|| "download-new-category-control".into())
@@ -8560,21 +8666,37 @@ impl Render for NewDownloadView {
                 Popover::new("download-new-category-popover")
                     .anchor(Corner::BottomRight)
                     .open(self.category_popover_open)
-                    .on_open_change(move |open, _, cx| {
-                        let _ = category_open_view.update(cx, |view, cx| {
-                            view.category_popover_open = *open;
-                            if *open {
-                                view.category_menu_page = view
-                                    .selected_category_id
-                                    .as_deref()
-                                    .and_then(|selected| {
-                                        view.categories.iter().position(|category| {
-                                            category.id.eq_ignore_ascii_case(selected)
+                    .track_focus(&category_search_focus)
+                    .appearance(false)
+                    .overlay_closable(true)
+                    .on_open_change(move |open, window, cx| {
+                        let open = *open;
+                        let category_open_view = category_open_view.clone();
+                        let category_close_focus = category_close_focus.clone();
+                        window.defer(cx, move |window, cx| {
+                            let _ = category_open_view.update(cx, |view, cx| {
+                                view.category_popover_open = open;
+                                if open {
+                                    let choices = view.category_choice_ids(cx);
+                                    view.category_highlighted_index = view
+                                        .selected_category_id
+                                        .as_deref()
+                                        .and_then(|selected| {
+                                            choices.iter().position(|choice| {
+                                                choice.as_deref().is_some_and(|category| {
+                                                    category.eq_ignore_ascii_case(selected)
+                                                })
+                                            })
                                         })
-                                    })
-                                    .map_or(0, |index| index / CATEGORY_MENU_PAGE_SIZE);
+                                        .unwrap_or(0);
+                                    view.category_scroll
+                                        .scroll_to_item(view.category_highlighted_index);
+                                }
+                                cx.notify();
+                            });
+                            if !open {
+                                category_close_focus.focus(window);
                             }
-                            cx.notify();
                         });
                     })
                     .trigger(
@@ -8587,70 +8709,73 @@ impl Render for NewDownloadView {
                             .h(px(30.0)),
                     )
                     .content(move |_, _, _| {
-                        let automatic_view = category_menu_view.clone();
-                        let menu = categories.iter().enumerate().fold(
-                            div()
-                                .w_full()
-                                .p(px(6.0))
-                                .flex()
-                                .flex_col()
-                                .gap(px(3.0))
-                                .child(
-                                    div()
-                                        .id("download-new-category-automatic")
-                                        .w_full()
-                                        .h(px(34.0))
-                                        .px(px(9.0))
-                                        .rounded(px(5.0))
-                                        .bg(if selected_category_id_for_menu.is_none() {
-                                            theme.element_selected
-                                        } else {
-                                            theme.canvas
-                                        })
-                                        .cursor_pointer()
-                                        .flex()
-                                        .flex_col()
-                                        .justify_center()
-                                        .gap(px(1.0))
-                                        .child(
-                                            div()
-                                                .text_size(px(10.5))
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_color(theme.text)
-                                                .child("自动匹配"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(px(9.0))
-                                                .text_color(theme.text_muted)
-                                                .child("按文件名、扩展名和 URL 规则选择"),
-                                        )
-                                        .on_click(move |_, _, cx| {
-                                            let close_view = automatic_view.clone();
+                        let mut rows = Vec::with_capacity(categories.len() + 1);
+                        if category_query.is_empty() {
+                            let automatic_view = category_menu_view.clone();
+                            let automatic_return_focus = category_return_focus.clone();
+                            rows.push(
+                                div()
+                                    .id("download-new-category-automatic")
+                                    .w_full()
+                                    .h(px(38.0))
+                                    .px(px(SPACING_8))
+                                    .rounded(px(4.0))
+                                    .bg(category_choice_background(
+                                        theme,
+                                        selected_category_id_for_menu.is_none(),
+                                        category_highlighted_index == 0,
+                                    ))
+                                    .cursor_pointer()
+                                    .flex()
+                                    .flex_col()
+                                    .justify_center()
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_BODY))
+                                            .line_height(px(16.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text)
+                                            .child("自动匹配"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_LABEL))
+                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_color(theme.text_muted)
+                                            .child("按文件名、扩展名和 URL 规则选择"),
+                                    )
+                                    .on_click(move |_, window, cx| {
+                                        let automatic_view = automatic_view.clone();
+                                        let automatic_return_focus =
+                                            automatic_return_focus.clone();
+                                        window.defer(cx, move |window, cx| {
                                             let _ = automatic_view.update(cx, |view, cx| {
-                                                view.selected_category_id = None;
-                                                view.error = None;
+                                                view.select_category_choice(None);
                                                 cx.notify();
                                             });
-                                            cx.defer(move |cx| {
-                                                let _ = close_view.update(cx, |view, cx| {
-                                                    view.category_popover_open = false;
-                                                    cx.notify();
-                                                });
-                                            });
-                                        }),
-                                ),
-                            |menu, (index, category)| {
-                                if index < category_page_start
-                                    || index >= category_page_start + CATEGORY_MENU_PAGE_SIZE
-                                {
-                                    return menu;
-                                }
+                                            automatic_return_focus.focus(window);
+                                        });
+                                    })
+                                    .into_any_element(),
+                            );
+                        }
+                        let category_offset = rows.len();
+                        rows.extend(
+                            categories
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, category)| {
+                                    category_matches_query(category, &category_query)
+                                })
+                                .enumerate()
+                                .map(|(visible_index, (index, category))| {
                                 let category_id = category.id.clone();
                                 let selected =
                                     selected_category_id_for_menu.as_deref().is_some_and(
                                         |selected| selected.eq_ignore_ascii_case(&category_id),
                                     );
+                                let highlighted = category_highlighted_index
+                                    == category_offset + visible_index;
                                 let category_name = category.name.clone();
                                 let directory_label = if category.save_directory.is_empty() {
                                     "使用默认保存目录".to_owned()
@@ -8659,22 +8784,21 @@ impl Render for NewDownloadView {
                                 };
                                 let directory_tooltip = directory_label.clone();
                                 let view = category_menu_view.clone();
-                                menu.child(
-                                    div()
+                                let category_return_focus = category_return_focus.clone();
+                                div()
                                         .id(("download-new-category-option", index))
                                         .debug_selector(move || {
                                             format!("download-new-category-option-{index}")
                                         })
                                         .w_full()
-                                        .h(px(34.0))
-                                        .px(px(9.0))
-                                        .py(px(2.0))
-                                        .rounded(px(5.0))
-                                        .bg(if selected {
-                                            theme.element_selected
-                                        } else {
-                                            theme.canvas
-                                        })
+                                        .h(px(38.0))
+                                        .px(px(SPACING_8))
+                                        .rounded(px(4.0))
+                                        .bg(category_choice_background(
+                                            theme,
+                                            selected,
+                                            highlighted,
+                                        ))
                                         .tooltip(move |window, cx| {
                                             Tooltip::new(directory_tooltip.clone()).build(window, cx)
                                         })
@@ -8682,12 +8806,12 @@ impl Render for NewDownloadView {
                                         .flex()
                                         .flex_col()
                                         .justify_center()
-                                        .gap(px(1.0))
                                         .child(
                                             div()
                                                 .overflow_hidden()
                                                 .whitespace_nowrap()
-                                                .text_size(px(10.5))
+                                                .text_size(px(TEXT_BODY))
+                                                .line_height(px(16.0))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text)
                                                 .child(category_name),
@@ -8701,141 +8825,68 @@ impl Render for NewDownloadView {
                                                 })
                                                 .overflow_hidden()
                                                 .whitespace_nowrap()
-                                                .text_size(px(9.0))
+                                                .text_size(px(TEXT_LABEL))
+                                                .line_height(px(LINE_HEIGHT_LABEL))
                                                 .text_color(theme.text_muted)
                                                 .child(directory_label),
                                         )
-                                        .on_click(move |_, _, cx| {
+                                        .on_click(move |_, window, cx| {
                                             let category_id = category_id.clone();
-                                            let close_view = view.clone();
-                                            let _ = view.update(cx, |view, cx| {
-                                                view.selected_category_id = Some(category_id);
-                                                view.error = None;
-                                                cx.notify();
-                                            });
-                                            cx.defer(move |cx| {
-                                                let _ = close_view.update(cx, |view, cx| {
-                                                    view.category_popover_open = false;
+                                            let view = view.clone();
+                                            let category_return_focus =
+                                                category_return_focus.clone();
+                                            window.defer(cx, move |window, cx| {
+                                                let _ = view.update(cx, |view, cx| {
+                                                    view.select_category_choice(Some(category_id));
                                                     cx.notify();
                                                 });
+                                                category_return_focus.focus(window);
                                             });
-                                        }),
-                                )
-                            },
+                                        })
+                                        .into_any_element()
+                            }),
                         );
-                        let menu = if category_page_count > 1 {
-                            let previous_view = category_menu_view.clone();
-                            let next_view = category_menu_view.clone();
-                            menu.child(
+                        if rows.is_empty() {
+                            rows.push(
                                 div()
                                     .w_full()
-                                    .h(px(34.0))
-                                    .mt(px(1.0))
-                                    .px(px(2.0))
-                                    .border_t_1()
-                                    .border_color(theme.border_subtle)
+                                    .h(px(42.0))
                                     .flex()
                                     .items_center()
-                                    .justify_between()
-                                    .child(
-                                        div()
-                                            .id("download-new-category-previous-page")
-                                            .debug_selector(|| {
-                                                "download-new-category-previous-page".into()
-                                            })
-                                            .w(px(68.0))
-                                            .h(px(26.0))
-                                            .rounded(px(4.0))
-                                            .bg(theme.canvas)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_size(px(9.5))
-                                            .text_color(if category_menu_page == 0 {
-                                                theme.text_muted
-                                            } else {
-                                                theme.text
-                                            })
-                                            .when(category_menu_page > 0, |button| {
-                                                button.cursor_pointer().hover(|button| {
-                                                    button.bg(theme.surface_hover)
-                                                })
-                                            })
-                                            .on_click(move |_, _, cx| {
-                                                if category_menu_page == 0 {
-                                                    return;
-                                                }
-                                                let _ = previous_view.update(cx, |view, cx| {
-                                                    view.category_menu_page =
-                                                        view.category_menu_page.saturating_sub(1);
-                                                    cx.notify();
-                                                });
-                                            })
-                                            .child("上一页"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(9.0))
-                                            .text_color(theme.text_muted)
-                                            .child(format!(
-                                                "{} / {}",
-                                                category_menu_page + 1,
-                                                category_page_count
-                                            )),
-                                    )
-                                    .child(
-                                        div()
-                                            .id("download-new-category-next-page")
-                                            .debug_selector(|| {
-                                                "download-new-category-next-page".into()
-                                            })
-                                            .w(px(68.0))
-                                            .h(px(26.0))
-                                            .rounded(px(4.0))
-                                            .bg(theme.canvas)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_size(px(9.5))
-                                            .text_color(if category_menu_page + 1
-                                                >= category_page_count
-                                            {
-                                                theme.text_muted
-                                            } else {
-                                                theme.text
-                                            })
-                                            .when(
-                                                category_menu_page + 1 < category_page_count,
-                                                |button| {
-                                                    button.cursor_pointer().hover(|button| {
-                                                        button.bg(theme.surface_hover)
-                                                    })
-                                                },
-                                            )
-                                            .on_click(move |_, _, cx| {
-                                                if category_menu_page + 1 >= category_page_count {
-                                                    return;
-                                                }
-                                                let _ = next_view.update(cx, |view, cx| {
-                                                    view.category_menu_page = (view
-                                                        .category_menu_page
-                                                        + 1)
-                                                        .min(category_page_count - 1);
-                                                    cx.notify();
-                                                });
-                                            })
-                                            .child("下一页"),
-                                    ),
-                            )
-                        } else {
-                            menu
-                        };
-                        div()
-                            .debug_selector(|| "download-new-category-popover-content".into())
-                            .w(px(276.0))
-                            .h(px(category_menu_height))
-                            .overflow_hidden()
-                            .child(menu)
+                                    .justify_center()
+                                    .text_size(px(TEXT_LABEL))
+                                    .text_color(theme.text_muted)
+                                    .child("没有匹配的分类")
+                                    .into_any_element(),
+                            );
+                        }
+                        popover_shell(
+                            theme,
+                            "download-new-category-popover-content",
+                            320.0,
+                            240.0,
+                            div()
+                                .size_full()
+                                .p(px(SPACING_6))
+                                .flex()
+                                .flex_col()
+                                .gap(px(SPACING_4))
+                                .child(field_shell(
+                                    theme,
+                                    "download-new-category-search",
+                                    Input::new(&category_search)
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .small(),
+                                ))
+                                .child(list_box(
+                                    "download-new-category-list",
+                                    188.0,
+                                    category_scroll.clone(),
+                                    rows,
+                                ))
+                                .into_any_element(),
+                        )
                     }),
             )
             .into_any_element();
@@ -9175,6 +9226,7 @@ impl Render for NewDownloadView {
             .flex_col()
             .child(
                 div()
+                    .debug_selector(|| "download-new-titlebar".into())
                     .h(px(34.0))
                     .pl(px(14.0))
                     .border_b_1()
@@ -10844,6 +10896,41 @@ fn download_input_field(
 mod tests {
     use super::*;
 
+    #[test]
+    fn category_search_matches_name_directory_and_extension_without_unbounded_metadata() {
+        let category = DownloadCategorySettings {
+            id: "archives".into(),
+            name: "压缩包".into(),
+            enabled: true,
+            save_directory: r"Downloads\Archive".into(),
+            extensions: vec!["zip".into(), "7z".into()],
+            url_patterns: Vec::new(),
+        };
+        assert!(category_matches_query(&category, "压缩"));
+        assert!(category_matches_query(&category, "archive"));
+        assert!(category_matches_query(&category, "7z"));
+        assert!(!category_matches_query(&category, "video"));
+    }
+
+    #[test]
+    fn category_keyboard_highlight_is_visually_distinct_from_committed_selection() {
+        let theme = Theme::zed_dark();
+
+        assert_eq!(
+            category_choice_background(theme, true, false),
+            theme.accent_soft
+        );
+        assert_eq!(
+            category_choice_background(theme, false, true),
+            theme.element_selected
+        );
+        assert_ne!(
+            category_choice_background(theme, true, false),
+            category_choice_background(theme, false, true),
+            "the committed selection and the single keyboard highlight need distinct surfaces"
+        );
+    }
+
     use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
 
     #[test]
@@ -11233,50 +11320,28 @@ mod tests {
             .debug_bounds("download-new-category-popover-content")
             .expect("bounded production category menu");
         assert!(
-            popover.size.height.as_f32() <= 242.0,
+            popover.size.height.as_f32() <= 248.0,
             "32 categories must stay in a compact bounded menu, got {}px",
             popover.size.height.as_f32()
         );
-        for (index, selector) in [
-            "download-new-category-option-0",
-            "download-new-category-option-1",
-            "download-new-category-option-2",
-            "download-new-category-option-3",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let option = window
-                .debug_bounds(selector)
-                .unwrap_or_else(|| panic!("compact category page is missing option {index}"));
-            assert!(
-                (32.0..=38.0).contains(&option.size.height.as_f32()),
-                "category option {index} must use the Zed-style compact row rhythm, got {}px",
-                option.size.height.as_f32()
-            );
-        }
-        let first_directory = window
-            .debug_bounds("download-new-category-option-directory-0")
-            .expect("first category directory summary");
+        let search = window
+            .debug_bounds("download-new-category-search")
+            .expect("bounded category menu search field");
+        let list = window
+            .debug_bounds("download-new-category-list")
+            .expect("shared bounded category ListBox");
+        assert!(search.top() >= popover.top() && search.bottom() < list.top());
         assert!(
-            first_directory.size.height.as_f32() >= 9.0,
-            "category directory summary must remain readable"
+            list.bottom() <= popover.bottom(),
+            "ListBox must stay inside the shared Popover: list={list:?}, popover={popover:?}"
         );
-
-        for _ in 0..7 {
-            let next_page = window
+        assert!(
+            window
                 .debug_bounds("download-new-category-next-page")
-                .expect("category next-page button");
-            assert!(
-                next_page.top() >= popover.top()
-                    && next_page.bottom() <= popover.bottom() + px(1.0),
-                "category pager must stay inside the popover: next={next_page:?}, popover={popover:?}"
-            );
-            window.simulate_click(next_page.center(), Modifiers::default());
-            window.run_until_parked();
-            window.refresh().expect("advance bounded category menu");
-        }
-        assert_eq!(
+                .is_none(),
+            "the searchable ListBox must replace the seven-page control"
+        );
+        assert!(
             cx.read(|cx| {
                 application
                     .read(cx)
@@ -11284,27 +11349,95 @@ mod tests {
                     .as_ref()
                     .expect("production new-download view")
                     .read(cx)
-                    .category_menu_page
+                    .category_scroll
+                    .max_offset()
+                    .height
+                    > px(0.0)
             }),
-            7,
-            "page controls must reach the final bounded category page"
+            "all 32 categories must share one genuinely scrollable ListBox"
         );
-        let last_category = window
-            .debug_bounds("download-new-category-option-31")
-            .expect("last category on final page");
+        let first_directory = window
+            .debug_bounds("download-new-category-option-directory-0")
+            .expect("first category directory summary");
         assert!(
-            last_category.top() >= popover.top() && last_category.bottom() <= popover.bottom(),
-            "the final allowed category must remain inside the bounded menu: last={last_category:?}, popover={popover:?}"
+            first_directory.size.height.as_f32() >= 14.0,
+            "category directory summary must remain readable"
         );
+        let titlebar = window
+            .debug_bounds("download-new-titlebar")
+            .expect("production new-download titlebar");
         window.simulate_click(
-            gpui::point(
-                last_category.left() + px(4.0),
-                last_category.top() + px(4.0),
-            ),
+            gpui::point(titlebar.left() + px(180.0), titlebar.center().y),
             Modifiers::default(),
         );
         window.run_until_parked();
-        window.refresh().expect("select final production category");
+        window
+            .refresh()
+            .expect("dismiss category menu through overlay");
+        assert!(
+            !cx.read(|cx| {
+                application
+                    .read(cx)
+                    .new_download_view
+                    .as_ref()
+                    .expect("production new-download view")
+                    .read(cx)
+                    .category_popover_open
+            }),
+            "clicking outside must close the controlled category Popover"
+        );
+        window.update(|window, cx| {
+            let view = application
+                .read(cx)
+                .new_download_view
+                .as_ref()
+                .expect("production new-download view");
+            assert!(view.read(cx).file_name.focus_handle(cx).is_focused(window));
+        });
+        window.simulate_click(category_trigger.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("reopen category menu after overlay close");
+        window.simulate_keystrokes("escape");
+        assert!(
+            !cx.read(|cx| {
+                application
+                    .read(cx)
+                    .new_download_view
+                    .as_ref()
+                    .expect("production new-download view")
+                    .read(cx)
+                    .category_popover_open
+            }),
+            "Escape must close the controlled category Popover"
+        );
+        window.update(|window, cx| {
+            let view = application
+                .read(cx)
+                .new_download_view
+                .as_ref()
+                .expect("production new-download view");
+            assert!(view.read(cx).file_name.focus_handle(cx).is_focused(window));
+        });
+        window.simulate_click(category_trigger.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("reopen searchable category menu");
+        window.simulate_input("分类 3");
+        window.run_until_parked();
+        window.refresh().expect("filter category ListBox");
+        let last_category = window
+            .debug_bounds("download-new-category-option-31")
+            .expect("keyboard search reaches the final category");
+        assert!(
+            last_category.top() >= list.top() && last_category.bottom() <= list.bottom(),
+            "the filtered final category must remain inside the ListBox: last={last_category:?}, list={list:?}"
+        );
+        window.simulate_keystrokes("down enter");
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("select searched production category");
         assert_eq!(
             cx.read(|cx| {
                 application
@@ -11317,8 +11450,28 @@ mod tests {
                     .clone()
             }),
             Some("category-31".into()),
-            "clicking the final scrolled category must reach the production view: last={last_category:?}, popover={popover:?}"
+            "keyboard search and Enter must select the final production category"
         );
+        assert!(
+            !cx.read(|cx| {
+                application
+                    .read(cx)
+                    .new_download_view
+                    .as_ref()
+                    .expect("production new-download view")
+                    .read(cx)
+                    .category_popover_open
+            }),
+            "selection must close the controlled Popover"
+        );
+        window.update(|window, cx| {
+            let view = application
+                .read(cx)
+                .new_download_view
+                .as_ref()
+                .expect("production new-download view");
+            assert!(view.read(cx).file_name.focus_handle(cx).is_focused(window));
+        });
 
         let cancel = window
             .debug_bounds("download-new-cancel-action")

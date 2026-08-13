@@ -4,6 +4,38 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260813-P0LISTBOXOOM] cargo_test_desktop_category_listbox
+
+**Logged**: 2026-08-13T12:10:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+The exact production GPUI category ListBox regression could not relink because Windows commit memory was exhausted.
+
+### Error
+```
+rustc-LLVM ERROR: out of memory
+Allocation failed
+STATUS_STACK_BUFFER_OVERRUN (0xc0000409)
+```
+
+### Context
+- Command: exact `nxtools-desktop` production new-download category test with one Cargo job, incremental disabled, 256 codegen units and test debug disabled.
+- The machine reported only about 1.9 GiB free virtual/commit capacity; unrelated user processes held the majority of commit.
+- The same production regression had passed immediately before the final focus assertions were added.
+
+### Suggested Fix
+Do not terminate unrelated user processes. Re-run when commit is available; meanwhile use `cargo check`, source-level formatting, and smaller unit seams to validate the incremental focus change.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260813-P0C
+
+---
+
 ## [ERR-20260812-CARGO-MULTIPLE-FILTERS] cargo_test_rejected_multiple_positional_test_filters
 
 **Logged**: 2026-08-12T00:00:00+08:00

@@ -1827,6 +1827,27 @@ workspace and Zed's control scale:
   shares the same 28 px rhythm. Icon-only pick/refresh actions are square; text actions have explicit
   horizontal padding and visible secondary/primary hierarchy.
 
+Reverified on 2026-08-13 for the P0 Popover/ListBox migration:
+
+- The earlier four-item pager was a bounded-window safety fix, not an old-product behavioral
+  requirement. With the current 560 px confirmation window it forces seven page transitions at the
+  supported 32-category limit and conflicts with the approved `DL-21` remediation.
+- Zed `crates/ui/src/components/popover.rs` keeps the elevated surface attached to its trigger, while
+  `crates/ui/src/components/list/list.rs` and `list_item.rs` use one continuous full-width item stack
+  with neutral selection. NxTools.Next therefore uses one bounded, scrollable ListBox rather than
+  page controls.
+- The ListBox owns one visible search field and one highlighted choice. Typing filters bounded
+  category name/directory/extension metadata; Up/Down moves the highlight, Enter selects, and
+  Escape closes through the existing Popover lifecycle. Mouse selection and keyboard confirmation
+  update the same local `selected_category_id` before the controlled surface closes; close returns
+  keyboard focus to the adjacent file-name field rather than leaving focus on a hidden search box.
+- The committed category and the single keyboard highlight use distinct neutral surfaces. Every
+  close path, including overlay dismissal and trigger toggle, returns focus only after the local
+  selection/controlled-open transition has completed.
+- The automatic-classification choice remains first only when the search is empty. Every category
+  continues to show name plus directory state, with the full bounded directory in a tooltip; no
+  query, directory or category text enters diagnostics.
+
 Reverified on 2026-08-13 for the final Stage 6 completion-action slice:
 
 - ABDM first: `shared/app/.../ondownloadcompletion/OnDownloadCompletionActionRunner.kt` observes

@@ -18,6 +18,8 @@ Root: `D:\Code\zed-main`
 | `crates/ui/src/components/button/icon_button.rs` | Icon-only controls share the same button state model. They require a screen-reader label and may share that label with their tooltip. |
 | `crates/ui/src/components/button/toggle_button.rs` | Segmented groups own one selected index, equal-width cells by default, contiguous corner treatment and one group accessibility/focus order. Selected state is semantic rather than an unrelated colored chip. |
 | `crates/ui/src/components/list/list_item.rs` | Selectable list rows use a continuous surface, neutral hover/active/selected backgrounds and one accessible actionable node; rounding is optional rather than mandatory per row. |
+| `crates/ui/src/components/list/list.rs` | A List owns one full-width child stack and a real empty state instead of pagination chrome; item semantics remain in ListItem. |
+| `crates/ui/src/components/popover.rs` | Popover is an elevated surface attached to its trigger rather than to the pointer. It provides the bounded presentation shell while the caller owns the selection model. |
 | `crates/ui/src/components/notification/alert_modal.rs` | Dialog content and footer are separate regions; the footer groups secondary and primary actions rather than scattering actions through content. |
 
 ## NxTools.Next P0 invariants
