@@ -50,6 +50,27 @@ terminal result and worker exit. A one- and five-second watchdog records a bound
 only while OLE remains active. Shell open/reveal commands retain their normal
 `command.received`/`command.completed` pair.
 
+Download completion presentation uses `download.completion_feedback.started` and exactly one
+`download.completion_feedback.completed|failed` terminal under one correlation ID per coalesced
+burst. The events carry bounded `completed_count`, `failed_count`, `directory_count`,
+`suppressed_directory_count`, fixed enabled/action fields and `elapsed_ms`. Native command failures
+also carry `native_error_code`. A burst plays at most one Windows system notification sound and
+reveals at most three distinct directories; it never logs a URL, file name, path, Header, Cookie or
+audio source.
+
+Task-local shutdown intent is transient. `download.shutdown_countdown.started` has exactly one
+`download.shutdown_countdown.cancelled|completed|failed` terminal with the same correlation ID,
+bounded `countdown_seconds`, fixed reason/failure kind and `elapsed_ms`. New nonterminal work,
+Cancel and window close produce `cancelled`; expiry or **立即关机** sends one typed PlatformHost
+shutdown request, and only its successful result produces `completed`. The arm set and active
+countdown are never persisted, so startup does not replay either lifecycle.
+Changing the per-task arm records `download.shutdown_arm.started` and exactly one
+`download.shutdown_arm.completed|failed` under a separate correlation ID with task identity, the
+fixed `process_only` persistence kind, the resulting boolean state or fixed `task_not_active`
+failure kind, and elapsed time. The intermediate
+`download.shutdown_countdown.execute_requested` event uses the countdown correlation and only the
+fixed reason `user_requested|countdown_elapsed`; it never contains command output or a path.
+
 ## Taskbar progress
 
 Taskbar progress uses `taskbar_progress.applied` for state changes and the

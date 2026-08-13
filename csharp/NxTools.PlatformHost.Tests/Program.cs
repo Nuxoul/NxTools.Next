@@ -90,6 +90,7 @@ internal static class Program
             ("titlebar move reaches the real native window boundary", TitlebarMoveUsesRealNativeWindow),
             ("titlebar maximize toggle reaches the real native window boundary", TitlebarMaximizeToggleUsesRealNativeWindow),
             ("window position, resize and shell commands preserve payload", WindowPositionResizeAndShellCommandsPreservePayload),
+            ("completion sound and shutdown use the typed Windows adapter", CompletionActionsUseTypedWindowsAdapter),
             ("typed process launch preserves arguments and Windows flags", TypedProcessLaunchPreservesArgumentsAndFlags),
             ("shell action session commands preserve payload", ShellActionSessionCommandsPreservePayload),
             ("shell action session enumerates a real filesystem target", ShellActionSessionEnumeratesFilesystemTarget),
@@ -156,6 +157,45 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private sealed class FakeCompletionSystemActions : ICompletionSystemActions
+    {
+        public int SoundRequests { get; private set; }
+        public ushort? ShutdownDelaySeconds { get; private set; }
+
+        public WindowsCommandResult PlayNotificationSound()
+        {
+            SoundRequests++;
+            return new WindowsCommandResult(true);
+        }
+
+        public WindowsCommandResult RequestShutdown(ushort delaySeconds)
+        {
+            ShutdownDelaySeconds = delaySeconds;
+            return new WindowsCommandResult(true);
+        }
+    }
+
+    private static Task CompletionActionsUseTypedWindowsAdapter()
+    {
+        var soundEnvelope = ProtocolEnvelope.Create(
+            "platform_command",
+            new { Command = "play_system_notification_sound" });
+        Assert(PlatformCommandParser.GetCommandName(soundEnvelope) == "play_system_notification_sound");
+        var shutdownEnvelope = ProtocolEnvelope.Create(
+            "platform_command",
+            new { Command = "shutdown_system", Data = new { DelaySeconds = 1 } });
+        var shutdown = PlatformCommandParser.ParseShutdownSystem(shutdownEnvelope);
+        Assert(shutdown.DelaySeconds == 1);
+
+        var actions = new FakeCompletionSystemActions();
+        using var adapter = new WindowsPlatformAdapter(new ForegroundContextProvider(), completionSystemActions: actions);
+        Assert(adapter.PlaySystemNotificationSound().Success);
+        Assert(adapter.ShutdownSystem(shutdown).Success);
+        Assert(actions.SoundRequests == 1);
+        Assert(actions.ShutdownDelaySeconds == 1);
+        return Task.CompletedTask;
     }
 
     private static Task EnvelopeUsesWireNames()

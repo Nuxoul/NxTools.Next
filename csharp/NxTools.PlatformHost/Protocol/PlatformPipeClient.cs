@@ -254,6 +254,9 @@ internal sealed class PlatformPipeClient(
                             cancellationToken),
                         "open_shell_target" => platformAdapter.OpenShellTarget(
                             PlatformCommandParser.ParseOpenShellTarget(envelope)),
+                        "play_system_notification_sound" => platformAdapter.PlaySystemNotificationSound(),
+                        "shutdown_system" => platformAdapter.ShutdownSystem(
+                            PlatformCommandParser.ParseShutdownSystem(envelope)),
                         "launch_process" => platformAdapter.LaunchProcess(
                             PlatformCommandParser.ParseLaunchProcess(envelope)),
                         "navigate_directory" => platformAdapter.NavigateDirectory(

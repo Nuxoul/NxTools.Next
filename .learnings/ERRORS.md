@@ -8229,3 +8229,88 @@ builder callback is introduced.
 ### Resolution
 - **Resolved**: 2026-08-12T18:12:00+08:00
 - **Notes**: Replaced the temporary selector with four static literals, fixed the callback boundary, added the status-card ID, and reran the red-capable production tests.
+
+## [ERR-20260813-CARGOMULTIFILTER] Passed multiple positional filters to cargo test
+
+**Logged**: 2026-08-13T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+`cargo test` accepts one positional test-name filter, but the command supplied three test names.
+
+### Error
+`error: unexpected argument 'task_window_arms_and_cancels_the_real_shutdown_countdown' found`
+
+### Suggested Fix
+Run exact filters as separate commands or use one shared substring; do not interpret this command
+syntax failure as a product test failure.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T00:00:00+08:00
+- **Notes**: Replaced the invalid invocation with separate exact test commands.
+
+## [ERR-20260813-GPUISHUTDOWNREENTRY] Task-window render re-entered DownloadApplication
+
+**Logged**: 2026-08-13T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The new shutdown-arm control read `DownloadApplication` from a task-window render while the
+application was already being updated, triggering GPUI's entity re-entry guard.
+
+### Error
+`cannot read nxtools_desktop::downloads::DownloadApplication while it is already being updated`
+
+### Suggested Fix
+Snapshot parent-owned state into the child view and update it explicitly; defer parent operations
+from child callbacks, and expose stable debug selectors around production buttons before simulating
+clicks.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+
+### Resolution
+- **Resolved**: 2026-08-13T00:00:00+08:00
+- **Notes**: Added `shutdown_armed` to the task-window snapshot, deferred countdown transitions,
+  and passed the production arm/cancel/immediate-shutdown GPUI tests.
+
+## [ERR-20260813-VERIFICATIONTIMEOUTS] Verification wrappers used incomplete time budgets
+
+**Logged**: 2026-08-13T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A combined Cargo command was first given a five-second effective wrapper timeout, and the C# full
+adapter suite later exceeded its explicit five-minute wrapper budget without a failure result.
+The new config fields also exposed one old explicit `DownloadSettings` fixture that needed updating.
+
+### Error
+`command timed out after 5050 milliseconds`; later `command timed out after 304040 milliseconds`;
+Rust initially reported missing `completion_sound_enabled` and `open_directory_on_completion` in a
+test initializer.
+
+### Suggested Fix
+Run long verification targets separately with realistic resumable timeouts, inspect and terminate
+only owned surviving child PIDs after wrapper timeout, and update every explicit config fixture when
+adding a backward-compatible field.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/crates/nxtools-core/src/lib.rs; csharp/NxTools.PlatformHost.Tests/Program.cs
+
+### Resolution
+- **Resolved**: 2026-08-13T00:00:00+08:00
+- **Notes**: Core/protocol/desktop and architecture gates passed; the C# completion-action filter
+  passed. The full C# timeout is documented rather than claimed as a pass, and only its known PIDs
+  were stopped.

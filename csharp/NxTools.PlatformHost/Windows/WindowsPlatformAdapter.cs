@@ -47,15 +47,18 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     private readonly IElevatedDirectoryNavigationChannel _elevatedDirectoryNavigation;
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
+    private readonly ICompletionSystemActions _completionSystemActions;
     private EventWindow? _window;
     private Exception? _startupError;
     private bool _disposed;
 
     public WindowsPlatformAdapter(
         ForegroundContextProvider foregroundContextProvider,
-        IPlatformLog? log = null)
+        IPlatformLog? log = null,
+        ICompletionSystemActions? completionSystemActions = null)
     {
         _log = log ?? NullPlatformLog.Instance;
+        _completionSystemActions = completionSystemActions ?? new WindowsCompletionSystemActions();
         _fileDragCoordinator = new NativeFileDragCoordinator(_log);
         ThirdPartyFileManagerAdapter.WarmUp();
         _elevatedDirectoryNavigation = new ElevatedDirectoryNavigationClient(
@@ -505,6 +508,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             return new WindowsCommandResult(false, error.Message);
         }
     }
+
+    public WindowsCommandResult PlaySystemNotificationSound() =>
+        _completionSystemActions.PlayNotificationSound();
+
+    public WindowsCommandResult ShutdownSystem(ShutdownSystemCommand command) =>
+        _completionSystemActions.RequestShutdown(command.DelaySeconds);
 
     public WindowsCommandResult LaunchProcess(LaunchProcessCommand command)
     {

@@ -207,6 +207,10 @@ pub struct DownloadSettings {
     pub show_progress_window: bool,
     #[serde(default = "default_true")]
     pub show_completion_window: bool,
+    #[serde(default = "default_true")]
+    pub completion_sound_enabled: bool,
+    #[serde(default)]
+    pub open_directory_on_completion: bool,
     #[serde(default)]
     pub taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
 }
@@ -317,6 +321,8 @@ impl Default for DownloadSettings {
             adaptive_segment_min_mib: default_download_adaptive_min_segment_mib(),
             show_progress_window: true,
             show_completion_window: true,
+            completion_sound_enabled: true,
+            open_directory_on_completion: false,
             taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
         }
     }
@@ -1157,6 +1163,8 @@ mod tests {
         assert_eq!(settings.adaptive_segment_min_mib, 3);
         assert!(settings.show_progress_window);
         assert!(settings.show_completion_window);
+        assert!(settings.completion_sound_enabled);
+        assert!(!settings.open_directory_on_completion);
         assert!(settings.taskbar_progress_overlay.enabled);
         assert_eq!(
             settings.taskbar_progress_overlay.anchor,
@@ -1237,6 +1245,8 @@ mod tests {
         assert!(config.download.ffmpeg_executable_path.is_empty());
         assert!(config.download.show_progress_window);
         assert!(!config.download.show_completion_window);
+        assert!(config.download.completion_sound_enabled);
+        assert!(!config.download.open_directory_on_completion);
     }
 
     #[test]
@@ -1383,6 +1393,8 @@ mod tests {
                 adaptive_segment_min_mib: 3,
                 show_progress_window: false,
                 show_completion_window: false,
+                completion_sound_enabled: false,
+                open_directory_on_completion: true,
                 taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
             },
         )
@@ -1399,6 +1411,8 @@ mod tests {
         assert_eq!(updated.download.default_request_headers, "X-Test: value");
         assert_eq!(updated.download.default_cookie, "session=test");
         assert!(updated.download.accept_invalid_certificates);
+        assert!(!updated.download.completion_sound_enabled);
+        assert!(updated.download.open_directory_on_completion);
         fs::remove_dir_all(directory).expect("remove settings directory");
     }
 

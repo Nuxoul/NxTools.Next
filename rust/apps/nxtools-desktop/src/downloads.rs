@@ -47,10 +47,14 @@ use nxtools_protocol::{
     OpenShellTargetCommand, PickDirectoryCommand, PickProgramCommand,
     PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
     SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
-    TaskbarOverlayAnchor, TaskbarProgressState,
+    ShutdownSystemCommand, TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
+use crate::completion_actions::{
+    COMPLETION_FEEDBACK_DELAY, COMPLETION_PLATFORM_TIMEOUT, CompletionActionCoordinator,
+    CompletionFeedbackBatch, CompletionTerminal, ShutdownCountdown, ShutdownTransition,
+};
 use crate::download_taskbar_overlay::{
     DownloadTaskbarOverlayModel, DownloadTaskbarOverlaySample, DownloadTaskbarOverlaySegmentSample,
     DownloadTaskbarOverlayView, aggregate_taskbar_progress,
@@ -159,6 +163,8 @@ struct DownloadSettingsDraft {
     global_speed_limit_bytes_per_second: Option<u64>,
     show_progress_window: bool,
     show_completion_window: bool,
+    completion_sound_enabled: bool,
+    open_directory_on_completion: bool,
     taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
 }
 
@@ -325,6 +331,31 @@ struct PendingTaskWindowActivation {
     started_at: Instant,
 }
 
+struct PendingCompletionFeedback {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+    completed_count: usize,
+    failed_count: usize,
+    directory_count: usize,
+    suppressed_directory_count: usize,
+    sound_enabled: bool,
+    directory_enabled: bool,
+    pending_commands: HashSet<uuid::Uuid>,
+    failed_commands: usize,
+    native_error_code: Option<i32>,
+}
+
+struct PendingShutdownCommand {
+    command_id: uuid::Uuid,
+    countdown: ShutdownCountdown,
+}
+
+struct DownloadShutdownWindow {
+    window: AnyWindowHandle,
+    view: Entity<DownloadShutdownCountdownView>,
+    correlation_id: uuid::Uuid,
+}
+
 pub(crate) struct DownloadApplication {
     engine: DownloadEngine,
     platform: Rc<PlatformBridge>,
@@ -379,6 +410,12 @@ pub(crate) struct DownloadApplication {
     #[cfg(test)]
     ffmpeg_platform_commands: Rc<RefCell<Vec<(uuid::Uuid, PlatformCommand)>>>,
     notified_terminal_states: HashSet<(DownloadTaskId, DownloadStatus)>,
+    completion_actions: CompletionActionCoordinator,
+    completion_feedback_scheduled: bool,
+    pending_completion_feedback: HashMap<uuid::Uuid, PendingCompletionFeedback>,
+    completion_feedback_commands: HashMap<uuid::Uuid, uuid::Uuid>,
+    shutdown_window: Option<DownloadShutdownWindow>,
+    pending_shutdown_command: Option<PendingShutdownCommand>,
     last_event_sequence: u64,
     _event_task: Task<()>,
     _browser_dialog_task: Task<()>,
@@ -553,6 +590,12 @@ impl DownloadApplication {
             #[cfg(test)]
             ffmpeg_platform_commands: Rc::new(RefCell::new(Vec::new())),
             notified_terminal_states,
+            completion_actions: CompletionActionCoordinator::default(),
+            completion_feedback_scheduled: false,
+            pending_completion_feedback: HashMap::new(),
+            completion_feedback_commands: HashMap::new(),
+            shutdown_window: None,
+            pending_shutdown_command: None,
             last_event_sequence: 0,
             _event_task: event_task,
             _browser_dialog_task: browser_dialog_task,
@@ -701,6 +744,8 @@ impl DownloadApplication {
             global_speed_limit_bytes_per_second: self.engine.global_speed_limit(),
             show_progress_window: self.show_progress_window,
             show_completion_window: self.show_completion_window,
+            completion_sound_enabled: self.config.download.completion_sound_enabled,
+            open_directory_on_completion: self.config.download.open_directory_on_completion,
             taskbar_progress_overlay: self.config.download.taskbar_progress_overlay.clone(),
         }
     }
@@ -2481,6 +2526,8 @@ impl DownloadApplication {
             adaptive_segment_min_mib: draft.adaptive_segment_min_mib,
             show_progress_window: draft.show_progress_window,
             show_completion_window: draft.show_completion_window,
+            completion_sound_enabled: draft.completion_sound_enabled,
+            open_directory_on_completion: draft.open_directory_on_completion,
             taskbar_progress_overlay: draft.taskbar_progress_overlay.clone(),
         };
         if let Err(error) =
@@ -2743,6 +2790,7 @@ impl DownloadApplication {
         let application = cx.entity();
         let snapshot = self.task(task_id).cloned();
         let progress = self.progress(task_id).cloned();
+        let shutdown_armed = self.is_shutdown_armed(task_id);
         let window_size = download_task_window_size(phase);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let window_generation = uuid::Uuid::new_v4();
@@ -2776,8 +2824,15 @@ impl DownloadApplication {
                 #[cfg(not(test))]
                 let resolved_native_handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = resolved_native_handle;
-                let view = cx
-                    .new(|_| DownloadTaskWindowView::new(application, task_id, snapshot, progress));
+                let view = cx.new(|_| {
+                    DownloadTaskWindowView::new(
+                        application,
+                        task_id,
+                        snapshot,
+                        progress,
+                        shutdown_armed,
+                    )
+                });
                 *opened_view_slot.borrow_mut() = Some(view.clone());
                 cx.new(|cx| Root::new(view, window, cx))
             },
@@ -2833,6 +2888,7 @@ impl DownloadApplication {
         };
         let snapshot = self.task(task_id).cloned();
         let progress = self.progress(task_id).cloned();
+        let shutdown_armed = self.is_shutdown_armed(task_id);
         let native_window_handle = entry.native_window_handle;
         let window_identity = TaskWindowIdentity {
             native_window_handle,
@@ -2845,7 +2901,7 @@ impl DownloadApplication {
             .as_ref()
             .map(|task| taskbar_progress_command(native_window_handle, task, progress.as_ref()));
         view.update(cx, |view, cx| {
-            view.replace_snapshot(snapshot, progress, cx);
+            view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
         });
         let updated = window_handle
             .update(cx, move |_, window, _| {
@@ -3175,6 +3231,18 @@ impl DownloadApplication {
         else {
             return;
         };
+        if let Some(operation_id) = self.completion_feedback_commands.remove(&correlation_id) {
+            self.handle_completion_feedback_result(operation_id, correlation_id, result, cx);
+            return;
+        }
+        if self
+            .pending_shutdown_command
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == correlation_id)
+        {
+            self.handle_shutdown_result(correlation_id, result, cx);
+            return;
+        }
         if self
             .pending_taskbar_overlay_gestures
             .remove(&correlation_id)
@@ -3487,6 +3555,7 @@ impl DownloadApplication {
         tasks: &[DownloadEngineTask],
         cx: &mut Context<Self>,
     ) {
+        let mut queued_feedback = false;
         for task in tasks {
             let status = task.task.status();
             if !matches!(status, DownloadStatus::Completed | DownloadStatus::Failed)
@@ -3496,29 +3565,888 @@ impl DownloadApplication {
             {
                 continue;
             }
-            let id = format!("download-{}", task.task.id().as_uuid());
-            match status {
-                DownloadStatus::Completed => {
-                    let message = task.final_path.as_ref().map_or_else(
-                        || "下载文件已完成".into(),
-                        |path| path.display().to_string(),
-                    );
-                    self.notifications.update(cx, |notifications, cx| {
-                        notifications.show_success(id, "下载完成", message, cx);
-                    });
+            let display_name = task
+                .final_path
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .or(task.task.request().file_name.as_deref())
+                .unwrap_or("下载任务")
+                .to_owned();
+            self.completion_actions.record_terminal(CompletionTerminal {
+                task_id: task.task.id(),
+                status,
+                directory: task
+                    .final_path
+                    .as_ref()
+                    .and_then(|path| path.parent())
+                    .map(Path::to_path_buf),
+                display_name,
+                error_message: task.error.as_ref().map(|error| error.message.clone()),
+            });
+            queued_feedback = true;
+        }
+        if queued_feedback && !self.completion_feedback_scheduled {
+            self.completion_feedback_scheduled = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(COMPLETION_FEEDBACK_DELAY)
+                    .await;
+                let _ = this.update(cx, |application, cx| {
+                    application.flush_completion_feedback(cx);
+                });
+            })
+            .detach();
+        }
+        self.evaluate_shutdown(tasks, cx);
+    }
+
+    fn flush_completion_feedback(&mut self, cx: &mut Context<Self>) {
+        self.completion_feedback_scheduled = false;
+        let Some(batch) = self.completion_actions.take_feedback_batch() else {
+            return;
+        };
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        let sound_enabled =
+            self.config.download.completion_sound_enabled && batch.completed_count > 0;
+        let directory_enabled =
+            self.config.download.open_directory_on_completion && batch.completed_count > 0;
+        info!(
+            event = "download.completion_feedback.started",
+            %correlation_id,
+            completed_count = batch.completed_count,
+            failed_count = batch.failed_count,
+            directory_count = if directory_enabled { batch.directories.len() } else { 0 },
+            suppressed_directory_count = if directory_enabled { batch.suppressed_directory_count } else { 0 },
+            sound_enabled,
+            directory_enabled,
+            "coalesced download completion feedback started"
+        );
+        self.show_completion_batch_notification(&batch, correlation_id, cx);
+
+        let mut operation = PendingCompletionFeedback {
+            correlation_id,
+            started_at,
+            completed_count: batch.completed_count,
+            failed_count: batch.failed_count,
+            directory_count: if directory_enabled {
+                batch.directories.len()
+            } else {
+                0
+            },
+            suppressed_directory_count: if directory_enabled {
+                batch.suppressed_directory_count
+            } else {
+                0
+            },
+            sound_enabled,
+            directory_enabled,
+            pending_commands: HashSet::new(),
+            failed_commands: 0,
+            native_error_code: None,
+        };
+        let mut commands = Vec::new();
+        if sound_enabled {
+            commands.push(PlatformCommand::PlaySystemNotificationSound);
+        }
+        if directory_enabled {
+            commands.extend(batch.directories.into_iter().map(|directory| {
+                PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                    target: directory.to_string_lossy().into_owned(),
+                    action: ShellOpenAction::Open,
+                })
+            }));
+        }
+        for command in commands {
+            match self
+                .platform
+                .send_command_correlated(command, correlation_id)
+            {
+                Ok(command_id) => {
+                    operation.pending_commands.insert(command_id);
+                    self.completion_feedback_commands
+                        .insert(command_id, correlation_id);
                 }
-                DownloadStatus::Failed => {
-                    let message = task.error.as_ref().map_or_else(
-                        || "下载任务失败，未返回详细原因".into(),
-                        |error| error.message.clone(),
+                Err(error) => {
+                    operation.failed_commands += 1;
+                    warn!(
+                        event = "download.completion_feedback.command_enqueue_failed",
+                        %correlation_id,
+                        error_kind = "platform_enqueue",
+                        %error,
+                        "completion feedback command could not be queued"
                     );
-                    self.notifications.update(cx, |notifications, cx| {
-                        notifications.show_error(id, "下载失败", message, cx);
-                    });
                 }
-                _ => {}
             }
         }
+        if operation.pending_commands.is_empty() {
+            self.finish_completion_feedback(operation);
+            return;
+        }
+        self.pending_completion_feedback
+            .insert(correlation_id, operation);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(COMPLETION_PLATFORM_TIMEOUT)
+                .await;
+            let _ = this.update(cx, |application, _| {
+                application.completion_feedback_timed_out(correlation_id);
+            });
+        })
+        .detach();
+    }
+
+    fn show_completion_batch_notification(
+        &self,
+        batch: &CompletionFeedbackBatch,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let id = format!("download-completion-{correlation_id}");
+        if batch.completed_count > 0 && batch.failed_count == 0 {
+            let message = if batch.completed_count == 1 {
+                batch
+                    .single_display_name
+                    .clone()
+                    .unwrap_or_else(|| "下载文件已完成".into())
+            } else {
+                format!("{} 个下载任务已完成", batch.completed_count)
+            };
+            self.notifications.update(cx, |notifications, cx| {
+                notifications.show_success(id, "下载完成", message, cx);
+            });
+        } else {
+            let message = if batch.failed_count == 1 && batch.completed_count == 0 {
+                batch
+                    .single_error_message
+                    .clone()
+                    .unwrap_or_else(|| "下载任务失败，未返回详细原因".into())
+            } else {
+                format!(
+                    "完成 {} 个，失败 {} 个",
+                    batch.completed_count, batch.failed_count
+                )
+            };
+            self.notifications.update(cx, |notifications, cx| {
+                notifications.show_error(id, "下载批次已结束", message, cx);
+            });
+        }
+    }
+
+    fn handle_completion_feedback_result(
+        &mut self,
+        operation_id: uuid::Uuid,
+        command_id: uuid::Uuid,
+        result: PlatformCommandResult,
+        _cx: &mut Context<Self>,
+    ) {
+        let Some(operation) = self.pending_completion_feedback.get_mut(&operation_id) else {
+            return;
+        };
+        operation.pending_commands.remove(&command_id);
+        if !result.success {
+            operation.failed_commands += 1;
+            operation.native_error_code = operation.native_error_code.or(result.native_error_code);
+        }
+        if operation.pending_commands.is_empty()
+            && let Some(operation) = self.pending_completion_feedback.remove(&operation_id)
+        {
+            self.finish_completion_feedback(operation);
+        }
+    }
+
+    fn completion_feedback_timed_out(&mut self, operation_id: uuid::Uuid) {
+        let Some(mut operation) = self.pending_completion_feedback.remove(&operation_id) else {
+            return;
+        };
+        for command_id in &operation.pending_commands {
+            self.completion_feedback_commands.remove(command_id);
+        }
+        operation.failed_commands += operation.pending_commands.len();
+        operation.pending_commands.clear();
+        self.finish_completion_feedback(operation);
+    }
+
+    fn finish_completion_feedback(&self, operation: PendingCompletionFeedback) {
+        if operation.failed_commands == 0 {
+            info!(
+                event = "download.completion_feedback.completed",
+                correlation_id = %operation.correlation_id,
+                completed_count = operation.completed_count,
+                failed_count = operation.failed_count,
+                directory_count = operation.directory_count,
+                suppressed_directory_count = operation.suppressed_directory_count,
+                sound_enabled = operation.sound_enabled,
+                directory_enabled = operation.directory_enabled,
+                elapsed_ms = operation.started_at.elapsed().as_millis(),
+                "coalesced download completion feedback completed"
+            );
+        } else {
+            warn!(
+                event = "download.completion_feedback.failed",
+                correlation_id = %operation.correlation_id,
+                completed_count = operation.completed_count,
+                failed_count = operation.failed_count,
+                directory_count = operation.directory_count,
+                suppressed_directory_count = operation.suppressed_directory_count,
+                sound_enabled = operation.sound_enabled,
+                directory_enabled = operation.directory_enabled,
+                failed_command_count = operation.failed_commands,
+                native_error_code = operation.native_error_code,
+                elapsed_ms = operation.started_at.elapsed().as_millis(),
+                "coalesced download completion feedback failed"
+            );
+        }
+    }
+
+    fn is_shutdown_armed(&self, task_id: DownloadTaskId) -> bool {
+        self.completion_actions.is_shutdown_armed(task_id)
+    }
+
+    fn toggle_shutdown_armed(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if self.pending_shutdown_command.is_some() {
+            return;
+        }
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        info!(
+            event = "download.shutdown_arm.started",
+            %correlation_id,
+            task_id = %task_id.as_uuid(),
+            persistence = "process_only",
+            "task-local shutdown arm update started"
+        );
+        let eligible = self
+            .engine
+            .task(task_id)
+            .ok()
+            .flatten()
+            .is_some_and(|task| {
+                !matches!(
+                    task.task.status(),
+                    DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+                )
+            });
+        if !eligible {
+            warn!(
+                event = "download.shutdown_arm.failed",
+                %correlation_id,
+                task_id = %task_id.as_uuid(),
+                failure_kind = "task_not_active",
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "task-local shutdown arm update rejected"
+            );
+            return;
+        }
+        let armed = !self.completion_actions.is_shutdown_armed(task_id);
+        self.completion_actions.set_shutdown_armed(task_id, armed);
+        info!(
+            event = "download.shutdown_arm.completed",
+            %correlation_id,
+            task_id = %task_id.as_uuid(),
+            armed,
+            persistence = "process_only",
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "task-local shutdown arm update completed"
+        );
+        if let Some(entry) = self.task_windows.get(&task_id) {
+            entry.view.update(cx, |view, cx| {
+                view.shutdown_armed = armed;
+                cx.notify();
+            });
+        }
+        let tasks = self
+            .tasks
+            .iter()
+            .map(|task| (task.task.id(), task.task.status()))
+            .collect::<Vec<_>>();
+        let transition = self
+            .completion_actions
+            .evaluate_shutdown(tasks, Instant::now());
+        self.apply_shutdown_transition(transition, cx);
+    }
+
+    fn evaluate_shutdown(&mut self, tasks: &[DownloadEngineTask], cx: &mut Context<Self>) {
+        let task_states = tasks
+            .iter()
+            .map(|task| (task.task.id(), task.task.status()))
+            .collect::<Vec<_>>();
+        let transition = self
+            .completion_actions
+            .evaluate_shutdown(task_states, Instant::now());
+        self.apply_shutdown_transition(transition, cx);
+    }
+
+    fn apply_shutdown_transition(
+        &mut self,
+        transition: ShutdownTransition,
+        cx: &mut Context<Self>,
+    ) {
+        match transition {
+            ShutdownTransition::None => {}
+            ShutdownTransition::Started(countdown) => {
+                let application = cx.entity();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.open_shutdown_countdown(countdown, cx);
+                    });
+                });
+            }
+            ShutdownTransition::Cancelled(countdown, reason) => {
+                let application = cx.entity();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.finish_shutdown_cancelled(countdown, reason, cx);
+                    });
+                });
+            }
+        }
+    }
+
+    fn open_shutdown_countdown(&mut self, countdown: ShutdownCountdown, cx: &mut Context<Self>) {
+        if self.shutdown_window.is_some() {
+            return;
+        }
+        info!(
+            event = "download.shutdown_countdown.started",
+            correlation_id = %countdown.correlation_id,
+            countdown_seconds = countdown.duration.as_secs(),
+            reason = "queue_completed",
+            "download shutdown countdown started"
+        );
+        let application = cx.entity();
+        let native_handle = Rc::new(RefCell::new(0_i64));
+        let opened_native_handle = Rc::clone(&native_handle);
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let window_size = size(px(450.0), px(200.0));
+        let window_bounds = WindowBounds::centered(window_size, cx);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(window_bounds),
+                titlebar: None,
+                focus: true,
+                show: true,
+                kind: WindowKind::Normal,
+                is_movable: true,
+                is_resizable: false,
+                is_minimizable: false,
+                display_id: None,
+                window_background: WindowBackgroundAppearance::Opaque,
+                app_id: Some("NxTools.DownloadShutdown".into()),
+                window_min_size: Some(window_size),
+                window_decorations: Some(WindowDecorations::Client),
+                tabbing_identifier: None,
+            },
+            move |window, cx| {
+                let close_application = application.clone();
+                window.on_window_should_close(cx, move |_, cx| {
+                    close_application.update(cx, |application, _| {
+                        application.native_close_shutdown_countdown(countdown.correlation_id)
+                    })
+                });
+                *opened_native_handle.borrow_mut() =
+                    native_window_handle(window).unwrap_or_default();
+                let view = cx.new(|_| {
+                    DownloadShutdownCountdownView::new(
+                        application,
+                        countdown.correlation_id,
+                        countdown.duration.as_secs(),
+                    )
+                });
+                *opened_view_slot.borrow_mut() = Some(view.clone());
+                cx.new(|cx| Root::new(view, window, cx))
+            },
+        );
+        let Ok(window) = opened else {
+            let _ = self.completion_actions.clear_countdown();
+            warn!(
+                event = "download.shutdown_countdown.failed",
+                correlation_id = %countdown.correlation_id,
+                failure_kind = "window_creation",
+                native_error_code = Option::<i32>::None,
+                elapsed_ms = countdown.started_at.elapsed().as_millis(),
+                "download shutdown countdown window could not be created"
+            );
+            return;
+        };
+        let Some(view) = view_slot.borrow().clone() else {
+            let _ = self.completion_actions.clear_countdown();
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+            warn!(
+                event = "download.shutdown_countdown.failed",
+                correlation_id = %countdown.correlation_id,
+                failure_kind = "window_view_missing",
+                native_error_code = Option::<i32>::None,
+                elapsed_ms = countdown.started_at.elapsed().as_millis(),
+                "download shutdown countdown view was not attached"
+            );
+            return;
+        };
+        self.shutdown_window = Some(DownloadShutdownWindow {
+            window: window.into(),
+            view,
+            correlation_id: countdown.correlation_id,
+        });
+        let native_handle = *native_handle.borrow();
+        if native_handle != 0 {
+            let _ = self.platform.send_command_correlated(
+                PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
+                    window_handle: native_handle,
+                    enabled: true,
+                }),
+                countdown.correlation_id,
+            );
+        }
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let Ok(active) = this.update(cx, |application, cx| {
+                    application.tick_shutdown_countdown(countdown.correlation_id, cx)
+                }) else {
+                    return;
+                };
+                if !active {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn tick_shutdown_countdown(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(countdown) = self.completion_actions.active_countdown() else {
+            return false;
+        };
+        if countdown.correlation_id != correlation_id || self.pending_shutdown_command.is_some() {
+            return false;
+        }
+        let now = Instant::now();
+        let remaining = countdown
+            .deadline
+            .saturating_duration_since(now)
+            .as_secs()
+            .saturating_add(u64::from(now < countdown.deadline));
+        if let Some(window) = &self.shutdown_window {
+            window.view.update(cx, |view, cx| {
+                view.remaining_seconds = remaining;
+                cx.notify();
+            });
+        }
+        if now >= countdown.deadline {
+            self.execute_shutdown(correlation_id, "countdown_elapsed", cx);
+            return false;
+        }
+        true
+    }
+
+    fn cancel_shutdown_countdown(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_shutdown_command.is_some() {
+            return;
+        }
+        let Some(countdown) = self.completion_actions.clear_countdown() else {
+            return;
+        };
+        if countdown.correlation_id != correlation_id {
+            return;
+        }
+        self.finish_shutdown_cancelled(countdown, reason, cx);
+    }
+
+    fn finish_shutdown_cancelled(
+        &mut self,
+        countdown: ShutdownCountdown,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        info!(
+            event = "download.shutdown_countdown.cancelled",
+            correlation_id = %countdown.correlation_id,
+            reason,
+            elapsed_ms = countdown.started_at.elapsed().as_millis(),
+            "download shutdown countdown cancelled"
+        );
+        self.close_shutdown_window(countdown.correlation_id, cx);
+    }
+
+    fn native_close_shutdown_countdown(&mut self, correlation_id: uuid::Uuid) -> bool {
+        if self.pending_shutdown_command.is_some() {
+            return false;
+        }
+        let Some(countdown) = self.completion_actions.clear_countdown() else {
+            return true;
+        };
+        if countdown.correlation_id != correlation_id {
+            return false;
+        }
+        info!(
+            event = "download.shutdown_countdown.cancelled",
+            %correlation_id,
+            reason = "window_closed",
+            elapsed_ms = countdown.started_at.elapsed().as_millis(),
+            "download shutdown countdown cancelled by native window close"
+        );
+        self.shutdown_window.take();
+        true
+    }
+
+    fn execute_shutdown(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_shutdown_command.is_some() {
+            return;
+        }
+        let Some(countdown) = self
+            .completion_actions
+            .take_countdown_for_execution(correlation_id)
+        else {
+            return;
+        };
+        if let Some(window) = &self.shutdown_window {
+            window.view.update(cx, |view, cx| {
+                view.executing = true;
+                cx.notify();
+            });
+        }
+        info!(
+            event = "download.shutdown_countdown.execute_requested",
+            %correlation_id,
+            reason,
+            "download shutdown command requested"
+        );
+        match self.platform.send_command_correlated(
+            PlatformCommand::ShutdownSystem(ShutdownSystemCommand { delay_seconds: 1 }),
+            correlation_id,
+        ) {
+            Ok(command_id) => {
+                self.pending_shutdown_command = Some(PendingShutdownCommand {
+                    command_id,
+                    countdown,
+                });
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(COMPLETION_PLATFORM_TIMEOUT)
+                        .await;
+                    let _ = this.update(cx, |application, cx| {
+                        application.shutdown_command_timed_out(command_id, cx);
+                    });
+                })
+                .detach();
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.shutdown_countdown.failed",
+                    %correlation_id,
+                    failure_kind = "platform_enqueue",
+                    native_error_code = Option::<i32>::None,
+                    elapsed_ms = countdown.started_at.elapsed().as_millis(),
+                    %error,
+                    "download shutdown command could not be queued"
+                );
+                self.show_shutdown_failure("无法请求 Windows 关机", cx);
+                self.close_shutdown_window(correlation_id, cx);
+            }
+        }
+    }
+
+    fn handle_shutdown_result(
+        &mut self,
+        command_id: uuid::Uuid,
+        result: PlatformCommandResult,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_shutdown_command.take() else {
+            return;
+        };
+        if pending.command_id != command_id {
+            self.pending_shutdown_command = Some(pending);
+            return;
+        }
+        if result.success {
+            info!(
+                event = "download.shutdown_countdown.completed",
+                correlation_id = %pending.countdown.correlation_id,
+                elapsed_ms = pending.countdown.started_at.elapsed().as_millis(),
+                "Windows accepted the download shutdown request"
+            );
+        } else {
+            warn!(
+                event = "download.shutdown_countdown.failed",
+                correlation_id = %pending.countdown.correlation_id,
+                failure_kind = "native_rejected",
+                native_error_code = result.native_error_code,
+                elapsed_ms = pending.countdown.started_at.elapsed().as_millis(),
+                "Windows rejected the download shutdown request"
+            );
+            self.show_shutdown_failure(
+                result.error.as_deref().unwrap_or("Windows 拒绝了关机请求"),
+                cx,
+            );
+        }
+        self.close_shutdown_window(pending.countdown.correlation_id, cx);
+    }
+
+    fn shutdown_command_timed_out(&mut self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_shutdown_command.take() else {
+            return;
+        };
+        if pending.command_id != command_id {
+            self.pending_shutdown_command = Some(pending);
+            return;
+        }
+        warn!(
+            event = "download.shutdown_countdown.failed",
+            correlation_id = %pending.countdown.correlation_id,
+            failure_kind = "platform_timeout",
+            native_error_code = Option::<i32>::None,
+            elapsed_ms = pending.countdown.started_at.elapsed().as_millis(),
+            "download shutdown command timed out"
+        );
+        self.show_shutdown_failure("Windows 关机请求超时", cx);
+        self.close_shutdown_window(pending.countdown.correlation_id, cx);
+    }
+
+    fn show_shutdown_failure(&self, message: &str, cx: &mut Context<Self>) {
+        self.notifications.update(cx, |notifications, cx| {
+            notifications.show_error(
+                "download-shutdown-failed",
+                "自动关机失败",
+                message.to_owned(),
+                cx,
+            );
+        });
+    }
+
+    fn close_shutdown_window(&mut self, correlation_id: uuid::Uuid, cx: &mut Context<Self>) {
+        if self
+            .shutdown_window
+            .as_ref()
+            .is_some_and(|window| window.correlation_id == correlation_id)
+            && let Some(window) = self.shutdown_window.take()
+        {
+            let _ = window
+                .window
+                .update(cx, |_, window, _| window.remove_window());
+        }
+    }
+}
+
+struct DownloadShutdownCountdownView {
+    theme: Theme,
+    application: Entity<DownloadApplication>,
+    correlation_id: uuid::Uuid,
+    remaining_seconds: u64,
+    executing: bool,
+}
+
+impl DownloadShutdownCountdownView {
+    fn new(
+        application: Entity<DownloadApplication>,
+        correlation_id: uuid::Uuid,
+        remaining_seconds: u64,
+    ) -> Self {
+        Self {
+            theme: Theme::zed_dark(),
+            application,
+            correlation_id,
+            remaining_seconds,
+            executing: false,
+        }
+    }
+}
+
+impl Render for DownloadShutdownCountdownView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let correlation_id = self.correlation_id;
+        let cancel_application = self.application.clone();
+        let close_application = self.application.clone();
+        let execute_application = self.application.clone();
+        div()
+            .size_full()
+            .bg(theme.canvas)
+            .text_color(theme.text)
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(34.0))
+                    .pl(px(14.0))
+                    .border_b_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .window_control_area(WindowControlArea::Drag)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("自动关机"),
+                    )
+                    .child(
+                        div()
+                            .id("download-shutdown-close")
+                            .w(px(38.0))
+                            .h_full()
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .hover(move |style| {
+                                style.bg(theme.danger).text_color(gpui::white())
+                            })
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(move |_, _, cx| {
+                                let application = close_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.cancel_shutdown_countdown(
+                                            correlation_id,
+                                            "window_closed",
+                                            cx,
+                                        );
+                                    });
+                                });
+                            })
+                            .child(Icon::new(MaterialIcon::Close).size(px(15.0))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .px(px(18.0))
+                    .py(px(14.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(16.0))
+                    .child(
+                        div()
+                            .size(px(76.0))
+                            .rounded(px(38.0))
+                            .border_1()
+                            .border_color(theme.danger)
+                            .bg(theme.surface_raised)
+                            .flex()
+                            .items_end()
+                            .justify_center()
+                            .pb(px(18.0))
+                            .child(
+                                div()
+                                    .text_size(px(28.0))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.danger)
+                                    .child(if self.executing {
+                                        "…".into()
+                                    } else {
+                                        format!("{:02}", self.remaining_seconds)
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.danger)
+                                    .child(if self.executing {
+                                        "正在请求 Windows 关机"
+                                    } else {
+                                        "所有下载已完成，即将关机"
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.5))
+                                    .text_color(theme.text_muted)
+                                    .child("这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(46.0))
+                    .px(px(14.0))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .debug_selector(|| "download-shutdown-now".into())
+                            .child(
+                                Button::new("download-shutdown-now-button")
+                                    .label("立即关机")
+                                    .small()
+                                    .h(px(28.0))
+                                    .px(px(11.0))
+                                    .rounded(px(4.0))
+                                    .disabled(self.executing)
+                                    .custom(download_primary_button_variant(theme, cx))
+                                    .on_click(move |_, _, cx| {
+                                        let application = execute_application.clone();
+                                        cx.defer(move |cx| {
+                                            application.update(cx, |application, cx| {
+                                                application.execute_shutdown(
+                                                    correlation_id,
+                                                    "user_requested",
+                                                    cx,
+                                                );
+                                            });
+                                        });
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .debug_selector(|| "download-shutdown-cancel".into())
+                            .child(
+                                Button::new("download-shutdown-cancel-button")
+                                    .label("取消")
+                                    .small()
+                                    .ghost()
+                                    .h(px(28.0))
+                                    .px(px(10.0))
+                                    .rounded(px(4.0))
+                                    .disabled(self.executing)
+                                    .on_click(move |_, _, cx| {
+                                        let application = cancel_application.clone();
+                                        cx.defer(move |cx| {
+                                            application.update(cx, |application, cx| {
+                                                application.cancel_shutdown_countdown(
+                                                    correlation_id,
+                                                    "user_cancelled",
+                                                    cx,
+                                                );
+                                            });
+                                        });
+                                    }),
+                            ),
+                    )
+            )
     }
 }
 
@@ -4179,6 +5107,8 @@ struct DownloadSettingsInput<'a> {
     speed_limit_kib: &'a str,
     show_progress_window: bool,
     show_completion_window: bool,
+    completion_sound_enabled: bool,
+    open_directory_on_completion: bool,
     taskbar_overlay_enabled: bool,
     taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
     taskbar_overlay_offset_x: &'a str,
@@ -4207,6 +5137,8 @@ fn parse_download_settings_draft(
         speed_limit_kib,
         show_progress_window,
         show_completion_window,
+        completion_sound_enabled,
+        open_directory_on_completion,
         taskbar_overlay_enabled,
         taskbar_overlay_anchor,
         taskbar_overlay_offset_x,
@@ -4327,6 +5259,8 @@ fn parse_download_settings_draft(
         global_speed_limit_bytes_per_second,
         show_progress_window,
         show_completion_window,
+        completion_sound_enabled,
+        open_directory_on_completion,
         taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings {
             enabled: taskbar_overlay_enabled,
             anchor: taskbar_overlay_anchor,
@@ -4441,6 +5375,8 @@ struct DownloadSettingsView {
     page: DownloadSettingsPage,
     show_progress_window: bool,
     show_completion_window: bool,
+    completion_sound_enabled: bool,
+    open_directory_on_completion: bool,
     automatic_categories_enabled: bool,
     categories: Vec<DownloadCategoryEditor>,
     selected_category: Option<usize>,
@@ -4681,6 +5617,8 @@ impl DownloadSettingsView {
             page: DownloadSettingsPage::General,
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
+            completion_sound_enabled: snapshot.completion_sound_enabled,
+            open_directory_on_completion: snapshot.open_directory_on_completion,
             automatic_categories_enabled: snapshot.automatic_categories_enabled,
             selected_category: (!categories.is_empty()).then_some(0),
             categories,
@@ -4758,6 +5696,8 @@ impl DownloadSettingsView {
             speed_limit_kib: &self.speed_limit_kib.read(cx).value(),
             show_progress_window: self.show_progress_window,
             show_completion_window: self.show_completion_window,
+            completion_sound_enabled: self.completion_sound_enabled,
+            open_directory_on_completion: self.open_directory_on_completion,
             taskbar_overlay_enabled: self.taskbar_overlay_enabled,
             taskbar_overlay_anchor: self.taskbar_overlay_anchor,
             taskbar_overlay_offset_x: &self.taskbar_overlay_offset_x.read(cx).value(),
@@ -5653,6 +6593,26 @@ impl Render for DownloadSettingsView {
                 cx.notify();
             }),
         );
+        let completion_sound_toggle = download_settings_toggle(
+            theme,
+            "download-settings-completion-sound",
+            self.completion_sound_enabled,
+            cx.listener(|this, _, _, cx| {
+                this.completion_sound_enabled = !this.completion_sound_enabled;
+                this.error = None;
+                cx.notify();
+            }),
+        );
+        let completion_directory_toggle = download_settings_toggle(
+            theme,
+            "download-settings-completion-directory",
+            self.open_directory_on_completion,
+            cx.listener(|this, _, _, cx| {
+                this.open_directory_on_completion = !this.open_directory_on_completion;
+                this.error = None;
+                cx.notify();
+            }),
+        );
         let taskbar_overlay_toggle = download_settings_toggle(
             theme,
             "download-settings-taskbar-overlay",
@@ -5972,6 +6932,18 @@ impl Render for DownloadSettingsView {
                             "显示完成窗口",
                             "进度窗已关闭时被动显示完成窗口",
                             completion_toggle,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "完成提示音",
+                            "按一批完成任务播放一次 Windows 系统通知声音",
+                            completion_sound_toggle,
+                        ),
+                        download_settings_row(
+                            theme,
+                            "完成后打开目录",
+                            "一批最多打开三个不同目录，避免窗口风暴",
+                            completion_directory_toggle,
                         ),
                     ],
                 ))
@@ -9016,6 +9988,7 @@ struct DownloadTaskWindowView {
     task_id: DownloadTaskId,
     snapshot: Option<DownloadEngineTask>,
     progress: Option<DownloadProgress>,
+    shutdown_armed: bool,
 }
 
 impl DownloadTaskWindowView {
@@ -9024,6 +9997,7 @@ impl DownloadTaskWindowView {
         task_id: DownloadTaskId,
         snapshot: Option<DownloadEngineTask>,
         progress: Option<DownloadProgress>,
+        shutdown_armed: bool,
     ) -> Self {
         Self {
             theme: Theme::zed_dark(),
@@ -9031,6 +10005,7 @@ impl DownloadTaskWindowView {
             task_id,
             snapshot,
             progress,
+            shutdown_armed,
         }
     }
 
@@ -9038,10 +10013,12 @@ impl DownloadTaskWindowView {
         &mut self,
         snapshot: Option<DownloadEngineTask>,
         progress: Option<DownloadProgress>,
+        shutdown_armed: bool,
         cx: &mut Context<Self>,
     ) {
         self.snapshot = snapshot;
         self.progress = progress;
+        self.shutdown_armed = shutdown_armed;
         cx.notify();
     }
 }
@@ -9075,6 +10052,7 @@ impl Render for DownloadTaskWindowView {
         };
 
         let status = task.task.status();
+        let shutdown_armed = self.shutdown_armed;
         let name = task
             .final_path
             .as_ref()
@@ -9392,6 +10370,7 @@ impl Render for DownloadTaskWindowView {
             .unwrap_or_else(|| status_label.to_owned());
         let action_application = application.clone();
         let secondary_application = application.clone();
+        let shutdown_application = application.clone();
         let actions = match status {
             DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed => div()
                 .flex()
@@ -9562,7 +10541,48 @@ impl Render for DownloadTaskWindowView {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
-                    .justify_end()
+                    .justify_between()
+                    .when(
+                        !matches!(
+                            status,
+                            DownloadStatus::Completed
+                                | DownloadStatus::Failed
+                                | DownloadStatus::Cancelled
+                        ),
+                        |footer| {
+                            footer.child(
+                                div()
+                                    .debug_selector(|| "download-window-shutdown-arm".into())
+                                    .child(
+                                        Button::new("download-window-shutdown-arm-button")
+                                            .label(if shutdown_armed {
+                                                "已计划关机"
+                                            } else {
+                                                "完成后关机"
+                                            })
+                                            .small()
+                                            .h(px(28.0))
+                                            .px(px(10.0))
+                                            .rounded(px(4.0))
+                                            .when(shutdown_armed, |button| {
+                                                button.custom(download_primary_button_variant(
+                                                    theme, cx,
+                                                ))
+                                            })
+                                            .when(!shutdown_armed, |button| button.outline())
+                                            .on_click(move |_, _, cx| {
+                                                let application = shutdown_application.clone();
+                                                cx.defer(move |cx| {
+                                                    application.update(cx, |application, cx| {
+                                                        application
+                                                            .toggle_shutdown_armed(task_id, cx);
+                                                    });
+                                                });
+                                            }),
+                                    ),
+                            )
+                        },
+                    )
                     .child(actions),
             )
             .into_any_element()
@@ -9927,6 +10947,8 @@ mod tests {
             speed_limit_kib: "2048",
             show_progress_window: true,
             show_completion_window: false,
+            completion_sound_enabled: true,
+            open_directory_on_completion: false,
             taskbar_overlay_enabled: true,
             taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
             taskbar_overlay_offset_x: "12",
@@ -9951,6 +10973,8 @@ mod tests {
         );
         assert!(draft.show_progress_window);
         assert!(!draft.show_completion_window);
+        assert!(draft.completion_sound_enabled);
+        assert!(!draft.open_directory_on_completion);
         assert_eq!(draft.taskbar_progress_overlay.width, 132);
         assert_eq!(draft.taskbar_progress_overlay.height, 8);
         assert_eq!(
@@ -9968,6 +10992,8 @@ mod tests {
                 speed_limit_kib: "0",
                 show_progress_window: true,
                 show_completion_window: true,
+                completion_sound_enabled: true,
+                open_directory_on_completion: false,
                 taskbar_overlay_enabled: true,
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
@@ -9995,6 +11021,8 @@ mod tests {
                 speed_limit_kib: "0",
                 show_progress_window: true,
                 show_completion_window: true,
+                completion_sound_enabled: true,
+                open_directory_on_completion: false,
                 taskbar_overlay_enabled: true,
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
@@ -10022,6 +11050,8 @@ mod tests {
                 speed_limit_kib: "0",
                 show_progress_window: true,
                 show_completion_window: true,
+                completion_sound_enabled: true,
+                open_directory_on_completion: false,
                 taskbar_overlay_enabled: true,
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
@@ -10050,6 +11080,8 @@ mod tests {
                 speed_limit_kib: "0",
                 show_progress_window: true,
                 show_completion_window: true,
+                completion_sound_enabled: true,
+                open_directory_on_completion: false,
                 taskbar_overlay_enabled: true,
                 taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
                 taskbar_overlay_offset_x: "12",
@@ -11319,6 +12351,431 @@ mod tests {
     }
 
     #[gpui::test]
+    fn completion_feedback_crosses_the_bounded_platform_transport_once_per_batch(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = unique_download_settings_test_directory("completion-feedback");
+        std::fs::create_dir_all(&directory).expect("create completion feedback directory");
+        let mut config = AppConfig::default();
+        config.download.completion_sound_enabled = true;
+        config.download.open_directory_on_completion = true;
+        let engine = DownloadEngine::open_in_memory().expect("open completion feedback engine");
+        let (platform, platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let application = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: directory.clone(),
+                        config,
+                        config_path: directory.join("config.json"),
+                        log_directory: directory.clone(),
+                        database_path: directory.join("downloads.sqlite3"),
+                        ffmpeg_install_directory: directory.join("tools").join("ffmpeg"),
+                    },
+                    cx,
+                )
+            })
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                for index in 0..5 {
+                    application
+                        .completion_actions
+                        .record_terminal(CompletionTerminal {
+                            task_id: DownloadTaskId::new(),
+                            status: DownloadStatus::Completed,
+                            directory: Some(directory.join(format!("batch-{index}"))),
+                            display_name: format!("batch-{index}.bin"),
+                            error_message: None,
+                        });
+                }
+                application.flush_completion_feedback(cx);
+            });
+        });
+
+        let mut envelopes = Vec::new();
+        for _ in 0..4 {
+            envelopes.push(
+                platform_endpoint
+                    .try_receive_command_for_contract_test()
+                    .expect("bounded completion command"),
+            );
+        }
+        assert!(matches!(
+            &envelopes[0].message,
+            nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::PlaySystemNotificationSound
+            )
+        ));
+        assert_eq!(
+            envelopes
+                .iter()
+                .filter(|envelope| matches!(
+                    &envelope.message,
+                    nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+                ))
+                .count(),
+            3
+        );
+        let operation_id = envelopes[0]
+            .correlation_id
+            .expect("shared feedback correlation");
+        assert!(
+            envelopes
+                .iter()
+                .all(|envelope| envelope.correlation_id == Some(operation_id))
+        );
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                for envelope in envelopes {
+                    application.handle_platform_notification(
+                        PlatformNotification::CommandResult {
+                            correlation_id: envelope.id,
+                            result: PlatformCommandResult {
+                                success: true,
+                                error: None,
+                                native_error_code: None,
+                                data: None,
+                            },
+                        },
+                        cx,
+                    );
+                }
+                assert!(application.pending_completion_feedback.is_empty());
+                assert!(application.completion_feedback_commands.is_empty());
+            });
+        });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "shutdown-countdown-window");
+        let task_id = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .enqueue(
+                    DownloadRequest {
+                        source_url: "https://example.test/shutdown.bin".into(),
+                        save_directory: directory.clone(),
+                        save_directory_explicit: false,
+                        file_name: Some("shutdown.bin".into()),
+                        headers: Vec::new(),
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: None,
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                    },
+                    RequestOrigin::Internal,
+                )
+                .expect("enqueue shutdown fixture")
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.refresh(cx);
+                application.open_task_window(task_id, DownloadWindowPhase::Progress, None, cx);
+            });
+        });
+        cx.run_until_parked();
+        let task_window = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .task_windows
+                    .get(&task_id)
+                    .map(|entry| entry.window)
+            })
+            .expect("production task window");
+        let mut task_window = VisualTestContext::from_window(task_window, cx);
+        task_window
+            .refresh()
+            .expect("render production task window");
+        let arm = task_window
+            .debug_bounds("download-window-shutdown-arm")
+            .expect("task-local shutdown arm");
+        task_window.simulate_click(arm.center(), Modifiers::default());
+        task_window.run_until_parked();
+        assert!(cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)));
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                let transition = application
+                    .completion_actions
+                    .evaluate_shutdown([(task_id, DownloadStatus::Completed)], Instant::now());
+                application.apply_shutdown_transition(transition, cx);
+            });
+        });
+        cx.run_until_parked();
+        let shutdown_window_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .shutdown_window
+                    .as_ref()
+                    .map(|window| window.window)
+            })
+            .expect("production shutdown countdown window");
+        let mut shutdown_window = VisualTestContext::from_window(shutdown_window_handle, cx);
+        shutdown_window
+            .refresh()
+            .expect("render production shutdown countdown");
+        let cancel = shutdown_window
+            .debug_bounds("download-shutdown-cancel")
+            .expect("shutdown cancel action");
+        shutdown_window.simulate_click(cancel.center(), Modifiers::default());
+        shutdown_window.run_until_parked();
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.completion_actions.active_countdown().is_none()
+                && application.shutdown_window.is_none()
+                && application.pending_shutdown_command.is_none()
+        }));
+        assert!(shutdown_window_handle.update(cx, |_, _, _| ()).is_err());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn native_shutdown_window_close_cancels_the_countdown(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "shutdown-native-close");
+        let task_id = DownloadTaskId::new();
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application
+                    .completion_actions
+                    .set_shutdown_armed(task_id, true);
+                let transition = application
+                    .completion_actions
+                    .evaluate_shutdown([(task_id, DownloadStatus::Completed)], Instant::now());
+                application.apply_shutdown_transition(transition, cx);
+            });
+        });
+        cx.run_until_parked();
+        let window_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .shutdown_window
+                    .as_ref()
+                    .map(|window| window.window)
+            })
+            .expect("production shutdown countdown window");
+        let mut window = VisualTestContext::from_window(window_handle, cx);
+        assert!(
+            window.simulate_close(),
+            "native close is accepted after disarming"
+        );
+        window.run_until_parked();
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.completion_actions.active_countdown().is_none()
+                && application.shutdown_window.is_none()
+                && application.pending_shutdown_command.is_none()
+        }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn stale_shutdown_arm_click_cannot_arm_a_task_that_already_terminated(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "shutdown-stale-arm");
+        let task_id = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .enqueue(
+                    DownloadRequest {
+                        source_url: "https://example.test/stale-arm.bin".into(),
+                        save_directory: directory.clone(),
+                        save_directory_explicit: false,
+                        file_name: Some("stale-arm.bin".into()),
+                        headers: Vec::new(),
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: None,
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                    },
+                    RequestOrigin::Internal,
+                )
+                .expect("enqueue stale arm fixture")
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.refresh(cx);
+                application.open_task_window(task_id, DownloadWindowPhase::Progress, None, cx);
+            });
+        });
+        cx.run_until_parked();
+        let task_window = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .task_windows
+                    .get(&task_id)
+                    .map(|entry| entry.window)
+            })
+            .expect("production task window");
+        let mut task_window = VisualTestContext::from_window(task_window, cx);
+        task_window
+            .refresh()
+            .expect("render task window before terminal");
+        let arm = task_window
+            .debug_bounds("download-window-shutdown-arm")
+            .expect("stale shutdown arm hit target");
+
+        cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .cancel(task_id)
+                .expect("terminate task before deferred arm click");
+        });
+        task_window.simulate_click(arm.center(), Modifiers::default());
+        task_window.run_until_parked();
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            !application.is_shutdown_armed(task_id)
+                && application.completion_actions.active_countdown().is_none()
+                && application.shutdown_window.is_none()
+        }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = unique_download_settings_test_directory("shutdown-platform-boundary");
+        std::fs::create_dir_all(&directory).expect("create shutdown boundary directory");
+        let engine = DownloadEngine::open_in_memory().expect("open shutdown boundary engine");
+        let (platform, platform_endpoint) = nxtools_ipc::platform_bridge(8);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let application = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications,
+                    DownloadRuntimeContext {
+                        fallback_default_directory: directory.clone(),
+                        config: AppConfig::default(),
+                        config_path: directory.join("config.json"),
+                        log_directory: directory.clone(),
+                        database_path: directory.join("downloads.sqlite3"),
+                        ffmpeg_install_directory: directory.join("tools").join("ffmpeg"),
+                    },
+                    cx,
+                )
+            })
+        });
+        let task_id = DownloadTaskId::new();
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application
+                    .completion_actions
+                    .set_shutdown_armed(task_id, true);
+                let transition = application
+                    .completion_actions
+                    .evaluate_shutdown([(task_id, DownloadStatus::Completed)], Instant::now());
+                application.apply_shutdown_transition(transition, cx);
+            });
+        });
+        cx.run_until_parked();
+        let window_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .shutdown_window
+                    .as_ref()
+                    .map(|window| window.window)
+            })
+            .expect("production shutdown countdown window");
+        let mut window = VisualTestContext::from_window(window_handle, cx);
+        window.refresh().expect("render shutdown countdown window");
+        let shutdown_now = window
+            .debug_bounds("download-shutdown-now")
+            .expect("immediate shutdown action");
+        window.simulate_click(shutdown_now.center(), Modifiers::default());
+        window.run_until_parked();
+
+        let envelope = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed shutdown command");
+        assert!(matches!(
+            envelope.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ShutdownSystem(
+                ShutdownSystemCommand { delay_seconds: 1 }
+            ))
+        ));
+        let operation_id = envelope
+            .correlation_id
+            .expect("shutdown operation correlation");
+        assert_eq!(
+            cx.read(|cx| {
+                application
+                    .read(cx)
+                    .pending_shutdown_command
+                    .as_ref()
+                    .map(|pending| pending.countdown.correlation_id)
+            }),
+            Some(operation_id)
+        );
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: envelope.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.pending_shutdown_command.is_none()
+                && application.shutdown_window.is_none()
+                && application.completion_actions.active_countdown().is_none()
+        }));
+        assert!(window_handle.update(cx, |_, _, _| ()).is_err());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn closing_download_settings_always_leaves_taskbar_overlay_edit_mode(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory) =
@@ -12190,6 +13647,14 @@ mod tests {
             .debug_bounds("download-settings-completion-window")
             .expect("completion setting toggle");
         window.simulate_click(completion_toggle.center(), Modifiers::default());
+        let sound_toggle = window
+            .debug_bounds("download-settings-completion-sound")
+            .expect("completion sound toggle");
+        window.simulate_click(sound_toggle.center(), Modifiers::default());
+        let directory_toggle = window
+            .debug_bounds("download-settings-completion-directory")
+            .expect("completion directory toggle");
+        window.simulate_click(directory_toggle.center(), Modifiers::default());
         window.run_until_parked();
         let taskbar_overlay_toggle = window
             .debug_bounds("download-settings-taskbar-overlay")
@@ -12245,6 +13710,8 @@ mod tests {
             ffmpeg_executable
         );
         assert!(!persisted.download.show_completion_window);
+        assert!(!persisted.download.completion_sound_enabled);
+        assert!(persisted.download.open_directory_on_completion);
         assert!(!persisted.download.taskbar_progress_overlay.enabled);
         assert_eq!(
             persisted.download.taskbar_progress_overlay.anchor,
@@ -12274,6 +13741,8 @@ mod tests {
                 DownloadDuplicateStrategySettings::Reject
             );
             assert!(!view.categories[0].enabled);
+            assert!(!view.completion_sound_enabled);
+            assert!(view.open_directory_on_completion);
         });
         cancel_window
             .refresh()
@@ -12352,6 +13821,8 @@ mod tests {
                         global_speed_limit_bytes_per_second: Some(1024 * 1024),
                         show_progress_window: false,
                         show_completion_window: false,
+                        completion_sound_enabled: true,
+                        open_directory_on_completion: false,
                         taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
                     },
                     uuid::Uuid::new_v4(),

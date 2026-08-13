@@ -257,6 +257,12 @@ the product should remain resident. `--silent-start` creates the ordinary produc
 hidden, unfocused main window; notification-area restore reuses that same window. Explicit tray
 Exit is the only tray path that quits the GPUI application and disposes PlatformHost resources.
 
+Download completion policy remains in Rust. The desktop coalesces terminal task feedback, owns the
+transient task-local shutdown arm and renders the cancellable GPUI countdown. PlatformHost exposes
+only typed Windows adapters for the system notification sound, directory reveal and final shutdown
+request; it never observes the queue or persists/decides the power policy. Shutdown intent is not
+part of `AppConfig` or SQLite, so a process restart is fail-safe.
+
 ## Quick-launch phase-2 tracer bullet
 
 The packaged desktop connects to `NxTools.Indexer.exe --service`, an automatic LocalSystem Windows

@@ -2,6 +2,7 @@
 
 mod assets;
 mod clipboard;
+mod completion_actions;
 mod download_taskbar_overlay;
 mod download_window_lifecycle;
 mod downloads;

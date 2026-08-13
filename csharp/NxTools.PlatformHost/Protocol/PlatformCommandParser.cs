@@ -85,6 +85,7 @@ internal sealed record BeginWindowResizeCommand(long WindowHandle);
 internal sealed record BeginWindowMoveCommand(long WindowHandle);
 internal sealed record BeginFileDragCommand(string Path, long SourceWindowHandle);
 internal sealed record OpenShellTargetCommand(string Target, string Action);
+internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
 internal sealed record LaunchProcessCommand(
     string Executable,
     IReadOnlyList<string> Arguments,
@@ -294,6 +295,9 @@ internal static class PlatformCommandParser
 
     public static OpenShellTargetCommand ParseOpenShellTarget(ProtocolEnvelope envelope) =>
         Parse<OpenShellTargetCommand>(envelope, "open_shell_target", "Open target command payload was empty.");
+
+    public static ShutdownSystemCommand ParseShutdownSystem(ProtocolEnvelope envelope) =>
+        Parse<ShutdownSystemCommand>(envelope, "shutdown_system", "Shutdown command payload was empty.");
 
     public static LaunchProcessCommand ParseLaunchProcess(ProtocolEnvelope envelope) =>
         Parse<LaunchProcessCommand>(

@@ -1827,6 +1827,43 @@ workspace and Zed's control scale:
   shares the same 28 px rhythm. Icon-only pick/refresh actions are square; text actions have explicit
   horizontal padding and visible secondary/primary hierarchy.
 
+Reverified on 2026-08-13 for the final Stage 6 completion-action slice:
+
+- ABDM first: `shared/app/.../ondownloadcompletion/OnDownloadCompletionActionRunner.kt` observes
+  completed jobs and delegates actions through `OnDownloadCompletionActionProvider` instead of
+  embedding OS work in the downloader. Desktop power actions are selected in
+  `desktop/app/.../actions/onevennts/getOnDownloadCompletionAction.kt`; the alert in
+  `pages/poweractionalert/PowerActionComponent.kt` owns a 30-second transient countdown with
+  **Shut down now** and **Cancel**, and calls the platform power adapter only after the countdown.
+  `PowerActionWindows.kt` ultimately delegates shutdown to Windows. Its useful invariant is the
+  cancellable, non-durable intent; its direct command execution and unbounded repeated per-job
+  callbacks are not copied.
+- ABDM notification sound is a separate completion presentation concern
+  (`util/notification/BaseNotificationSound*.kt`). Desktop falls back to the system beep when no
+  custom source exists. NxTools.Next intentionally narrows this: it never imports or executes an
+  arbitrary audio path and asks PlatformHost to play the current Windows system notification sound.
+- Old NxTools next: `MainWindowViewModel.HandleDownloadCompleted` shows the completion surface,
+  optionally opens the destination directory and evaluates shutdown only after the active queue has
+  drained. `TryShutdownWhenAllRequestedDownloadsComplete` arms shutdown per task, waits while any
+  created/probing/scheduled/queued/downloading/merging/paused/verifying task remains, then launches
+  `shutdown.exe` immediately. `DownloadProgressWindow.axaml` exposes the task-local arm switch.
+  Useful compatibility behavior is that an armed task must complete successfully and the whole
+  queue must be idle; the unsafe immediate, non-cancellable process launch is a negative reference.
+- NxTools.Next keeps persistent presentation preferences only for completion sound and automatic
+  directory reveal. A task-local **完成后关机** arm is process memory only: it is never stored in
+  config, SQLite or a download command, and therefore cannot resume after restart. When an armed
+  task completes and no nonterminal download remains, Rust opens one always-on-top 30-second GPUI
+  countdown. Cancel/close/new work disarms it; **立即关机** or expiry sends one typed Windows command.
+  C# owns the Windows sound and shutdown adapter but never decides when shutdown is allowed.
+- Completion feedback is burst-coalesced. One bounded batch produces one in-app notification, at
+  most one Windows notification sound, and reveals at most three distinct destination directories.
+  Additional directories are reported only as a count. Initial terminal tasks restored at startup
+  are marked seen, so restart emits neither stale feedback nor a stale power action.
+- Diagnostics use one new correlation ID per coalesced feedback batch or shutdown countdown. They
+  carry only bounded task/result/directory counts, fixed action/failure kinds, elapsed time and the
+  native error code. They never record URLs, file names, paths, Header/Cookie values or custom sound
+  data.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

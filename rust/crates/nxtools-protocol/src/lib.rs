@@ -385,6 +385,8 @@ pub enum PlatformCommand {
     BeginWindowMove(BeginWindowMoveCommand),
     BeginFileDrag(BeginFileDragCommand),
     OpenShellTarget(OpenShellTargetCommand),
+    PlaySystemNotificationSound,
+    ShutdownSystem(ShutdownSystemCommand),
     LaunchProcess(LaunchProcessCommand),
     NavigateDirectory(NavigateDirectoryCommand),
     OpenFileInDialog(OpenFileInDialogCommand),
@@ -638,6 +640,11 @@ pub struct BeginFileDragCommand {
 pub struct OpenShellTargetCommand {
     pub target: String,
     pub action: ShellOpenAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShutdownSystemCommand {
+    pub delay_seconds: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1162,6 +1169,8 @@ mod tests {
                 target: "C:/Apps/Editor.lnk".into(),
                 action: ShellOpenAction::RunElevated,
             }),
+            PlatformCommand::PlaySystemNotificationSound,
+            PlatformCommand::ShutdownSystem(ShutdownSystemCommand { delay_seconds: 1 }),
             PlatformCommand::NavigateDirectory(NavigateDirectoryCommand {
                 host: DirectoryNavigationHost::Explorer,
                 window_handle: 88,
