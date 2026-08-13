@@ -41,6 +41,9 @@ Root: `D:\Code\zed-main`
   The shell does not own application persistence or native-window policy.
 - Popover/ListBox shells are bounded, use the 6 px floating radius and never create an unbounded
   child list. Tooltip text may reveal a complete bounded path but must not be logged.
+- Non-list overlays such as the delayed-start calendar reuse the same Popover shell and shared
+  action tier; their domain-specific content remains owned by the caller rather than by the visual
+  wrapper.
 - GPUI entity callbacks update their own draft synchronously and defer any cross-entity operation to
   the next application turn.
 

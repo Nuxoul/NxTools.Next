@@ -328,6 +328,19 @@ rust/apps/nxtools-desktop/src/ui/
   测试时系统只剩约 1.9 GiB 提交余量，LLVM 因内存不足退出，因此没有把最终测试重链或
   workspace 全量误报为通过。本切片未启动 GUI、未打包、未冒领 DPI/截图人工验收。
 
+第四个 P0 纵向切片（2026-08-13，验证中）：
+
+- “稍后下载”日期时间浮层成为共享 Popover 的第二个生产消费者：保留既有本地草稿、
+  中文日历和延迟提交语义，迁移到 304×240 px 有界 6 px 浮层；清除/确定统一为共享
+  28 px 操作，普通中文日期提升为 11–12 px，10 px 仅保留星期元数据。
+- Popover 打开、月份切换、日期选择、清除和确定都在下一 application turn 更新父 View，
+  避免组件回调同步重入。外部关闭继续只丢弃未确认草稿，不改变上次已提交时间。
+- 新增门禁通过真实 `open_browser_download_dialog` 生产窗口点击日期、确认、外部关闭、
+  清除和 Cancel，并验证浮层边界及操作高度；本轮尚未宣告通过，因为当前 Windows 提交
+  内存不足使包含完整 GPUI 测试模块的 `cargo check --tests` 在 rustc 分配约 520 KiB 时
+  退出。随后 production-only desktop check 与 Clippy 均通过；新增真实窗口门禁仍待内存
+  恢复后执行。未启动 GUI、未打包、未冒领 DPI/截图人工验收。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

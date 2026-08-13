@@ -7,7 +7,7 @@ Command failures and integration errors.
 ## [ERR-20260813-P0LISTBOXOOM] cargo_test_desktop_category_listbox
 
 **Logged**: 2026-08-13T12:10:00+08:00
-**Priority**: medium
+**Priority**: high
 **Status**: pending
 **Area**: tests
 
@@ -25,6 +25,8 @@ STATUS_STACK_BUFFER_OVERRUN (0xc0000409)
 - Command: exact `nxtools-desktop` production new-download category test with one Cargo job, incremental disabled, 256 codegen units and test debug disabled.
 - The machine reported only about 1.9 GiB free virtual/commit capacity; unrelated user processes held the majority of commit.
 - The same production regression had passed immediately before the final focus assertions were added.
+- The failure recurred on the next P0 schedule-Popover slice even for metadata-only `cargo check`:
+  rustc aborted while allocating 532,496 bytes with the same `0xc0000409` process exit.
 
 ### Suggested Fix
 Do not terminate unrelated user processes. Re-run when commit is available; meanwhile use `cargo check`, source-level formatting, and smaller unit seams to validate the incremental focus change.
@@ -33,6 +35,7 @@ Do not terminate unrelated user processes. Re-run when commit is available; mean
 - Reproducible: environment-dependent
 - Related Files: rust/apps/nxtools-desktop/src/downloads.rs
 - See Also: ERR-20260813-P0C
+- Recurrence-Count: 2
 
 ---
 

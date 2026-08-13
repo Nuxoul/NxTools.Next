@@ -65,11 +65,12 @@ use crate::download_window_lifecycle::{
 use crate::icons::MaterialIcon;
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
+use crate::ui::components::action::{action_button, icon_action};
 use crate::ui::components::field::field_shell;
 use crate::ui::components::popover::{list_box, popover_shell};
-use crate::ui::metrics::{SPACING_4, SPACING_6, SPACING_8};
+use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_6, SPACING_8};
 use crate::ui::native_window_handle;
-use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
+use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
@@ -8470,13 +8471,19 @@ impl Render for NewDownloadView {
                 Popover::new("download-new-schedule-popover")
                     .anchor(Corner::BottomLeft)
                     .open(self.schedule_popover_open)
+                    .appearance(false)
+                    .overlay_closable(true)
                     .on_open_change(move |open, window, cx| {
-                        let _ = schedule_view.update(cx, |view, cx| {
-                            view.schedule_popover_open = *open;
-                            if *open {
-                                view.reset_schedule_draft(window, cx);
-                            }
-                            cx.notify();
+                        let open = *open;
+                        let schedule_view = schedule_view.clone();
+                        window.defer(cx, move |window, cx| {
+                            let _ = schedule_view.update(cx, |view, cx| {
+                                view.schedule_popover_open = open;
+                                if open {
+                                    view.reset_schedule_draft(window, cx);
+                                }
+                                cx.notify();
+                            });
                         });
                     })
                     .trigger(
@@ -8495,106 +8502,143 @@ impl Render for NewDownloadView {
                         let schedule_calendar_view = schedule_calendar_view.clone();
                         let schedule_confirm_hour = schedule_confirm_hour.clone();
                         let schedule_confirm_minute = schedule_confirm_minute.clone();
-                        div()
-                            .id("download-new-schedule-popover-content")
-                            .debug_selector(|| "download-new-schedule-popover-content".into())
-                            .w(px(286.0))
-                            .flex()
-                            .flex_col()
-                            .gap(px(8.0))
-                            .child(delayed_start_calendar(
-                                theme,
-                                schedule_month,
-                                schedule_date,
-                                schedule_today,
-                                schedule_calendar_view,
-                            ))
-                            .child(
-                                div()
-                                    .pt(px(6.0))
-                                    .border_t_1()
-                                    .border_color(theme.border_subtle)
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(6.0))
-                                    .child(
-                                        div()
-                                            .mr(px(4.0))
-                                            .text_size(px(9.5))
-                                            .text_color(theme.text_secondary)
-                                            .child("时间"),
-                                    )
-                                    .child(div().w(px(66.0)).child(
-                                        Select::new(&schedule_hour).menu_width(px(66.0)).small(),
-                                    ))
-                                    .child(
-                                        div()
-                                            .text_size(px(11.0))
-                                            .text_color(theme.text_muted)
-                                            .child(":"),
-                                    )
-                                    .child(div().w(px(66.0)).child(
-                                        Select::new(&schedule_minute).menu_width(px(66.0)).small(),
-                                    ))
-                                    .child(div().flex_1())
-                                    .child(
-                                        Button::new("download-new-schedule-clear")
-                                            .label("清除")
-                                            .small()
-                                            .ghost()
-                                            .on_click(move |_, _, cx| {
-                                                info!("download delayed-start selection cleared");
-                                                let _ =
-                                                    schedule_clear_view.update(cx, |view, cx| {
-                                                        view.committed_schedule = None;
-                                                        view.schedule_popover_open = false;
-                                                        view.error = None;
-                                                        cx.notify();
-                                                    });
-                                            }),
-                                    )
-                                    .child(
-                                        div()
-                                            .debug_selector(|| {
-                                                "download-new-schedule-confirm".into()
-                                            })
-                                            .child(
-                                                Button::new("download-new-schedule-confirm-button")
-                                                    .label("确定")
-                                                    .small()
+                        popover_shell(
+                            theme,
+                            "download-new-schedule-popover-shell",
+                            304.0,
+                            240.0,
+                            div()
+                                .id("download-new-schedule-popover-content")
+                                .debug_selector(|| {
+                                    "download-new-schedule-popover-content".into()
+                                })
+                                .size_full()
+                                .flex()
+                                .flex_col()
+                                .gap(px(SPACING_6))
+                                .child(delayed_start_calendar(
+                                    theme,
+                                    schedule_month,
+                                    schedule_date,
+                                    schedule_today,
+                                    schedule_calendar_view,
+                                ))
+                                .child(
+                                    div()
+                                        .pt(px(SPACING_6))
+                                        .border_t_1()
+                                        .border_color(theme.border_subtle)
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(SPACING_6))
+                                        .child(
+                                            div()
+                                                .mr(px(SPACING_4))
+                                                .text_size(px(TEXT_LABEL))
+                                                .line_height(px(LINE_HEIGHT_LABEL))
+                                                .text_color(theme.text_secondary)
+                                                .child("时间"),
+                                        )
+                                        .child(div().w(px(66.0)).child(
+                                            Select::new(&schedule_hour)
+                                                .menu_width(px(66.0))
+                                                .small(),
+                                        ))
+                                        .child(
+                                            div()
+                                                .text_size(px(TEXT_LABEL))
+                                                .text_color(theme.text_muted)
+                                                .child(":"),
+                                        )
+                                        .child(div().w(px(66.0)).child(
+                                            Select::new(&schedule_minute)
+                                                .menu_width(px(66.0))
+                                                .small(),
+                                        ))
+                                        .child(div().flex_1())
+                                        .child(
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-schedule-clear-action".into()
+                                                })
+                                                .child(
+                                                    action_button(
+                                                        "download-new-schedule-clear",
+                                                        "清除",
+                                                    )
+                                                    .ghost()
+                                                    .on_click(move |_, window, cx| {
+                                                        let schedule_clear_view =
+                                                            schedule_clear_view.clone();
+                                                        window.defer(cx, move |_, cx| {
+                                                            info!(
+                                                                "download delayed-start selection cleared"
+                                                            );
+                                                            let _ = schedule_clear_view.update(
+                                                                cx,
+                                                                |view, cx| {
+                                                                    view.committed_schedule = None;
+                                                                    view.schedule_popover_open =
+                                                                        false;
+                                                                    view.error = None;
+                                                                    cx.notify();
+                                                                },
+                                                            );
+                                                        });
+                                                    }),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-schedule-confirm".into()
+                                                })
+                                                .child(
+                                                    action_button(
+                                                        "download-new-schedule-confirm-button",
+                                                        "确定",
+                                                    )
                                                     .custom(schedule_primary_variant)
-                                                    .on_click(move |_, _, cx| {
+                                                    .on_click(move |_, window, cx| {
                                                         let selection = read_delayed_start_draft(
                                                             schedule_date,
                                                             &schedule_confirm_hour,
                                                             &schedule_confirm_minute,
                                                             cx,
                                                         );
-                                                        let _ = schedule_confirm_view.update(
-                                                            cx,
-                                                            |view, cx| {
-                                                                let selection = match selection {
-                                                                    Ok(selection) => selection,
-                                                                    Err(error) => {
-                                                                        view.error = Some(error);
-                                                                        cx.notify();
-                                                                        return;
-                                                                    }
-                                                                };
-                                                                info!(
-                                                                    "download delayed-start selection committed"
-                                                                );
-                                                                view.committed_schedule =
-                                                                    Some(selection);
-                                                                view.schedule_popover_open = false;
-                                                                view.error = None;
-                                                                cx.notify();
-                                                            },
-                                                        );
+                                                        let schedule_confirm_view =
+                                                            schedule_confirm_view.clone();
+                                                        window.defer(cx, move |_, cx| {
+                                                            let _ = schedule_confirm_view.update(
+                                                                cx,
+                                                                |view, cx| {
+                                                                    let selection = match selection {
+                                                                        Ok(selection) => selection,
+                                                                        Err(error) => {
+                                                                            view.error =
+                                                                                Some(error);
+                                                                            cx.notify();
+                                                                            return;
+                                                                        }
+                                                                    };
+                                                                    info!(
+                                                                        "download delayed-start selection committed"
+                                                                    );
+                                                                    view.committed_schedule =
+                                                                        Some(selection);
+                                                                    view.schedule_popover_open =
+                                                                        false;
+                                                                    view.error = None;
+                                                                    cx.notify();
+                                                                },
+                                                            );
+                                                        });
                                                     }),
-                                            ),
-                                    ),
-                            )
+                                                ),
+                                        ),
+                                )
+                                .into_any_element(),
+                        )
                     }),
             );
         let footer_actions = if confirmed {
@@ -9645,44 +9689,62 @@ fn delayed_start_calendar(
         .gap(px(2.0))
         .child(
             div()
-                .h(px(22.0))
+                .h(px(28.0))
                 .flex()
                 .items_center()
                 .child(
-                    Button::new("download-new-schedule-previous-month")
-                        .icon(Icon::new(MaterialIcon::ChevronLeft))
-                        .xsmall()
-                        .ghost()
-                        .on_click(move |_, _, cx| {
-                            let _ = previous_view.update(cx, |view, cx| {
-                                view.scheduled_month =
-                                    shift_calendar_month(view.scheduled_month, -1);
-                                cx.notify();
-                            });
-                        }),
+                    div()
+                        .debug_selector(|| "download-new-schedule-previous-month-action".into())
+                        .child(
+                            icon_action(
+                                "download-new-schedule-previous-month",
+                                MaterialIcon::ChevronLeft,
+                                "上个月",
+                            )
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                let previous_view = previous_view.clone();
+                                window.defer(cx, move |_, cx| {
+                                    let _ = previous_view.update(cx, |view, cx| {
+                                        view.scheduled_month =
+                                            shift_calendar_month(view.scheduled_month, -1);
+                                        cx.notify();
+                                    });
+                                });
+                            }),
+                        ),
                 )
                 .child(
                     div()
                         .debug_selector(|| "download-new-schedule-month-title".into())
                         .flex_1()
                         .text_center()
-                        .text_size(px(11.0))
+                        .text_size(px(TEXT_BODY))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text)
                         .child(delayed_start_calendar_title(month)),
                 )
                 .child(
-                    Button::new("download-new-schedule-next-month")
-                        .icon(Icon::new(MaterialIcon::ChevronRight))
-                        .xsmall()
-                        .ghost()
-                        .on_click(move |_, _, cx| {
-                            let _ = next_view.update(cx, |view, cx| {
-                                view.scheduled_month =
-                                    shift_calendar_month(view.scheduled_month, 1);
-                                cx.notify();
-                            });
-                        }),
+                    div()
+                        .debug_selector(|| "download-new-schedule-next-month-action".into())
+                        .child(
+                            icon_action(
+                                "download-new-schedule-next-month",
+                                MaterialIcon::ChevronRight,
+                                "下个月",
+                            )
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                let next_view = next_view.clone();
+                                window.defer(cx, move |_, cx| {
+                                    let _ = next_view.update(cx, |view, cx| {
+                                        view.scheduled_month =
+                                            shift_calendar_month(view.scheduled_month, 1);
+                                        cx.notify();
+                                    });
+                                });
+                            }),
+                        ),
                 ),
         )
         .child(
@@ -9696,7 +9758,7 @@ fn delayed_start_calendar(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(8.5))
+                        .text_size(px(TEXT_META))
                         .text_color(theme.text_muted)
                         .child(weekday)
                 })),
@@ -9713,13 +9775,16 @@ fn delayed_start_calendar(
                     let day_view = view.clone();
                     div()
                         .id(("download-new-schedule-day", date.num_days_from_ce() as u64))
+                        .when(date == selected_date + ChronoDuration::days(1), |cell| {
+                            cell.debug_selector(|| "download-new-schedule-next-day".into())
+                        })
                         .w(px(40.0))
                         .h(px(22.0))
-                        .rounded(px(5.0))
+                        .rounded(px(RADIUS_CONTROL))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(9.0))
+                        .text_size(px(TEXT_LABEL))
                         .text_color(if selected {
                             theme.accent_text
                         } else if current_month {
@@ -9741,11 +9806,14 @@ fn delayed_start_calendar(
                                         cell.bg(theme.surface_hover)
                                     }
                                 })
-                                .on_click(move |_, _, cx| {
-                                    let _ = day_view.update(cx, |view, cx| {
-                                        view.scheduled_date = date;
-                                        view.scheduled_month = calendar_month_start(date);
-                                        cx.notify();
+                                .on_click(move |_, window, cx| {
+                                    let day_view = day_view.clone();
+                                    window.defer(cx, move |_, cx| {
+                                        let _ = day_view.update(cx, |view, cx| {
+                                            view.scheduled_date = date;
+                                            view.scheduled_month = calendar_month_start(date);
+                                            cx.notify();
+                                        });
                                     });
                                 })
                         })
@@ -11486,6 +11554,218 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[gpui::test]
+    fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "production-delayed-start-popover");
+        let (completion, completed) = std::sync::mpsc::sync_channel(1);
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_browser_download_dialog(
+                    BrowserDownloadDialogRequest {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        handoff_id: uuid::Uuid::new_v4(),
+                        source: BrowserDownloadDialogSource::Blob {
+                            blob: BrowserBlob {
+                                id: uuid::Uuid::new_v4(),
+                                file_name: "scheduled.webm".into(),
+                                media_type: Some("video/webm".into()),
+                                size: 4096,
+                            },
+                            save_directory: directory.clone(),
+                        },
+                        completion,
+                    },
+                    cx,
+                );
+            });
+        });
+        assert_eq!(completed.recv().expect("browser dialog completion"), Ok(()));
+        cx.run_until_parked();
+
+        let new_download_window = cx
+            .read(|cx| application.read(cx).new_download_window)
+            .expect("production new-download window");
+        let view = cx
+            .read(|cx| application.read(cx).new_download_view.clone())
+            .expect("production new-download view");
+        let mut window = VisualTestContext::from_window(new_download_window, cx);
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render production delayed-start form");
+
+        let schedule = window
+            .debug_bounds("download-new-schedule-control")
+            .expect("production delayed-start action");
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render shared schedule Popover");
+
+        let shell = window
+            .debug_bounds("download-new-schedule-popover-shell")
+            .expect("shared schedule Popover shell");
+        let content = window
+            .debug_bounds("download-new-schedule-popover-content")
+            .expect("schedule Popover content");
+        assert!(
+            content.left() >= shell.left()
+                && content.right() <= shell.right()
+                && content.top() >= shell.top()
+                && content.bottom() <= shell.bottom(),
+            "schedule content must remain inside the shared Popover shell"
+        );
+        assert!(
+            shell.size.width.as_f32() <= 304.0 && shell.size.height.as_f32() <= 240.0,
+            "schedule Popover must stay bounded at 304x240, got {:?}",
+            shell.size
+        );
+        for (name, selector) in [
+            (
+                "previous month",
+                "download-new-schedule-previous-month-action",
+            ),
+            ("next month", "download-new-schedule-next-month-action"),
+            ("clear", "download-new-schedule-clear-action"),
+            ("confirm", "download-new-schedule-confirm"),
+        ] {
+            let action = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing shared schedule {name} action"));
+            assert!(
+                (28.0..=30.0).contains(&action.size.height.as_f32()),
+                "schedule {name} must use the shared 28px tier, got {}px",
+                action.size.height.as_f32()
+            );
+        }
+        let initial_month = window.read(|cx| view.read(cx).scheduled_month);
+        let next_month = window
+            .debug_bounds("download-new-schedule-next-month-action")
+            .expect("production next-month action");
+        window.simulate_click(next_month.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("navigate to the next schedule month");
+        assert_eq!(
+            window.read(|cx| view.read(cx).scheduled_month),
+            shift_calendar_month(initial_month, 1),
+            "the production next-month action must update the local schedule draft"
+        );
+        let previous_month = window
+            .debug_bounds("download-new-schedule-previous-month-action")
+            .expect("production previous-month action");
+        window.simulate_click(previous_month.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("navigate back to the original schedule month");
+        assert_eq!(
+            window.read(|cx| view.read(cx).scheduled_month),
+            initial_month,
+            "the production previous-month action must restore the local schedule month"
+        );
+
+        let confirm = window
+            .debug_bounds("download-new-schedule-confirm")
+            .expect("schedule confirm action");
+        window.simulate_click(confirm.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("commit production delayed start");
+        let committed = window
+            .read(|cx| view.read(cx).committed_schedule)
+            .expect("confirm must commit the production delayed start");
+        assert!(!window.read(|cx| view.read(cx).schedule_popover_open));
+
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("reopen production delayed start");
+        assert_eq!(
+            window.read(|cx| view.read(cx).scheduled_date),
+            committed.date,
+            "opening must snapshot the committed date back into the local draft"
+        );
+        let draft_date = committed.date + ChronoDuration::days(1);
+        let draft_day = window
+            .debug_bounds("download-new-schedule-next-day")
+            .expect("next production schedule day");
+        window.simulate_click(draft_day.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render modified production schedule draft");
+        assert_eq!(window.read(|cx| view.read(cx).scheduled_date), draft_date);
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("dismiss schedule draft through trigger toggle");
+        assert!(!window.read(|cx| view.read(cx).schedule_popover_open));
+        assert_eq!(
+            window.read(|cx| view.read(cx).committed_schedule),
+            Some(committed),
+            "trigger-toggle dismissal must not commit the modified draft"
+        );
+
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("reopen after trigger-toggle dismissal");
+        assert_eq!(
+            window.read(|cx| view.read(cx).scheduled_date),
+            committed.date,
+            "reopening after trigger dismissal must restore the committed draft snapshot"
+        );
+        let draft_day = window
+            .debug_bounds("download-new-schedule-next-day")
+            .expect("next production schedule day after reopening");
+        window.simulate_click(draft_day.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("modify the reopened schedule draft");
+        assert_eq!(window.read(|cx| view.read(cx).scheduled_date), draft_date);
+        let titlebar = window
+            .debug_bounds("download-new-titlebar")
+            .expect("production new-download titlebar");
+        window.simulate_click(
+            gpui::point(titlebar.left() + px(180.0), titlebar.center().y),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        window.refresh().expect("dismiss production schedule draft");
+        assert!(!window.read(|cx| view.read(cx).schedule_popover_open));
+        assert_eq!(
+            window.read(|cx| view.read(cx).committed_schedule),
+            Some(committed),
+            "outside dismissal must preserve the last committed schedule"
+        );
+
+        window.simulate_click(schedule.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("reopen schedule before clearing");
+        let clear = window
+            .debug_bounds("download-new-schedule-clear-action")
+            .expect("schedule clear action");
+        window.simulate_click(clear.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("clear production delayed start");
+        assert_eq!(window.read(|cx| view.read(cx).committed_schedule), None);
+        assert!(!window.read(|cx| view.read(cx).schedule_popover_open));
+
+        let cancel = window
+            .debug_bounds("download-new-cancel-action")
+            .expect("production new-download cancel action");
+        window.simulate_click(cancel.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(new_download_window.update(cx, |_, _, _| {}).is_err());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
     #[test]
     fn browser_download_window_starts_at_compact_probe_height() {
         let request = DownloadRequest {
@@ -11823,7 +12103,6 @@ mod tests {
                 && popup.bottom() <= root.bottom(),
             "the date-time picker must snap inside the download window"
         );
-
         let confirm = window
             .debug_bounds("download-new-schedule-confirm")
             .expect("schedule confirm action");

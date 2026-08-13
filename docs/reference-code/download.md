@@ -1117,6 +1117,16 @@ Reverified on 2026-07-29 before implementing the third Stage 3 slice:
   times before submission and preserves the committed selection across a probe refresh. A delayed
   `StartNow` submission must not open a progress window early; the existing keyed window opens only
   once the engine admits the task.
+- Reverified on 2026-08-13 for the P0 shared-Popover migration: old NxTools exposes the one-time
+  schedule as a peer form field (`Views/MainWindow.axaml:3203-3218`) and ABDM keeps scheduling in a
+  normal configuration group (`QueueInfoComponent.kt`); neither requires a separate decorative
+  card. NxTools.Next therefore keeps its anchored calendar interaction but renders it through the
+  same 6 px bounded Popover shell as category selection. The calendar uses Label text for Chinese
+  dates/days and Meta only for weekday metadata; its Clear/Confirm actions use the shared 28 px
+  action tier in one separated footer, while month navigation uses shared square icon actions with
+  visible tooltips. Opening snapshots the committed schedule into a local draft,
+  outside/trigger dismissal never commits that draft, and Clear/Confirm update local state
+  before the controlled surface closes. No date, time or schedule draft is added to diagnostics.
 - Calendar and month-navigation glyphs use locally embedded Google Material Symbols
   (`calendar_month`, `chevron_left`, `chevron_right`). The desktop asset source does not expose the
   full gpui-component icon bundle, so using an unregistered `IconName` produces an empty button in
