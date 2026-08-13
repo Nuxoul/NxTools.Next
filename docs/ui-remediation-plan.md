@@ -308,6 +308,8 @@ rust/apps/nxtools-desktop/src/ui/
   仅既有 HLS 重启恢复 loopback 用例出现一次本地请求瞬断；该 exact 用例随即 1/1 通过，
   因此如实记录为全量非全绿、精确门禁通过。本切片未启动 GUI、未打包、未冒领 DPI/截图
   人工验收。
+- 最终 Standards/Spec 双轴复审的阻塞项均为 0；复审中发现的 Field 仅撑外壳、
+  SegmentedControl 单选/单外边框不自证、Cancel 未走生产点击门禁等问题已在交付前关闭。
 
 ### 批次 2：主壳层与全局设置
 
