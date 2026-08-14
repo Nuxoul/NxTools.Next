@@ -1211,6 +1211,27 @@ Reverified on 2026-07-29 before implementing the fourth Stage 3 slice:
   repeated separators. Mixed-state lifecycle actions target only the selected tasks that support
   that action, avoiding partial batch failures; queue and remove remain all-selection operations.
 
+Reverified on 2026-08-14 before the DL-06 visual remediation slice:
+
+- ABDM still keeps status/category filtering upstream of the stable-ID table and exposes sort
+  through the table model; old NxTools still applies status first and search second, while its
+  sortable headers change presentation order only. Neither reference turns filter/search/sort
+  controls into queue or transfer commands.
+- NxTools.Next keeps the six existing status predicates and their counts, but presents them as one
+  shared segmented control: one 28 px outer boundary, one selected cell and six equal-width cells.
+  Counts are inline metadata rather than a second row of badges, so All, Downloading, Waiting,
+  Paused, Completed and Failed cannot change width as counts change.
+- Search remains in the module header and uses one 28 px editor-style field with a bounded clear
+  action. The result summary moves into the header metadata so the 38 px filter strip contains only
+  the status group and one compact sort action.
+- The sort menu remains necessary for Queue, Size and Date Added, which have no dedicated visible
+  table column at compact width. Name, Progress and Status headers continue to toggle direction;
+  both entry points update the same local `DownloadSortState` and never persist queue order.
+- Required regression: open the production download workspace at the compact 720 px width, prove
+  all six status cells are equal-height/equal-width inside one bounded group, click a real status
+  cell, drive the real search input and clear action, and change sorting through both the menu and a
+  table header without issuing a download command or changing the authoritative task snapshot.
+
 ### Phase 3 task detail, segment, Header, verification and log findings
 
 Reverified on 2026-07-29 before implementing the fifth Stage 3 slice:

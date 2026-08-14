@@ -32,6 +32,8 @@ Root: `D:\Code\zed-main`
   remains open until that dependency seam is available or a typed adapter is added.
 - A segmented control has exactly one selected option, stable equal-height cells and a single outer
   border/radius. Selecting an option changes local draft state before any cross-entity operation.
+- Count-bearing status segments keep the count inside the equal-width cell; the count is metadata,
+  not a nested badge or an independently sized chip. Changing counts must not move sibling cells.
 - Setting sections and rows fill the parent content width. Ordinary Chinese title/description text
   uses Body/Label roles (12/11 px); 10 px Meta is reserved for true metadata.
 - Field and path-picker shells keep a 32 px input boundary and place the picker action at the field
@@ -61,6 +63,8 @@ Root: `D:\Code\zed-main`
 
 - A production settings window proves titlebar/content/footer geometry through the shared shell.
 - A real segmented option and toggle click mutate only the local settings draft.
+- A production count-bearing segmented group proves all cells have equal geometry and that a real
+  click changes only the owning view's presentation filter.
 - Apply and Cancel continue through the existing production callbacks; component extraction must not
   replace those lifecycle gates with component-only unit tests.
 - Long inline error text remains inside the settings content width and above the fixed footer.

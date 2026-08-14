@@ -46,9 +46,9 @@ use crate::quick_launch::{
 };
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
-use crate::ui::components::action::labelled_icon_action;
+use crate::ui::components::action::{SegmentedOption, labelled_icon_action, segmented_control};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
-use crate::ui::metrics::TITLEBAR_HEIGHT;
+use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, TITLEBAR_HEIGHT};
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY,
     UI_MONO_FONT_FAMILY,
@@ -61,6 +61,7 @@ const QUICK_FIND_SCROLL_EASING: f32 = 0.42;
 const QUICK_FIND_SCROLL_TARGET_SNAP_DISTANCE: f32 = 128.0;
 const DOWNLOAD_PAGE_HEADER_HEIGHT: f32 = 48.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
+const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
 const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
@@ -505,7 +506,7 @@ impl DownloadTaskFilter {
 
     const fn label(self) -> &'static str {
         match self {
-            Self::All => "全部任务",
+            Self::All => "全部",
             Self::Downloading => "下载中",
             Self::Waiting => "等待",
             Self::Paused => "暂停",
@@ -2112,29 +2113,34 @@ impl MainWindow {
         )
         .size_full()
         .track_scroll(self.download_list_scroll.clone());
-        let mut filter_rows = div().flex().items_center().gap(px(3.0));
-        for filter in DownloadTaskFilter::ALL {
-            let active = filter == self.download_filter;
-            let filter_count = counts.get(filter);
-            filter_rows = filter_rows.child(
-                download_filter_chip(theme, filter.label(), filter_count.to_string(), active)
-                    .id(filter.id())
-                    .debug_selector(|| filter.id().to_owned())
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if select_download_filter(
-                            &mut this.download_filter,
-                            filter,
-                            filter_count,
-                            total_count,
-                        ) {
-                            this.download_list_scroll
-                                .scroll_to_item(0, ScrollStrategy::Top);
-                            cx.notify();
-                        }
-                    })),
-            );
-        }
+        let filter_segments = segmented_control(
+            theme,
+            "download-filter-segments",
+            self.download_filter.id(),
+            DownloadTaskFilter::ALL
+                .into_iter()
+                .map(|filter| {
+                    let filter_count = counts.get(filter);
+                    SegmentedOption::new(
+                        filter.id(),
+                        format!("{} {filter_count}", filter.label()),
+                        cx.listener(move |this, _, _, cx| {
+                            if select_download_filter(
+                                &mut this.download_filter,
+                                filter,
+                                filter_count,
+                                total_count,
+                            ) {
+                                this.download_list_scroll
+                                    .scroll_to_item(0, ScrollStrategy::Top);
+                                cx.notify();
+                            }
+                        }),
+                    )
+                })
+                .collect(),
+            cx,
+        );
         let filter_summary =
             if self.download_filter == DownloadTaskFilter::All && search_query.is_empty() {
                 format!("共 {total_count} 项")
@@ -2185,7 +2191,7 @@ impl MainWindow {
                                 div()
                                     .text_size(px(10.0))
                                     .text_color(theme.text_muted)
-                                    .child(format!("{total_count} 个任务")),
+                                    .child(filter_summary.clone()),
                             ),
                     )
                     .child(div().flex_1())
@@ -2193,10 +2199,10 @@ impl MainWindow {
                         div()
                             .id("download-search")
                             .debug_selector(|| "download-search".into())
-                            .w(px(176.0))
-                            .h(px(26.0))
+                            .w(px(188.0))
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .mr(px(8.0))
-                            .rounded(px(4.0))
+                            .rounded(px(RADIUS_CONTROL))
                             .border_1()
                             .border_color(theme.border_subtle)
                             .bg(theme.surface)
@@ -2218,16 +2224,24 @@ impl MainWindow {
                             )
                             .when(!search_query.is_empty(), |search| {
                                 search.child(
-                                    Button::new("download-search-clear")
-                                        .icon(Icon::new(MaterialIcon::Close))
-                                        .xsmall()
-                                        .compact()
-                                        .ghost()
-                                        .on_click(move |_, window, cx| {
-                                            clear_search_input.update(cx, |input, cx| {
-                                                input.set_value("", window, cx);
-                                            });
-                                        }),
+                                    div()
+                                        .debug_selector(|| "download-search-clear".into())
+                                        .size(px(18.0))
+                                        .flex_none()
+                                        .child(
+                                            Button::new("download-search-clear")
+                                                .icon(Icon::new(MaterialIcon::Close))
+                                                .tooltip("清除搜索")
+                                                .xsmall()
+                                                .compact()
+                                                .ghost()
+                                                .size_full()
+                                                .on_click(move |_, window, cx| {
+                                                    clear_search_input.update(cx, |input, cx| {
+                                                        input.set_value("", window, cx);
+                                                    });
+                                                }),
+                                        ),
                                 )
                             }),
                     )
@@ -2292,57 +2306,63 @@ impl MainWindow {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
-                    .child(filter_rows)
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("download-sort")
-                            .label(sort_label)
-                            .xsmall()
-                            .compact()
-                            .ghost()
-                            .h(px(26.0))
-                            .dropdown_menu_with_anchor(
-                                Corner::TopRight,
-                                move |menu, _window, _cx| {
-                                    DownloadSortKey::ALL.into_iter().fold(
-                                        menu.min_w(px(118.0)),
-                                        |menu, key| {
-                                            let sort_main_window = sort_main_window.clone();
-                                            menu.item(
-                                                PopupMenuItem::new(key.label())
-                                                    .checked(key == sort_state.key)
-                                                    .on_click(move |_event, _window, cx| {
-                                                        sort_main_window.update(
-                                                            cx,
-                                                            |window, cx| {
-                                                                if set_download_sort(
-                                                                    &mut window.download_sort,
-                                                                    key,
-                                                                    false,
-                                                                ) {
-                                                                    window
-                                                                        .download_list_scroll
-                                                                        .scroll_to_item(
-                                                                            0,
-                                                                            ScrollStrategy::Top,
-                                                                        );
-                                                                    cx.notify();
-                                                                }
-                                                            },
-                                                        );
-                                                    }),
-                                            )
-                                        },
-                                    )
-                                },
-                            ),
-                    )
                     .child(
                         div()
-                            .ml(px(8.0))
-                            .text_size(px(9.5))
-                            .text_color(theme.text_muted)
-                            .child(filter_summary),
+                            .w(px(DOWNLOAD_FILTER_SEGMENTED_WIDTH))
+                            .flex_none()
+                            .child(filter_segments),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .debug_selector(|| "download-sort".into())
+                            .h(px(CONTROL_HEIGHT_ACTION))
+                            .flex_none()
+                            .child(
+                                Button::new("download-sort")
+                                    .label(sort_label)
+                                    .xsmall()
+                                    .compact()
+                                    .ghost()
+                                    .h_full()
+                                    .rounded(px(RADIUS_CONTROL))
+                                    .dropdown_menu_with_anchor(
+                                        Corner::TopRight,
+                                        move |menu, _window, _cx| {
+                                            DownloadSortKey::ALL.into_iter().fold(
+                                                menu.min_w(px(118.0)),
+                                                |menu, key| {
+                                                    let sort_main_window = sort_main_window.clone();
+                                                    menu.item(
+                                                        PopupMenuItem::new(key.label())
+                                                            .checked(key == sort_state.key)
+                                                            .on_click(move |_event, _window, cx| {
+                                                                sort_main_window.update(
+                                                                    cx,
+                                                                    |window, cx| {
+                                                                        if set_download_sort(
+                                                                            &mut window
+                                                                                .download_sort,
+                                                                            key,
+                                                                            false,
+                                                                        ) {
+                                                                            window
+                                                                                .download_list_scroll
+                                                                                .scroll_to_item(
+                                                                                    0,
+                                                                                    ScrollStrategy::Top,
+                                                                                );
+                                                                            cx.notify();
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }),
+                                                    )
+                                                },
+                                            )
+                                        },
+                                    ),
+                            ),
                     ),
             )
             .child(
@@ -5720,67 +5740,6 @@ fn download_sort_header_cell(
         })
 }
 
-fn download_filter_chip(
-    theme: Theme,
-    label: &'static str,
-    count: impl Into<String>,
-    active: bool,
-) -> gpui::Div {
-    div()
-        .h(px(26.0))
-        .px(px(8.0))
-        .rounded(px(4.0))
-        .border_1()
-        .border_color(if active {
-            theme.border_active
-        } else {
-            gpui::rgba(0x00000000)
-        })
-        .bg(if active {
-            theme.accent_soft
-        } else {
-            theme.surface
-        })
-        .when(!active, |chip| {
-            chip.hover(move |style| style.bg(theme.surface_hover))
-        })
-        .flex()
-        .items_center()
-        .gap(px(6.0))
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(if active {
-                    theme.accent_text
-                } else {
-                    theme.text_secondary
-                })
-                .child(label),
-        )
-        .child(
-            div()
-                .min_w(px(17.0))
-                .h(px(17.0))
-                .px(px(4.0))
-                .rounded(px(3.0))
-                .bg(if active {
-                    theme.surface_hover
-                } else {
-                    theme.surface_raised
-                })
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(9.0))
-                .text_color(if active {
-                    theme.accent_text
-                } else {
-                    theme.text_muted
-                })
-                .child(count.into()),
-        )
-}
-
 fn empty_state(
     theme: Theme,
     icon: MaterialIcon,
@@ -6928,6 +6887,9 @@ mod tests {
         let filter_strip_bounds = window
             .debug_bounds("download-filter-strip")
             .expect("rendered horizontal filter strip bounds");
+        let filter_segments = window
+            .debug_bounds("download-filter-segments")
+            .expect("status filters must share one segmented-control boundary");
         let table_header_bounds = window
             .debug_bounds("download-table-header")
             .expect("rendered download table header bounds");
@@ -6942,6 +6904,32 @@ mod tests {
         assert_eq!(
             filter_strip_bounds.size.width,
             table_header_bounds.size.width
+        );
+        let segment_bounds = DownloadTaskFilter::ALL.map(|filter| {
+            window
+                .debug_bounds(filter.id())
+                .unwrap_or_else(|| panic!("rendered status segment {}", filter.id()))
+        });
+        assert_eq!(filter_segments.size.height.as_f32(), 28.0);
+        for (index, segment) in segment_bounds.iter().enumerate() {
+            assert_eq!(segment.size.height, segment_bounds[0].size.height);
+            assert!(
+                (segment.size.width.as_f32() - segment_bounds[0].size.width.as_f32()).abs() <= 0.5,
+                "pixel rounding must be the only width difference between status segments"
+            );
+            assert!(filter_segments.contains(&segment.origin));
+            assert!(filter_segments.contains(&segment.bottom_right()));
+            if index > 0 {
+                assert_eq!(segment.left(), segment_bounds[index - 1].right());
+            }
+        }
+        assert_eq!(
+            segment_bounds[0].left().as_f32(),
+            filter_segments.left().as_f32() + 1.0
+        );
+        assert_eq!(
+            segment_bounds[5].right().as_f32(),
+            filter_segments.right().as_f32() - 1.0
         );
         window.simulate_click(bounds.center(), Modifiers::default());
 
@@ -7022,7 +7010,7 @@ mod tests {
                 RequestOrigin::Internal,
             )
             .expect("enqueue first task");
-        let _second_task = engine
+        let second_task = engine
             .enqueue(
                 DownloadRequest {
                     source_url: "https://example.com/second.bin".into(),
@@ -7104,14 +7092,112 @@ mod tests {
         });
         window.simulate_resize(size(px(720.0), px(500.0)));
 
+        let authoritative_task_ids = window.read(|cx| {
+            downloads
+                .read(cx)
+                .tasks()
+                .iter()
+                .map(|task| task.task.id())
+                .collect::<Vec<_>>()
+        });
+        let filter_segments = window
+            .debug_bounds("download-filter-segments")
+            .expect("compact production workspace status group bounds");
+        let segment_bounds = DownloadTaskFilter::ALL.map(|filter| {
+            window
+                .debug_bounds(filter.id())
+                .unwrap_or_else(|| panic!("compact production status segment {}", filter.id()))
+        });
+        assert_eq!(filter_segments.size.height.as_f32(), 28.0);
+        for (index, segment) in segment_bounds.iter().enumerate() {
+            assert_eq!(segment.size.height, segment_bounds[0].size.height);
+            assert!(
+                (segment.size.width.as_f32() - segment_bounds[0].size.width.as_f32()).abs() <= 0.5
+            );
+            if index > 0 {
+                assert_eq!(segment.left(), segment_bounds[index - 1].right());
+            }
+        }
+        window.simulate_click(segment_bounds[2].center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_filter),
+            DownloadTaskFilter::Waiting
+        );
+        window.simulate_click(segment_bounds[0].center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_filter),
+            DownloadTaskFilter::All
+        );
+
         let page_header = window
             .debug_bounds("download-page-header")
             .expect("download page header bounds");
         let search = window
             .debug_bounds("download-search")
             .expect("download search bounds");
+        let sort = window
+            .debug_bounds("download-sort")
+            .expect("download sort action bounds");
         assert!(page_header.contains(&search.origin));
         assert!(page_header.contains(&search.bottom_right()));
+        assert_eq!(search.size.height.as_f32(), 28.0);
+        assert_eq!(sort.size.height.as_f32(), 28.0);
+
+        let first_element_id = first_task.as_uuid().as_u64_pair().0;
+        let second_element_id = second_task.as_uuid().as_u64_pair().0;
+        let first_row_selector: &'static str =
+            Box::leak(format!("download-task-row-{first_element_id}").into_boxed_str());
+        let second_row_selector: &'static str =
+            Box::leak(format!("download-task-row-{second_element_id}").into_boxed_str());
+        let search_input = window.read(|cx| main_window.read(cx).download_search_input.clone());
+        window.update(|window, cx| {
+            search_input.update(cx, |input, cx| input.set_value("first", window, cx));
+            main_window.update(cx, |_, cx| cx.notify());
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render filtered production task list");
+        assert_eq!(
+            window.read(|cx| search_input.read(cx).value().to_string()),
+            "first"
+        );
+        assert!(window.debug_bounds(first_row_selector).is_some());
+        let clear_search = window
+            .debug_bounds("download-search-clear")
+            .expect("non-empty search exposes the bounded clear action");
+        window.simulate_click(clear_search.center(), Modifiers::default());
+        window.run_until_parked();
+        window.update(|_, cx| main_window.update(cx, |_, cx| cx.notify()));
+        window.refresh().expect("render cleared production search");
+        assert!(window.read(|cx| search_input.read(cx).value().is_empty()));
+        assert!(window.debug_bounds(second_row_selector).is_some());
+
+        window.simulate_click(sort.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("open compact sort menu");
+        window.simulate_keystrokes("down down enter");
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_sort),
+            DownloadSortState {
+                key: DownloadSortKey::Name,
+                descending: false,
+            },
+            "the compact sort menu must feed the same local view sort as table headers"
+        );
+        assert_eq!(
+            window.read(|cx| {
+                downloads
+                    .read(cx)
+                    .tasks()
+                    .iter()
+                    .map(|task| task.task.id())
+                    .collect::<Vec<_>>()
+            }),
+            authoritative_task_ids,
+            "filter, search and sort must not mutate the authoritative task snapshot"
+        );
         assert_eq!(
             window.read(|cx| main_window.read(cx).download_detail_tab),
             DownloadDetailTab::Overview
@@ -7127,9 +7213,7 @@ mod tests {
         );
 
         let selected_task = first_task;
-        let selected_element_id = selected_task.as_uuid().as_u64_pair().0;
-        let selected_row_selector: &'static str =
-            Box::leak(format!("download-task-row-{selected_element_id}").into_boxed_str());
+        let selected_row_selector = first_row_selector;
         let selected_row = window
             .debug_bounds(selected_row_selector)
             .expect("production task row bounds");
@@ -7404,7 +7488,7 @@ mod tests {
     }
 
     #[test]
-    fn download_filter_rows_are_interactive_in_the_gpui_main_window() {
+    fn download_filter_segments_are_wired_to_the_gpui_main_window() {
         let source = include_str!("main_window.rs");
         let production = source
             .split("#[cfg(test)]")
@@ -7418,8 +7502,9 @@ mod tests {
 
         assert!(production.contains("download-filter-waiting"));
         assert!(production.contains("download-filter-paused"));
-        assert!(downloads.contains(".id(filter.id())"));
-        assert!(downloads.contains(".on_click(cx.listener("));
+        assert!(downloads.contains("segmented_control("));
+        assert!(downloads.contains("SegmentedOption::new("));
+        assert!(downloads.contains("cx.listener(move |this"));
         assert!(downloads.contains("select_download_filter("));
         assert!(downloads.contains("visible_tasks"));
     }

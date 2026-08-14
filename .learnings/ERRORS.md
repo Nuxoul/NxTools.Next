@@ -8670,3 +8670,103 @@ Use `overflow_y_scrollbar()` and clone the executor before opening the visual te
 - **Resolved**: 2026-08-13T16:35:00+08:00
 - **Notes**: Updated the pinned API call, reused a pre-window executor clone, and routed later
   entity updates through `VisualTestContext::update` instead of reborrowing the parent context.
+
+---
+
+## [ERR-20260814-CARGO-TIMEOUT] desktop_test_wrapper_given_short_timeout
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The full desktop test wrapper was mistakenly started with a one-second command timeout and was
+terminated before the suite could run.
+
+### Error
+`command timed out` before Cargo produced a test result.
+
+### Context
+- The repository explicitly requires long Cargo operations to use a timeout sized for the full run.
+- A process check immediately afterward found no surviving Cargo or rustc process, so no duplicate
+  build was started.
+
+### Suggested Fix
+Use a full-operation timeout for direct Cargo commands and rely on the tool's resumable yield/wait
+cell when output is not ready yet.
+
+### Metadata
+- Reproducible: yes
+- Related Files: AGENTS.md
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Verified no child process survived and restarted the gate with the required long
+  timeout.
+
+---
+
+## [ERR-20260814-STALE-FILTER-GATE] filter_source_assertion_expected_removed_chips
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The full desktop suite exposed a stale source-wiring assertion after the download status chips were
+replaced by the shared segmented control.
+
+### Error
+`download_filter_rows_are_interactive_in_the_gpui_main_window` still required
+`.id(filter.id())` in `render_downloads`.
+
+### Context
+- The real production GPUI filter-click and equal-geometry regression already passed.
+- The shared component now owns the button identity; the caller owns `SegmentedOption` handlers.
+
+### Suggested Fix
+Keep the source-level wiring gate aligned with the component boundary and rely on the production
+window test for hit-target and state-transition proof.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Updated the source assertion to require `segmented_control`, `SegmentedOption`, and the
+  existing listener/selection path.
+
+---
+
+## [ERR-20260814-CARGO-FILTERS] cargo_test_was_given_two_positional_filters
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+One `cargo test` invocation supplied two exact test-name substrings even though Cargo accepts only
+one positional `TESTNAME` filter.
+
+### Error
+`unexpected argument 'clicking_a_download_filter_row_changes_the_real_main_window_state' found`
+
+### Context
+- The command was intended to run two independent GPUI regressions after review fixes.
+- Cargo rejected the invocation before compilation or test execution.
+
+### Suggested Fix
+Run each uniquely named test in a separate command, or use one common substring only when it cannot
+select unrelated tests.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Replaced the invalid multi-filter command with separate targeted invocations.

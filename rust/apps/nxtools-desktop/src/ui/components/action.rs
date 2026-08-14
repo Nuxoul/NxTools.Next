@@ -1,4 +1,4 @@
-use gpui::{AnyElement, App, IntoElement, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{Icon, Selectable, Sizable};
 
@@ -10,19 +10,19 @@ pub(crate) type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut A
 
 pub(crate) struct SegmentedOption {
     pub id: &'static str,
-    pub label: &'static str,
+    pub label: SharedString,
     pub on_click: ClickHandler,
 }
 
 impl SegmentedOption {
     pub(crate) fn new(
         id: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             id,
-            label,
+            label: label.into(),
             on_click: Box::new(on_click),
         }
     }
