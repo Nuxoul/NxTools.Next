@@ -17,6 +17,8 @@ mod runtime;
 mod shell;
 mod theme;
 mod ui;
+#[cfg(test)]
+mod windows_icon;
 
 use anyhow::{Context as _, Result};
 use assets::NxToolsAssets;

@@ -10,3 +10,13 @@ Copyright Google LLC.
 
 Licensed under the Apache License, Version 2.0. A copy of that license is included in
 `LICENSE-APACHE`.
+
+## rust-embed-resource
+
+The Windows desktop build uses
+[`embed-resource`](https://crates.io/crates/embed-resource) to compile the generated product icon
+resource into `NxTools.exe`.
+
+Copyright (c) 2017 nabijaczleweli.
+
+Licensed under the MIT License. A copy of that license is included in `LICENSE-MIT`.

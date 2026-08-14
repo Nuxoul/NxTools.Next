@@ -164,6 +164,8 @@ try {
     if ($Configuration -eq 'Release') {
         & '.\tests\architecture\desktop-release-subsystem.ps1' `
             -DesktopExecutable (Join-Path $destination 'NxTools.exe')
+        & '.\tests\architecture\desktop-product-icon.ps1' `
+            -DesktopExecutable (Join-Path $destination 'NxTools.exe')
     }
     Copy-PackageFile ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" (Join-Path $destination 'NxTools.PlatformHost.exe')
     $packagedBrowserExtensionRoot = Join-Path $destination 'browser_extension'

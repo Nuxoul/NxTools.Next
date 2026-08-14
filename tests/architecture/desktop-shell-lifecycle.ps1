@@ -4,6 +4,9 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $main = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs') -Raw
 $mainWindow = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs') -Raw
 $platformEvents = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events.rs') -Raw
+$desktopBuild = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\build.rs') -Raw
+$trayPresentation = Get-Content (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\DesktopTrayPresentation.cs') -Raw
+$windowsAdapter = Get-Content (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs') -Raw
 $desktopSources = (Get-ChildItem (Join-Path $root 'rust\apps\nxtools-desktop\src') -Filter '*.rs' -Recurse |
     ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
 
@@ -23,6 +26,20 @@ if ($platformEvents -notmatch 'send_command_correlated' -or
     $platformEvents -notmatch 'TrayAction::Open' -or
     $platformEvents -notmatch 'TrayAction::Exit') {
     throw 'Tray restore and exit must retain their typed correlated lifecycle.'
+}
+foreach ($size in 16, 32, 48, 128) {
+    if ($desktopBuild -notmatch "icon-$size\.png") {
+        throw "Desktop Windows resource must include the $size px formal brand icon."
+    }
+}
+if ($trayPresentation -notmatch 'Tooltip = "NxTools"' -or
+    $trayPresentation -notmatch 'OpenLabel = "打开 NxTools"' -or
+    $trayPresentation -notmatch 'ExitLabel = "退出"') {
+    throw 'Native tray tooltip and menu labels must remain the bounded product presentation.'
+}
+if ($windowsAdapter -match 'trayIcon\.Icon = icon \?\?' -or
+    $windowsAdapter -notmatch 'DesktopExecutableIcon\.ExtractProductIcon') {
+    throw 'Native tray must reject a missing product icon instead of using a generic fallback.'
 }
 
 Write-Host 'Desktop shell lifecycle architecture gate passed.'

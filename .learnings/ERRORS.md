@@ -9281,3 +9281,77 @@ an expected result.
 ### Resolution
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Opened the concrete existing GPUI test blocks directly and reused their established API.
+
+---
+
+## [ERR-20260814-OPTIONAL-DISCOVERY-EXIT] optional discovery commands propagated empty-result failures
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+Two read-only discovery commands returned exit code 1 because an optional examples glob and an
+optional process-name query had no matches, despite returning all required primary output.
+
+### Error
+PowerShell propagated the final command's non-zero status for expected empty optional results.
+
+### Context
+- The first command successfully read the local `embed-resource` README before an absent examples
+  glob failed.
+- The second command successfully reported Windows memory before `Get-Process` found no active
+  Cargo, rustc or dotnet process.
+- No product file or external state was changed by either failed command.
+
+### Suggested Fix
+Keep optional discovery in a separate command and explicitly tolerate the documented no-match case.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/build.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Subsequent optional process and path checks use explicit empty-result handling.
+
+---
+
+## [ERR-20260814-ICON-GATE-LOW-COMMIT] icon unit gate could not start under exhausted virtual memory
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: medium
+**Status**: open
+**Area**: tests
+
+### Summary
+An isolated `rustc --test` attempt for the Windows ICO encoder could not start reliably after Windows
+FreeVirtual fell to approximately 0.15 GiB; the hosting PowerShell process terminated with a stack
+overflow before the test binary ran.
+
+### Error
+`Exit code -1073741571: Stack overflow` in PowerShell command/module discovery.
+
+### Context
+- The first temporary-run form was rejected by the terminal safety policy because it included a
+  cleanup deletion; no command ran.
+- The second form retained its output under `target`, but the host failed before producing test
+  results.
+- A subsequent single-process PlatformHost Release test with shared compilation disabled reached
+  Roslyn, but `csc.dll` exited with the same `-1073741571` stack-overflow code before emitting any
+  source diagnostic.
+- No Cargo, rustc or dotnet process was active before the attempt; the shortage belongs to global
+  Windows commit/pagefile state rather than a concurrent NxTools build.
+
+### Suggested Fix
+After restoring virtual-memory headroom, run the exact ICO encoder unit tests, C# PlatformHost suite,
+and Release package product-icon gate with the repository's low-memory build environment.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/windows_icon.rs, tests/architecture/desktop-product-icon.ps1
+
+### Resolution
+- Pending: compile/runtime verification is deferred until Windows commit headroom is restored; the
+  bounded C# retry confirmed the same environment failure rather than a product compiler error.

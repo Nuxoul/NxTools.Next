@@ -76,6 +76,17 @@
   three notifications are visible and every cross-entity dismissal is deferred with its rendered
   `(id, generation)` target frozen.
 
+### Native tray
+
+- The notification-area surface remains the Windows-native `NotifyIcon` and `ContextMenuStrip`; it
+  is not recreated as a GPUI or owner-drawn menu.
+- The desktop executable, taskbar and tray use the same NxTools brand asset. Release builds embed
+  16/32/48/128 px variants; a missing product icon is a typed shell failure rather than permission
+  to display the generic Windows application icon.
+- Presentation is intentionally bounded: tooltip `NxTools`, then `打开 NxTools`, one separator and
+  `退出`. Left click and Open restore the existing window; Exit keeps the existing explicit-exit
+  lifecycle.
+
 ## Verification
 
 - Real production GPUI windows must prove geometry, hit targets, state transitions and window ownership.

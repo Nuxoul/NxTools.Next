@@ -17,6 +17,8 @@ internal sealed record WindowsCommandResult(
     bool Fatal = false,
     int? NativeErrorCode = null);
 
+internal readonly record struct DesktopTrayCandidate(NotifyIcon TrayIcon, Icon OwnedIcon);
+
 internal readonly record struct NativeWindowPresentationState(
     bool Exists,
     bool Visible,
@@ -633,55 +635,51 @@ internal sealed class WindowsPlatformAdapter : IDisposable
         }
     }
 
-    internal static NotifyIcon CreateTrayIcon(
+    internal static DesktopTrayCandidate CreateTrayIcon(
         string desktopExecutable,
         Action open,
-        Action exit,
-        out Icon? ownedIcon)
+        Action exit)
         => CreateTrayIconCore(
-            () => File.Exists(desktopExecutable)
-                ? Icon.ExtractAssociatedIcon(desktopExecutable)
-                : null,
+            () => DesktopExecutableIcon.ExtractProductIcon(desktopExecutable),
             () => new ContextMenuStrip(),
             () => new NotifyIcon(),
             open,
-            exit,
-            out ownedIcon);
+            exit);
 
-    internal static NotifyIcon CreateTrayIconForTest(
+    internal static DesktopTrayCandidate CreateTrayIconForTest(
+        Action open,
+        Action exit,
         Func<ContextMenuStrip> createMenu,
-        Func<NotifyIcon> createTrayIcon,
-        out Icon? ownedIcon)
+        Func<NotifyIcon> createTrayIcon)
         => CreateTrayIconCore(
-            () => null,
+            () => (Icon)SystemIcons.Application.Clone(),
             createMenu,
             createTrayIcon,
-            () => { },
-            () => { },
-            out ownedIcon);
+            open,
+            exit);
 
-    private static NotifyIcon CreateTrayIconCore(
+    private static DesktopTrayCandidate CreateTrayIconCore(
         Func<Icon?> createIcon,
         Func<ContextMenuStrip> createMenu,
         Func<NotifyIcon> createTrayIcon,
         Action open,
-        Action exit,
-        out Icon? ownedIcon)
+        Action exit)
     {
         Icon? icon = null;
         ContextMenuStrip? menu = null;
         NotifyIcon? trayIcon = null;
-        ownedIcon = null;
         try
         {
-            icon = createIcon();
+            icon = createIcon()
+                ?? throw new InvalidOperationException(
+                    "The NxTools desktop executable does not expose its product icon.");
             menu = createMenu();
-            menu.Items.Add("打开 NxTools", null, (_, _) => open());
+            menu.Items.Add(DesktopTrayPresentation.OpenLabel, null, (_, _) => open());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出", null, (_, _) => exit());
+            menu.Items.Add(DesktopTrayPresentation.ExitLabel, null, (_, _) => exit());
             trayIcon = createTrayIcon();
-            trayIcon.Text = "NxTools";
-            trayIcon.Icon = icon ?? SystemIcons.Application;
+            trayIcon.Text = DesktopTrayPresentation.Tooltip;
+            trayIcon.Icon = icon;
             trayIcon.ContextMenuStrip = menu;
             trayIcon.MouseClick += (_, eventArgs) =>
             {
@@ -690,13 +688,11 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                     open();
                 }
             };
-            ownedIcon = icon;
-            return trayIcon;
+            return new DesktopTrayCandidate(trayIcon, icon);
         }
         catch
         {
             DisposeTrayCandidateWithoutThrowing(trayIcon, menu, icon);
-            ownedIcon = null;
             throw;
         }
     }

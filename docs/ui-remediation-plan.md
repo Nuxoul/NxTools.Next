@@ -484,7 +484,27 @@ rust/apps/nxtools-desktop/src/ui/
   当前 Windows FreeVirtual 约 0.53 GiB，未重复启动此前会在 Rust 元数据 mmap 阶段触发 1455
   的 Cargo 门禁；精确 GPUI/Cargo 回归与 Release/DPI 截图继续保留为统一打包前验收，不冒领
   本轮环境未提供的运行证据。
-- SH-08 托盘仍保持下一切片；在完成原生图标/文案核对与生命周期门禁前，批次 2 不整体勾选。
+- 本切片结束时 SH-08 托盘仍保持下一切片；在完成原生图标/文案核对与生命周期门禁前，
+  批次 2 不整体勾选。
+
+第十四个 P0 原生托盘切片（2026-08-14）：
+
+- SH-08 保持 Windows 原生 `NotifyIcon + ContextMenuStrip`，没有引入 GPUI 自绘或 owner-drawn
+  菜单。Tooltip 固定为 `NxTools`，菜单固定为 `打开 NxTools`、一条原生分隔线和 `退出`；左键、
+  Open、Exit 继续复用既有 correlated typed event 与同一主窗口生命周期。
+- 桌面构建从仓库内同一组 16/32/48/128 px NxTools 品牌 PNG 生成多尺寸 ICO 并嵌入
+  `NxTools.exe`，使 EXE、任务栏、GPUI 标题栏和托盘不再出现两套品牌。PlatformHost 只提取
+  EXE 的关联图标；缺失正式图标时返回 typed failure，不再静默退回 Windows 通用应用图标。
+- C# 真实托盘门禁补充精确 Tooltip、菜单顺序、分隔线、关联图标存在，以及真实无图标 PE
+  不得退回通用图标的 fail-safe；
+  Release 打包新增像素级产品图标门禁，防止后续构建丢失 PE 图标资源。ICO 编码器另有独立
+  目录/偏移/拒绝非法 PNG 单测。
+- 静态 PowerShell AST、rustfmt 与 diff 门禁已写入；当前 Windows FreeVirtual 从约 0.15 GiB
+  继续降至约 0.07 GiB，小型 `rustc --test` 尚未启动即由 PowerShell 发生 stack overflow。
+  FreeVirtual 短暂恢复到约 0.33 GiB 后，以单进程且禁用 shared compilation 重试 PlatformHost
+  Release 门禁，Roslyn `csc.dll` 仍以同一 `-1073741571` stack overflow 退出且没有源码诊断。
+  因此本切片不冒领 ICO 单测、PlatformHost 编译测试、Release 产品图标门禁或 DPI 截图通过；
+  它们保留到系统提交空间恢复后的统一打包验收。
 
 ### 批次 2：主壳层与全局设置
 

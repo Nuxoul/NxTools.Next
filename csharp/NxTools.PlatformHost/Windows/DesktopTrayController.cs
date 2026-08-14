@@ -5,11 +5,23 @@ using System.Windows.Forms;
 
 internal sealed class DesktopTrayController : IDisposable
 {
+    private readonly Func<string, Action, Action, DesktopTrayCandidate> _createTrayIcon;
     private NotifyIcon? _trayIcon;
     private Icon? _ownedIcon;
     private ContextMenuStrip? _menu;
 
     internal NotifyIcon? TrayIcon => _trayIcon;
+
+    internal DesktopTrayController()
+        : this(WindowsPlatformAdapter.CreateTrayIcon)
+    {
+    }
+
+    internal DesktopTrayController(
+        Func<string, Action, Action, DesktopTrayCandidate> createTrayIcon)
+    {
+        _createTrayIcon = createTrayIcon;
+    }
 
     internal WindowsCommandResult Configure(
         bool visible,
@@ -36,11 +48,9 @@ internal sealed class DesktopTrayController : IDisposable
         ContextMenuStrip? candidateMenu = null;
         try
         {
-            candidate = WindowsPlatformAdapter.CreateTrayIcon(
-                desktopExecutable,
-                open,
-                exit,
-                out candidateIcon);
+            var created = _createTrayIcon(desktopExecutable, open, exit);
+            candidate = created.TrayIcon;
+            candidateIcon = created.OwnedIcon;
             candidateMenu = candidate.ContextMenuStrip;
             candidate.Visible = true;
             _trayIcon = candidate;
@@ -94,5 +104,7 @@ internal sealed class DesktopTrayController : IDisposable
         new(
             false,
             "Windows could not create or show the NxTools notification-area icon.",
-            NativeErrorCode: cleanupCode ?? error.HResult);
+            NativeErrorCode: cleanupCode ?? (error is System.ComponentModel.Win32Exception native
+                ? native.NativeErrorCode
+                : error.HResult));
 }

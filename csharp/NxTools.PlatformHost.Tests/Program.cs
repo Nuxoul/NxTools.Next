@@ -86,6 +86,7 @@ internal static class Program
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("desktop shell and tray contracts preserve bounded intent", DesktopShellAndTrayContractsRoundTrip),
             ("startup registration and tray actions use real Windows boundaries", DesktopShellUsesRealWindowsBoundaries),
+            ("desktop tray rejects a missing product executable icon", DesktopTrayRequiresProductIcon),
             ("tray factory failure disposes partially created resources", TrayFactoryFailureDisposesPartialResources),
             ("titlebar move reaches the real native window boundary", TitlebarMoveUsesRealNativeWindow),
             ("titlebar maximize toggle reaches the real native window boundary", TitlebarMaximizeToggleUsesRealNativeWindow),
@@ -2759,15 +2760,27 @@ internal static class Program
 
             var opened = 0;
             var exited = 0;
-            using var controller = new DesktopTrayController();
-            controller.Configure(true, executable, () => opened++, () => exited++);
+            using var controller = new DesktopTrayController((_, open, exit) =>
+                WindowsPlatformAdapter.CreateTrayIconForTest(
+                    open,
+                    exit,
+                    () => new ContextMenuStrip(),
+                    () => new NotifyIcon()));
+            var configured = controller.Configure(true, executable, () => opened++, () => exited++);
+            Assert(configured.Success);
             var tray = controller.TrayIcon ?? throw new InvalidOperationException("tray missing");
             var firstMenu = tray.ContextMenuStrip
                 ?? throw new InvalidOperationException("tray menu missing");
             Assert(firstMenu.Items.Count == 3);
             Assert(tray.Visible);
+            Assert(tray.Text == DesktopTrayPresentation.Tooltip);
+            Assert(firstMenu.Items[0].Text == DesktopTrayPresentation.OpenLabel);
+            Assert(firstMenu.Items[1] is ToolStripSeparator);
+            Assert(firstMenu.Items[2].Text == DesktopTrayPresentation.ExitLabel);
+            Assert(tray.Icon is not null);
 
-            controller.Configure(true, executable, () => opened++, () => exited++);
+            var reconfigured = controller.Configure(true, executable, () => opened++, () => exited++);
+            Assert(reconfigured.Success);
             Assert(ReferenceEquals(tray, controller.TrayIcon));
 
             var mouseClick = typeof(NotifyIcon).GetMethod(
@@ -2780,7 +2793,8 @@ internal static class Program
             Assert(opened == 2);
             Assert(exited == 1);
 
-            controller.Configure(false, executable, () => opened++, () => exited++);
+            var disabledTray = controller.Configure(false, executable, () => opened++, () => exited++);
+            Assert(disabledTray.Success);
             Assert(controller.TrayIcon is null);
             Assert(firstMenu.IsDisposed);
         }
@@ -2791,15 +2805,30 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task DesktopTrayRequiresProductIcon()
+    {
+        using var controller = new DesktopTrayController();
+        var iconlessExecutable = Path.Combine(Environment.SystemDirectory, "where.exe");
+        Assert(File.Exists(iconlessExecutable));
+
+        var result = controller.Configure(true, iconlessExecutable, () => { }, () => { });
+
+        Assert(!result.Success);
+        Assert(result.NativeErrorCode == DesktopExecutableIcon.ErrorResourceTypeNotFound);
+        Assert(controller.TrayIcon is null);
+        return Task.CompletedTask;
+    }
+
     private static Task TrayFactoryFailureDisposesPartialResources()
     {
         ContextMenuStrip? menu = null;
         try
         {
             _ = WindowsPlatformAdapter.CreateTrayIconForTest(
+                () => { },
+                () => { },
                 () => menu = new ContextMenuStrip(),
-                () => throw new InvalidOperationException("injected tray construction failure"),
-                out _);
+                () => throw new InvalidOperationException("injected tray construction failure"));
             throw new InvalidOperationException("Tray factory unexpectedly accepted an injected failure.");
         }
         catch (InvalidOperationException error) when (

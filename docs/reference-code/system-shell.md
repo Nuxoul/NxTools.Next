@@ -1,6 +1,6 @@
 # Product shell, startup and tray reference index
 
-Last verified: 2026-08-12.
+Last verified: 2026-08-14.
 
 ## User-visible contract
 
@@ -28,6 +28,7 @@ Root: `D:\RiderProject\NxTools`
 | `Views\SettingsWindow.axaml` | Places close behavior and silent startup together in product settings. |
 | `Views\MainWindow.axaml.cs` | Cancels ordinary close when hide-to-tray is enabled; creates one tray icon, restores on left click, and exposes Open/Exit menu actions. |
 | `Views\MainWindow.axaml.cs::TitleBar_PointerPressed` | Starts native move on left press and toggles maximize on double click. |
+| `Views\MainWindow.axaml.cs::EnsureTrayIcon` / `LoadTrayIcon` | Uses the product `Assets/Icon.ico`, tooltip `NxTools`, and native menu labels `打开 NxTools` / `退出`. |
 
 Verified old lifecycle:
 
@@ -66,6 +67,13 @@ tray Exit
 - GPUI owns product-settings and title-bar presentation and converts clicks into typed operations.
 - C# PlatformHost owns HKCU startup registration, notification-area icon/menu presentation, native HWND
   show/hide/foreground and `WM_SYSCOMMAND` move. It does not decide policy.
+- The desktop executable, taskbar and notification area share one formal NxTools brand identity. The
+  Rust desktop build embeds a multi-size Windows icon assembled from the same checked-in 16/32/48/128
+  brand PNGs used by the browser extension and GPUI title bar; PlatformHost extracts that associated
+  executable icon and must not invent a second visual identity.
+- The tray remains a native `NotifyIcon` plus native `ContextMenuStrip`. Its bounded presentation
+  contract is tooltip `NxTools`, then `打开 NxTools`, one separator and `退出`; SH-08 must not replace
+  it with a GPUI or owner-drawn menu.
 - All system-shell commands and tray events are versioned, bounded and correlated. Diagnostics carry
   fixed operation/result/native error fields, never arbitrary registry values or executable paths.
 
@@ -76,6 +84,10 @@ tray Exit
   reaches the typed native move command with the real HWND.
 - Registry adapter verifies exact current-user Run value enable/disable with a real isolated key seam.
 - Tray adapter creates one icon, maps left click/Open/Exit to typed events and disposes it at shutdown.
+- The native tray boundary verifies the exact tooltip/menu order and that the icon is the executable's
+  associated product icon. PlatformHost first verifies that the PE owns an `RT_GROUP_ICON` resource,
+  so an iconless executable cannot be mistaken for the Shell generic fallback; Release packaging then
+  compares the embedded icon pixels with the checked-in brand asset.
 - Close-to-tray keeps the GPUI window entity alive; restore reuses it; explicit Exit terminates.
 - Release subsystem is `windows`, while tests/debug builds retain ordinary diagnostic behavior.
 
