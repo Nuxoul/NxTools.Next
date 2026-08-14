@@ -1914,6 +1914,29 @@ Reverified on 2026-08-13 for the P0 task-context-menu migration:
   omissions and Escape lifecycle. Diagnostics continue to record only bounded selected count,
   fixed action kind and correlation ID—never URL, task name, artifact path, Header or Cookie.
 
+Reverified on 2026-08-14 for the P0 detail-dock and multi-selection-toolbar migration:
+
+- ABDM first: `HomePage.kt` keeps `selectionList` as the stable list-level selection authority and
+  passes it into `DownloadList`; header actions remain attached to the continuous download surface
+  instead of becoming controls inside every row. Old NxTools next: `MainWindow.axaml` exposes a
+  selected-task detail inspector and `MainWindowViewModel` applies pause/resume/cancel to
+  `GetSelectedTasksOrCurrent()`. NxTools.Next keeps its safer capability-derived target subsets and
+  queue-edge rules rather than copying the old first-selected-only queue behavior.
+- The selected-task inspector stays docked below the virtual table. It is absent when selection is
+  empty, uses one fixed-height tab strip and one persistent scroll viewport, and presents ordinary
+  fields with stable label/value columns rather than miniature metric cards or arbitrary font
+  sizes. Long URL/path/error content remains inside the inspector scroll boundary and never moves
+  the task-table columns.
+- Multi-selection adds one transient toolbar between the filter strip and table header only when at
+  least two visible tasks are selected. It reuses the exact context capability calculation:
+  lifecycle actions target only capable members, queue moves appear only when the entire selection
+  is movable at that edge, and removal appears only when every selected task is removable. Single
+  selection and empty selection allocate no toolbar height.
+- Toolbar actions keep the stable selected-ID set and defer every cross-entity
+  `DownloadApplication` call to the next application turn. Clearing the selection is local view
+  state. Diagnostics remain owned by the existing typed batch/queue commands and never include
+  file names, paths, URLs, Header or Cookie values.
+
 Reverified on 2026-08-13 for the final Stage 6 completion-action slice:
 
 - ABDM first: `shared/app/.../ondownloadcompletion/OnDownloadCompletionActionRunner.kt` observes

@@ -46,7 +46,9 @@ use crate::quick_launch::{
 };
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
-use crate::ui::components::action::{SegmentedOption, labelled_icon_action, segmented_control};
+use crate::ui::components::action::{
+    SegmentedOption, icon_action, labelled_icon_action, segmented_control,
+};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, TITLEBAR_HEIGHT};
 use crate::ui::typography::{
@@ -64,7 +66,10 @@ const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
 const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
+const DOWNLOAD_BATCH_TOOLBAR_HEIGHT: f32 = 36.0;
 const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
+const DOWNLOAD_DETAIL_TAB_HEIGHT: f32 = 30.0;
+const DOWNLOAD_DETAIL_LABEL_WIDTH: f32 = 52.0;
 const DOWNLOAD_SEARCH_DIAGNOSTIC_DELAY: Duration = Duration::from_millis(250);
 const DOWNLOAD_TRANSFERRED_COLUMN_WIDTH: f32 = 90.0;
 const DOWNLOAD_SPEED_COLUMN_WIDTH: f32 = 54.0;
@@ -2025,6 +2030,11 @@ impl MainWindow {
             .iter()
             .map(|task| task.task.id())
             .collect::<Vec<_>>();
+        let selected_task_ids = visible_task_ids
+            .iter()
+            .filter(|task_id| self.selected_download_tasks.contains(task_id))
+            .copied()
+            .collect::<Vec<_>>();
         self.download_selection_anchor = self
             .download_selection_anchor
             .filter(|task_id| self.selected_download_tasks.contains(task_id))
@@ -2046,6 +2056,30 @@ impl MainWindow {
         let selected_progress = selected_task_id
             .and_then(|task_id| visible_progress.get(&task_id))
             .cloned();
+        let main_window = cx.entity();
+        let batch_toolbar = (selected_task_ids.len() > 1).then(|| {
+            let mut capabilities =
+                download_context_capabilities(&visible_tasks, &selected_task_ids);
+            if capabilities.can_move_queue
+                && let Some(application) = self.downloads.upgrade()
+            {
+                let (top, up, down, bottom) = download_queue_placement_capabilities(
+                    &application.read(cx).default_queue_order(),
+                    &selected_task_ids,
+                );
+                capabilities.queue_top = top;
+                capabilities.queue_up = up;
+                capabilities.queue_down = down;
+                capabilities.queue_bottom = bottom;
+            }
+            download_batch_toolbar(
+                theme,
+                self.downloads.clone(),
+                main_window.clone(),
+                selected_task_ids.clone(),
+                capabilities,
+            )
+        });
         if let Some(task_id) = selected_task_id {
             if detail_snapshot.is_some() {
                 self.requested_download_detail = Some(task_id);
@@ -2066,7 +2100,6 @@ impl MainWindow {
         let detail_tab = self.download_detail_tab;
         let detail_scroll = self.download_detail_scroll.clone();
         let download_application = self.downloads.clone();
-        let main_window = cx.entity();
         let detail_main_window = main_window.clone();
         let selected_task_detail = selected_task.map(|task| {
             download_task_detail(
@@ -2371,6 +2404,9 @@ impl MainWindow {
                     .min_h_0()
                     .flex()
                     .flex_col()
+                    .when_some(batch_toolbar, |workspace, toolbar| {
+                        workspace.child(toolbar)
+                    })
                     .child(download_table_header(
                         theme,
                         self.download_sort,
@@ -4751,6 +4787,190 @@ fn download_task_context_menu(
     menu
 }
 
+fn download_batch_toolbar(
+    theme: Theme,
+    application: gpui::WeakEntity<DownloadApplication>,
+    main_window: Entity<MainWindow>,
+    task_ids: Vec<DownloadTaskId>,
+    capabilities: DownloadContextCapabilities,
+) -> AnyElement {
+    let plan = download_context_menu_plan(&capabilities, task_ids.len());
+    let batch_action = |id: &'static str,
+                        icon: MaterialIcon,
+                        tooltip: &'static str,
+                        action: DownloadBatchAction,
+                        targets: Vec<DownloadTaskId>,
+                        danger: bool| {
+        let application = application.clone();
+        let button = icon_action(id, icon, tooltip)
+            .ghost()
+            .when(danger, |button| button.danger())
+            .on_click(move |_, _, cx| {
+                let application = application.clone();
+                let targets = targets.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.batch_action(targets, action, cx);
+                    });
+                });
+            });
+        div()
+            .debug_selector(move || id.into())
+            .size(px(CONTROL_HEIGHT_ACTION))
+            .child(button)
+            .into_any_element()
+    };
+    let queue_action = |id: &'static str,
+                        icon: MaterialIcon,
+                        tooltip: &'static str,
+                        placement: DownloadQueuePlacement| {
+        let application = application.clone();
+        let task_ids = task_ids.clone();
+        let button = icon_action(id, icon, tooltip)
+            .ghost()
+            .on_click(move |_, _, cx| {
+                let application = application.clone();
+                let task_ids = task_ids.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.move_queue_tasks(task_ids, placement, cx);
+                    });
+                });
+            });
+        div()
+            .debug_selector(move || id.into())
+            .size(px(CONTROL_HEIGHT_ACTION))
+            .child(button)
+            .into_any_element()
+    };
+    let clear_selection = main_window;
+    let has_queue_actions = plan.queue_top || plan.queue_up || plan.queue_down || plan.queue_bottom;
+
+    div()
+        .debug_selector(|| "download-batch-toolbar".into())
+        .h(px(DOWNLOAD_BATCH_TOOLBAR_HEIGHT))
+        .px(px(12.0))
+        .flex_none()
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .child(
+            div()
+                .mr(px(6.0))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.text_secondary)
+                .child(format!("已选择 {} 项", task_ids.len())),
+        )
+        .when(plan.resume, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-resume",
+                MaterialIcon::Download,
+                "开始 / 继续可运行任务",
+                DownloadBatchAction::Resume,
+                capabilities.resume_targets.clone(),
+                false,
+            ))
+        })
+        .when(plan.pause, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-pause",
+                MaterialIcon::History,
+                "暂停可暂停任务",
+                DownloadBatchAction::Pause,
+                capabilities.pause_targets.clone(),
+                false,
+            ))
+        })
+        .when(plan.cancel, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-cancel",
+                MaterialIcon::Cancel,
+                "取消可取消任务",
+                DownloadBatchAction::Cancel,
+                capabilities.cancel_targets.clone(),
+                false,
+            ))
+        })
+        .when(has_queue_actions, |toolbar| {
+            toolbar.child(
+                div()
+                    .mx(px(4.0))
+                    .h(px(18.0))
+                    .w(px(1.0))
+                    .bg(theme.border_subtle),
+            )
+        })
+        .when(plan.queue_top, |toolbar| {
+            toolbar.child(queue_action(
+                "download-batch-queue-top",
+                MaterialIcon::ArrowUpward,
+                "移到队列顶部",
+                DownloadQueuePlacement::Top,
+            ))
+        })
+        .when(plan.queue_up, |toolbar| {
+            toolbar.child(queue_action(
+                "download-batch-queue-up",
+                MaterialIcon::ArrowUpward,
+                "队列上移",
+                DownloadQueuePlacement::Up,
+            ))
+        })
+        .when(plan.queue_down, |toolbar| {
+            toolbar.child(queue_action(
+                "download-batch-queue-down",
+                MaterialIcon::History,
+                "队列下移",
+                DownloadQueuePlacement::Down,
+            ))
+        })
+        .when(plan.queue_bottom, |toolbar| {
+            toolbar.child(queue_action(
+                "download-batch-queue-bottom",
+                MaterialIcon::History,
+                "移到队列底部",
+                DownloadQueuePlacement::Bottom,
+            ))
+        })
+        .when(plan.remove, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-remove",
+                MaterialIcon::Delete,
+                "从列表移除",
+                DownloadBatchAction::Remove,
+                task_ids.clone(),
+                true,
+            ))
+        })
+        .child(div().flex_1())
+        .child({
+            let button = icon_action("download-batch-clear", MaterialIcon::Close, "清除多选")
+                .ghost()
+                .on_click(move |_, _, cx| {
+                    clear_selection.update(cx, |window, cx| {
+                        window.selected_download_tasks.clear();
+                        window.selected_download_task = None;
+                        window.download_selection_anchor = None;
+                        window.requested_download_detail = None;
+                        window
+                            .download_detail_scroll
+                            .set_offset(point(px(0.0), px(0.0)));
+                        cx.notify();
+                    });
+                });
+            div()
+                .debug_selector(|| "download-batch-clear".into())
+                .size(px(CONTROL_HEIGHT_ACTION))
+                .child(button)
+        })
+        .into_any_element()
+}
+
 fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElement {
     let DownloadDetailView {
         task,
@@ -4763,7 +4983,8 @@ fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElemen
     } = view;
     let task_id = task.task.id();
     let mut tabs = div()
-        .h(px(30.0))
+        .debug_selector(|| "download-detail-tabs".into())
+        .h(px(DOWNLOAD_DETAIL_TAB_HEIGHT))
         .px(px(10.0))
         .border_b_1()
         .border_color(theme.border_subtle)
@@ -4789,7 +5010,8 @@ fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElemen
                 .cursor_pointer()
                 .flex()
                 .items_center()
-                .text_size(px(10.0))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(if active {
                     gpui::FontWeight::SEMIBOLD
                 } else {
@@ -4843,6 +5065,7 @@ fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -> AnyElemen
                 .child(
                     div()
                         .id("download-detail-scroll")
+                        .debug_selector(|| "download-detail-scroll".into())
                         .size_full()
                         .track_scroll(&scroll)
                         .overflow_y_scroll()
@@ -4875,95 +5098,112 @@ fn download_overview_detail(
         .map_or_else(|| "尚未解析".into(), |path| path.display().to_string());
     let (status_label, status_color) = download_status_presentation(theme, task.task.status());
 
+    let primary = div()
+        .debug_selector(|| "download-detail-overview-primary".into())
+        .min_w_0()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-status",
+            "状态",
+            status_label.into(),
+            status_color,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-downloaded",
+            "已下载",
+            format_download_bytes(downloaded),
+            theme.text,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-remaining",
+            "剩余",
+            remaining,
+            theme.text,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-resume",
+            "断点",
+            task.probe.as_ref().map_or_else(
+                || "未知".into(),
+                |probe| {
+                    if probe.supports_ranges {
+                        "支持".into()
+                    } else {
+                        "不支持".into()
+                    }
+                },
+            ),
+            theme.text_secondary,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-category",
+            "分类",
+            request
+                .category_name
+                .clone()
+                .unwrap_or_else(|| "未分类".into()),
+            theme.text_secondary,
+        ));
+    let secondary = div()
+        .debug_selector(|| "download-detail-overview-secondary".into())
+        .min_w_0()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-size",
+            "大小",
+            total.map_or_else(|| "未知".into(), format_download_bytes),
+            theme.text,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-speed",
+            "速度",
+            if bytes_per_second == 0 {
+                "—".into()
+            } else {
+                format!("{}/s", format_download_bytes(bytes_per_second))
+            },
+            theme.text,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-connections",
+            "连接",
+            active_connections.to_string(),
+            theme.text,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-origin",
+            "来源",
+            download_origin_label(task.task.origin()).into(),
+            theme.text_secondary,
+        ))
+        .child(download_detail_field(
+            theme,
+            "download-detail-field-schedule",
+            "计划",
+            request
+                .scheduled_at_unix_ms
+                .map_or_else(|| "立即".into(), format_download_timestamp),
+            theme.text_secondary,
+        ));
+
     div()
         .flex()
         .flex_col()
         .gap(px(6.0))
-        .child(
-            div()
-                .flex()
-                .gap(px(14.0))
-                .child(download_detail_metric(
-                    theme,
-                    "状态",
-                    status_label.into(),
-                    status_color,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "大小",
-                    total.map_or_else(|| "未知".into(), format_download_bytes),
-                    theme.text,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "已下载",
-                    format_download_bytes(downloaded),
-                    theme.text,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "速度",
-                    if bytes_per_second == 0 {
-                        "—".into()
-                    } else {
-                        format!("{}/s", format_download_bytes(bytes_per_second))
-                    },
-                    theme.text,
-                ))
-                .child(download_detail_metric(theme, "剩余", remaining, theme.text))
-                .child(download_detail_metric(
-                    theme,
-                    "连接",
-                    active_connections.to_string(),
-                    theme.text,
-                )),
-        )
-        .child(
-            div()
-                .flex()
-                .gap(px(14.0))
-                .child(download_detail_metric(
-                    theme,
-                    "断点",
-                    task.probe.as_ref().map_or_else(
-                        || "未知".into(),
-                        |probe| {
-                            if probe.supports_ranges {
-                                "支持".into()
-                            } else {
-                                "不支持".into()
-                            }
-                        },
-                    ),
-                    theme.text_secondary,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "来源",
-                    download_origin_label(task.task.origin()).into(),
-                    theme.text_secondary,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "计划",
-                    request
-                        .scheduled_at_unix_ms
-                        .map_or_else(|| "立即".into(), format_download_timestamp),
-                    theme.text_secondary,
-                ))
-                .child(download_detail_metric(
-                    theme,
-                    "分类",
-                    request
-                        .category_name
-                        .clone()
-                        .unwrap_or_else(|| "未分类".into()),
-                    theme.text_secondary,
-                ))
-                .child(div().flex_1())
-                .child(div().flex_1()),
-        )
+        .child(div().flex().gap(px(24.0)).child(primary).child(secondary))
         .when_some(task.error.as_ref(), |content, error| {
             content.child(download_detail_line_with_color(
                 theme,
@@ -5029,7 +5269,8 @@ fn download_segment_detail(
                 .border_color(theme.border_subtle)
                 .flex()
                 .items_center()
-                .text_size(px(9.5))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .child(
                     div()
                         .w(px(38.0))
@@ -5070,7 +5311,8 @@ fn download_segment_detail(
         .gap(px(7.0))
         .child(
             div()
-                .text_size(px(9.5))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_muted)
                 .child(format!(
                     "{} 个分段 · {} / {}",
@@ -5233,7 +5475,8 @@ fn download_timeline_detail(
                 .flex()
                 .items_start()
                 .gap(px(10.0))
-                .text_size(px(9.5))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .child(
                     div()
                         .w(px(64.0))
@@ -5267,7 +5510,8 @@ fn download_detail_section(
         .child(
             div()
                 .pb(px(3.0))
-                .text_size(px(10.0))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child(title),
@@ -5284,7 +5528,8 @@ fn download_detail_empty(theme: Theme, message: &'static str) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(10.0))
+        .text_size(px(TEXT_BODY))
+        .line_height(px(LINE_HEIGHT_BODY))
         .text_color(theme.text_muted)
         .child(message)
         .into_any_element()
@@ -5296,35 +5541,48 @@ fn download_detail_error(theme: Theme, message: &str) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(10.0))
+        .text_size(px(TEXT_BODY))
+        .line_height(px(LINE_HEIGHT_BODY))
         .text_color(theme.danger)
         .child(format!("详情加载失败：{message}"))
         .into_any_element()
 }
 
-fn download_detail_metric(
+fn download_detail_field(
     theme: Theme,
+    selector: &'static str,
     label: &'static str,
     value: String,
     value_color: gpui::Rgba,
 ) -> AnyElement {
+    let label_selector = format!("{selector}-label");
+    let value_selector = format!("{selector}-value");
     div()
+        .debug_selector(move || selector.into())
+        .min_h(px(20.0))
         .min_w_0()
-        .flex_1()
         .flex()
-        .flex_col()
-        .gap(px(1.0))
+        .items_center()
+        .gap(px(8.0))
         .child(
             div()
-                .text_size(px(8.5))
+                .debug_selector(move || label_selector.clone())
+                .w(px(DOWNLOAD_DETAIL_LABEL_WIDTH))
+                .flex_none()
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_muted)
                 .child(label),
         )
         .child(
             div()
+                .debug_selector(move || value_selector.clone())
+                .min_w_0()
+                .flex_1()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .text_size(px(9.5))
+                .text_size(px(TEXT_BODY))
+                .line_height(px(LINE_HEIGHT_BODY))
                 .text_color(value_color)
                 .child(value),
         )
@@ -5341,7 +5599,8 @@ fn download_detail_line_owned(theme: Theme, label: String, value: String) -> Any
         .flex()
         .items_start()
         .gap(px(8.0))
-        .text_size(px(9.5))
+        .text_size(px(TEXT_BODY))
+        .line_height(px(LINE_HEIGHT_BODY))
         .child(
             div()
                 .w(px(92.0))
@@ -5369,10 +5628,11 @@ fn download_detail_line_with_color(
         .flex()
         .items_start()
         .gap(px(8.0))
-        .text_size(px(9.5))
+        .text_size(px(TEXT_BODY))
+        .line_height(px(LINE_HEIGHT_BODY))
         .child(
             div()
-                .w(px(44.0))
+                .w(px(DOWNLOAD_DETAIL_LABEL_WIDTH))
                 .flex_none()
                 .text_color(theme.text_muted)
                 .child(label),
@@ -6086,16 +6346,16 @@ mod tests {
     }
 
     use super::{
-        DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT, DOWNLOAD_PAGE_HEADER_HEIGHT,
-        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
-        DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
-        DownloadTaskFilter, MainWindow, MainWindowShellContext, download_context_capabilities,
-        download_context_menu_plan, download_filter_counts, download_queue_placement_capabilities,
-        download_segment_strip_cells, download_tasks_for_view, file_index_summary,
-        format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
-        notification_transition, prepare_download_context_selection, quick_find_scroll_step,
-        quick_find_scroll_target, reconcile_download_selection, set_download_sort,
-        toggle_indexed_volume_selection, update_download_selection,
+        DOWNLOAD_BATCH_TOOLBAR_HEIGHT, DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT,
+        DOWNLOAD_PAGE_HEADER_HEIGHT, DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT,
+        DownloadContextCapabilities, DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey,
+        DownloadSortState, DownloadTaskFilter, MainWindow, MainWindowShellContext,
+        download_context_capabilities, download_context_menu_plan, download_filter_counts,
+        download_queue_placement_capabilities, download_segment_strip_cells,
+        download_tasks_for_view, file_index_summary, format_query_elapsed, hotkey_from_key_down,
+        masked_request_header_value, notification_transition, prepare_download_context_selection,
+        quick_find_scroll_step, quick_find_scroll_target, reconcile_download_selection,
+        set_download_sort, toggle_indexed_volume_selection, update_download_selection,
     };
 
     #[test]
@@ -6104,6 +6364,7 @@ mod tests {
         assert_eq!(DOWNLOAD_FILTER_STRIP_HEIGHT, 38.0);
         assert_eq!(DOWNLOAD_TABLE_HEADER_HEIGHT, 28.0);
         assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 46.0);
+        assert_eq!(DOWNLOAD_BATCH_TOOLBAR_HEIGHT, 36.0);
         assert_eq!(DOWNLOAD_DETAIL_HEIGHT, 176.0);
     }
 
@@ -7211,6 +7472,10 @@ mod tests {
             window.debug_bounds("download-task-detail").is_none(),
             "the detail dock must stay hidden until the user selects a task"
         );
+        assert!(
+            window.debug_bounds("download-batch-toolbar").is_none(),
+            "empty selection must not reserve a batch toolbar row"
+        );
 
         let selected_task = first_task;
         let selected_row_selector = first_row_selector;
@@ -7242,6 +7507,58 @@ mod tests {
         let detail_error = window
             .debug_bounds("download-task-detail-error")
             .expect("selected failure detail bounds");
+        let detail = window
+            .debug_bounds("download-task-detail")
+            .expect("production detail dock bounds");
+
+        let detail_tabs = window
+            .debug_bounds("download-detail-tabs")
+            .expect("production detail tab strip bounds");
+        let detail_scroll = window
+            .debug_bounds("download-detail-scroll")
+            .expect("production detail scroll viewport bounds");
+        let overview_primary = window
+            .debug_bounds("download-detail-overview-primary")
+            .expect("primary overview field column bounds");
+        let overview_secondary = window
+            .debug_bounds("download-detail-overview-secondary")
+            .expect("secondary overview field column bounds");
+        let status_label = window
+            .debug_bounds("download-detail-field-status-label")
+            .expect("fixed overview status label bounds");
+        let downloaded_label = window
+            .debug_bounds("download-detail-field-downloaded-label")
+            .expect("fixed overview downloaded label bounds");
+        let status_value = window
+            .debug_bounds("download-detail-field-status-value")
+            .expect("overview status value bounds");
+        let downloaded_value = window
+            .debug_bounds("download-detail-field-downloaded-value")
+            .expect("overview downloaded value bounds");
+        assert_eq!(detail_tabs.size.height.as_f32(), 30.0);
+        let tab_bounds = DownloadDetailTab::ALL.map(|tab| {
+            window
+                .debug_bounds(Box::leak(
+                    format!("download-detail-tab-{}", tab.diagnostic_name()).into_boxed_str(),
+                ))
+                .unwrap_or_else(|| panic!("production {:?} detail tab bounds", tab))
+        });
+        for tab in &tab_bounds {
+            assert_eq!(tab.top(), tab_bounds[0].top());
+            assert_eq!(tab.size.height.as_f32(), 29.0);
+            assert!(detail_tabs.contains(&tab.origin));
+            assert!(detail_tabs.contains(&tab.bottom_right()));
+        }
+        assert_eq!(detail_scroll.top(), detail_tabs.bottom());
+        assert_eq!(detail_scroll.bottom(), detail.bottom());
+        assert!(
+            (overview_primary.size.width.as_f32() - overview_secondary.size.width.as_f32()).abs()
+                <= 1.0,
+            "overview inspector columns must split the available content width evenly"
+        );
+        assert_eq!(status_label.size.width.as_f32(), 52.0);
+        assert_eq!(downloaded_label.size.width, status_label.size.width);
+        assert_eq!(status_value.left(), downloaded_value.left());
 
         let segment_tab = window
             .debug_bounds("download-detail-tab-segments")
@@ -7297,9 +7614,6 @@ mod tests {
         let status_header = window
             .debug_bounds("download-sort-header-status")
             .expect("status header bounds");
-        let detail = window
-            .debug_bounds("download-task-detail")
-            .expect("production detail dock bounds");
         assert!(
             name.size.width.as_f32() >= 180.0,
             "the file-name column must retain enough width to render its content"
@@ -7335,6 +7649,214 @@ mod tests {
             super::DOWNLOAD_ERROR_TOOLTIP_WIDTH
         );
         assert!(error_tooltip.size.height.as_f32() <= super::DOWNLOAD_ERROR_TOOLTIP_MAX_HEIGHT);
+    }
+
+    #[gpui::test]
+    fn production_download_batch_toolbar_appears_for_multi_select_and_dispatches_one_batch(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
+        let request = |name: &str| DownloadRequest {
+            source_url: format!("https://example.com/{name}"),
+            save_directory: r"C:\Downloads".into(),
+            save_directory_explicit: false,
+            file_name: Some(name.into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(2),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+        };
+        let first = engine
+            .enqueue(request("batch-first.bin"), RequestOrigin::Internal)
+            .expect("enqueue first batch task");
+        let second = engine
+            .enqueue(request("batch-second.bin"), RequestOrigin::Internal)
+            .expect("enqueue second batch task");
+        let mut snapshots = engine.tasks().expect("read batch task snapshots");
+        let failed_snapshot = snapshots
+            .iter_mut()
+            .find(|task| task.task.id() == first)
+            .expect("first mixed-state task snapshot");
+        failed_snapshot
+            .task
+            .transition_to(DownloadStatus::Probing, 1)
+            .expect("advance first task to probing");
+        failed_snapshot
+            .task
+            .transition_to(DownloadStatus::Failed, 2)
+            .expect("advance first task to failed");
+        let downloading_snapshot = snapshots
+            .iter_mut()
+            .find(|task| task.task.id() == second)
+            .expect("second mixed-state task snapshot");
+        for (status, revision) in [
+            (DownloadStatus::Probing, 1),
+            (DownloadStatus::Waiting, 2),
+            (DownloadStatus::Downloading, 3),
+        ] {
+            downloading_snapshot
+                .task
+                .transition_to(status, revision)
+                .expect("advance second task to downloading");
+        }
+        let mixed_snapshots = snapshots.clone();
+        let fixture_id = uuid::Uuid::new_v4();
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let downloads = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications.clone(),
+                    DownloadRuntimeContext {
+                        fallback_default_directory: r"C:\Downloads".into(),
+                        config: AppConfig::default(),
+                        config_path: std::env::temp_dir()
+                            .join(format!("nxtools-batch-toolbar-config-{fixture_id}.json")),
+                        log_directory: std::env::temp_dir(),
+                        database_path: std::env::temp_dir()
+                            .join(format!("nxtools-batch-toolbar-{fixture_id}.sqlite3")),
+                        ffmpeg_install_directory: std::env::temp_dir()
+                            .join("nxtools-test-tools")
+                            .join("ffmpeg"),
+                    },
+                    cx,
+                )
+            })
+        });
+        downloads.update(cx, |application, _| {
+            application.replace_tasks_for_test(snapshots);
+        });
+        let downloads_for_window = downloads.downgrade();
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                downloads_for_window,
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Downloads);
+            main_window
+        });
+        window.simulate_resize(size(px(720.0), px(500.0)));
+        window.update(|_, cx| {
+            downloads.update(cx, |application, _| {
+                application.replace_tasks_for_test(mixed_snapshots);
+            });
+            main_window.update(cx, |_, cx| cx.notify());
+        });
+        window.refresh().expect("render mixed-state task snapshots");
+
+        assert!(window.debug_bounds("download-batch-toolbar").is_none());
+        let first_selector: &'static str = Box::leak(
+            format!("download-task-row-{}", first.as_uuid().as_u64_pair().0).into_boxed_str(),
+        );
+        let second_selector: &'static str = Box::leak(
+            format!("download-task-row-{}", second.as_uuid().as_u64_pair().0).into_boxed_str(),
+        );
+        let first_row = window
+            .debug_bounds(first_selector)
+            .expect("first production task row");
+        window.simulate_click(first_row.center(), Modifiers::default());
+        assert!(window.debug_bounds("download-batch-toolbar").is_none());
+        let second_row = window
+            .debug_bounds(second_selector)
+            .expect("second production task row");
+        window.simulate_click(
+            second_row.center(),
+            Modifiers {
+                control: true,
+                ..Modifiers::default()
+            },
+        );
+        window.run_until_parked();
+        window.refresh().expect("render production batch toolbar");
+
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_tasks.clone()),
+            HashSet::from([first, second])
+        );
+        let toolbar = window
+            .debug_bounds("download-batch-toolbar")
+            .expect("real multi-selection toolbar bounds");
+        let cancel = window
+            .debug_bounds("download-batch-cancel")
+            .expect("mixed selection cancel action for the active subset");
+        assert!(window.debug_bounds("download-batch-resume").is_some());
+        assert!(window.debug_bounds("download-batch-pause").is_some());
+        for unavailable in [
+            "download-batch-queue-top",
+            "download-batch-queue-up",
+            "download-batch-queue-down",
+            "download-batch-queue-bottom",
+            "download-batch-remove",
+        ] {
+            assert!(
+                window.debug_bounds(unavailable).is_none(),
+                "mixed-state selection must omit unavailable toolbar action {unavailable}"
+            );
+        }
+        assert_eq!(toolbar.size.height.as_f32(), DOWNLOAD_BATCH_TOOLBAR_HEIGHT);
+        assert_eq!(cancel.size.height.as_f32(), 28.0);
+        assert!(toolbar.contains(&cancel.origin));
+        assert!(toolbar.contains(&cancel.bottom_right()));
+        let header_with_toolbar = window
+            .debug_bounds("download-table-header")
+            .expect("table header below batch toolbar");
+
+        window.simulate_click(cancel.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(window.read(|cx| {
+            let tasks = downloads.read(cx).tasks();
+            tasks
+                .iter()
+                .find(|task| task.task.id() == first)
+                .is_some_and(|task| task.task.status() != DownloadStatus::Cancelled)
+                && tasks
+                    .iter()
+                    .find(|task| task.task.id() == second)
+                    .is_some_and(|task| task.task.status() == DownloadStatus::Cancelled)
+        }));
+        window.update(|_, cx| main_window.update(cx, |_, cx| cx.notify()));
+        window.refresh().expect("refresh terminal batch actions");
+        let clear = window
+            .debug_bounds("download-batch-clear")
+            .expect("clear-selection action after batch completion");
+        window.simulate_click(clear.center(), Modifiers::default());
+        window.run_until_parked();
+        window.update(|_, cx| main_window.update(cx, |_, cx| cx.notify()));
+        window.refresh().expect("reclaim batch toolbar row");
+        assert!(window.read(|cx| main_window.read(cx).selected_download_tasks.is_empty()));
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_download_task),
+            None
+        );
+        let header_without_toolbar = window
+            .debug_bounds("download-table-header")
+            .expect("table header after clearing multi-selection");
+        assert_eq!(
+            header_without_toolbar.top() + px(DOWNLOAD_BATCH_TOOLBAR_HEIGHT),
+            header_with_toolbar.top(),
+            "single/empty selection must reclaim the complete batch toolbar height"
+        );
     }
 
     #[gpui::test]

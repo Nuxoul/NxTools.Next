@@ -386,6 +386,21 @@ rust/apps/nxtools-desktop/src/ui/
   `git diff --check` 通过。DL-07 详情 dock 和 DL-08 多选工具栏仍留在后续独立切片；未启动
   GUI、未打包、未冒领 DPI/Release 截图人工验收。
 
+第八个 P0 纵向切片（2026-08-14）：
+
+- DL-07 将已选任务详情收口为固定高度的底部 inspector：30 px Tab 列保持稳定，正文统一
+  使用 11/12 px typography token，概览采用固定标签列与可伸缩值列，所有长内容留在同一个
+  纵向滚动区；无选择时不渲染也不预留详情高度。
+- DL-08 在真实多选时于筛选条和表头之间显示一条紧凑工具栏。动作完全复用右键菜单的能力
+  快照与目标子集；单选/空选择时不渲染工具栏，不保留空操作带。
+- 生产 720 px 下载窗口已证明详情 Tab/字段列/滚动区几何稳定；多选回归使用 Failed +
+  Downloading 混合状态，验证 Resume/Pause/Cancel 的能力子集、四个队列动作和 Remove 的省略，
+  并从真实 Cancel 命中区只取消可取消任务，再清除选择、回收完整 36 px 工具栏高度。
+- 自动化验证：DL-07/DL-08 两条生产 GPUI 定向门禁、desktop 串行门禁 290/290、workspace
+  check、workspace `clippy -D warnings`、`cargo fmt --check` 与 `git diff --check` 通过；Standards
+  与 Spec 双轴复审剩余阻塞均为 0。未启动 GUI、未冒领 DPI/Release 截图人工验收；Release
+  包由本切片提交后统一生成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
