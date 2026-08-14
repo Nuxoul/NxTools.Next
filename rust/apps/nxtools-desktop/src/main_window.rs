@@ -52,15 +52,17 @@ use crate::ui::components::action::{
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, SPACING_6,
-    SPACING_8, SPACING_12, TITLEBAR_HEIGHT,
+    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_2, SPACING_4,
+    SPACING_6, SPACING_8, SPACING_12, SPACING_24, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY,
-    UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, TEXT_BODY, TEXT_LABEL, TEXT_META,
+    UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 
 const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
+const NOTIFICATION_CARD_WIDTH: f32 = 336.0;
+const NOTIFICATION_CARD_MAX_HEIGHT: f32 = 112.0;
 const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
 const QUICK_FIND_SCROLL_LINE_HEIGHT: f32 = 38.0;
 const QUICK_FIND_SCROLL_EASING: f32 = 0.42;
@@ -1324,13 +1326,15 @@ impl MainWindow {
         let theme = self.theme;
         let notifications = self.notifications.read(cx).items().to_vec();
         let mut stack = div()
+            .id("notification-stack")
+            .debug_selector(|| "notification-stack".into())
             .absolute()
-            .top(px(44.0))
-            .right(px(10.0))
-            .w(px(368.0))
+            .right(px(SPACING_12))
+            .bottom(px(SPACING_12))
+            .w(px(NOTIFICATION_CARD_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(6.0));
+            .gap(px(SPACING_6));
         for notification in notifications {
             let accent = match notification.level {
                 NotificationLevel::Progress | NotificationLevel::Info => theme.accent,
@@ -1348,39 +1352,48 @@ impl MainWindow {
             let notification_exiting = notification.exiting;
             let dismiss_id = notification.id.clone();
             let notification_center = self.notifications.clone();
+            let title_selector =
+                gpui::SharedString::from(format!("notification-title-{}", notification_id));
+            let message_selector =
+                gpui::SharedString::from(format!("notification-message-{}", notification_id));
             let mut body = div()
                 .min_w_0()
                 .flex_1()
-                .pr(px(18.0))
+                .pr(px(SPACING_24))
                 .flex()
                 .flex_col()
-                .gap(px(3.0))
+                .gap(px(SPACING_2))
                 .child(
                     div()
-                        .text_size(px(11.5))
+                        .debug_selector(move || title_selector.clone())
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(theme.text)
                         .child(notification.title),
                 )
                 .child(
                     div()
-                        .text_size(px(10.0))
+                        .debug_selector(move || message_selector.clone())
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_secondary)
                         .child(notification.message),
                 );
             for detail in notification.details {
+                let detail_tooltip = detail.value.clone();
                 body = body.child(
                     div()
-                        .mt(px(4.0))
-                        .pt(px(6.0))
+                        .pt(px(SPACING_4))
                         .border_t_1()
                         .border_color(theme.border_subtle)
                         .flex()
                         .flex_col()
-                        .gap(px(2.0))
+                        .gap(px(SPACING_2))
                         .child(
                             div()
-                                .text_size(px(9.0))
+                                .text_size(px(TEXT_META))
+                                .line_height(px(LINE_HEIGHT_META))
                                 .text_color(theme.text_muted)
                                 .child(detail.label),
                         )
@@ -1388,10 +1401,14 @@ impl MainWindow {
                             div()
                                 .w_full()
                                 .whitespace_normal()
-                                .line_clamp(2)
+                                .line_clamp(1)
                                 .font_family(UI_MONO_FONT_FAMILY)
-                                .text_size(px(9.5))
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
                                 .text_color(theme.text_secondary)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(detail_tooltip.clone()).build(window, cx)
+                                })
                                 .child(detail.value),
                         ),
                 );
@@ -1401,69 +1418,90 @@ impl MainWindow {
                 let action_dismiss_id = notification_id.clone();
                 let action_center = self.notifications.clone();
                 let action_label = action.label.clone();
+                let action_selector =
+                    gpui::SharedString::from(format!("notification-action-{}", action_id));
                 body = body.child(
-                    div().mt(px(3.0)).flex().justify_end().child(
+                    div().flex().justify_end().child(
                         div()
-                            .id(gpui::SharedString::from(format!(
-                                "notification-action-{}",
-                                action_id
-                            )))
-                            .h(px(23.0))
-                            .px(px(7.0))
-                            .rounded(px(3.0))
-                            .border_1()
-                            .border_color(theme.border)
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .gap(px(4.0))
-                            .hover(move |style| style.bg(theme.surface_hover))
+                            .debug_selector(move || action_selector.clone())
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .child(
-                                Icon::new(MaterialIcon::OpenInNew)
-                                    .size(px(12.0))
-                                    .text_color(theme.text_muted),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(9.5))
-                                    .text_color(theme.text_secondary)
-                                    .child(action_label),
-                            )
-                            .on_click(move |_event, window, cx| {
-                                action_center.update(cx, |notifications, cx| {
-                                    notifications.dismiss(action_dismiss_id.as_ref(), cx);
-                                });
-                                action.invoke(window, cx);
-                                cx.stop_propagation();
-                            }),
+                                Button::new(gpui::SharedString::from(format!(
+                                    "notification-action-{}",
+                                    action_id
+                                )))
+                                .label(action_label)
+                                .icon(Icon::new(MaterialIcon::OpenInNew).size(px(12.0)))
+                                .ghost()
+                                .small()
+                                .h_full()
+                                .px(px(SPACING_8))
+                                .rounded(px(RADIUS_CONTROL))
+                                .on_click(
+                                    move |_event, window, cx| {
+                                        action.invoke(window, cx);
+                                        let action_center = action_center.clone();
+                                        let action_dismiss_id = action_dismiss_id.clone();
+                                        cx.defer(move |cx| {
+                                            action_center.update(cx, |notifications, cx| {
+                                                notifications.dismiss_generation(
+                                                    action_dismiss_id.clone(),
+                                                    notification_generation,
+                                                    cx,
+                                                );
+                                            });
+                                        });
+                                        cx.stop_propagation();
+                                    },
+                                ),
+                            ),
                     ),
                 );
             }
+            let card_selector =
+                gpui::SharedString::from(format!("notification-{}", notification_id));
+            let marker_selector =
+                gpui::SharedString::from(format!("notification-marker-{}", notification_id));
+            let dismiss_selector =
+                gpui::SharedString::from(format!("dismiss-notification-{}", notification_id));
             let card = div()
                 .id(gpui::SharedString::from(format!(
                     "notification-{}",
                     notification_id
                 )))
+                .debug_selector(move || card_selector.clone())
                 .w_full()
                 .relative()
-                .min_h(px(58.0))
-                .rounded(px(5.0))
+                .min_h(px(56.0))
+                .max_h(px(NOTIFICATION_CARD_MAX_HEIGHT))
+                .rounded(px(RADIUS_CONTROL))
                 .border_1()
-                .border_color(theme.border)
+                .border_color(theme.border_subtle)
                 .bg(theme.surface_raised)
-                .shadow_md()
-                .px(px(11.0))
-                .py(px(9.0))
+                .shadow_sm()
+                .overflow_hidden()
+                .pl(px(SPACING_12))
+                .pr(px(SPACING_8))
+                .py(px(SPACING_4))
                 .flex()
                 .items_start()
-                .gap(px(7.0))
+                .gap(px(SPACING_8))
                 .occlude()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(|_, _, cx| cx.stop_propagation())
                 .child(
                     div()
-                        .size(px(18.0))
-                        .mt(px(1.0))
+                        .debug_selector(move || marker_selector.clone())
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left_0()
+                        .w(px(3.0))
+                        .bg(accent),
+                )
+                .child(
+                    div()
+                        .size(px(16.0))
                         .flex_none()
                         .flex()
                         .items_center()
@@ -1473,30 +1511,36 @@ impl MainWindow {
                 .child(body)
                 .child(
                     div()
-                        .id(gpui::SharedString::from(format!(
-                            "dismiss-notification-{}",
-                            notification_id
-                        )))
+                        .debug_selector(move || dismiss_selector.clone())
                         .absolute()
-                        .top(px(6.0))
-                        .right(px(6.0))
-                        .size(px(24.0))
-                        .rounded(px(3.0))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .hover(move |style| style.bg(theme.surface_hover))
+                        .top(px(SPACING_4))
+                        .right(px(SPACING_4))
+                        .size(px(CONTROL_HEIGHT_ACTION))
                         .child(
-                            Icon::new(MaterialIcon::Close)
-                                .size(px(13.0))
-                                .text_color(theme.text_muted),
-                        )
-                        .on_click(move |_event, _window, cx| {
-                            notification_center.update(cx, |notifications, cx| {
-                                notifications.dismiss(dismiss_id.as_ref(), cx);
-                            });
-                        }),
+                            Button::new(gpui::SharedString::from(format!(
+                                "dismiss-notification-{}",
+                                notification_id
+                            )))
+                            .icon(Icon::new(MaterialIcon::Close).size(px(13.0)))
+                            .tooltip("关闭通知")
+                            .ghost()
+                            .small()
+                            .size(px(CONTROL_HEIGHT_ACTION))
+                            .rounded(px(RADIUS_CONTROL))
+                            .on_click(move |_event, _window, cx| {
+                                let notification_center = notification_center.clone();
+                                let dismiss_id = dismiss_id.clone();
+                                cx.defer(move |cx| {
+                                    notification_center.update(cx, |notifications, cx| {
+                                        notifications.dismiss_generation(
+                                            dismiss_id.clone(),
+                                            notification_generation,
+                                            cx,
+                                        );
+                                    });
+                                });
+                            }),
+                        ),
                 );
             let transition_duration = if notification_exiting {
                 NOTIFICATION_EXIT_DURATION
@@ -6024,7 +6068,7 @@ fn empty_state(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::HashSet;
     use std::rc::Rc;
     use std::time::Duration;
@@ -6049,7 +6093,7 @@ mod tests {
     use crate::clipboard::ClipboardApplication;
     use crate::downloads::{DownloadApplication, DownloadRuntimeContext};
     use crate::network_settings::NetworkSettingsApplication;
-    use crate::notifications::NotificationCenter;
+    use crate::notifications::{NotificationAction, NotificationCenter, NotificationDetail};
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
 
@@ -6289,6 +6333,153 @@ mod tests {
                 .height,
             px(LINE_HEIGHT_LABEL)
         );
+    }
+
+    #[gpui::test]
+    fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let action_invoked = Rc::new(Cell::new(false));
+        let action_invoked_for_handler = Rc::clone(&action_invoked);
+        let notifications_for_action = notifications.clone();
+        notifications.update(cx, |center, cx| {
+            center.show_progress("transfer", "正在下载", "已完成 42%", cx);
+            center.show_error("failure", "下载失败", "服务器暂时不可用", cx);
+            center.show_success_with_details(
+                "backup",
+                "备份完成",
+                "已创建可恢复备份",
+                vec![NotificationDetail::new(
+                    "保存位置",
+                    r"C:\Users\Administrator\Downloads\NxTools Backup",
+                )],
+                Some(NotificationAction::new(
+                    "打开目录",
+                    move |_window, cx| {
+                        action_invoked_for_handler.set(true);
+                        let notifications_for_action = notifications_for_action.clone();
+                        cx.defer(move |cx| {
+                            notifications_for_action.update(cx, |center, cx| {
+                                center.show_success(
+                                    "backup",
+                                    "新的备份通知",
+                                    "替换旧 generation",
+                                    cx,
+                                );
+                            });
+                        });
+                    },
+                )),
+                cx,
+            );
+        });
+        let notifications_for_window = notifications.clone();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(920.0), px(480.0)));
+            MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            )
+        });
+        window
+            .refresh()
+            .expect("render production notification layer");
+
+        let titlebar = window.debug_bounds("main-titlebar").expect("main titlebar");
+        let window_controls = window
+            .debug_bounds("main-window-controls")
+            .expect("window control group");
+        let header_actions = window
+            .debug_bounds("download-module-header-actions")
+            .expect("module primary actions");
+        let stack = window
+            .debug_bounds("notification-stack")
+            .expect("notification stack");
+        assert!(stack.top() >= header_actions.bottom());
+        assert!(stack.top() >= titlebar.bottom());
+        assert!(stack.top() >= window_controls.bottom());
+        assert!(stack.right() <= px(920.0) - px(SPACING_12));
+        assert!(stack.bottom() <= px(480.0) - px(SPACING_12));
+
+        for id in ["backup", "failure", "transfer"] {
+            let card = window
+                .debug_bounds(Box::leak(format!("notification-{id}").into_boxed_str()))
+                .unwrap_or_else(|| panic!("notification card {id}"));
+            let marker = window
+                .debug_bounds(Box::leak(
+                    format!("notification-marker-{id}").into_boxed_str(),
+                ))
+                .unwrap_or_else(|| panic!("semantic marker {id}"));
+            let title = window
+                .debug_bounds(Box::leak(
+                    format!("notification-title-{id}").into_boxed_str(),
+                ))
+                .unwrap_or_else(|| panic!("notification title {id}"));
+            let message = window
+                .debug_bounds(Box::leak(
+                    format!("notification-message-{id}").into_boxed_str(),
+                ))
+                .unwrap_or_else(|| panic!("notification message {id}"));
+            let dismiss = window
+                .debug_bounds(Box::leak(
+                    format!("dismiss-notification-{id}").into_boxed_str(),
+                ))
+                .unwrap_or_else(|| panic!("notification dismiss {id}"));
+            assert_eq!(card.size.width, px(336.0));
+            assert!(card.size.height <= px(112.0));
+            assert_eq!(marker.size.width, px(3.0));
+            assert_eq!(marker.size.height, card.size.height);
+            assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
+            assert_eq!(message.size.height, px(LINE_HEIGHT_LABEL));
+            assert_eq!(dismiss.size, size(px(28.0), px(28.0)));
+        }
+        let backup = window
+            .debug_bounds("notification-backup")
+            .expect("detailed notification");
+        let action = window
+            .debug_bounds("notification-action-backup")
+            .expect("notification action");
+        assert_eq!(action.size.height, px(28.0));
+        assert!(backup.contains(&action.origin));
+        assert!(backup.contains(&action.bottom_right()));
+
+        window.simulate_click(action.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(action_invoked.get());
+        assert!(notifications.read_with(cx, |center, _| {
+            center.items().iter().any(|item| {
+                item.id.as_ref() == "backup"
+                    && item.title.as_ref() == "新的备份通知"
+                    && !item.exiting
+            })
+        }));
+
+        let dismiss = window
+            .debug_bounds("dismiss-notification-transfer")
+            .expect("notification dismiss hit target");
+        window.simulate_click(dismiss.center(), Modifiers::default());
+        notifications.update(cx, |center, cx| {
+            center.show_progress("transfer", "新的下载通知", "替换旧 generation", cx);
+        });
+        window.run_until_parked();
+        assert!(notifications.read_with(cx, |center, _| {
+            center.items().iter().any(|item| {
+                item.id.as_ref() == "transfer"
+                    && item.title.as_ref() == "新的下载通知"
+                    && !item.exiting
+            })
+        }));
     }
 
     #[gpui::test]

@@ -454,6 +454,22 @@ rust/apps/nxtools-desktop/src/ui/
 - 本切片只关闭 SH-01/SH-02 的生产入口与自动化门禁；SH-06 通知、SH-07 状态和 SH-08
   托盘视觉文案仍留在后续切片，新的 Release/DPI 截图也仍需统一打包后人工验收。
 
+第十二个 P0 通知层切片（2026-08-14）：
+
+- SH-06 不再把 368 px 阴影卡片贴在标题栏下方；最多三条通知迁移到窗口右下角的独立浮层，
+  在 920×480 生产最小尺寸中保持 12 px client inset，并完整避开标题栏和模块主操作区。
+- 单条通知收敛为 336 px、最高 112 px 的轻量 raised surface：4 px 圆角、subtle border、small
+  shadow 与 3 px 单侧语义标记；进度/信息/成功/失败只通过标记和 14 px 状态图标表达，不再用
+  大面积语义色或厚重卡片层级。
+- 标题、正文、详情和操作分别复用 Body/Label/Meta/Mono 与共享 28 px action tier；原有最多三条、
+  generation-scoped 自动退出、结构化详情和操作语义保持不变。操作/关闭后的 NotificationCenter
+  更新延迟到下一 application turn，且冻结渲染时的 `(id, generation)`，避免跨实体同步重入或旧卡
+  误关同 ID 的新通知。
+- 新增真实生产 `MainWindow` 门禁，覆盖 progress/error/detailed-success 三种通知，验证三卡边界、
+  语义标记、12/11 px 字体与 18/16 px 行高、28 px action/dismiss，并实际点击操作与关闭进入退出态。首次低内存
+  精确 Cargo 门禁在加载 Rust 标准库元数据时受 Windows pagefile 1455 阻断；源码/格式门禁继续
+  完成，待系统提交空间恢复后重跑，不以本轮源码结果冒领 Release/DPI 截图验收。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

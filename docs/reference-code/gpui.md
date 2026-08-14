@@ -22,6 +22,8 @@ Root: `D:\Code\zed-main`
 | `crates/ui/src/components/popover.rs` | Popover is an elevated surface attached to its trigger rather than to the pointer. It provides the bounded presentation shell while the caller owns the selection model. |
 | `crates/ui/src/components/context_menu.rs` | ContextMenu keeps one focused menu surface, real selectable descendants, fixed icon/title slots and separators between capability groups. A confirmed handler runs before the menu emits dismissal; action dispatch has its own short selected-state delay. Escape or dismissal returns control to the invoking context. |
 | `crates/ui/src/components/notification/alert_modal.rs` | Dialog content and footer are separate regions; the footer groups secondary and primary actions rather than scattering actions through content. |
+| `crates/workspace/src/toast_layer.rs` | Workspace toast ownership lives in a dedicated full-window overlay; the active surface is anchored at the bottom, occludes pointer input only within the toast, pauses dismissal while hovered and enters from below. |
+| `crates/notifications/src/status_toast.rs` | Status toasts use one elevated surface, restrained padding/gaps, the standard label/button/icon primitives and an optional dismiss action instead of stacking independent card treatments. |
 
 ## NxTools.Next P0 invariants
 
@@ -32,6 +34,16 @@ Root: `D:\Code\zed-main`
 - Caption controls use four distinct embedded 12 px SVG assets. Maximize and restore are selected
   from the observed window state and must never fall back to hand-drawn borders or font glyphs. Each
   icon-only hit target exposes a stable Chinese tooltip.
+- Main-window notifications live in a bottom-right overlay, not against the titlebar or module
+  header. At the 920×480 production minimum, all three visible notifications must remain below the
+  module action band and inside a 12 px client inset. Each 336 px surface is capped at 112 px,
+  uses the shared raised surface/subtle border/small shadow, a 4 px radius and one 3 px semantic
+  edge; severity color does not fill the whole card.
+- Notification titles/messages use Body/Label roles, metadata alone uses Meta, and all visible
+  actions use the shared 28 px desktop action tier. Dismiss/action clicks defer the cross-entity
+  `NotificationCenter` update to the next application turn and freeze the rendered `(id,
+  generation)` target, so an old card cannot dismiss a same-ID replacement. Existing
+  generation-scoped timeout and maximum-three ownership remain authoritative.
 - Normal actions, icon actions and segmented options consume the same four control heights.
 - Icon-only actions expose a visible tooltip; their icon is not itself a separate hit target. Zed's
   current GPUI layer also supplies an accessibility label, but NxTools.Next's pinned GPUI 0.2.2 /
@@ -105,3 +117,6 @@ Root: `D:\Code\zed-main`
   capability omissions, and Escape dismisses it while returning focus to the invoking surface.
 - Asset, tooltip or list presentation must not add Header, Cookie, path or other sensitive values to
   diagnostics.
+- A production 920×480 `MainWindow` with progress, failure and detailed success notifications proves
+  the three-card stack stays below titlebar/module actions and inside the client edge; it also clicks
+  the real 28 px action and dismiss targets and observes generation-scoped exit state.

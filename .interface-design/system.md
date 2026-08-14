@@ -54,6 +54,19 @@
 - Destructive color appears only for destructive actions and their terminal states.
 - Cross-entity GPUI callbacks defer to the next application turn.
 
+### Notifications
+
+- Main-window notifications form a bottom-right workbench layer with a 12 px client inset; they do
+  not compete with the titlebar or the module's primary action.
+- Each surface is 336 px wide, no taller than 112 px, uses the raised graphite surface, subtle border,
+  small shadow and 4 px radius. A 3 px left marker carries progress/info/success/error color; the
+  whole notification never becomes a semantic-color card.
+- Title/message use Body/Label roles. Detail labels alone use Meta and detail values use Label Mono.
+  Action and dismiss hit targets stay on the shared 28 px desktop action tier.
+- Enter/exit motion remains limited to opacity and a 6/4 px vertical offset over 150/120 ms. At most
+  three notifications are visible and every cross-entity dismissal is deferred with its rendered
+  `(id, generation)` target frozen.
+
 ## Verification
 
 - Real production GPUI windows must prove geometry, hit targets, state transitions and window ownership.

@@ -186,16 +186,13 @@ impl NotificationCenter {
         );
     }
 
-    pub(crate) fn dismiss(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some((id, generation)) = self
-            .items
-            .iter()
-            .find(|item| item.id.as_ref() == id)
-            .map(|item| (item.id.clone(), item.generation))
-        else {
-            return;
-        };
-        self.start_dismiss(id, generation, cx);
+    pub(crate) fn dismiss_generation(
+        &mut self,
+        id: impl Into<SharedString>,
+        generation: u64,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_dismiss(id.into(), generation, cx);
     }
 
     fn show(
@@ -229,7 +226,7 @@ impl NotificationCenter {
         generation
     }
 
-    fn dismiss_generation(&mut self, id: &str, generation: u64) -> bool {
+    fn remove_generation(&mut self, id: &str, generation: u64) -> bool {
         let previous_len = self.items.len();
         self.items
             .retain(|item| item.id.as_ref() != id || item.generation != generation);
@@ -261,7 +258,7 @@ impl NotificationCenter {
                 .timer(NOTIFICATION_EXIT_DURATION)
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.dismiss_generation(id.as_ref(), generation) {
+                if this.remove_generation(id.as_ref(), generation) {
                     cx.notify();
                 }
             });
@@ -272,6 +269,8 @@ impl NotificationCenter {
 
 #[cfg(test)]
 mod tests {
+    use gpui::{AppContext, TestAppContext};
+
     use super::{AppNotification, NotificationCenter, NotificationLevel};
 
     #[test]
@@ -290,7 +289,7 @@ mod tests {
             "备份完成",
         ));
         assert_ne!(first_generation, replacement_generation);
-        assert!(!center.dismiss_generation("clipboard.database", first_generation));
+        assert!(!center.remove_generation("clipboard.database", first_generation));
         assert_eq!(center.items().len(), 1);
         assert_eq!(center.items()[0].level, NotificationLevel::Success);
         assert_eq!(center.items()[0].message, "备份完成");
@@ -355,7 +354,26 @@ mod tests {
         assert!(center.begin_dismiss_generation("clipboard.database", generation));
         assert!(center.items()[0].exiting);
         assert!(!center.begin_dismiss_generation("clipboard.database", generation));
-        assert!(center.dismiss_generation("clipboard.database", generation));
+        assert!(center.remove_generation("clipboard.database", generation));
         assert!(center.items().is_empty());
+    }
+
+    #[gpui::test]
+    fn deferred_dismiss_does_not_mark_a_replacement_generation_as_exiting(cx: &mut TestAppContext) {
+        let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        center.update(cx, |center, cx| {
+            center.show_progress("transfer", "正在下载", "旧 generation", cx);
+        });
+        let old_generation = center.read_with(cx, |center, _| center.items()[0].generation());
+        center.update(cx, |center, cx| {
+            center.show_success("transfer", "下载完成", "新 generation", cx);
+            center.dismiss_generation("transfer", old_generation, cx);
+        });
+
+        center.read_with(cx, |center, _| {
+            assert_eq!(center.items().len(), 1);
+            assert_eq!(center.items()[0].title, "下载完成");
+            assert!(!center.items()[0].exiting);
+        });
     }
 }
