@@ -1,4 +1,7 @@
 pub(crate) const TITLEBAR_HEIGHT: f32 = 36.0;
+pub(crate) const MODULE_HEADER_HEIGHT: f32 = 48.0;
+pub(crate) const SIDEBAR_WIDTH: f32 = 208.0;
+pub(crate) const SIDEBAR_ROW_HEIGHT: f32 = 42.0;
 #[allow(dead_code)] // Consumed by compact icon controls as later surfaces migrate.
 pub(crate) const CONTROL_HEIGHT_COMPACT: f32 = 18.0;
 pub(crate) const CONTROL_HEIGHT_DEFAULT: f32 = 22.0;
@@ -27,6 +30,11 @@ mod tests {
 
     #[test]
     fn metrics_match_the_zed_density_contract() {
+        assert_eq!(
+            [TITLEBAR_HEIGHT, MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT],
+            [36.0, 48.0, 42.0]
+        );
+        assert_eq!(SIDEBAR_WIDTH, 208.0);
         assert_eq!(
             [
                 CONTROL_HEIGHT_COMPACT,

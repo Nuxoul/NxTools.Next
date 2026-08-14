@@ -50,7 +50,11 @@ use crate::ui::components::action::{
     SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
 };
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, TITLEBAR_HEIGHT};
+use crate::ui::components::titlebar::ModuleHeader;
+use crate::ui::metrics::{
+    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, SPACING_6,
+    TITLEBAR_HEIGHT,
+};
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY,
     UI_MONO_FONT_FAMILY,
@@ -61,7 +65,6 @@ const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
 const QUICK_FIND_SCROLL_LINE_HEIGHT: f32 = 38.0;
 const QUICK_FIND_SCROLL_EASING: f32 = 0.42;
 const QUICK_FIND_SCROLL_TARGET_SNAP_DISTANCE: f32 = 128.0;
-const DOWNLOAD_PAGE_HEADER_HEIGHT: f32 = 48.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
@@ -1898,13 +1901,15 @@ impl MainWindow {
         let mut modules = div().flex().flex_col().gap(px(4.0));
         for module in MainModule::ALL {
             let selected = module == active;
+            let selector = gpui::SharedString::from(format!("main-module-{}", module.label()));
+            let debug_selector = selector.clone();
+            let title_selector = format!("main-module-{}-title", module.label());
+            let description_selector = format!("main-module-{}-description", module.label());
             modules = modules.child(
                 div()
-                    .id(gpui::SharedString::from(format!(
-                        "main-module-{}",
-                        module.label()
-                    )))
-                    .h(px(42.0))
+                    .id(selector)
+                    .debug_selector(move || debug_selector.to_string())
+                    .h(px(SIDEBAR_ROW_HEIGHT))
                     .px(px(10.0))
                     .rounded(px(4.0))
                     .border_l_2()
@@ -1936,7 +1941,9 @@ impl MainWindow {
                             .gap(px(1.0))
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .debug_selector(move || title_selector.clone())
+                                    .text_size(px(TEXT_BODY))
+                                    .line_height(px(LINE_HEIGHT_BODY))
                                     .font_weight(if selected {
                                         gpui::FontWeight::MEDIUM
                                     } else {
@@ -1947,7 +1954,9 @@ impl MainWindow {
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.0))
+                                    .debug_selector(move || description_selector.clone())
+                                    .text_size(px(TEXT_LABEL))
+                                    .line_height(px(LINE_HEIGHT_LABEL))
                                     .text_color(theme.text_muted)
                                     .child(module.description()),
                             ),
@@ -1960,7 +1969,8 @@ impl MainWindow {
         }
 
         div()
-            .w(px(208.0))
+            .debug_selector(|| "main-sidebar".into())
+            .w(px(SIDEBAR_WIDTH))
             .h_full()
             .p(px(10.0))
             .border_r_1()
@@ -2193,168 +2203,132 @@ impl MainWindow {
                 if sort_state.descending { "↓" } else { "↑" }
             )
         };
+        let settings_download_application = self.downloads.clone();
+        let schedule_download_application = self.downloads.clone();
+        let new_download_application = download_application.clone();
+        let download_header_trailing = div()
+            .debug_selector(|| "download-module-header-actions".into())
+            .flex()
+            .items_center()
+            .gap(px(SPACING_4))
+            .child(
+                div()
+                    .id("download-search")
+                    .debug_selector(|| "download-search".into())
+                    .w(px(188.0))
+                    .h(px(CONTROL_HEIGHT_ACTION))
+                    .rounded(px(RADIUS_CONTROL))
+                    .border_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .px(px(SPACING_6))
+                    .flex()
+                    .items_center()
+                    .gap(px(SPACING_4))
+                    .child(
+                        Icon::new(MaterialIcon::Search)
+                            .size(px(13.0))
+                            .text_color(theme.text_muted),
+                    )
+                    .child(
+                        div().min_w_0().flex_1().child(
+                            Input::new(&search_input)
+                                .appearance(false)
+                                .bordered(false)
+                                .focus_bordered(false)
+                                .xsmall(),
+                        ),
+                    )
+                    .when(!search_query.is_empty(), |search| {
+                        search.child(
+                            div()
+                                .debug_selector(|| "download-search-clear".into())
+                                .size(px(18.0))
+                                .flex_none()
+                                .child(
+                                    Button::new("download-search-clear")
+                                        .icon(Icon::new(MaterialIcon::Close))
+                                        .tooltip("清除搜索")
+                                        .xsmall()
+                                        .compact()
+                                        .ghost()
+                                        .size_full()
+                                        .on_click(move |_, window, cx| {
+                                            clear_search_input.update(cx, |input, cx| {
+                                                input.set_value("", window, cx);
+                                            });
+                                        }),
+                                ),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-action".into())
+                    .h(px(CONTROL_HEIGHT_ACTION))
+                    .child(
+                        icon_action("download-settings", MaterialIcon::Settings, "下载设置")
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = settings_download_application.clone();
+                                cx.defer(move |cx| {
+                                    let _ = application.update(cx, |application, cx| {
+                                        application.open_settings_window(cx);
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "download-schedule-action".into())
+                    .h(px(CONTROL_HEIGHT_ACTION))
+                    .child(
+                        icon_action("download-schedule", MaterialIcon::History, "下载计划")
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = schedule_download_application.clone();
+                                cx.defer(move |cx| {
+                                    let _ = application.update(cx, |application, cx| {
+                                        application.open_schedule_window(cx);
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "download-new-task-action".into())
+                    .h(px(CONTROL_HEIGHT_ACTION))
+                    .child(
+                        labelled_icon_action("download-new-task", MaterialIcon::Add, "新建下载")
+                            .primary()
+                            .on_click(move |_, _, cx| {
+                                let application = new_download_application.clone();
+                                cx.defer(move |cx| {
+                                    let _ = application.update(cx, |application, cx| {
+                                        application.open_new_download_window(cx);
+                                    });
+                                });
+                            }),
+                    ),
+            )
+            .into_any_element();
         div()
             .size_full()
             .bg(theme.canvas)
             .flex()
             .flex_col()
             .child(
-                div()
-                    .id("download-page-header")
-                    .debug_selector(|| "download-page-header".into())
-                    .h(px(DOWNLOAD_PAGE_HEADER_HEIGHT))
-                    .px(px(14.0))
-                    .border_b_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.canvas)
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                div()
-                                    .text_size(px(15.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child("下载"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(theme.text_muted)
-                                    .child(filter_summary.clone()),
-                            ),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .id("download-search")
-                            .debug_selector(|| "download-search".into())
-                            .w(px(188.0))
-                            .h(px(CONTROL_HEIGHT_ACTION))
-                            .mr(px(8.0))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(theme.border_subtle)
-                            .bg(theme.surface)
-                            .flex()
-                            .items_center()
-                            .child(
-                                Icon::new(MaterialIcon::Search)
-                                    .size(px(13.0))
-                                    .text_color(theme.text_muted),
-                            )
-                            .child(
-                                div().min_w_0().flex_1().child(
-                                    Input::new(&search_input)
-                                        .appearance(false)
-                                        .bordered(false)
-                                        .focus_bordered(false)
-                                        .xsmall(),
-                                ),
-                            )
-                            .when(!search_query.is_empty(), |search| {
-                                search.child(
-                                    div()
-                                        .debug_selector(|| "download-search-clear".into())
-                                        .size(px(18.0))
-                                        .flex_none()
-                                        .child(
-                                            Button::new("download-search-clear")
-                                                .icon(Icon::new(MaterialIcon::Close))
-                                                .tooltip("清除搜索")
-                                                .xsmall()
-                                                .compact()
-                                                .ghost()
-                                                .size_full()
-                                                .on_click(move |_, window, cx| {
-                                                    clear_search_input.update(cx, |input, cx| {
-                                                        input.set_value("", window, cx);
-                                                    });
-                                                }),
-                                        ),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "download-page-actions".into())
-                            .flex()
-                            .items_center()
-                            .gap(px(4.0))
-                            .child(
-                                div()
-                                    .debug_selector(|| "download-settings-action".into())
-                                    .child(
-                                        icon_action(
-                                            "download-settings",
-                                            MaterialIcon::Settings,
-                                            "下载设置",
-                                        )
-                                        .ghost()
-                                        .on_click({
-                                            let download_application = self.downloads.clone();
-                                            move |_, _, cx| {
-                                                let download_application =
-                                                    download_application.clone();
-                                                cx.defer(move |cx| {
-                                                    let _ = download_application.update(
-                                                        cx,
-                                                        |application, cx| {
-                                                            application.open_settings_window(cx);
-                                                        },
-                                                    );
-                                                });
-                                            }
-                                        }),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(|| "download-schedule-action".into())
-                                    .child(
-                                        icon_action(
-                                            "download-schedule",
-                                            MaterialIcon::History,
-                                            "下载计划",
-                                        )
-                                        .ghost()
-                                        .on_click({
-                                            let download_application = self.downloads.clone();
-                                            move |_, _, cx| {
-                                                let _ = download_application.update(
-                                                    cx,
-                                                    |application, cx| {
-                                                        application.open_schedule_window(cx);
-                                                    },
-                                                );
-                                            }
-                                        }),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(|| "download-new-task-action".into())
-                                    .child(
-                                        labelled_icon_action(
-                                            "download-new-task",
-                                            MaterialIcon::Add,
-                                            "新建下载",
-                                        )
-                                        .primary()
-                                        .on_click(move |_, _, cx| {
-                                            let _ = download_application.update(
-                                                cx,
-                                                |application, cx| {
-                                                    application.open_new_download_window(cx);
-                                                },
-                                            );
-                                        }),
-                                    ),
-                            ),
-                    ),
+                ModuleHeader::new(
+                    "download-module-header",
+                    "download-module-header-title",
+                    "download-module-header-metadata",
+                    "下载",
+                    filter_summary.clone(),
+                )
+                .trailing(download_header_trailing)
+                .render(theme),
             )
             .child(
                 div()
@@ -3320,12 +3294,16 @@ impl MainWindow {
             .size_full()
             .flex()
             .flex_col()
-            .child(page_header(
-                theme,
-                "速启",
-                "独立弹窗 · 应用、文件与系统工具",
-                None,
-            ))
+            .child(
+                ModuleHeader::new(
+                    "quick-launch-module-header",
+                    "quick-launch-module-header-title",
+                    "quick-launch-module-header-metadata",
+                    "速启",
+                    "应用、文件与系统工具",
+                )
+                .render(theme),
+            )
             .child(
                 div()
                     .flex_1()
@@ -3781,45 +3759,34 @@ impl MainWindow {
             .flex()
             .flex_col()
             .child(
-                div()
-                    .h(px(48.0))
-                    .px(px(14.0))
-                    .border_b_1()
-                    .border_color(theme.border_subtle)
-                    .flex()
-                    .items_center()
-                    .gap(px(12.0))
-                    .child(
-                        div()
-                            .text_size(px(15.0))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("剪贴板"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .font_family(UI_MONO_FONT_FAMILY)
-                            .text_color(theme.text_muted)
-                            .child(format!(
-                                "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
-                                overview.total, overview.text, overview.images, overview.files
-                            )),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .text_color(if settings.enabled {
-                                theme.accent_text
-                            } else {
-                                theme.text_muted
-                            })
-                            .child(if settings.enabled {
-                                "● CAPTURE ON"
-                            } else {
-                                "○ CAPTURE OFF"
-                            }),
+                ModuleHeader::new(
+                    "clipboard-module-header",
+                    "clipboard-module-header-title",
+                    "clipboard-module-header-metadata",
+                    "剪贴板",
+                    format!(
+                        "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
+                        overview.total, overview.text, overview.images, overview.files
                     ),
+                )
+                .metadata_monospace()
+                .trailing(
+                    div()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(if settings.enabled {
+                            theme.accent_text
+                        } else {
+                            theme.text_muted
+                        })
+                        .child(if settings.enabled {
+                            "● CAPTURE ON"
+                        } else {
+                            "○ CAPTURE OFF"
+                        })
+                        .into_any_element(),
+                )
+                .render(theme),
             )
             .child(
                 div().flex_1().min_h_0().p(px(12.0)).child(
@@ -4178,63 +4145,6 @@ fn window_control(
         })
         .on_click(on_click)
         .child(icon)
-}
-
-fn page_header(
-    theme: Theme,
-    title: &'static str,
-    description: &'static str,
-    action: Option<(MaterialIcon, &'static str)>,
-) -> impl IntoElement {
-    div()
-        .h(px(68.0))
-        .px(px(20.0))
-        .border_b_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.canvas)
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(3.0))
-                .child(
-                    div()
-                        .text_size(px(18.0))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(theme.text_muted)
-                        .child(description),
-                ),
-        )
-        .child(div().flex_1())
-        .when_some(action, |header, (icon, label)| {
-            header.child(
-                div()
-                    .h(px(34.0))
-                    .px(px(12.0))
-                    .rounded(px(6.0))
-                    .bg(theme.accent_soft)
-                    .border_1()
-                    .border_color(theme.accent)
-                    .flex()
-                    .items_center()
-                    .gap(px(7.0))
-                    .child(Icon::new(icon).size(px(16.0)).text_color(theme.accent))
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(theme.accent_text)
-                            .child(label),
-                    ),
-            )
-        })
 }
 
 fn download_task_row(
@@ -6194,6 +6104,144 @@ mod tests {
     }
 
     #[gpui::test]
+    fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui::size(px(1060.0), px(500.0)));
+            MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            )
+        });
+        window.refresh().expect("render download workspace");
+
+        let sidebar = window
+            .debug_bounds("main-sidebar")
+            .expect("rendered production sidebar");
+        assert_eq!(sidebar.size.width, px(SIDEBAR_WIDTH));
+        for selector in ["main-module-下载", "main-module-速启", "main-module-剪贴板"] {
+            let row = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("rendered sidebar row {selector}"));
+            assert_eq!(row.size.height, px(SIDEBAR_ROW_HEIGHT));
+        }
+        for module in ["下载", "速启", "剪贴板"] {
+            let title_selector: &'static str =
+                Box::leak(format!("main-module-{module}-title").into_boxed_str());
+            let description_selector: &'static str =
+                Box::leak(format!("main-module-{module}-description").into_boxed_str());
+            assert_eq!(
+                window
+                    .debug_bounds(title_selector)
+                    .expect("sidebar module title")
+                    .size
+                    .height,
+                px(LINE_HEIGHT_BODY)
+            );
+            assert_eq!(
+                window
+                    .debug_bounds(description_selector)
+                    .expect("sidebar module description")
+                    .size
+                    .height,
+                px(LINE_HEIGHT_LABEL)
+            );
+        }
+
+        let download_header = window
+            .debug_bounds("download-module-header")
+            .expect("download module header");
+        assert_eq!(download_header.size.height, px(48.0));
+        assert_eq!(
+            window
+                .debug_bounds("download-module-header-title")
+                .expect("download module title")
+                .size
+                .height,
+            px(20.0)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("download-module-header-metadata")
+                .expect("download module metadata")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+        let search = window
+            .debug_bounds("download-search")
+            .expect("download header search");
+        let settings = window
+            .debug_bounds("download-settings-action")
+            .expect("download header settings");
+        assert_eq!(settings.left() - search.right(), px(SPACING_4));
+
+        let quick_switch = window
+            .debug_bounds("main-module-速启")
+            .expect("quick-launch sidebar row");
+        window.simulate_click(quick_switch.center(), Modifiers::default());
+        window.refresh().expect("render quick-launch workspace");
+        let quick_header = window
+            .debug_bounds("quick-launch-module-header")
+            .expect("quick-launch module header");
+        assert_eq!(quick_header.size.height, download_header.size.height);
+        assert_eq!(quick_header.origin.y, download_header.origin.y);
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-module-header-title")
+                .expect("quick-launch module title")
+                .size
+                .height,
+            px(20.0)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-module-header-metadata")
+                .expect("quick-launch module metadata")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+
+        let clipboard_switch = window
+            .debug_bounds("main-module-剪贴板")
+            .expect("clipboard sidebar row");
+        window.simulate_click(clipboard_switch.center(), Modifiers::default());
+        window.refresh().expect("render clipboard workspace");
+        let clipboard_header = window
+            .debug_bounds("clipboard-module-header")
+            .expect("clipboard module header");
+        assert_eq!(clipboard_header.size.height, download_header.size.height);
+        assert_eq!(clipboard_header.origin.y, download_header.origin.y);
+        assert_eq!(
+            window
+                .debug_bounds("clipboard-module-header-title")
+                .expect("clipboard module title")
+                .size
+                .height,
+            px(20.0)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("clipboard-module-header-metadata")
+                .expect("clipboard module metadata")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+    }
+
+    #[gpui::test]
     fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         cx: &mut TestAppContext,
     ) {
@@ -6369,20 +6417,22 @@ mod tests {
 
     use super::{
         DOWNLOAD_BATCH_TOOLBAR_HEIGHT, DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT,
-        DOWNLOAD_PAGE_HEADER_HEIGHT, DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT,
-        DownloadContextCapabilities, DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey,
-        DownloadSortState, DownloadTaskFilter, MainWindow, MainWindowShellContext,
-        download_context_capabilities, download_context_menu_plan, download_filter_counts,
-        download_queue_placement_capabilities, download_segment_strip_cells,
-        download_tasks_for_view, file_index_summary, format_query_elapsed, hotkey_from_key_down,
-        masked_request_header_value, notification_transition, prepare_download_context_selection,
-        quick_find_scroll_step, quick_find_scroll_target, reconcile_download_selection,
-        set_download_sort, toggle_indexed_volume_selection, update_download_selection,
+        DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
+        DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
+        DownloadTaskFilter, MainWindow, MainWindowShellContext, download_context_capabilities,
+        download_context_menu_plan, download_filter_counts, download_queue_placement_capabilities,
+        download_segment_strip_cells, download_tasks_for_view, file_index_summary,
+        format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
+        notification_transition, prepare_download_context_selection, quick_find_scroll_step,
+        quick_find_scroll_target, reconcile_download_selection, set_download_sort,
+        toggle_indexed_volume_selection, update_download_selection,
     };
+    use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4};
+    use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL};
 
     #[test]
     fn download_workspace_uses_the_compact_editor_density_scale() {
-        assert_eq!(DOWNLOAD_PAGE_HEADER_HEIGHT, 48.0);
+        assert_eq!(MODULE_HEADER_HEIGHT, 48.0);
         assert_eq!(DOWNLOAD_FILTER_STRIP_HEIGHT, 38.0);
         assert_eq!(DOWNLOAD_TABLE_HEADER_HEIGHT, 28.0);
         assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 46.0);
@@ -7413,7 +7463,7 @@ mod tests {
         );
 
         let page_header = window
-            .debug_bounds("download-page-header")
+            .debug_bounds("download-module-header")
             .expect("download page header bounds");
         let search = window
             .debug_bounds("download-search")

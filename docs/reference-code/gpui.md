@@ -50,6 +50,12 @@ Root: `D:\Code\zed-main`
 - Module-header actions use the shared 28 px action tier and one 4 px group gap. A secondary sort
   action stays adjacent to its segmented filter instead of being pushed into an isolated far-edge
   text target. These are layout invariants; search/filter/sort continue to own only local view state.
+- Download, quick-launch and clipboard use one 48 px `ModuleHeader`: Title is 14/20, bounded
+  metadata is 11/16, and only machine-like counts use the Mono role. Module switching must not
+  change the workbench's vertical origin or invent a module-specific title scale.
+- The main sidebar remains a fixed 208 px rail with 42 px rows. Its two-line label uses Body/Label
+  roles and a stable selector; selection changes presentation only and keeps module ownership in
+  `MainWindow`.
 - Popover/ListBox shells are bounded, use the 6 px floating radius and never create an unbounded
   child list. Tooltip text may reveal a complete bounded path but must not be logged.
 - Non-list overlays such as the delayed-start calendar reuse the same Popover shell and shared
@@ -74,6 +80,8 @@ Root: `D:\Code\zed-main`
   row ends at the normal inset above the fixed footer, without a large unused viewport.
 - A production module header proves all ordinary actions are 28 px, remain inside the header, and
   form one stable action group; the sort trigger remains adjacent to and inside the filter strip.
+- One production `MainWindow` switches through all three real sidebar rows and proves identical
+  48 px module-header and 20 px title-line geometry without recreating the shell.
 - A real segmented option and toggle click mutate only the local settings draft.
 - A production count-bearing segmented group proves all cells have equal geometry and that a real
   click changes only the owning view's presentation filter.

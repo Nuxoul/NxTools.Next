@@ -11,7 +11,7 @@
 本计划用于统一三个模块及其辅助窗口的字体、颜色、控件尺寸、层级、布局、状态与动效，避免继续
 按单个截图对局部控件反复打补丁。
 
-本轮结论来自源码级扫描，没有启动桌面 GUI，因此以下内容分为：
+初始结论来自源码级扫描；后续切片同时补充真实 GPUI 窗口门禁与 Release 包截图，因此以下内容分为：
 
 - **源码已确认问题**：能从现有布局、常量、组件和资产映射直接确认；
 - **实机验收项**：字体清晰度、DPI、窗口裁剪、动效、焦点和实际视觉差异，必须在 Release 包中
@@ -416,6 +416,28 @@ rust/apps/nxtools-desktop/src/ui/
   尾部空间、错误状态、三个页头操作 containment 及筛选/排序邻接；desktop 串行门禁
   290/290、workspace `clippy -D warnings` 与 `git diff --check` 通过。本切片未启动 GUI、
   未打包，也未冒领 Release 截图人工验收。
+
+第十个 P0 主壳层切片（2026-08-14）：
+
+- 使用 interface-design、make-interfaces-feel-better、design-system、windows-desktop-e2e 与
+  screenshot 五项工作流重新检查主窗口。视觉方向固定为 Zed 式石墨工作台：连续表面、低对比
+  边界、稳定密度与最少强调色；设计决策记录在 `.interface-design/system.md`，Rust 的
+  `theme.rs`、`ui/metrics.rs` 和 `ui/typography.rs` 仍是唯一生产令牌来源。
+- 新增共享 `ModuleHeader`，下载、速启和剪贴板统一使用 48 px 页头、14/20 标题与 11/16
+  元数据；剪贴板计数保留 Mono，下载搜索、设置、计划与新建操作收进同一 4 px trailing group，
+  不改变三个模块各自的信息拓扑和业务回调。
+- 主侧栏继续保持 208 px 与 42 px 行，但标题/说明改为共享 Body/Label 字体角色，并为三个真实
+  模块行增加稳定调试选择器。三模块切换不再出现速启 68 px、剪贴板 15/10 px 与下载 48 px
+  三套页头节奏。
+- 新增真实生产 `MainWindow` GPUI 回归：在 1060×500 窗口中依次点击下载、速启、剪贴板侧栏，
+  断言三个页头和标题行几何一致；既有标题栏设置/拖动/关闭与 720 px 下载操作区回归继续通过。
+  Windows 原生生命周期继续使用 typed PlatformHost/真实 HWND 门禁；GPUI 自绘控件不冒充完整
+  UIA 控件树。
+- 本切片已通过 desktop `cargo check --tests`、三模块页头门禁、3 项标题栏门禁与下载紧凑工作区
+  门禁。首次默认 test profile 链接因系统提交内存不足失败，改用同一源码与依赖、仅关闭 test
+  debuginfo 的低内存 profile 后精确门禁通过；尚未生成新的 Release 包，也未用旧包截图冒充改后
+  效果。SH-03/SH-04 的当前生产入口已收敛，但主壳层批次仍需完成 SH-01/02/06/07/08 与完整
+  DPI 截图矩阵后才能整体勾选。
 
 ### 批次 2：主壳层与全局设置
 
