@@ -9122,3 +9122,66 @@ desired modifiers for hover-only movement.
 ### Resolution
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Updated the production-window tooltip test to pass no pressed button and default modifiers.
+
+---
+
+## [ERR-20260814-NOTIFICATION1455] notification GPUI red gate could not map Rust metadata
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: tests
+
+### Summary
+The first low-memory SH-06 production-window regression compile failed before source assertions
+because Windows could not map Rust standard-library metadata under the current commit limit.
+
+### Error
+`failed to mmap ... libcompiler_builtins...: 页面文件太小，无法完成操作。 (os error 1455)`
+
+### Context
+- Command: exact `nxtools-desktop` notification production-window test with the repository-required
+  single-job, no-incremental and high codegen-unit environment.
+- The failure happened while loading toolchain metadata, before the new test could run.
+- No GUI or package process was started.
+
+### Suggested Fix
+Finish source/static gates and retry the exact test only after Windows commit headroom recovers;
+do not start duplicate Cargo processes while the same limit remains active.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+- See Also: ERR-20260812-LAYOUT1455
+
+---
+
+## [ERR-20260814-RG-MISSING-DESKTOP-TESTS] rg included a nonexistent desktop tests directory
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A read-only gate discovery command returned exit 1 because it included a nonexistent
+`rust/apps/nxtools-desktop/tests` path alongside valid paths.
+
+### Error
+`系统找不到指定的文件。 (os error 2)`
+
+### Context
+- The command was only locating relevant UI gates; no product or test file was changed.
+- The authoritative scripts are under `tests/architecture`.
+
+### Suggested Fix
+Enumerate candidate paths with `rg --files` first, then pass only existing directories to the
+content search.
+
+### Metadata
+- Reproducible: yes
+- Related Files: tests/architecture/download-ui-lifecycle.ps1
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Ran the concrete download UI lifecycle gate directly; it passed.
