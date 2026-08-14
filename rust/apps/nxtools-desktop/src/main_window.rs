@@ -47,7 +47,7 @@ use crate::quick_launch::{
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
 use crate::ui::components::action::{
-    SegmentedOption, icon_action, labelled_icon_action, segmented_control,
+    SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
 };
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, TITLEBAR_HEIGHT};
@@ -2279,53 +2279,81 @@ impl MainWindow {
                             }),
                     )
                     .child(
-                        Button::new("download-settings")
-                            .icon(Icon::new(MaterialIcon::Settings))
-                            .label("设置")
-                            .small()
-                            .compact()
-                            .ghost()
-                            .on_click({
-                                let download_application = self.downloads.clone();
-                                move |_, _, cx| {
-                                    let download_application = download_application.clone();
-                                    cx.defer(move |cx| {
-                                        let _ =
-                                            download_application.update(cx, |application, cx| {
-                                                application.open_settings_window(cx);
-                                            });
-                                    });
-                                }
-                            }),
-                    )
-                    .child(
-                        Button::new("download-schedule")
-                            .icon(Icon::new(MaterialIcon::History))
-                            .label("计划")
-                            .small()
-                            .compact()
-                            .ghost()
-                            .on_click({
-                                let download_application = self.downloads.clone();
-                                move |_, _, cx| {
-                                    let _ = download_application.update(cx, |application, cx| {
-                                        application.open_schedule_window(cx);
-                                    });
-                                }
-                            }),
-                    )
-                    .child(
-                        Button::new("download-new-task")
-                            .icon(Icon::new(MaterialIcon::Add))
-                            .label("新建下载")
-                            .small()
-                            .compact()
-                            .primary()
-                            .on_click(move |_, _, cx| {
-                                let _ = download_application.update(cx, |application, cx| {
-                                    application.open_new_download_window(cx);
-                                });
-                            }),
+                        div()
+                            .debug_selector(|| "download-page-actions".into())
+                            .flex()
+                            .items_center()
+                            .gap(px(4.0))
+                            .child(
+                                div()
+                                    .debug_selector(|| "download-settings-action".into())
+                                    .child(
+                                        icon_action(
+                                            "download-settings",
+                                            MaterialIcon::Settings,
+                                            "下载设置",
+                                        )
+                                        .ghost()
+                                        .on_click({
+                                            let download_application = self.downloads.clone();
+                                            move |_, _, cx| {
+                                                let download_application =
+                                                    download_application.clone();
+                                                cx.defer(move |cx| {
+                                                    let _ = download_application.update(
+                                                        cx,
+                                                        |application, cx| {
+                                                            application.open_settings_window(cx);
+                                                        },
+                                                    );
+                                                });
+                                            }
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "download-schedule-action".into())
+                                    .child(
+                                        icon_action(
+                                            "download-schedule",
+                                            MaterialIcon::History,
+                                            "下载计划",
+                                        )
+                                        .ghost()
+                                        .on_click({
+                                            let download_application = self.downloads.clone();
+                                            move |_, _, cx| {
+                                                let _ = download_application.update(
+                                                    cx,
+                                                    |application, cx| {
+                                                        application.open_schedule_window(cx);
+                                                    },
+                                                );
+                                            }
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "download-new-task-action".into())
+                                    .child(
+                                        labelled_icon_action(
+                                            "download-new-task",
+                                            MaterialIcon::Add,
+                                            "新建下载",
+                                        )
+                                        .primary()
+                                        .on_click(move |_, _, cx| {
+                                            let _ = download_application.update(
+                                                cx,
+                                                |application, cx| {
+                                                    application.open_new_download_window(cx);
+                                                },
+                                            );
+                                        }),
+                                    ),
+                            ),
                     ),
             )
             .child(
@@ -2339,26 +2367,20 @@ impl MainWindow {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
+                    .gap(px(8.0))
                     .child(
                         div()
                             .w(px(DOWNLOAD_FILTER_SEGMENTED_WIDTH))
                             .flex_none()
                             .child(filter_segments),
                     )
-                    .child(div().flex_1())
                     .child(
                         div()
                             .debug_selector(|| "download-sort".into())
                             .h(px(CONTROL_HEIGHT_ACTION))
                             .flex_none()
                             .child(
-                                Button::new("download-sort")
-                                    .label(sort_label)
-                                    .xsmall()
-                                    .compact()
-                                    .ghost()
-                                    .h_full()
-                                    .rounded(px(RADIUS_CONTROL))
+                                action_button("download-sort", sort_label)
                                     .dropdown_menu_with_anchor(
                                         Corner::TopRight,
                                         move |menu, _window, _cx| {
@@ -7396,13 +7418,31 @@ mod tests {
         let search = window
             .debug_bounds("download-search")
             .expect("download search bounds");
+        let settings_action = window
+            .debug_bounds("download-settings-action")
+            .expect("download settings action bounds");
+        let schedule_action = window
+            .debug_bounds("download-schedule-action")
+            .expect("download schedule action bounds");
+        let new_task_action = window
+            .debug_bounds("download-new-task-action")
+            .expect("download new-task action bounds");
         let sort = window
             .debug_bounds("download-sort")
             .expect("download sort action bounds");
         assert!(page_header.contains(&search.origin));
         assert!(page_header.contains(&search.bottom_right()));
         assert_eq!(search.size.height.as_f32(), 28.0);
+        for action in [settings_action, schedule_action, new_task_action] {
+            assert_eq!(action.size.height.as_f32(), 28.0);
+            assert!(page_header.contains(&action.origin));
+            assert!(page_header.contains(&action.bottom_right()));
+        }
         assert_eq!(sort.size.height.as_f32(), 28.0);
+        assert!(
+            (sort.left() - filter_segments.right()) <= px(8.0),
+            "sort must remain grouped with the status filter instead of floating at the far edge"
+        );
 
         let first_element_id = first_task.as_uuid().as_u64_pair().0;
         let second_element_id = second_task.as_uuid().as_u64_pair().0;

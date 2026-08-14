@@ -33,6 +33,9 @@ use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{SPACING_6, SPACING_8, SPACING_12};
 use crate::ui::typography::TEXT_LABEL;
 
+const GLOBAL_SETTINGS_WINDOW_WIDTH: f32 = 720.0;
+const GLOBAL_SETTINGS_WINDOW_HEIGHT: f32 = 368.0;
+
 pub(crate) struct NetworkSettingsApplication {
     policy: NetworkPolicy,
     config: AppConfig,
@@ -109,7 +112,10 @@ impl NetworkSettingsApplication {
         let view_slot = Rc::new(RefCell::new(None));
         #[cfg(test)]
         let opened_view_slot = Rc::clone(&view_slot);
-        let window_size = size(px(560.0), px(430.0));
+        let window_size = size(
+            px(GLOBAL_SETTINGS_WINDOW_WIDTH),
+            px(GLOBAL_SETTINGS_WINDOW_HEIGHT),
+        );
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -777,14 +783,15 @@ impl Render for NetworkSettingsView {
                     ),
                 ],
             ))
-            .child(
+            .child(if let Some(error) = error {
+                inline_error(theme, "network-settings-inline-error", error)
+            } else {
                 div()
+                    .debug_selector(|| "network-settings-policy-note".into())
                     .text_size(px(TEXT_LABEL))
                     .text_color(theme.text_muted)
-                    .child("当前切片不提供 PAC 或代理密码输入；不会把敏感凭据明文写入配置。"),
-            )
-            .when_some(error, |panel, error| {
-                panel.child(inline_error(theme, "network-settings-inline-error", error))
+                    .child("当前切片不提供 PAC 或代理密码输入；不会把敏感凭据明文写入配置。")
+                    .into_any_element()
             })
             .into_any_element();
         let footer_application = self.application.clone();
@@ -934,6 +941,10 @@ mod tests {
         });
         let mut window = VisualTestContext::from_window(window_handle, cx);
         window.run_until_parked();
+        let actual_window_size = window_handle
+            .update(cx, |_, window, _| window.bounds().size)
+            .expect("read production global-settings bounds");
+        assert_eq!(actual_window_size, size(px(720.0), px(368.0)));
         window.update(|window, cx| {
             view.update(cx, |view, cx| {
                 view.host.update(cx, |input, cx| {
@@ -960,7 +971,10 @@ mod tests {
             .expect("shared settings footer");
         assert_eq!(shell.size.width, content.size.width);
         assert_eq!(shell.size.width, footer.size.width);
-        assert!(content.bottom() <= footer.top());
+        assert!(
+            content.bottom() <= footer.top(),
+            "content={content:?}, footer={footer:?}"
+        );
         let general_section = window
             .debug_bounds("network-settings-general-section")
             .expect("shared settings section");
@@ -968,6 +982,12 @@ mod tests {
             .debug_bounds("network-settings-network-section")
             .expect("shared network section");
         assert_eq!(general_section.size.width, network_section.size.width);
+        let policy_note = window
+            .debug_bounds("network-settings-policy-note")
+            .expect("bounded network policy note");
+        let trailing_inset = footer.top() - policy_note.bottom();
+        assert!(trailing_inset >= px(SPACING_12));
+        assert!(trailing_inset <= px(SPACING_12 + 2.0));
         let start_toggle = window
             .debug_bounds("system-start-on-login")
             .expect("shared settings toggle");
@@ -1080,7 +1100,10 @@ mod tests {
             .expect("fixed settings footer");
         assert!(inline_error.left() >= content.left());
         assert!(inline_error.right() <= content.right());
-        assert!(inline_error.bottom() <= footer.top());
+        assert!(
+            inline_error.bottom() <= footer.top(),
+            "inline_error={inline_error:?}, footer={footer:?}"
+        );
         window.update(|_, cx| assert!(view.read(cx).error.is_some()));
         let _ = std::fs::remove_dir_all(directory);
     }

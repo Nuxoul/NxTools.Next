@@ -4,6 +4,99 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260814-DESKTOP-TEST-SHORT-TIMEOUT] full_desktop_test_started_with_short_wrapper_timeout
+
+**Logged**: 2026-08-14T10:34:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: testing
+
+### Summary
+The first full desktop regression command used a short shell timeout instead of a long command
+deadline with resumable tool yielding.
+
+### Error
+`command timed out after 5035 milliseconds`
+
+### Context
+The wrapper terminated before reporting any test result. A process inspection confirmed that no
+Cargo, rustc, or desktop test process survived, so no duplicate build was started.
+
+### Suggested Fix
+Give the shell command the full expected runtime and let the outer tool yield a resumable cell ID;
+poll that cell rather than constraining Cargo itself.
+
+### Metadata
+- Reproducible: yes
+- Related Files: AGENTS.md
+
+### Resolution
+- **Resolved**: 2026-08-14T10:35:00+08:00
+- **Notes**: Confirmed zero surviving build processes before restarting with a long deadline.
+
+---
+
+## [ERR-20260814-CARGO-EXACT-FILTER] omitted_module_path_from_exact_test_filter
+
+**Logged**: 2026-08-14T10:24:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: testing
+
+### Summary
+An exact Cargo test filter used only the function name and silently ran zero tests.
+
+### Error
+`0 passed; 0 failed; 290 filtered out`
+
+### Context
+Rust unit-test names include their module path, so `--exact` required
+`network_settings::tests::save_persists_before_publishing_the_shared_policy`.
+
+### Suggested Fix
+When an exact filter is newly introduced, list matching tests first and use the complete module path.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/network_settings.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T10:25:00+08:00
+- **Notes**: Listed the test names and reran the full exact path, obtaining the intended red failure.
+
+---
+
+## [ERR-20260814-OLDPROJECT-SOURCEPATH] assumed_old_project_src_directory
+
+**Logged**: 2026-08-14T10:18:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: workflow
+
+### Summary
+A read-only reference lookup assumed the old Avalonia project used a `src` directory.
+
+### Error
+`rg: D:\RiderProject\NxTools\src: The system cannot find the path specified.`
+
+### Context
+The old project keeps `Views`, `Controls`, `Services`, and `ViewModels` directly under its repository
+root. No source or workspace data was modified.
+
+### Suggested Fix
+List the recorded reference root before narrowing an old-project search, then follow the actual
+`Views/MainWindow.axaml` and `Views/SettingsWindow.axaml` entries.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/reference-code/gpui.md
+
+### Resolution
+- **Resolved**: 2026-08-14T10:19:00+08:00
+- **Notes**: Listed the old root and continued through its real Avalonia view paths.
+
+---
+
 ## [ERR-20260813-MCL] shared_menu_constant_assertion
 
 **Logged**: 2026-08-13T16:58:00+08:00

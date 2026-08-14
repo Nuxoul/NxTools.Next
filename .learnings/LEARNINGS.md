@@ -6,6 +6,46 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260814-COMPACTDEADSPACE] correction
+
+**Logged**: 2026-08-14T10:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Token-compliant control heights do not make a surface compact when its window geometry and action
+grouping still create dead space or isolated tiny controls.
+
+### Details
+The packaged download workspace used 28 px in several isolated wrappers, but module actions still
+bypassed the shared action component and the sort trigger was pushed to the far edge as bare text.
+The global-settings content used shared sections inside a hard-coded 560×430 client area, leaving a
+large unused band below a cramped 560 px content column. The result was technically bounded but did
+not match the accepted clipboard/Zed visual rhythm.
+
+### Suggested Action
+For each production-window geometry gate, assert both positive sizing and distribution: action
+height plus adjacency/containment, and content width plus the remaining inset before a fixed footer.
+Do not infer visual comfort from shared component adoption alone.
+
+### Metadata
+- Source: user_feedback
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs, rust/apps/nxtools-desktop/src/network_settings.rs
+- Tags: gpui, zed, layout, dead-space, action-group
+- Pattern-Key: ui.tokens_plus_distribution
+- Recurrence-Count: 1
+- First-Seen: 2026-08-14
+- Last-Seen: 2026-08-14
+
+### Resolution
+- **Resolved**: 2026-08-14T10:42:00+08:00
+- **Notes**: Added production native-bounds/distribution gates, resized global settings to the
+  content-owned 720×368 surface, grouped the module actions at 28 px, and kept sort adjacent to the
+  status segments.
+
+---
+
 ## [LRN-20260813-001] best_practice
 
 **Logged**: 2026-08-13T12:00:00+08:00

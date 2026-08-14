@@ -37,7 +37,7 @@ pub(crate) fn primary_button_variant(theme: Theme, cx: &App) -> ButtonCustomVari
         .active(theme.accent.into())
 }
 
-pub(crate) fn action_button(id: &'static str, label: &'static str) -> Button {
+pub(crate) fn action_button(id: &'static str, label: impl Into<SharedString>) -> Button {
     Button::new(id)
         .label(label)
         .small()

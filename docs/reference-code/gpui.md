@@ -1,6 +1,6 @@
 # GPUI / Zed visual component reference index
 
-Last verified: 2026-08-13.
+Last verified: 2026-08-14.
 
 ## Scope
 
@@ -42,6 +42,14 @@ Root: `D:\Code\zed-main`
   for status, not navigation or ordinary labels.
 - SettingsShell owns one client titlebar, one scrollable content region and one fixed dialog footer.
   The shell does not own application persistence or native-window policy.
+- A compact settings shell must size its production client area to the content it actually owns.
+  Conforming controls inside an oversized fixed viewport is not a valid Zed-like result: the final
+  section/note keeps only the ordinary 12 px content inset above the fixed footer. The old NxTools
+  `Views/SettingsWindow.axaml` used a 984×612 workspace because it contained many global sections;
+  that size is not inherited by the smaller Next global-settings subset.
+- Module-header actions use the shared 28 px action tier and one 4 px group gap. A secondary sort
+  action stays adjacent to its segmented filter instead of being pushed into an isolated far-edge
+  text target. These are layout invariants; search/filter/sort continue to own only local view state.
 - Popover/ListBox shells are bounded, use the 6 px floating radius and never create an unbounded
   child list. Tooltip text may reveal a complete bounded path but must not be logged.
 - Non-list overlays such as the delayed-start calendar reuse the same Popover shell and shared
@@ -62,6 +70,10 @@ Root: `D:\Code\zed-main`
 ## Required regressions
 
 - A production settings window proves titlebar/content/footer geometry through the shared shell.
+- The production global-settings window proves its actual native bounds and that the final content
+  row ends at the normal inset above the fixed footer, without a large unused viewport.
+- A production module header proves all ordinary actions are 28 px, remain inside the header, and
+  form one stable action group; the sort trigger remains adjacent to and inside the filter strip.
 - A real segmented option and toggle click mutate only the local settings draft.
 - A production count-bearing segmented group proves all cells have equal geometry and that a real
   click changes only the owning view's presentation filter.
