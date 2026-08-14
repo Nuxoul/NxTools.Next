@@ -8899,3 +8899,37 @@ Use a let-chain for the optional application upgrade and return cloned String se
 ### Resolution
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Applied the suggested forms and reran workspace Clippy.
+
+---
+
+## [ERR-20260814-DL078-PACKAGE-HEADROOM] release_preflight_refused_default_commit_threshold
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The first DL-07/DL-08 package attempt stopped before Cargo because Windows commit headroom was below
+the default six-GiB release threshold.
+
+### Error
+`Release build commit headroom: 3.72 GiB (required: 6.00 GiB)`.
+
+### Context
+- The package script safely stopped before compilation and did not produce a partial release set.
+- The user had explicitly authorized packaging without the memory-headroom gate.
+- Single-job Cargo, disabled incremental compilation, and 256 codegen units remained enabled.
+
+### Suggested Fix
+Retry the same package command with `-MinimumCommitHeadroomGiB 0` only under the user's explicit risk
+authorization; keep all bounded-build settings unchanged.
+
+### Metadata
+- Reproducible: yes
+- Related Files: scripts/package.ps1, scripts/windows-build-tools.ps1
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Retried with the user-authorized zero headroom threshold and the standard low-memory
+  Cargo environment.
