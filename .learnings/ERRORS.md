@@ -9026,3 +9026,99 @@ authorization; keep all bounded-build settings unchanged.
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Retried with the user-authorized zero headroom threshold and the standard low-memory
   Cargo environment.
+
+---
+
+## [ERR-20260814-UI-ASSET-ROOT] guessed_desktop_asset_directory
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+An asset inventory command guessed `rust/apps/nxtools-desktop/assets/icons`, but this project stores
+registered SVGs under `rust/apps/nxtools-desktop/assets/material-symbols`.
+
+### Error
+`Get-ChildItem: Cannot find path ...\assets\icons because it does not exist.`
+
+### Context
+- The failed operation was read-only and did not modify the worktree.
+- `src/assets.rs` is the authoritative map from logical asset paths to embedded filesystem paths.
+
+### Suggested Fix
+Read `src/assets.rs` first, then enumerate the registered filesystem root instead of guessing an
+asset directory from logical URI names.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/assets.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Located the correct asset root through the registry and continued with explicit files.
+
+---
+
+## [ERR-20260814-PS-RG-GLOB] rg_does_not_expand_powershell_path_globs
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Passing a Cargo registry path containing `*` directly to `rg` failed because Windows did not expand
+the wildcard into a filesystem path.
+
+### Error
+`文件名、目录名或卷标语法不正确。 (os error 123)`
+
+### Context
+- The command attempted to locate `gpui-component-*/src/tooltip.rs`.
+- The failure was read-only and did not affect the worktree.
+
+### Suggested Fix
+Resolve wildcard directories with `Get-ChildItem -Filter`, store the resulting concrete paths, then
+pass those paths to `rg`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Resolved the registry directory with PowerShell first and inspected the concrete file.
+
+---
+
+## [ERR-20260814-GPUI-MOUSE-MOVE] pinned_gpui_mouse_move_requires_button_state
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first caption-tooltip test called `simulate_mouse_move` with only a position, but pinned GPUI
+0.2.2 also requires pressed-button state and modifiers.
+
+### Error
+`this method takes 3 arguments but 1 argument was supplied`
+
+### Context
+- The failure was a test compilation error; product code did not execute.
+- The pinned API takes `(position, Option<MouseButton>, Modifiers)`.
+
+### Suggested Fix
+Inspect the pinned dependency method before using newer GPUI test examples and pass `None` plus the
+desired modifiers for hover-only movement.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Updated the production-window tooltip test to pass no pressed button and default modifiers.
