@@ -8770,3 +8770,132 @@ select unrelated tests.
 ### Resolution
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Replaced the invalid multi-filter command with separate targeted invocations.
+
+---
+
+## [ERR-20260814-LEGACY-UI-PATH] assumed_nested_legacy_main_window_path
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A parallel reference inspection stopped because it assumed the old NxTools UI lived under a
+`src/NxTools.App` subtree.
+
+### Error
+`D:\RiderProject\NxTools\src\NxTools.App\Views\MainWindow.axaml` did not exist.
+
+### Context
+- The old reference project currently stores the files directly under `Views/` and `ViewModels/`.
+- One rejected path caused the composed inspection call to return before the other outputs could be
+  used.
+
+### Suggested Fix
+Resolve legacy reference entry points with `rg --files` before composing parallel reads, and keep
+each optional reference lookup tolerant of a missing path.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/reference-code/download.md
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Located `Views/MainWindow.axaml` and `ViewModels/MainWindowViewModel.cs` with
+  `rg --files` before retrying the inspection.
+
+---
+
+## [ERR-20260814-RUST-EXACT-MODULE] bare_test_name_with_exact_filtered_everything
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A Rust targeted regression command combined a bare function name with `--exact`, so the harness ran
+zero tests instead of the intended module-qualified test.
+
+### Error
+`running 0 tests` and `289 filtered out` despite a successful exit code.
+
+### Context
+- The libtest name includes its module path.
+- A successful Cargo exit is not evidence when the executed test count is zero.
+
+### Suggested Fix
+Use the unique function-name substring without `--exact`, or first list the fully qualified test name
+and then pass that exact value.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Re-ran with the unique substring and verified that one test executed.
+
+---
+
+## [ERR-20260814-OPTIONAL-RG] optional_diagnostic_search_failed_composed_check
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+An optional `rg` lookup for existing detail/context event documentation returned no matches and made
+the composed read-only inspection report failure.
+
+### Error
+The search command exited with code 1 because no matching diagnostic event was present.
+
+### Context
+- No product build or test failed.
+- The new toolbar emits no new event; it delegates to the existing typed batch/queue diagnostics.
+
+### Suggested Fix
+Run optional searches independently or explicitly convert their no-match exit to a successful empty
+result so unrelated inspection output remains visible.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/diagnostics.md
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Subsequent optional searches use an explicit no-match fallback.
+
+---
+
+## [ERR-20260814-DL078-CLIPPY] initial_workspace_clippy_found_three_style_warnings
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The first DL-07/DL-08 workspace Clippy pass rejected one nested conditional and two redundant String
+conversions under `-D warnings`.
+
+### Error
+`clippy::collapsible-if` and two `clippy::useless-conversion` diagnostics in `main_window.rs`.
+
+### Context
+- `cargo check --workspace -j 1` passed first.
+- The findings were style-only and did not invalidate the passing production GPUI regressions.
+
+### Suggested Fix
+Use a let-chain for the optional application upgrade and return cloned String selectors directly.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Applied the suggested forms and reran workspace Clippy.
