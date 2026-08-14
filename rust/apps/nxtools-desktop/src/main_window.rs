@@ -50,6 +50,7 @@ use crate::ui::components::action::{
     SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
 };
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
+use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::metrics::{
     CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_2, SPACING_4,
@@ -2469,29 +2470,29 @@ impl MainWindow {
                         if total_count == 0 {
                             empty_state(
                                 theme,
+                                "download-empty-state",
                                 MaterialIcon::Download,
                                 "还没有下载任务",
                                 "点击右上角新建下载，提交真实 HTTP 或 HTTPS 地址。",
                             )
-                            .flex_1()
                             .into_any_element()
                         } else if !search_query.is_empty() {
                             empty_state(
                                 theme,
+                                "download-search-empty-state",
                                 MaterialIcon::Search,
                                 "没有匹配的下载任务",
                                 "尝试缩短关键词，或切换到其他状态分类。",
                             )
-                            .flex_1()
                             .into_any_element()
                         } else {
                             empty_state(
                                 theme,
+                                "download-filter-empty-state",
                                 MaterialIcon::Download,
                                 self.download_filter.empty_title(),
                                 "任务状态变化后会自动出现在这里。",
                             )
-                            .flex_1()
                             .into_any_element()
                         }
                     } else {
@@ -5254,12 +5255,35 @@ fn download_segment_detail(
 ) -> AnyElement {
     let Some(detail) = detail else {
         return detail_error.map_or_else(
-            || download_detail_empty(theme, "正在加载分段详情"),
-            |error| download_detail_error(theme, error),
+            || {
+                progress_state(
+                    theme,
+                    "download-detail-segments-progress",
+                    "正在加载分段详情",
+                    "正在读取持久化分段与连接状态。",
+                )
+                .into_any_element()
+            },
+            |error| {
+                inline_error_state(
+                    theme,
+                    "download-detail-segments-error",
+                    "分段详情加载失败",
+                    error.to_owned(),
+                )
+                .into_any_element()
+            },
         );
     };
     if detail.segments.is_empty() {
-        return download_detail_empty(theme, "尚未生成分段计划");
+        return empty_state(
+            theme,
+            "download-detail-segments-empty",
+            MaterialIcon::Info,
+            "尚未生成分段计划",
+            "单连接任务或尚未开始的任务不会显示分段。",
+        )
+        .into_any_element();
     }
     let total_bytes = detail
         .segments
@@ -5483,12 +5507,35 @@ fn download_timeline_detail(
 ) -> AnyElement {
     let Some(detail) = detail else {
         return detail_error.map_or_else(
-            || download_detail_empty(theme, "正在加载任务日志"),
-            |error| download_detail_error(theme, error),
+            || {
+                progress_state(
+                    theme,
+                    "download-detail-log-progress",
+                    "正在加载任务日志",
+                    "正在读取该任务的有界事件时间线。",
+                )
+                .into_any_element()
+            },
+            |error| {
+                inline_error_state(
+                    theme,
+                    "download-detail-log-error",
+                    "任务日志加载失败",
+                    error.to_owned(),
+                )
+                .into_any_element()
+            },
         );
     };
     if detail.timeline.is_empty() {
-        return download_detail_empty(theme, "暂无任务日志");
+        return empty_state(
+            theme,
+            "download-detail-log-empty",
+            MaterialIcon::History,
+            "暂无任务日志",
+            "任务产生状态变化后会在这里显示有界事件。",
+        )
+        .into_any_element();
     }
     let mut rows = div().flex().flex_col();
     for entry in &detail.timeline {
@@ -5546,32 +5593,6 @@ fn download_detail_section(
         section = section.child(download_detail_line_owned(theme, label, value));
     }
     section.into_any_element()
-}
-
-fn download_detail_empty(theme: Theme, message: &'static str) -> AnyElement {
-    div()
-        .h(px(88.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_BODY))
-        .text_color(theme.text_muted)
-        .child(message)
-        .into_any_element()
-}
-
-fn download_detail_error(theme: Theme, message: &str) -> AnyElement {
-    div()
-        .h(px(88.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_BODY))
-        .text_color(theme.danger)
-        .child(format!("详情加载失败：{message}"))
-        .into_any_element()
 }
 
 fn download_detail_field(
@@ -6026,46 +6047,6 @@ fn download_sort_header_cell(
         })
 }
 
-fn empty_state(
-    theme: Theme,
-    icon: MaterialIcon,
-    title: &'static str,
-    description: &'static str,
-) -> gpui::Div {
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(8.0))
-        .child(
-            div()
-                .size(px(42.0))
-                .rounded(px(10.0))
-                .bg(theme.surface_raised)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(Icon::new(icon).size(px(21.0)).text_color(theme.text_muted)),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(theme.text_secondary)
-                .child(title),
-        )
-        .child(
-            div()
-                .max_w(px(430.0))
-                .text_center()
-                .text_size(px(11.0))
-                .text_color(theme.text_muted)
-                .child(description),
-        )
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
@@ -6279,6 +6260,29 @@ mod tests {
             .debug_bounds("download-settings-action")
             .expect("download header settings");
         assert_eq!(settings.left() - search.right(), px(SPACING_4));
+        let download_empty = window
+            .debug_bounds("download-empty-state")
+            .expect("download work-surface empty state");
+        let download_empty_icon = window
+            .debug_bounds("download-empty-state-icon")
+            .expect("download empty icon slot");
+        let download_empty_title = window
+            .debug_bounds("download-empty-state-title")
+            .expect("download empty title");
+        let download_empty_description = window
+            .debug_bounds("download-empty-state-description")
+            .expect("download empty description");
+        assert_eq!(download_empty_icon.size, size(px(18.0), px(18.0)));
+        assert_eq!(download_empty_title.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(
+            download_empty_description.size.height,
+            px(LINE_HEIGHT_LABEL)
+        );
+        assert_eq!(
+            download_empty_title.left(),
+            download_empty_description.left()
+        );
+        assert!(download_empty.left() >= sidebar.right());
 
         let quick_switch = window
             .debug_bounds("main-module-速启")
@@ -7978,6 +7982,55 @@ mod tests {
         assert_eq!(
             window.read(|cx| main_window.read(cx).download_detail_tab),
             DownloadDetailTab::Segments
+        );
+        window.refresh().expect("render detail progress state");
+        let detail_progress = window
+            .debug_bounds("download-detail-segments-progress")
+            .expect("production detail progress state");
+        let detail_progress_icon = window
+            .debug_bounds("download-detail-segments-progress-icon")
+            .expect("detail progress icon");
+        let detail_progress_title = window
+            .debug_bounds("download-detail-segments-progress-title")
+            .expect("detail progress title");
+        let detail_progress_description = window
+            .debug_bounds("download-detail-segments-progress-description")
+            .expect("detail progress description");
+        assert_eq!(detail_progress.size.height, px(72.0));
+
+        window.update(|_, cx| {
+            downloads.update(cx, |application, cx| {
+                application.replace_task_detail_error_for_test(
+                    selected_task,
+                    "detail fixture failure",
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render detail error state");
+        let detail_error_state = window
+            .debug_bounds("download-detail-segments-error")
+            .expect("production detail error state");
+        let detail_error_marker = window
+            .debug_bounds("download-detail-segments-error-marker")
+            .expect("detail error semantic edge");
+        let detail_error_icon = window
+            .debug_bounds("download-detail-segments-error-icon")
+            .expect("detail error icon");
+        let detail_error_title = window
+            .debug_bounds("download-detail-segments-error-title")
+            .expect("detail error title");
+        let detail_error_description = window
+            .debug_bounds("download-detail-segments-error-description")
+            .expect("detail error description");
+        assert_eq!(detail_error_state.size, detail_progress.size);
+        assert_eq!(detail_error_marker.size.width, px(2.0));
+        assert_eq!(detail_error_icon.origin.x, detail_progress_icon.origin.x);
+        assert_eq!(detail_error_title.origin.x, detail_progress_title.origin.x);
+        assert_eq!(
+            detail_error_description.origin.x,
+            detail_progress_description.origin.x
         );
 
         let name = window

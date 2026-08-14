@@ -4,4 +4,5 @@ pub(crate) mod list;
 pub(crate) mod menu;
 pub(crate) mod popover;
 pub(crate) mod settings;
+pub(crate) mod state;
 pub(crate) mod titlebar;

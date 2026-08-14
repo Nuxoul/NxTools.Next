@@ -51,6 +51,7 @@ use crate::theme::{
     ROW_HORIZONTAL_PADDING, SEARCH_TEXT_SIZE, SURFACE_INSET, Theme, UI_FONT_FAMILY,
     UI_MONO_FONT_FAMILY,
 };
+use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::native_window_handle;
 
 mod file_dialog_search;
@@ -6025,48 +6026,44 @@ impl Render for QuickLaunchPanel {
                         ),
                 )
                 .when(pending, |container| {
-                    container.child(
-                        div()
-                            .h(px(26.0))
-                            .px(px(8.0))
-                            .flex()
-                            .items_center()
-                            .gap(px(7.0))
-                            .text_size(px(META_TEXT_SIZE))
-                            .text_color(theme.text_muted)
-                            .child(
-                                gpui_component::Icon::new(MaterialIcon::ProgressActivity)
-                                    .size(px(13.0)),
-                            )
-                            .child("正在加载 Windows 操作…"),
-                    )
+                    container.child(progress_state(
+                        theme,
+                        "quick-launch-actions-progress",
+                        "正在加载 Windows 操作",
+                        "正在读取所选目标的系统操作。",
+                    ))
                 })
                 .when(action_entries.is_empty() && !pending, |container| {
-                    container.child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(12.0))
-                            .text_color(theme.text_muted)
-                            .child("没有匹配的操作"),
-                    )
+                    container.child(empty_state(
+                        theme,
+                        "quick-launch-actions-empty",
+                        MaterialIcon::Search,
+                        "没有匹配的操作",
+                        "尝试缩短关键词或返回上一级操作。",
+                    ))
                 })
                 .children(action_entries)
                 .vertical_scrollbar(&self.action_scroll)
         } else if self.results.is_empty() {
             div()
-                .id("quick-launch-results-empty")
                 .flex_1()
                 .min_h_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(12.0))
-                .text_color(theme.text_muted)
+                .when(self.search_pending, |container| {
+                    container.child(progress_state(
+                        theme,
+                        "quick-launch-results-progress",
+                        "正在搜索",
+                        "正在合并应用、本地文件与系统工具结果。",
+                    ))
+                })
                 .when(!self.search_pending, |container| {
-                    container.child(QUICK_LAUNCH_EMPTY_RESULTS_LABEL)
+                    container.child(empty_state(
+                        theme,
+                        "quick-launch-results-empty",
+                        MaterialIcon::Search,
+                        QUICK_LAUNCH_EMPTY_RESULTS_LABEL,
+                        "尝试缩短关键词，或输入应用、文件和命令名称。",
+                    ))
                 })
         } else {
             let result_count = self.results.len();
@@ -6263,6 +6260,87 @@ fn quick_launch_bounds(
 mod tests {
     use super::*;
     use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let panel_slot = Rc::new(RefCell::new(None));
+        let panel_slot_for_window = Rc::clone(&panel_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
+            let panel = cx.new(|cx| {
+                let mut panel = QuickLaunchPanel::new(
+                    Vec::new(),
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    None,
+                    Vec::new(),
+                    WeakEntity::new_invalid(),
+                    window,
+                    cx,
+                );
+                panel.results_visible = true;
+                panel
+            });
+            *panel_slot_for_window.borrow_mut() = Some(panel.clone());
+            Root::new(panel, window, cx)
+        });
+        let panel = panel_slot
+            .borrow_mut()
+            .take()
+            .expect("production quick-launch panel");
+
+        window.refresh().expect("render quick-launch empty state");
+        let empty = window
+            .debug_bounds("quick-launch-results-empty")
+            .expect("quick-launch shared empty state");
+        let empty_icon = window
+            .debug_bounds("quick-launch-results-empty-icon")
+            .expect("quick-launch empty icon");
+        let empty_title = window
+            .debug_bounds("quick-launch-results-empty-title")
+            .expect("quick-launch empty title");
+        let empty_description = window
+            .debug_bounds("quick-launch-results-empty-description")
+            .expect("quick-launch empty description");
+        assert_eq!(empty_icon.size, size(px(18.0), px(18.0)));
+        assert_eq!(empty_title.size.height, px(18.0));
+        assert_eq!(empty_description.size.height, px(16.0));
+        assert_eq!(empty_title.left(), empty_description.left());
+        assert_eq!(empty.size.width, px(PANEL_WIDTH));
+
+        panel.update_in(window, |panel, _window, cx| {
+            panel.search_pending = true;
+            cx.notify();
+        });
+        window
+            .refresh()
+            .expect("render quick-launch progress state");
+        let progress = window
+            .debug_bounds("quick-launch-results-progress")
+            .expect("quick-launch shared progress state");
+        let progress_icon = window
+            .debug_bounds("quick-launch-results-progress-icon")
+            .expect("quick-launch progress icon");
+        let progress_title = window
+            .debug_bounds("quick-launch-results-progress-title")
+            .expect("quick-launch progress title");
+        let progress_description = window
+            .debug_bounds("quick-launch-results-progress-description")
+            .expect("quick-launch progress description");
+        assert_eq!(progress.size.width, empty.size.width);
+        assert_eq!(progress_icon.size, empty_icon.size);
+        assert_eq!(progress_title.size.height, empty_title.size.height);
+        assert_eq!(
+            progress_description.size.height,
+            empty_description.size.height
+        );
+    }
 
     fn search_result(id: &str, source: ApplicationSource) -> SearchResult {
         SearchResult {

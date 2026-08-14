@@ -77,28 +77,3 @@ pub(crate) fn compact_list_row(
         )
         .into_any_element()
 }
-
-#[allow(dead_code)]
-pub(crate) fn empty_state(
-    theme: Theme,
-    title: impl Into<gpui::SharedString>,
-    description: impl Into<gpui::SharedString>,
-) -> AnyElement {
-    div()
-        .w_full()
-        .flex_1()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(SPACING_6))
-        .text_color(theme.text_muted)
-        .child(
-            div()
-                .text_size(px(TEXT_BODY))
-                .text_color(theme.text_secondary)
-                .child(title.into()),
-        )
-        .child(div().text_size(px(TEXT_LABEL)).child(description.into()))
-        .into_any_element()
-}

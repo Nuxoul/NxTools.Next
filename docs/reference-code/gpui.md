@@ -19,6 +19,7 @@ Root: `D:\Code\zed-main`
 | `crates/ui/src/components/button/toggle_button.rs` | Segmented groups own one selected index, equal-width cells by default, contiguous corner treatment and one group accessibility/focus order. Selected state is semantic rather than an unrelated colored chip. |
 | `crates/ui/src/components/list/list_item.rs` | Selectable list rows use a continuous surface, neutral hover/active/selected backgrounds and one accessible actionable node; rounding is optional rather than mandatory per row. |
 | `crates/ui/src/components/list/list.rs` | A List owns one full-width child stack and a real empty state instead of pagination chrome; item semantics remain in ListItem. |
+| `crates/ui/src/components/label/loading_label.rs` | Loading text remains a muted label inside the owning surface. NxTools.Next keeps that restrained hierarchy but deliberately omits the repeating ellipsis animation because the local design contract forbids idle animation loops. |
 | `crates/ui/src/components/popover.rs` | Popover is an elevated surface attached to its trigger rather than to the pointer. It provides the bounded presentation shell while the caller owns the selection model. |
 | `crates/ui/src/components/context_menu.rs` | ContextMenu keeps one focused menu surface, real selectable descendants, fixed icon/title slots and separators between capability groups. A confirmed handler runs before the menu emits dismissal; action dispatch has its own short selected-state delay. Escape or dismissal returns control to the invoking context. |
 | `crates/ui/src/components/notification/alert_modal.rs` | Dialog content and footer are separate regions; the footer groups secondary and primary actions rather than scattering actions through content. |
@@ -89,6 +90,16 @@ Root: `D:\Code\zed-main`
   second polling or diagnostic lifecycle. Ordinary file names use Body typography and paths/errors
   use Label typography, with full clipped failures available through an existing detail surface or
   tooltip.
+- Empty, loading and recoverable-error presentation stays inside the content boundary that owns the
+  missing data; it does not create a centered card, shadow or second surface. The three shared states
+  use one 18 px icon slot, Body title, Label description, 8 px text gap and 12 px content inset.
+  Empty is neutral, loading uses only the accent icon, and error uses only danger icon/text plus a
+  narrow semantic edge. Loading is static unless the underlying operation already exposes bounded
+  progress; rendering does not start a timer or animation loop.
+- Old NxTools clipboard history used a centered muted 12 px `暂无剪贴板历史` label, while the LAN
+  history window used a decorative 38 px icon/title stack. SH-07 preserves the useful empty-state
+  conditions and explanatory copy, but standardizes their presentation on the denser Zed list
+  boundary rather than carrying both legacy visual dialects forward.
 - GPUI entity callbacks update their own draft synchronously and defer any cross-entity operation to
   the next application turn.
 
@@ -120,3 +131,6 @@ Root: `D:\Code\zed-main`
 - A production 920×480 `MainWindow` with progress, failure and detailed success notifications proves
   the three-card stack stays below titlebar/module actions and inside the client edge; it also clicks
   the real 28 px action and dismiss targets and observes generation-scoped exit state.
+- Production download, quick-launch and clipboard surfaces exercise the shared empty/loading/error
+  states and prove identical icon/title/description geometry without changing their existing query,
+  task-detail or clipboard-history ownership.

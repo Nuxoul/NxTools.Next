@@ -48,6 +48,15 @@
 - Empty/error/loading states preserve the same content boundary instead of introducing centered cards.
 - Numeric transfer columns use Mono; user-facing Chinese remains in the UI font.
 
+### Work states
+
+- Empty, progress and recoverable error states share one 72 px minimum row, 12 px inset, 18 px icon
+  slot and 8 px icon-to-copy gap.
+- Title/description always use Body 12/18 and Label 11/16 with a 2 px internal gap.
+- Empty is neutral; progress uses accent only on the icon; error uses danger only on the icon/title
+  and a 2 px leading edge. No state owns a card background, shadow or idle animation loop.
+- Copy states what is absent or happening first, followed by one short next-step or scope sentence.
+
 ### Actions
 
 - Icon-only actions require a tooltip and stable 28 px visible geometry.

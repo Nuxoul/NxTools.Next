@@ -9185,3 +9185,99 @@ content search.
 ### Resolution
 - **Resolved**: 2026-08-14T00:00:00+08:00
 - **Notes**: Ran the concrete download UI lifecycle gate directly; it passed.
+
+---
+
+## [ERR-20260814-RG-MISSING-ZED-GPUI-UI] Zed state search included a nonexistent gpui_ui crate
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A read-only Zed state-component search returned exit 1 because it included the nonexistent
+`crates/gpui_ui` path beside the valid `crates/ui` path.
+
+### Error
+`rg: crates\\gpui_ui: The system cannot find the path specified. (os error 3)`
+
+### Context
+- The command was locating reference implementations for SH-07; no product file was changed.
+- The relevant Zed entries are under `crates/ui/src/components/list` and
+  `crates/ui/src/components/label`.
+
+### Suggested Fix
+Resolve candidate files with `rg --files` before searching optional reference-crate paths.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/reference-code/gpui.md
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Restricted the reference inspection to the verified Zed UI component paths.
+
+---
+
+## [ERR-20260814-SH07-FMT] SH-07 formatting check found rustfmt-only differences
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The first SH-07 `cargo fmt --check` reported only line wrapping in the newly added state calls and
+geometry assertions.
+
+### Error
+`cargo fmt --all -- --check` exited 1 with formatting diffs.
+
+### Context
+- No compilation or product execution had started.
+- The same check also confirmed Windows virtual-memory headroom was only about 0.53 GiB, so Cargo
+  compilation remains unsafe until that condition changes.
+
+### Suggested Fix
+Apply rustfmt mechanically and rerun the non-compiling format/diff gates.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/state.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Applied `cargo fmt --all`; no product logic changed.
+
+---
+
+## [ERR-20260814-RG-OPTIONAL-NO-MATCH] combined optional test search treated no match as failure
+
+**Logged**: 2026-08-14T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A combined `rg` discovery command exited 1 because one optional pattern had no matches, even though
+the earlier patterns returned the needed production-test locations.
+
+### Error
+`rg` exit code 1 with no diagnostic text for the unmatched optional pattern.
+
+### Context
+- The command only searched for existing GPUI test idioms; no file was changed.
+- PowerShell propagated the final `rg` exit status for the whole command.
+
+### Suggested Fix
+Run optional searches separately or append an explicit PowerShell no-match branch when absence is
+an expected result.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/quick_launch.rs
+
+### Resolution
+- **Resolved**: 2026-08-14T00:00:00+08:00
+- **Notes**: Opened the concrete existing GPUI test blocks directly and reused their established API.

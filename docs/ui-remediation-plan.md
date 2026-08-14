@@ -470,6 +470,22 @@ rust/apps/nxtools-desktop/src/ui/
   精确 Cargo 门禁在加载 Rust 标准库元数据时受 Windows pagefile 1455 阻断；源码/格式门禁继续
   完成，待系统提交空间恢复后重跑，不以本轮源码结果冒领 Release/DPI 截图验收。
 
+第十三个 P0 工作状态切片（2026-08-14）：
+
+- SH-07 新增共享 `EmptyState`、`ProgressState` 与工作区 `InlineError` 呈现：三者保留所属
+  内容边界，统一 18 px 图标槽、Body/Label 两级文字、8 px 内容间距与 12 px inset；不新增
+  独立卡片、阴影或循环加载动画。空态为中性，加载仅使用 accent 图标，错误仅通过 danger
+  图标/标题和窄语义边表达。
+- 下载任务空列表、搜索/过滤空结果、分段与日志详情的空/加载/错误，速启结果与 Windows
+  操作的空/加载，以及剪贴板历史空/搜索无结果均迁移到同一组件；设置字段错误也复用已有
+  共享 `InlineError`，不再保留下载私有的 9.5 px 错误文字。
+- 真实 GPUI 门禁已写入生产下载 `MainWindow`、速启弹窗和剪贴板面板，并补充共享组件三态
+  几何回归；静态 `ui-state-lifecycle.ps1`、原下载 UI 生命周期门禁、rustfmt 与 diff check 已通过。
+  当前 Windows FreeVirtual 约 0.53 GiB，未重复启动此前会在 Rust 元数据 mmap 阶段触发 1455
+  的 Cargo 门禁；精确 GPUI/Cargo 回归与 Release/DPI 截图继续保留为统一打包前验收，不冒领
+  本轮环境未提供的运行证据。
+- SH-08 托盘仍保持下一切片；在完成原生图标/文案核对与生命周期门禁前，批次 2 不整体勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

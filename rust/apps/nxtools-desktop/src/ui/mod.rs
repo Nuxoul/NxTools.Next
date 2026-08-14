@@ -36,6 +36,7 @@ use crate::icons::MaterialIcon;
 use crate::theme::{
     COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, SEARCH_TEXT_SIZE, Theme, UI_FONT_FAMILY,
 };
+use crate::ui::components::state::empty_state;
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
 };
@@ -1007,6 +1008,7 @@ impl Render for ClipboardPanel {
         let theme = self.theme;
         let modifier_actions = self.modifier_actions;
         let entries_empty = self.entries.is_empty();
+        let search_query = self.search_input.read(cx).value().trim().to_owned();
         let status_is_error = self.status.is_error();
         let status_should_render = self.status.should_render();
         let status_label = self.status.label().to_owned();
@@ -1315,29 +1317,25 @@ impl Render for ClipboardPanel {
                     .bg(theme.canvas)
                     .overflow_hidden()
                     .when(entries_empty, |list| {
-                        list.child(
-                            div()
-                                .size_full()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .justify_center()
-                                .gap_1()
-                                .child(
-                                    Icon::new(MaterialIcon::History)
-                                        .size(px(22.0))
-                                        .text_color(theme.icon_muted),
-                                )
-                                .text_size(px(RESULT_TITLE_SIZE))
-                                .text_color(theme.text_muted)
-                                .child("暂无剪贴板记录")
-                                .child(
-                                    div()
-                                        .text_size(px(META_TEXT_SIZE))
-                                        .text_color(theme.placeholder)
-                                        .child("复制内容后会自动出现在这里"),
-                                ),
-                        )
+                        list.child(empty_state(
+                            theme,
+                            "clipboard-history-empty",
+                            if search_query.is_empty() {
+                                MaterialIcon::History
+                            } else {
+                                MaterialIcon::Search
+                            },
+                            if search_query.is_empty() {
+                                "暂无剪贴板记录"
+                            } else {
+                                "没有匹配的剪贴板记录"
+                            },
+                            if search_query.is_empty() {
+                                "复制内容后会自动出现在这里。"
+                            } else {
+                                "尝试缩短关键词，或切换分类和搜索范围。"
+                            },
+                        ))
                     })
                     .when(!entries_empty, |container| {
                         let entries = self.entries.clone();
@@ -2150,11 +2148,68 @@ fn clamp_pixels(value: gpui::Pixels, minimum: gpui::Pixels, maximum: gpui::Pixel
 mod tests {
     use super::*;
     use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext};
+    use gpui_component::Root;
     use std::cell::Cell;
 
     #[test]
     fn history_count_belongs_to_the_header_not_the_search_row() {
         assert_eq!(clipboard_header_summary("全部", 134), "全部 · 134 条");
+    }
+
+    #[gpui::test]
+    fn production_clipboard_history_uses_the_shared_empty_state(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let page = ClipboardHistoryPage {
+            items: Vec::new(),
+            total: 0,
+            has_more: false,
+        };
+        let categories = vec![ClipboardCategory {
+            id: BUILTIN_ALL_CATEGORY_ID.into(),
+            name: "全部".into(),
+            kind: ClipboardCategoryKind::All,
+            sort_order: 0,
+        }];
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(520.0), px(440.0)));
+            let panel = cx.new(|cx| {
+                ClipboardPanel::new(
+                    page,
+                    categories,
+                    ClipboardModifierActions::default(),
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    WeakEntity::new_invalid(),
+                    window,
+                    cx,
+                )
+            });
+            Root::new(panel, window, cx)
+        });
+
+        window.refresh().expect("render clipboard empty state");
+        let state = window
+            .debug_bounds("clipboard-history-empty")
+            .expect("clipboard shared empty state");
+        let icon = window
+            .debug_bounds("clipboard-history-empty-icon")
+            .expect("clipboard empty icon");
+        let title = window
+            .debug_bounds("clipboard-history-empty-title")
+            .expect("clipboard empty title");
+        let description = window
+            .debug_bounds("clipboard-history-empty-description")
+            .expect("clipboard empty description");
+        assert_eq!(icon.size, size(px(18.0), px(18.0)));
+        assert_eq!(title.size.height, px(18.0));
+        assert_eq!(description.size.height, px(16.0));
+        assert_eq!(title.left(), description.left());
+        assert!(state.size.width < px(520.0));
     }
 
     #[gpui::test]

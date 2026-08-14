@@ -66,7 +66,7 @@ use crate::icons::MaterialIcon;
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::components::action::{action_button, icon_action};
-use crate::ui::components::field::field_shell;
+use crate::ui::components::field::{field_shell, inline_error};
 use crate::ui::components::popover::{list_box, popover_shell};
 use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_6, SPACING_8};
 use crate::ui::native_window_handle;
@@ -620,6 +620,18 @@ impl DownloadApplication {
     #[cfg(test)]
     pub(crate) fn replace_tasks_for_test(&mut self, tasks: Vec<DownloadEngineTask>) {
         self.tasks = tasks;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_task_detail_error_for_test(
+        &mut self,
+        task_id: DownloadTaskId,
+        error: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.task_detail = None;
+        self.task_detail_error = Some((task_id, error.into()));
+        cx.notify();
     }
 
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
@@ -9823,14 +9835,8 @@ fn delayed_start_calendar(
         .into_any_element()
 }
 
-fn download_inline_error(theme: Theme, error: String) -> impl IntoElement {
-    div()
-        .max_w_full()
-        .text_size(px(9.5))
-        .text_color(theme.danger)
-        .whitespace_normal()
-        .line_clamp(2)
-        .child(error)
+fn download_inline_error(theme: Theme, error: String) -> AnyElement {
+    inline_error(theme, "download-inline-error", error)
 }
 
 fn format_download_size(bytes: u64) -> String {
