@@ -21,6 +21,14 @@
 
 ## Shared patterns
 
+### Main titlebar
+
+- One 36 px chrome row with the official 18 px NxTools asset, Body product title and Label module metadata.
+- The drag region owns all remaining width; utilities never overlap it at the 920 px minimum window.
+- Global settings is one shared 28 px subtle action, separated from a contiguous 36 px Windows-control group by 4 px.
+- Minimize, maximize, restore and close use four distinct embedded 12 px SVG assets and visible Chinese tooltips; caption glyphs never depend on a font fallback.
+- Minimize, maximize/restore and close keep typed PlatformHost behavior; styling never replaces the native lifecycle seam.
+
 ### Module header
 
 - One 48 px continuous row with the shared 12 px horizontal inset.

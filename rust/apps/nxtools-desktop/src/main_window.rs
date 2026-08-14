@@ -38,7 +38,7 @@ use tracing::info;
 
 use crate::clipboard::ClipboardApplication;
 use crate::downloads::DownloadApplication;
-use crate::icons::MaterialIcon;
+use crate::icons::{CaptionIcon, MaterialIcon};
 use crate::network_settings::NetworkSettingsApplication;
 use crate::notifications::{NOTIFICATION_EXIT_DURATION, NotificationCenter, NotificationLevel};
 use crate::quick_launch::{
@@ -53,7 +53,7 @@ use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shel
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::metrics::{
     CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, SPACING_6,
-    TITLEBAR_HEIGHT,
+    SPACING_8, SPACING_12, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY,
@@ -1747,6 +1747,29 @@ impl MainWindow {
 
     fn render_titlebar(&self, window: &Window) -> AnyElement {
         let theme = self.theme;
+        let network_settings = self.network_settings.clone();
+        let global_settings_action = div()
+            .id("global-network-settings")
+            .debug_selector(|| "global-network-settings".into())
+            .h(px(CONTROL_HEIGHT_ACTION))
+            .child(
+                labelled_icon_action(
+                    "global-network-settings-button",
+                    MaterialIcon::Settings,
+                    "全局设置",
+                )
+                .ghost()
+                .on_click(move |_, _, cx| {
+                    let Some(network_settings) = network_settings.clone() else {
+                        return;
+                    };
+                    cx.defer(move |cx| {
+                        network_settings.update(cx, |application, cx| {
+                            application.open_window(cx);
+                        });
+                    });
+                }),
+            );
         div()
             .id("main-titlebar")
             .debug_selector(|| "main-titlebar".into())
@@ -1780,8 +1803,8 @@ impl MainWindow {
                     })
                     .flex()
                     .items_center()
-                    .gap(px(9.0))
-                    .pl(px(12.0))
+                    .gap(px(SPACING_8))
+                    .pl(px(SPACING_12))
                     .child(
                         div()
                             .id("main-brand-icon")
@@ -1799,54 +1822,44 @@ impl MainWindow {
                     )
                     .child(
                         div()
+                            .debug_selector(|| "main-brand-title".into())
+                            .h(px(LINE_HEIGHT_BODY))
                             .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.text_secondary)
                             .child("NxTools"),
                     )
                     .child(
                         div()
+                            .debug_selector(|| "main-active-module".into())
+                            .h(px(LINE_HEIGHT_LABEL))
                             .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_muted)
                             .child(format!("· {}", self.shell.active_module().label())),
                     ),
             )
             .child(
                 div()
-                    .id("global-network-settings")
-                    .debug_selector(|| "global-network-settings".into())
-                    .on_click({
-                        let network_settings = self.network_settings.clone();
-                        move |_, _, cx| {
-                            let Some(network_settings) = network_settings.clone() else {
-                                return;
-                            };
-                            cx.defer(move |cx| {
-                                network_settings.update(cx, |application, cx| {
-                                    application.open_window(cx);
-                                });
-                            });
-                        }
-                    })
+                    .debug_selector(|| "main-titlebar-utilities".into())
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(SPACING_4))
+                    .child(global_settings_action)
                     .child(
-                        labelled_icon_action(
-                            "global-network-settings-button",
-                            MaterialIcon::Settings,
-                            "全局设置",
-                        )
-                        .ghost(),
+                        div()
+                            .debug_selector(|| "main-window-controls".into())
+                            .h_full()
+                            .flex()
+                            .child(self.window_control(MainWindowControl::Minimize, theme))
+                            .child(
+                                self.window_control(maximize_control(window.is_maximized()), theme),
+                            )
+                            .child(self.window_control(MainWindowControl::Close, theme)),
                     ),
             )
-            .child(self.window_control(MainWindowControl::Minimize, theme))
-            .child(self.window_control(
-                if window.is_maximized() {
-                    MainWindowControl::Restore
-                } else {
-                    MainWindowControl::Maximize
-                },
-                theme,
-            ))
-            .child(self.window_control(MainWindowControl::Close, theme))
             .into_any_element()
     }
 
@@ -4093,12 +4106,49 @@ fn compact_group(theme: Theme, title: &'static str, rows: Vec<AnyElement>) -> An
         .into_any_element()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MainWindowControl {
     Minimize,
     Maximize,
     Restore,
     Close,
+}
+
+impl MainWindowControl {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Minimize => "window-control-minimize",
+            Self::Maximize => "window-control-maximize",
+            Self::Restore => "window-control-restore",
+            Self::Close => "window-control-close",
+        }
+    }
+
+    fn icon(self) -> CaptionIcon {
+        match self {
+            Self::Minimize => CaptionIcon::Minimize,
+            Self::Maximize => CaptionIcon::Maximize,
+            Self::Restore => CaptionIcon::Restore,
+            Self::Close => CaptionIcon::Close,
+        }
+    }
+
+    fn tooltip(self) -> &'static str {
+        match self {
+            Self::Minimize => "最小化",
+            Self::Maximize => "最大化",
+            Self::Restore => "还原",
+            Self::Close => "关闭",
+        }
+    }
+}
+
+fn maximize_control(is_maximized: bool) -> MainWindowControl {
+    if is_maximized {
+        MainWindowControl::Restore
+    } else {
+        MainWindowControl::Maximize
+    }
 }
 
 fn window_control(
@@ -4107,30 +4157,15 @@ fn window_control(
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let close = matches!(control, MainWindowControl::Close);
-    let id = match control {
-        MainWindowControl::Minimize => "window-control-minimize",
-        MainWindowControl::Maximize => "window-control-maximize",
-        MainWindowControl::Restore => "window-control-restore",
-        MainWindowControl::Close => "window-control-close",
-    };
-    let icon = match control {
-        MainWindowControl::Minimize => div().w(px(10.)).h(px(1.)).bg(theme.text_secondary),
-        MainWindowControl::Maximize => div()
-            .w(px(9.))
-            .h(px(9.))
-            .border_1()
-            .border_color(theme.text_secondary),
-        MainWindowControl::Restore => div()
-            .w(px(9.))
-            .h(px(9.))
-            .border_1()
-            .border_color(theme.text_secondary),
-        MainWindowControl::Close => div().text_size(px(15.)).child("×"),
-    };
+    let id = control.id();
+    let icon_selector = format!("{id}-icon");
+    let tooltip_selector = format!("{id}-tooltip");
+    let icon = Icon::new(control.icon()).size(px(12.0));
+    let tooltip = control.tooltip();
     div()
         .id(id)
         .debug_selector(move || id.into())
-        .w(px(42.0))
+        .w(px(TITLEBAR_HEIGHT))
         .h_full()
         .flex()
         .items_center()
@@ -4143,8 +4178,23 @@ fn window_control(
                 style.bg(theme.surface_hover).text_color(theme.text)
             }
         })
+        .tooltip(move |window, cx| {
+            let tooltip_selector = tooltip_selector.clone();
+            Tooltip::element(move |_, _| {
+                let debug_selector = tooltip_selector.clone();
+                div()
+                    .debug_selector(move || debug_selector.clone())
+                    .child(tooltip)
+            })
+            .build(window, cx)
+        })
         .on_click(on_click)
-        .child(icon)
+        .child(
+            div()
+                .debug_selector(move || icon_selector.clone())
+                .size(px(12.0))
+                .child(icon),
+        )
 }
 
 fn download_task_row(
@@ -6246,6 +6296,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.update(gpui_component::init);
+        let executor = cx.executor();
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let (platform, endpoint) = platform_bridge(8);
         endpoint.set_connected_for_contract_test(true);
@@ -6256,6 +6307,7 @@ mod tests {
             close_to_tray: true,
         }));
         let (main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(920.0), px(480.0)));
             MainWindow::new(
                 gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
                 gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
@@ -6287,14 +6339,43 @@ mod tests {
             .debug_bounds("main-brand-icon")
             .expect("real NxTools brand icon");
         assert_eq!(brand_icon.size, gpui::size(px(18.0), px(18.0)));
+        assert_eq!(
+            window
+                .debug_bounds("main-brand-title")
+                .expect("brand title")
+                .size
+                .height,
+            px(LINE_HEIGHT_BODY)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("main-active-module")
+                .expect("active module metadata")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
         let global_settings = window
             .debug_bounds("global-network-settings")
             .expect("global settings action");
         assert_eq!(global_settings.size.height, px(28.0));
+        let utilities = window
+            .debug_bounds("main-titlebar-utilities")
+            .expect("right-side titlebar utility group");
+        let control_group = window
+            .debug_bounds("main-window-controls")
+            .expect("window control group");
+        for bounds in [global_settings, control_group] {
+            assert!(utilities.contains(&bounds.origin));
+            assert!(utilities.contains(&bounds.bottom_right()));
+            assert!(titlebar_shell.contains(&bounds.origin));
+            assert!(titlebar_shell.contains(&bounds.bottom_right()));
+        }
 
         let titlebar = window
             .debug_bounds("main-titlebar-drag-region")
             .expect("titlebar drag bounds");
+        assert!(titlebar.right() <= utilities.left());
         window.simulate_mouse_down(titlebar.center(), MouseButton::Left, Modifiers::default());
         let move_envelope = endpoint
             .try_receive_command_for_contract_test()
@@ -6307,6 +6388,43 @@ mod tests {
         let minimize = window
             .debug_bounds("window-control-minimize")
             .expect("minimize control");
+        let maximize = window
+            .debug_bounds("window-control-maximize")
+            .expect("maximize control");
+        let close = window
+            .debug_bounds("window-control-close")
+            .expect("close control");
+        for control in [minimize, maximize, close] {
+            assert_eq!(control.size.width, px(TITLEBAR_HEIGHT));
+            assert_eq!(control.size.height, titlebar_shell.size.height - px(1.0));
+        }
+        assert_eq!(minimize.right(), maximize.left());
+        assert_eq!(maximize.right(), close.left());
+        assert_eq!(minimize.left() - global_settings.right(), px(SPACING_4));
+        for selector in [
+            "window-control-minimize-icon",
+            "window-control-maximize-icon",
+            "window-control-close-icon",
+        ] {
+            assert_eq!(
+                window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("rendered caption asset {selector}"))
+                    .size,
+                size(px(12.0), px(12.0))
+            );
+        }
+        window.simulate_mouse_move(minimize.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        executor.run_until_parked();
+        window.refresh().expect("render caption tooltip");
+        assert!(
+            window
+                .debug_bounds("window-control-minimize-tooltip")
+                .is_some(),
+            "caption control exposes its visible tooltip"
+        );
+
         window.simulate_click(minimize.center(), Modifiers::default());
         let minimize_envelope = endpoint
             .try_receive_command_for_contract_test()
@@ -6316,9 +6434,6 @@ mod tests {
             Message::PlatformCommand(PlatformCommand::SetWindowMinimized(_))
         ));
 
-        let maximize = window
-            .debug_bounds("window-control-maximize")
-            .expect("maximize control");
         window.simulate_click(maximize.center(), Modifiers::default());
         let maximize_envelope = endpoint
             .try_receive_command_for_contract_test()
@@ -6327,21 +6442,18 @@ mod tests {
             maximize_envelope.message,
             Message::PlatformCommand(PlatformCommand::ToggleWindowMaximized(_))
         ));
-        let restore = window
+        let second_toggle = window
             .debug_bounds("window-control-maximize")
-            .expect("maximize/restore toggle control");
-        window.simulate_click(restore.center(), Modifiers::default());
-        let restore_envelope = endpoint
+            .expect("maximize toggle control remains until native state changes");
+        window.simulate_click(second_toggle.center(), Modifiers::default());
+        let second_toggle_envelope = endpoint
             .try_receive_command_for_contract_test()
-            .expect("typed restore envelope");
+            .expect("typed second toggle envelope");
         assert!(matches!(
-            restore_envelope.message,
+            second_toggle_envelope.message,
             Message::PlatformCommand(PlatformCommand::ToggleWindowMaximized(_))
         ));
 
-        let close = window
-            .debug_bounds("window-control-close")
-            .expect("close control");
         window.simulate_click(close.center(), Modifiers::default());
         let close_envelope = endpoint
             .try_receive_command_for_contract_test()
@@ -6419,16 +6531,34 @@ mod tests {
         DOWNLOAD_BATCH_TOOLBAR_HEIGHT, DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT,
         DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
         DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
-        DownloadTaskFilter, MainWindow, MainWindowShellContext, download_context_capabilities,
-        download_context_menu_plan, download_filter_counts, download_queue_placement_capabilities,
-        download_segment_strip_cells, download_tasks_for_view, file_index_summary,
-        format_query_elapsed, hotkey_from_key_down, masked_request_header_value,
-        notification_transition, prepare_download_context_selection, quick_find_scroll_step,
-        quick_find_scroll_target, reconcile_download_selection, set_download_sort,
-        toggle_indexed_volume_selection, update_download_selection,
+        DownloadTaskFilter, MainWindow, MainWindowControl, MainWindowShellContext,
+        download_context_capabilities, download_context_menu_plan, download_filter_counts,
+        download_queue_placement_capabilities, download_segment_strip_cells,
+        download_tasks_for_view, file_index_summary, format_query_elapsed, hotkey_from_key_down,
+        masked_request_header_value, maximize_control, notification_transition,
+        prepare_download_context_selection, quick_find_scroll_step, quick_find_scroll_target,
+        reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
+        update_download_selection,
     };
-    use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4};
+    use crate::ui::metrics::{
+        MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, TITLEBAR_HEIGHT,
+    };
     use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL};
+
+    #[test]
+    fn maximize_state_selects_a_distinct_restore_caption_asset() {
+        let maximize = maximize_control(false);
+        let restore = maximize_control(true);
+
+        assert_eq!(maximize, MainWindowControl::Maximize);
+        assert_eq!(restore, MainWindowControl::Restore);
+        assert_ne!(maximize.icon(), restore.icon());
+        assert_ne!(maximize.id(), restore.id());
+        assert_eq!(MainWindowControl::Minimize.tooltip(), "最小化");
+        assert_eq!(maximize.tooltip(), "最大化");
+        assert_eq!(restore.tooltip(), "还原");
+        assert_eq!(MainWindowControl::Close.tooltip(), "关闭");
+    }
 
     #[test]
     fn download_workspace_uses_the_compact_editor_density_scale() {

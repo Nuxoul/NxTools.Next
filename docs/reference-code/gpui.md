@@ -25,6 +25,13 @@ Root: `D:\Code\zed-main`
 
 ## NxTools.Next P0 invariants
 
+- The main titlebar is one 36 px chrome row. It uses the official 18 px brand asset, Body/Label text,
+  one 28 px subtle global-settings action and a contiguous 36 px Windows-control group. The utility
+  group stays outside the drag region at the 920 px production minimum; visual changes must retain
+  the typed PlatformHost move/minimize/maximize/restore/close paths.
+- Caption controls use four distinct embedded 12 px SVG assets. Maximize and restore are selected
+  from the observed window state and must never fall back to hand-drawn borders or font glyphs. Each
+  icon-only hit target exposes a stable Chinese tooltip.
 - Normal actions, icon actions and segmented options consume the same four control heights.
 - Icon-only actions expose a visible tooltip; their icon is not itself a separate hit target. Zed's
   current GPUI layer also supplies an accessibility label, but NxTools.Next's pinned GPUI 0.2.2 /
@@ -75,6 +82,12 @@ Root: `D:\Code\zed-main`
 
 ## Required regressions
 
+- A 920 px production main window proves titlebar utilities remain inside the titlebar and outside
+  the drag region, window controls are contiguous, and real clicks still emit the typed native
+  commands without destroying the owned `MainWindow` entity.
+- The asset registry gate loads every caption SVG, and the maximized-state selector proves maximize
+  and restore map to distinct IDs and assets; the real-HWND gate remains authoritative for native
+  maximize/restore state changes. Hovering a production caption target must render its tooltip.
 - A production settings window proves titlebar/content/footer geometry through the shared shell.
 - The production global-settings window proves its actual native bounds and that the final content
   row ends at the normal inset above the fixed footer, without a large unused viewport.

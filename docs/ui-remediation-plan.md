@@ -439,6 +439,21 @@ rust/apps/nxtools-desktop/src/ui/
   效果。SH-03/SH-04 的当前生产入口已收敛，但主壳层批次仍需完成 SH-01/02/06/07/08 与完整
   DPI 截图矩阵后才能整体勾选。
 
+第十一个 P0 主标题栏切片（2026-08-14）：
+
+- SH-01/SH-02 收敛到一条 36 px Zed 式 chrome：正式 18 px NxTools 资产、Body 产品名、
+  Label 当前模块和右侧 utility group 使用共享字体与间距令牌，不再保留 9 px 一次性 gap。
+- 全局设置保持一个 28 px subtle action；它与连续的三枚 36 px Windows 控制按钮之间固定 4 px。
+  最小化、最大化/还原、关闭到托盘仍走原 typed PlatformHost 命令，零 HWND 回退语义不变。
+- 四种 caption 状态使用独立的 12 px 内嵌 SVG，不再手绘边框或依赖字体 `×`；资产注册门禁
+  覆盖四个文件与 `currentColor`，窗口状态选择门禁锁定 Maximize/Restore 的不同 ID 与图形；
+  四个 icon-only 命中区均提供稳定中文 Tooltip，真实 hover 门禁覆盖最小化入口。
+- 真实生产 `MainWindow` 在 920×480 最小尺寸下验证品牌/模块文字行高、utility containment、
+  拖动区不覆盖操作区、三个窗口按钮连续排列，并实际点击拖动、最小化、最大化/还原和关闭。
+  全局设置真实点击与窗口所有权门禁、desktop shell architecture gate 均继续通过。
+- 本切片只关闭 SH-01/SH-02 的生产入口与自动化门禁；SH-06 通知、SH-07 状态和 SH-08
+  托盘视觉文案仍留在后续切片，新的 Release/DPI 截图也仍需统一打包后人工验收。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

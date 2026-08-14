@@ -1,6 +1,32 @@
 use gpui::SharedString;
 use gpui_component::IconNamed;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptionIcon {
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
+}
+
+impl IconNamed for CaptionIcon {
+    fn path(self) -> SharedString {
+        match self {
+            Self::Minimize => "caption/minimize.svg",
+            Self::Maximize => "caption/maximize.svg",
+            Self::Restore => "caption/restore.svg",
+            Self::Close => "caption/close.svg",
+        }
+        .into()
+    }
+}
+
+#[cfg(test)]
+impl CaptionIcon {
+    pub(crate) const ALL: &'static [Self] =
+        &[Self::Minimize, Self::Maximize, Self::Restore, Self::Close];
+}
+
 macro_rules! material_icons {
     ($( $variant:ident => $path:literal ),+ $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]

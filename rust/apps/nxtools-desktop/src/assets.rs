@@ -104,6 +104,10 @@ impl AssetSource for NxToolsAssets {
             "material-symbols/cancel.svg" | "icons/circle-x.svg" => {
                 Some(include_bytes!("../assets/material-symbols/cancel.svg"))
             }
+            "caption/minimize.svg" => Some(include_bytes!("../assets/caption/minimize.svg")),
+            "caption/maximize.svg" => Some(include_bytes!("../assets/caption/maximize.svg")),
+            "caption/restore.svg" => Some(include_bytes!("../assets/caption/restore.svg")),
+            "caption/close.svg" => Some(include_bytes!("../assets/caption/close.svg")),
             "brand/nxtools.png" => Some(include_bytes!(
                 "../../../../browser_extension/nxtools-interceptor/icons/icon-32.png"
             )),
@@ -122,10 +126,10 @@ mod tests {
     use super::*;
     use gpui_component::IconNamed;
 
-    use crate::icons::MaterialIcon;
+    use crate::icons::{CaptionIcon, MaterialIcon};
 
     #[test]
-    fn all_material_symbols_are_embedded() {
+    fn all_registered_icons_are_embedded() {
         for &icon in MaterialIcon::ALL {
             let path = icon.path();
             assert!(
@@ -134,6 +138,19 @@ mod tests {
                     .expect("load embedded icon")
                     .is_some(),
                 "missing embedded Material Symbol: {path}"
+            );
+        }
+
+        for &icon in CaptionIcon::ALL {
+            let path = icon.path();
+            let bytes = NxToolsAssets
+                .load(path.as_ref())
+                .expect("load embedded caption icon")
+                .unwrap_or_else(|| panic!("missing embedded caption icon: {path}"));
+            let svg = std::str::from_utf8(bytes.as_ref()).expect("caption icon is UTF-8 SVG");
+            assert!(
+                svg.contains("fill=\"currentColor\""),
+                "caption icon must inherit semantic text color: {path}"
             );
         }
 
