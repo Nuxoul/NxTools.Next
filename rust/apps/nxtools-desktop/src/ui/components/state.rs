@@ -84,7 +84,6 @@ fn work_state(
     let marker_selector = format!("{selector}-marker");
 
     div()
-        .id(selector)
         .debug_selector(move || selector.into())
         .relative()
         .w_full()

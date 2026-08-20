@@ -506,6 +506,28 @@ rust/apps/nxtools-desktop/src/ui/
   因此本切片不冒领 ICO 单测、PlatformHost 编译测试、Release 产品图标门禁或 DPI 截图通过；
   它们保留到系统提交空间恢复后的统一打包验收。
 
+第十五个 P0 下载设置壳层与控件切片（2026-08-20）：
+
+- DL-09 将下载设置接入共享 `SettingsShell`：保留原五页左导航和单一滚动内容列，页脚统一为
+  固定 48 px。页面切换仍只改变本地页面与滚动位置，设置草稿、原生操作、Apply/Cancel 和
+  taskbar edit cleanup 生命周期不变。
+- DL-10 将普通中文设置文案收敛到 Body 12/18 与 Label 11/16，输入统一为 32 px，目录与
+  FFmpeg picker 改为带 Tooltip 的 28 px 方形操作；分类、FFmpeg、任务栏预览和页脚操作统一
+  复用共享 28 px action tier，不再混用 `xsmall`、`compact` 与调用点自绘高度。
+- 真实生产下载设置窗口门禁覆盖 984×650 外壳、共享 36 px titlebar、五页切换时固定 footer、
+  单一滚动所有者、同一内容宽度、两列传输网格、诊断全宽行，以及修改本地草稿后切遍五页
+  仍保持原值。12/18 与 11/16 基线、共享 32 px 输入、28 px 普通 action、22 px toggle 和目录/
+  FFmpeg picker 的真实悬停 Tooltip 均有生产窗口断言；分类排序、删除、picker、FFmpeg 和
+  Apply/Cancel 的既有点击门禁保持不变。
+- Windows FreeVirtual 恢复到约 3.9 GiB 后，desktop `cargo check --tests` 首次抵达编译并暴露
+  前三批因 pagefile 阻断而未发现的 SH-06/SH-07 类型门禁缺口；已只修复 GPUI 类型/测试坐标
+  seam，并实际通过通知、共享工作状态和速启状态生产门禁。DL-09/DL-10 的较早生产窗口门禁、
+  完整 picker/跨页/Apply/Cancel 与 FFmpeg 取消路径曾各取得 `1 passed`。最终又收敛共享
+  segmented control、field shell、titlebar、单滚动层、跨五页草稿和 Tooltip hover 门禁后，
+  desktop `cargo check --tests` 与 diff check 继续通过；此时 FreeVirtual 仅约 0.78 GiB，未再次
+  启动会重链 GPUI 测试二进制的 exact run。更新后 exact 门禁、Release 100/125/150% DPI 截图
+  和打包继续待提交空间恢复；本切片未启动 GUI，也不冒领最终运行或人工视觉验收。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

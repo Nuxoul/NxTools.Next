@@ -1974,6 +1974,24 @@ Reverified on 2026-08-13 for the final Stage 6 completion-action slice:
   native error code. They never record URLs, file names, paths, Header/Cookie values or custom sound
   data.
 
+Reverified on 2026-08-20 for the DL-09/DL-10 download-settings shell migration:
+
+- ABDM first: `DesktopSettingsComponent.kt` keeps navigation and the selected settings page inside
+  one stable desktop settings surface. Old NxTools `Views/SettingsWindow.axaml` likewise keeps one
+  modal settings lifetime; neither reference rebuilds the window or commits the draft when the user
+  changes a settings category.
+- NxTools.Next therefore reuses the shared `SettingsShell`: one titlebar, stable left navigation,
+  one scrollable content viewport and one fixed 48 px footer. Five-page navigation changes only the
+  locally rendered page and scroll offset; it does not mutate the draft, start native work, resize
+  the window or move Apply/Cancel.
+- The shared visual contract is Body 12/18 and Label 11/16 for Chinese settings copy, 32 px text
+  inputs and 28 px ordinary actions. Directory and FFmpeg pickers are square icon actions with
+  tooltips; category, FFmpeg, taskbar-preview and footer actions use the same action tier instead of
+  mixing `xsmall`, `small`, `compact` and caller-defined heights.
+- Existing ownership remains authoritative: the GPUI view owns the draft, Cancel/native close
+  discard it, and Apply keeps the existing validation, persistence, cross-entity defer and correlated
+  failure lifecycle. The migration adds no download command, protocol field or diagnostic payload.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

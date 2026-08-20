@@ -1353,10 +1353,8 @@ impl MainWindow {
             let notification_exiting = notification.exiting;
             let dismiss_id = notification.id.clone();
             let notification_center = self.notifications.clone();
-            let title_selector =
-                gpui::SharedString::from(format!("notification-title-{}", notification_id));
-            let message_selector =
-                gpui::SharedString::from(format!("notification-message-{}", notification_id));
+            let title_selector = format!("notification-title-{}", notification_id);
+            let message_selector = format!("notification-message-{}", notification_id);
             let mut body = div()
                 .min_w_0()
                 .flex_1()
@@ -1381,8 +1379,12 @@ impl MainWindow {
                         .text_color(theme.text_secondary)
                         .child(notification.message),
                 );
-            for detail in notification.details {
+            for (detail_index, detail) in notification.details.into_iter().enumerate() {
                 let detail_tooltip = detail.value.clone();
+                let detail_id = gpui::SharedString::from(format!(
+                    "notification-detail-{}-{detail_index}",
+                    notification_id
+                ));
                 body = body.child(
                     div()
                         .pt(px(SPACING_4))
@@ -1400,6 +1402,7 @@ impl MainWindow {
                         )
                         .child(
                             div()
+                                .id(detail_id)
                                 .w_full()
                                 .whitespace_normal()
                                 .line_clamp(1)
@@ -1419,8 +1422,7 @@ impl MainWindow {
                 let action_dismiss_id = notification_id.clone();
                 let action_center = self.notifications.clone();
                 let action_label = action.label.clone();
-                let action_selector =
-                    gpui::SharedString::from(format!("notification-action-{}", action_id));
+                let action_selector = format!("notification-action-{}", action_id);
                 body = body.child(
                     div().flex().justify_end().child(
                         div()
@@ -1459,12 +1461,9 @@ impl MainWindow {
                     ),
                 );
             }
-            let card_selector =
-                gpui::SharedString::from(format!("notification-{}", notification_id));
-            let marker_selector =
-                gpui::SharedString::from(format!("notification-marker-{}", notification_id));
-            let dismiss_selector =
-                gpui::SharedString::from(format!("dismiss-notification-{}", notification_id));
+            let card_selector = format!("notification-{}", notification_id);
+            let marker_selector = format!("notification-marker-{}", notification_id);
+            let dismiss_selector = format!("dismiss-notification-{}", notification_id);
             let card = div()
                 .id(gpui::SharedString::from(format!(
                     "notification-{}",
@@ -3881,6 +3880,7 @@ impl Render for MainWindow {
         };
         div()
             .id("nxtools-main-window")
+            .debug_selector(|| "nxtools-main-window".into())
             .size_full()
             .relative()
             .overflow_hidden()
@@ -6399,6 +6399,9 @@ mod tests {
         window
             .refresh()
             .expect("render production notification layer");
+        window.update(|window, _| {
+            assert_eq!(window.bounds().size, size(px(920.0), px(480.0)));
+        });
 
         let titlebar = window.debug_bounds("main-titlebar").expect("main titlebar");
         let window_controls = window
@@ -6410,11 +6413,22 @@ mod tests {
         let stack = window
             .debug_bounds("notification-stack")
             .expect("notification stack");
+        let main_surface = window
+            .debug_bounds("nxtools-main-window")
+            .expect("main window surface");
         assert!(stack.top() >= header_actions.bottom());
         assert!(stack.top() >= titlebar.bottom());
         assert!(stack.top() >= window_controls.bottom());
-        assert!(stack.right() <= px(920.0) - px(SPACING_12));
-        assert!(stack.bottom() <= px(480.0) - px(SPACING_12));
+        assert!(
+            stack.right() <= main_surface.right() - px(SPACING_12) + px(1.0),
+            "notification stack right edge is {}px",
+            stack.right().as_f32()
+        );
+        assert!(
+            stack.bottom() <= main_surface.bottom() - px(SPACING_12) + px(1.0),
+            "notification stack bottom edge is {}px",
+            stack.bottom().as_f32()
+        );
 
         for id in ["backup", "failure", "transfer"] {
             let card = window
@@ -6443,7 +6457,8 @@ mod tests {
             assert_eq!(card.size.width, px(336.0));
             assert!(card.size.height <= px(112.0));
             assert_eq!(marker.size.width, px(3.0));
-            assert_eq!(marker.size.height, card.size.height);
+            assert_eq!(marker.top(), card.top() + px(1.0));
+            assert_eq!(marker.bottom(), card.bottom() - px(1.0));
             assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
             assert_eq!(message.size.height, px(LINE_HEIGHT_LABEL));
             assert_eq!(dismiss.size, size(px(28.0), px(28.0)));
@@ -6461,24 +6476,26 @@ mod tests {
         window.simulate_click(action.center(), Modifiers::default());
         window.run_until_parked();
         assert!(action_invoked.get());
-        assert!(notifications.read_with(cx, |center, _| {
-            center.items().iter().any(|item| {
+        assert!(
+            window.read(|cx| notifications.read(cx).items().iter().any(|item| {
                 item.id.as_ref() == "backup"
                     && item.title.as_ref() == "新的备份通知"
                     && !item.exiting
-            })
-        }));
+            }))
+        );
 
         let dismiss = window
             .debug_bounds("dismiss-notification-transfer")
             .expect("notification dismiss hit target");
         window.simulate_click(dismiss.center(), Modifiers::default());
-        notifications.update(cx, |center, cx| {
-            center.show_progress("transfer", "新的下载通知", "替换旧 generation", cx);
+        window.update(|_, cx| {
+            notifications.update(cx, |center, cx| {
+                center.show_progress("transfer", "新的下载通知", "替换旧 generation", cx);
+            });
         });
         window.run_until_parked();
-        assert!(notifications.read_with(cx, |center, _| {
-            center.items().iter().any(|item| {
+        assert!(window.read(|cx| {
+            notifications.read(cx).items().iter().any(|item| {
                 item.id.as_ref() == "transfer"
                     && item.title.as_ref() == "新的下载通知"
                     && !item.exiting
@@ -6736,7 +6753,8 @@ mod tests {
         update_download_selection,
     };
     use crate::ui::metrics::{
-        MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, TITLEBAR_HEIGHT,
+        MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, SPACING_12,
+        TITLEBAR_HEIGHT,
     };
     use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL};
 

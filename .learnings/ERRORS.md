@@ -9355,3 +9355,168 @@ and Release package product-icon gate with the repository's low-memory build env
 ### Resolution
 - Pending: compile/runtime verification is deferred until Windows commit headroom is restored; the
   bounded C# retry confirmed the same environment failure rather than a product compiler error.
+
+---
+
+## [ERR-20260820-STALE-TOOL-ALIAS] resumed turn used an unavailable terminal tool alias
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The first resume command used the previous session's `shell_command` alias, which is not exposed in
+the current tool set.
+
+### Error
+`TypeError: tools.shell_command is not a function`.
+
+### Context
+- The command was intended only to read UI skills and inspect Git status.
+- The tool rejected it before any shell process started; no file or external state changed.
+
+### Suggested Fix
+Use the current `exec_command` interface after every resumed/compacted session instead of carrying
+tool aliases across turns.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Reissued the read-only command through `exec_command` and continued from the preserved worktree.
+
+---
+
+## [ERR-20260820-DEFERRED-UI-COMPILE] compiled UI debt surfaced after commit memory recovered
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The first successful desktop test compile after several pagefile-blocked visual slices exposed
+eleven type errors in the previously committed notification, work-state and quick-launch code.
+
+### Error
+`cargo check -p nxtools-desktop --tests` failed on dynamic debug-selector types, an unsupported
+tooltip on a stateless `Div`, incompatible conditional-branch element types and one missing test
+metric import.
+
+### Context
+- Earlier slices accurately recorded that Cargo could not reach compilation because Windows commit
+  memory was exhausted, but several slices accumulated before the environment recovered.
+- The same low-memory command completed once FreeVirtual recovered to about 3.9 GiB, making the
+  deferred failures visible before the next UI slice was committed.
+- A first exact-name test invocation also selected zero tests because Rust test names include their
+  module path; subsequent commands verified `running 1 test` explicitly.
+
+### Suggested Fix
+After any environment-blocked compile, make the first recovered-memory action a full affected-package
+test check before adding another visual slice. Treat `0 tests` as a failed verification attempt.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/main_window.rs,
+  rust/apps/nxtools-desktop/src/quick_launch.rs,
+  rust/apps/nxtools-desktop/src/ui/components/state.rs
+- See Also: ERR-20260814-1D2, ERR-20260814-E4F
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Corrected only the GPUI type/test seams, reran desktop test check, and obtained one-pass
+  results for the production notification, shared work-state and quick-launch state gates.
+
+---
+
+## [ERR-20260820-DL09-RELINK-COMMIT] final desktop test relink exhausted Windows commit
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+The final production settings-route rerun could not relink the desktop test binary after the last
+shared segmented-control cleanup because Windows virtual commit fell from about 3.9 GiB to 1.3 GiB.
+
+### Error
+`memory allocation of 22528 bytes failed`; rustc exited with `0xc0000409` while linking the test
+binary and emitted no source diagnostic.
+
+### Context
+- Required low-memory variables and one build job were active.
+- No Cargo or rustc process survived the failed command.
+- The same source then passed `cargo check -p nxtools-desktop --tests`; the production settings route
+  and FFmpeg cancellation tests had each passed immediately before the final presentation-only
+  segmented-control cleanup.
+
+### Suggested Fix
+Do not start another link while FreeVirtual remains near 1.3 GiB. Rerun the exact production settings
+route after commit headroom recovers, before packaging or claiming Release/DPI acceptance.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260820-DEFERRED-UI-COMPILE
+
+---
+
+## [ERR-20260820-SETTINGS-SCROLL-TRAIT] scroll ownership move omitted the consumer trait import
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Moving the only settings scrollbar from the shared shell into the global-settings content left the
+`ScrollableElement` trait imported by the old owner instead of the new owner.
+
+### Error
+`cargo check -p nxtools-desktop --tests` reported that `overflow_y_scrollbar` was unavailable on the
+global-settings `Div` and suggested importing `gpui_component::scroll::ScrollableElement`.
+
+### Suggested Fix
+When moving an extension-trait method across module ownership, move its trait import in the same
+patch and run the affected-package check immediately.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/settings.rs,
+  rust/apps/nxtools-desktop/src/network_settings.rs
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Imported `ScrollableElement` in the new content owner; the shared shell now only clips.
+
+---
+
+## [ERR-20260820-TOOLTIP-STATEFUL-DIV] shared tooltip wrapper lacked a stable element id
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A new shared icon-action tooltip surface called GPUI's stateful `tooltip` extension on a stateless
+`Div`.
+
+### Error
+`cargo check -p nxtools-desktop --tests` reported no `tooltip` method for `gpui::Div`.
+
+### Suggested Fix
+Tooltip owners must have a stable element ID before the stateful interactive extension is used.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/ui/components/action.rs
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Added the unique static tooltip selector as the wrapper's stable element ID before
+  attaching the tooltip; GPUI does not accept a tuple made from two string slices as an element ID.

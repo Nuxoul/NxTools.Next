@@ -10,6 +10,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::input::{Input, InputState};
+use gpui_component::scroll::ScrollableElement;
 use gpui_component::{Disableable, Root, Sizable};
 use nxtools_core::{
     AppConfig, NetworkProxyMode, NetworkProxySettings, NetworkSettings, SystemSettings,
@@ -693,6 +694,9 @@ impl Render for NetworkSettingsView {
             },
         );
         let content = div()
+            .size_full()
+            .min_h_0()
+            .overflow_y_scrollbar()
             .w_full()
             .p(px(SPACING_12))
             .flex()

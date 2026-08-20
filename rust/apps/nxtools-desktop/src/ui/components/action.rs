@@ -1,5 +1,6 @@
 use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{Icon, Selectable, Sizable};
 
 use crate::icons::MaterialIcon;
@@ -59,12 +60,34 @@ pub(crate) fn icon_action(
     icon: MaterialIcon,
     tooltip_label: &'static str,
 ) -> Button {
+    icon_action_button(id, icon).tooltip(tooltip_label)
+}
+
+pub(crate) fn icon_action_button(id: &'static str, icon: MaterialIcon) -> Button {
     Button::new(id)
         .icon(Icon::new(icon).size(px(14.0)))
-        .tooltip(tooltip_label)
         .small()
         .size(px(CONTROL_HEIGHT_ACTION))
         .rounded(px(RADIUS_CONTROL))
+}
+
+pub(crate) fn icon_action_tooltip_surface(
+    button: Button,
+    tooltip_label: &'static str,
+    tooltip_selector: &'static str,
+) -> AnyElement {
+    div()
+        .id(tooltip_selector)
+        .tooltip(move |window, cx| {
+            Tooltip::element(move |_, _| {
+                div()
+                    .debug_selector(move || tooltip_selector.into())
+                    .child(tooltip_label)
+            })
+            .build(window, cx)
+        })
+        .child(button)
+        .into_any_element()
 }
 
 pub(crate) fn segmented_control(

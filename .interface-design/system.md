@@ -42,6 +42,17 @@
 - Body title and Label description share a stable two-line baseline.
 - Selection uses neutral fill plus a narrow accent edge; no filled accent card.
 
+### Settings shell
+
+- Product settings use one client-decorated shell: titlebar, stable navigation rail, one scrollable
+  content column and a fixed 48 px footer. Changing pages never changes the window or footer geometry.
+- Ordinary Chinese settings copy uses Body 12/18 for values and titles, and Label 11/16 for labels
+  and explanations. Meta is reserved for bounded machine metadata, never used to shrink form copy.
+- Text inputs are 32 px and ordinary actions are 28 px. Icon-only pickers are square actions with a
+  tooltip; Apply is the only filled accent action and Cancel remains quiet.
+- The settings view owns one local draft. Navigation changes presentation only; native close and
+  Cancel discard the draft, while Apply keeps the existing validated persistence lifecycle.
+
 ### Work surfaces
 
 - Lists and inspectors use continuous surfaces separated by low-contrast rules.

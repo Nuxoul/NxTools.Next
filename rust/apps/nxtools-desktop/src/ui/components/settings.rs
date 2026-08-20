@@ -1,6 +1,3 @@
-use gpui::{AnyElement, FontWeight, IntoElement, div, prelude::*, px};
-use gpui_component::scroll::ScrollableElement;
-
 use crate::theme::Theme;
 use crate::ui::metrics::{
     CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT, SETTINGS_ROW_MIN_HEIGHT,
@@ -9,6 +6,7 @@ use crate::ui::metrics::{
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY,
 };
+use gpui::{AnyElement, FontWeight, IntoElement, div, prelude::*, px};
 
 pub(crate) struct SettingsShellIds {
     pub root: &'static str,
@@ -38,7 +36,7 @@ pub(crate) fn settings_shell(
                 .w_full()
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scrollbar()
+                .overflow_hidden()
                 .child(content),
         )
         .child(

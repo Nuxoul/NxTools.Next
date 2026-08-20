@@ -6044,6 +6044,7 @@ impl Render for QuickLaunchPanel {
                 })
                 .children(action_entries)
                 .vertical_scrollbar(&self.action_scroll)
+                .into_any_element()
         } else if self.results.is_empty() {
             div()
                 .flex_1()
@@ -6065,6 +6066,7 @@ impl Render for QuickLaunchPanel {
                         "尝试缩短关键词，或输入应用、文件和命令名称。",
                     ))
                 })
+                .into_any_element()
         } else {
             let result_count = self.results.len();
             let result_query = query.clone();
@@ -6107,14 +6109,21 @@ impl Render for QuickLaunchPanel {
                 })
                 .child(list)
                 .vertical_scrollbar(&self.result_scroll)
+                .into_any_element()
         };
-        let result_surface = result_surface.with_animation(
-            ("quick-launch-results", self.results_appearance_generation),
-            Animation::new(RESULTS_APPEAR_DURATION).with_easing(ease_out_quint()),
-            |surface, delta| surface.relative().top(px(1.0 * (1.0 - delta))),
-        );
+        let result_surface = div()
+            .w_full()
+            .flex_1()
+            .min_h_0()
+            .child(result_surface)
+            .with_animation(
+                ("quick-launch-results", self.results_appearance_generation),
+                Animation::new(RESULTS_APPEAR_DURATION).with_easing(ease_out_quint()),
+                |surface, delta| surface.relative().top(px(1.0 * (1.0 - delta))),
+            );
         div()
             .id("quick-launch-window")
+            .debug_selector(|| "quick-launch-window".into())
             .relative()
             .size_full()
             .overflow_hidden()
@@ -6296,6 +6305,15 @@ mod tests {
             .expect("production quick-launch panel");
 
         window.refresh().expect("render quick-launch empty state");
+        window.update(|window, _| {
+            assert_eq!(
+                window.bounds().size,
+                size(px(PANEL_WIDTH), px(PANEL_HEIGHT))
+            );
+        });
+        let panel_surface = window
+            .debug_bounds("quick-launch-window")
+            .expect("quick-launch production surface");
         let empty = window
             .debug_bounds("quick-launch-results-empty")
             .expect("quick-launch shared empty state");
@@ -6312,7 +6330,8 @@ mod tests {
         assert_eq!(empty_title.size.height, px(18.0));
         assert_eq!(empty_description.size.height, px(16.0));
         assert_eq!(empty_title.left(), empty_description.left());
-        assert_eq!(empty.size.width, px(PANEL_WIDTH));
+        assert_eq!(empty.left(), panel_surface.left() + px(1.0));
+        assert_eq!(empty.right(), panel_surface.right() - px(1.0));
 
         panel.update_in(window, |panel, _window, cx| {
             panel.search_pending = true;
