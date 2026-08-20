@@ -79,6 +79,10 @@
 - The matrix only subdivides its parent's width. It never supplies a minimum width that can stretch
   the settings viewport, and changing a value still belongs to the enclosing settings draft and its
   existing Apply/Cancel boundary.
+- Window policy and taskbar-overlay policy use separate matrices. The task-window matrix pairs
+  progress/completion visibility with completion feedback; the taskbar matrix leads with enable/edit,
+  then pairs placement, dimensions and information visibility on stable trailing rails. Segmented
+  modes, numeric fields and toggles remain ordinary row controls rather than becoming nested cards.
 
 ### External tool setup
 

@@ -630,8 +630,18 @@ rust/apps/nxtools-desktop/src/ui/
   约 1.1 GiB，未重复启动上一切片已因 commit 枯竭失败的 desktop Cargo 检查或大型 GPUI
   test link；desktop check、精确生产窗口门禁、Release 100/125/150% DPI 截图与人工视觉验收
   继续保留到提交空间恢复后。本切片未启动 GUI，也不冒领这些证据。
-- DL-17 窗口/进度设置是下一切片；任务窗口和任务栏进度拆成稳定小节、并完成 toggle/数值/
-  模式对齐门禁前不提前勾选。
+- DL-17 窗口/进度设置实现已落地、自动验收待提交空间恢复：窗口页不再使用带 `350 px`
+  子项最小宽的自由换行网格，改为
+  `任务窗口` 两行矩阵和 `任务栏进度` 七行矩阵。两节均只有一个外框与安静的 `1 px`
+  中缝；总开关/预览、锚点/模式、X/Y、宽/高以及信息开关按语义配对，Toggle、数值与
+  分段模式落在稳定的左右尾轨。生产 `984×650` 窗口门禁覆盖九行等宽/同行/中缝/父节
+  containment 及四条控件尾轨；既有 Apply/Cancel 和任务栏编辑生命周期不变。
+- rustfmt、`git diff --check` 与 `download-ui-lifecycle.ps1` 已通过。当前 Windows FreeVirtual
+  约 0.66 GiB，未重复启动此前已因 commit 枯竭失败的 desktop Cargo/GPUI 链接；desktop
+  check、精确生产窗口门禁、Release 100/125/150% DPI 截图与人工视觉验收仍待提交空间恢复。
+  本切片未启动 GUI，也未打包。
+- 在 desktop check 与精确生产 GPUI 门禁实际通过前，DL-17 不标记完成，也不开始 DL-18。
+  通过后下一切片为 DL-18 诊断页；三条路径的复制/打开操作与全宽裁切门禁完成前不提前勾选。
 
 ### 批次 2：主壳层与全局设置
 

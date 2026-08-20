@@ -7080,118 +7080,141 @@ impl Render for DownloadSettingsView {
                 .flex()
                 .flex_col()
                 .gap(px(SPACING_8))
-                .child(download_settings_grid_section(
+                .child(download_settings_matrix_section(
                     theme,
-                    "窗口",
+                    "任务窗口",
                     vec![
-                        download_settings_row(
-                            theme,
-                            "自动显示进度",
-                            "任务开始后显示独立进度窗口",
-                            progress_toggle,
+                        (
+                            download_settings_row(
+                                theme,
+                                "自动显示进度",
+                                "任务开始后显示独立进度窗口",
+                                progress_toggle,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "显示完成窗口",
+                                "进度窗已关闭时被动显示完成窗口",
+                                completion_toggle,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "显示完成窗口",
-                            "进度窗已关闭时被动显示完成窗口",
-                            completion_toggle,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "完成提示音",
-                            "按一批完成任务播放一次 Windows 系统通知声音",
-                            completion_sound_toggle,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "完成后打开目录",
-                            "一批最多打开三个不同目录，避免窗口风暴",
-                            completion_directory_toggle,
+                        (
+                            download_settings_row(
+                                theme,
+                                "完成提示音",
+                                "每批完成任务只播放一次系统提示音",
+                                completion_sound_toggle,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "完成后打开目录",
+                                "每批最多打开三个目录，避免窗口风暴",
+                                completion_directory_toggle,
+                            ),
                         ),
                     ],
                 ))
-                .child(download_settings_grid_section(
+                .child(download_settings_matrix_section(
                     theme,
                     "任务栏进度",
                     vec![
-                        download_settings_row(
-                            theme,
-                            "任务栏内进度",
-                            "活动下载存在时在任务栏上沿显示总体进度",
-                            taskbar_overlay_toggle,
+                        (
+                            download_settings_row(
+                                theme,
+                                "任务栏内进度",
+                                "活动下载时在任务栏上沿显示总体进度",
+                                taskbar_overlay_toggle,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "布局预览",
+                                "显示模拟数据并允许拖动、缩放",
+                                taskbar_edit_control,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "布局预览",
-                            "无任务也显示模拟数据；可直接拖动和缩放",
-                            taskbar_edit_control,
+                        (
+                            download_settings_row(
+                                theme,
+                                "锚点",
+                                "从任务栏左侧或右侧计算偏移",
+                                taskbar_anchor,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "进度模式",
+                                "总进度、按任务或按分段显示",
+                                taskbar_progress_mode,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "锚点",
-                            "从任务栏左侧或右侧计算 X 偏移",
-                            taskbar_anchor,
+                        (
+                            download_settings_row(
+                                theme,
+                                "X 偏移",
+                                "正值向任务栏内部移动",
+                                taskbar_offset_x,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "Y 偏移",
+                                "0 表示紧贴任务栏上沿",
+                                taskbar_offset_y,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "X 偏移",
-                            "逻辑像素；正值向任务栏内部移动",
-                            taskbar_offset_x,
+                        (
+                            download_settings_row(
+                                theme,
+                                "宽度",
+                                "逻辑像素，范围 72–640",
+                                taskbar_width,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "高度",
+                                "逻辑像素，范围 6–72",
+                                taskbar_height,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "Y 偏移",
-                            "逻辑像素；0 表示紧贴任务栏上沿",
-                            taskbar_offset_y,
+                        (
+                            download_settings_row(
+                                theme,
+                                "进度条",
+                                "显示所选模式的进度槽",
+                                taskbar_progress_info,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "速度",
+                                "显示当前合计下载速度",
+                                taskbar_speed_info,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "宽度",
-                            "逻辑像素，范围 72–640",
-                            taskbar_width,
+                        (
+                            download_settings_row(
+                                theme,
+                                "剩余时间",
+                                "按当前合计速度估算",
+                                taskbar_remaining_info,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "已下载 / 总大小",
+                                "显示活动任务的合计字节数",
+                                taskbar_bytes_info,
+                            ),
                         ),
-                        download_settings_row(theme, "高度", "逻辑像素，范围 6–72", taskbar_height),
-                        download_settings_row(
-                            theme,
-                            "进度模式",
-                            "总进度、按任务或按当前任务分段显示",
-                            taskbar_progress_mode,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "进度条",
-                            "显示所选模式的进度槽",
-                            taskbar_progress_info,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "速度",
-                            "显示当前合计下载速度",
-                            taskbar_speed_info,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "剩余时间",
-                            "按当前合计速度估算",
-                            taskbar_remaining_info,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "活动任务数",
-                            "显示当前正在处理的任务数量",
-                            taskbar_task_count_info,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "活动连接数",
-                            "显示所有活动任务的连接合计",
-                            taskbar_connection_info,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "已下载 / 总大小",
-                            "显示活动任务的合计字节数",
-                            taskbar_bytes_info,
+                        (
+                            download_settings_row(
+                                theme,
+                                "活动任务数",
+                                "显示当前正在处理的任务数量",
+                                taskbar_task_count_info,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "活动连接数",
+                                "显示所有活动任务的连接合计",
+                                taskbar_connection_info,
+                            ),
                         ),
                     ],
                 ))
@@ -7520,51 +7543,6 @@ pub(crate) fn download_settings_section(
                 .child(title),
         )
         .children(rows)
-        .into_any_element()
-}
-
-fn download_settings_grid_section(
-    theme: Theme,
-    title: &'static str,
-    rows: Vec<AnyElement>,
-) -> AnyElement {
-    div()
-        .debug_selector(move || format!("download-settings-section-{title}"))
-        .w_full()
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .h(px(28.0))
-                .px(px(SPACING_8))
-                .border_b_1()
-                .border_color(theme.border_subtle)
-                .flex()
-                .items_center()
-                .debug_selector(move || format!("download-settings-section-{title}-title"))
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .child(title),
-        )
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .flex_wrap()
-                .children(rows.into_iter().enumerate().map(move |(index, row)| {
-                    div()
-                        .debug_selector(move || format!("download-settings-grid-{title}-{index}"))
-                        .w(gpui::relative(0.5))
-                        .min_w(px(350.0))
-                        .child(row)
-                })),
-        )
         .into_any_element()
 }
 
@@ -13975,8 +13953,159 @@ mod tests {
             "transfer controls must align to stable left and right trailing rails"
         );
         open_page!("download-settings-nav-window");
-        assert_section!("窗口", "download-settings-section-窗口");
+        assert_section!("任务窗口", "download-settings-section-任务窗口");
         assert_section!("任务栏进度", "download-settings-section-任务栏进度");
+        let window_matrix_sections = [
+            ("任务窗口", "download-settings-section-任务窗口", 2_usize),
+            (
+                "任务栏进度",
+                "download-settings-section-任务栏进度",
+                7_usize,
+            ),
+        ];
+        for (title, section_selector, row_count) in window_matrix_sections {
+            let section = window
+                .debug_bounds(section_selector)
+                .unwrap_or_else(|| panic!("missing {title} matrix section"));
+            for row_index in 0..row_count {
+                let (row_selector, left_selector, seam_selector, right_selector) = match title {
+                    "任务窗口" => [
+                        (
+                            "download-settings-matrix-任务窗口-row-0",
+                            "download-settings-matrix-任务窗口-cell-0-left",
+                            "download-settings-matrix-任务窗口-seam-0",
+                            "download-settings-matrix-任务窗口-cell-0-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务窗口-row-1",
+                            "download-settings-matrix-任务窗口-cell-1-left",
+                            "download-settings-matrix-任务窗口-seam-1",
+                            "download-settings-matrix-任务窗口-cell-1-right",
+                        ),
+                    ][row_index],
+                    "任务栏进度" => [
+                        (
+                            "download-settings-matrix-任务栏进度-row-0",
+                            "download-settings-matrix-任务栏进度-cell-0-left",
+                            "download-settings-matrix-任务栏进度-seam-0",
+                            "download-settings-matrix-任务栏进度-cell-0-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-1",
+                            "download-settings-matrix-任务栏进度-cell-1-left",
+                            "download-settings-matrix-任务栏进度-seam-1",
+                            "download-settings-matrix-任务栏进度-cell-1-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-2",
+                            "download-settings-matrix-任务栏进度-cell-2-left",
+                            "download-settings-matrix-任务栏进度-seam-2",
+                            "download-settings-matrix-任务栏进度-cell-2-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-3",
+                            "download-settings-matrix-任务栏进度-cell-3-left",
+                            "download-settings-matrix-任务栏进度-seam-3",
+                            "download-settings-matrix-任务栏进度-cell-3-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-4",
+                            "download-settings-matrix-任务栏进度-cell-4-left",
+                            "download-settings-matrix-任务栏进度-seam-4",
+                            "download-settings-matrix-任务栏进度-cell-4-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-5",
+                            "download-settings-matrix-任务栏进度-cell-5-left",
+                            "download-settings-matrix-任务栏进度-seam-5",
+                            "download-settings-matrix-任务栏进度-cell-5-right",
+                        ),
+                        (
+                            "download-settings-matrix-任务栏进度-row-6",
+                            "download-settings-matrix-任务栏进度-cell-6-left",
+                            "download-settings-matrix-任务栏进度-seam-6",
+                            "download-settings-matrix-任务栏进度-cell-6-right",
+                        ),
+                    ][row_index],
+                    _ => unreachable!(),
+                };
+                let row = window
+                    .debug_bounds(row_selector)
+                    .expect("window matrix row");
+                let left = window
+                    .debug_bounds(left_selector)
+                    .expect("window matrix left cell");
+                let seam = window
+                    .debug_bounds(seam_selector)
+                    .expect("window matrix seam");
+                let right = window
+                    .debug_bounds(right_selector)
+                    .expect("window matrix right cell");
+                assert_eq!(left.origin.y, right.origin.y);
+                assert_eq!(left.size.height, right.size.height);
+                assert!((left.size.width.as_f32() - right.size.width.as_f32()).abs() <= 2.0);
+                assert!((seam.size.width.as_f32() - 1.0).abs() <= 0.5);
+                assert!(section.contains(&row.origin));
+                assert!(section.contains(&row.bottom_right()));
+            }
+        }
+        let task_window_left_edges = [
+            "download-settings-progress-window",
+            "download-settings-completion-sound",
+        ]
+        .map(|selector| {
+            let bounds = window.debug_bounds(selector).expect("task-window control");
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        let task_window_right_edges = [
+            "download-settings-completion-window",
+            "download-settings-completion-directory",
+        ]
+        .map(|selector| {
+            let bounds = window.debug_bounds(selector).expect("task-window control");
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        let taskbar_left_edges = [
+            "download-settings-taskbar-overlay",
+            "download-settings-taskbar-anchor",
+            "download-settings-taskbar-x-field",
+            "download-settings-taskbar-width-field",
+            "download-settings-taskbar-show-progress",
+            "download-settings-taskbar-show-remaining",
+            "download-settings-taskbar-show-tasks",
+        ]
+        .map(|selector| {
+            let bounds = window.debug_bounds(selector).expect("taskbar left control");
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        let taskbar_right_edges = [
+            "download-settings-taskbar-edit",
+            "download-settings-taskbar-progress-mode",
+            "download-settings-taskbar-y-field",
+            "download-settings-taskbar-height-field",
+            "download-settings-taskbar-show-speed",
+            "download-settings-taskbar-show-bytes",
+            "download-settings-taskbar-show-connections",
+        ]
+        .map(|selector| {
+            let bounds = window
+                .debug_bounds(selector)
+                .expect("taskbar right control");
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        for edges in [
+            task_window_left_edges.as_slice(),
+            task_window_right_edges.as_slice(),
+            taskbar_left_edges.as_slice(),
+            taskbar_right_edges.as_slice(),
+        ] {
+            assert!(
+                edges
+                    .windows(2)
+                    .all(|pair| (pair[0] - pair[1]).abs() <= 1.0),
+                "window and taskbar controls must align to stable trailing rails"
+            );
+        }
         open_page!("download-settings-nav-diagnostics");
         assert_section!("诊断", "download-settings-section-诊断");
 

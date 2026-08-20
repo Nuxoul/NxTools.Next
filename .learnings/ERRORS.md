@@ -9731,3 +9731,38 @@ settings-window regression after durable pagefile/commit headroom recovers, befo
 - Reproducible: environment-dependent
 - Related Files: rust/apps/nxtools-desktop/src/downloads.rs
 - See Also: ERR-20260820-DL1112-FINAL-CHECK-HOST, ERR-20260820-DL09-RELINK-COMMIT
+
+---
+
+## [ERR-20260820-DL17-ABDM-SETTINGS-PATH] recorded ABDM settings package path was stale
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+The DL-17 reference check combined two valid recorded ABDM files with an inferred `CommonSettings.kt`
+package path that does not exist in the current reference checkout.
+
+### Error
+`The system cannot find the path specified` for the inferred shared settings path.
+
+### Context
+- The already indexed `DesktopSettingsComponent.kt` and `ShowDownloadDialogs.kt` reads succeeded.
+- The failed read did not modify the reference checkout or product code.
+
+### Suggested Fix
+Use the reference index and `rg --files -g CommonSettings.kt` before opening a package path that is
+not explicitly recorded.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/reference-code/download.md
+- See Also: ERR-20260728-REFPATH
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Located the file with `rg --files` at
+  `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/settings/CommonSettings.kt`, verified
+  both appearance settings, and continued from the actual path.

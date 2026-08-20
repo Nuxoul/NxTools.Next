@@ -2085,6 +2085,24 @@ Reverified on 2026-08-20 before the DL-16 FFmpeg settings-flow migration:
   ordinary Apply/Cancel still governs manual path edits. Install state may replace copy or reveal
   Cancel without moving the fixed settings footer.
 
+Reverified on 2026-08-20 before the DL-17 window/progress settings migration:
+
+- ABDM first: `DesktopSettingsComponent.kt::Appearance` keeps automatic progress-window and
+  completion-window preferences in one bounded configurable group, while
+  `ShowDownloadDialogs.kt::UpdateTaskBar` maps task state to the native taskbar without mixing those
+  policies into transfer-engine controls. It has no equivalent of the NxTools.Next aggregate
+  taskbar overlay, so it supplies grouping—not invented overlay behavior.
+- Old NxTools `Views/SettingsWindow.axaml` likewise renders progress/completion and post-completion
+  behavior as continuous title/description/control rows. It has no taskbar-internal aggregate
+  overlay; its larger spacing and unrelated completed-item actions are not migrated.
+- NxTools.Next therefore keeps two stable, continuous matrices on the existing Window page. The
+  task-window section pairs visibility and completion feedback in two rows. The taskbar-progress
+  section pairs enable/edit, anchor/mode, X/Y, width/height and three information rows. Both use one
+  outer boundary, quiet center seams, equal flexible cells and aligned trailing control rails.
+- This remains presentation-only. Toggle, numeric and segmented controls retain the same draft
+  entities and validation. Entering, updating, applying, cancelling or closing taskbar layout edit
+  mode keeps the existing deferred GPUI and typed PlatformHost lifecycle.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
