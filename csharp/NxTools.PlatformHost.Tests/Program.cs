@@ -18,6 +18,8 @@ internal static class Program
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("command result preserves native error code", CommandResultPreservesNativeErrorCode),
+            ("platform command diagnostics prefer the operation correlation",
+                PlatformCommandDiagnosticsPreferOperationCorrelation),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
             ("native clipboard format command preserves staged payload", NativeFormatPayloadRoundTrips),
@@ -228,6 +230,23 @@ internal static class Program
         Assert(response.CorrelationId == request.Id);
         Assert(response.Payload.GetProperty("success").GetBoolean() == false);
         Assert(response.Payload.GetProperty("native_error_code").GetInt32() == 5);
+        return Task.CompletedTask;
+    }
+
+    private static Task PlatformCommandDiagnosticsPreferOperationCorrelation()
+    {
+        var operationCorrelationId = Guid.NewGuid();
+        var correlated = ProtocolEnvelope.Create(
+            "platform_command",
+            new { Command = "paste_text" },
+            operationCorrelationId);
+        var uncorrelated = ProtocolEnvelope.Create(
+            "platform_command",
+            new { Command = "paste_text" });
+
+        Assert(
+            PlatformPipeClient.ResolveDiagnosticCorrelationId(correlated) == operationCorrelationId);
+        Assert(PlatformPipeClient.ResolveDiagnosticCorrelationId(uncorrelated) == uncorrelated.Id);
         return Task.CompletedTask;
     }
 

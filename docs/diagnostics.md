@@ -307,13 +307,15 @@ TLS payloads are not logged.
 
 Every diagnostics-page path action creates one correlation ID and emits
 `download.settings_path_action.started`, followed by exactly one
-`download.settings_path_action.completed` or `download.settings_path_action.failed`. The operation
-is bounded by a 15-second PlatformHost timeout; enqueue failure, native failure and timeout all use
-the same terminal failure event with a fixed `failure_kind`.
+`download.settings_path_action.completed` or `download.settings_path_action.failed`. Desktop waits
+at most 15 seconds for PlatformHost confirmation; enqueue failure, native failure and observation
+timeout all use the same terminal failure event with a fixed `failure_kind`. This deadline releases
+desktop pending state and ignores a late result. It cannot revoke a Windows command that PlatformHost
+already accepted, so the timeout message explicitly says the action may still complete.
 
 These events carry only `path_kind=config|logs|database`, `action=copy|open`, elapsed time, a fixed
-failure kind and the optional native error code. The config, log and database paths, clipboard text,
-PlatformHost error text and any file contents are never logged. Copy uses the existing typed
+failure kind and the optional native error code. The config, log and database paths, clipboard text
+and any file contents are never logged. Copy uses the existing typed
 copy-only clipboard command; open uses the existing typed shell command, selecting file targets in
 Explorer and opening the log directory directly. UI callbacks remain deferred and C# remains the
 only Windows clipboard/Shell owner.

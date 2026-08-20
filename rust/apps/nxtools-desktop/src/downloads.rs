@@ -208,95 +208,63 @@ enum DownloadSettingsPathKind {
     Database,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DownloadSettingsPathPresentation {
+    key: &'static str,
+    display_name: &'static str,
+    value_selector: &'static str,
+    value_tooltip_selector: &'static str,
+    copy_button_id: &'static str,
+    open_button_id: &'static str,
+    copy_tooltip: &'static str,
+    open_tooltip: &'static str,
+    copy_tooltip_selector: &'static str,
+    open_tooltip_selector: &'static str,
+    shell_action: ShellOpenAction,
+}
+
 impl DownloadSettingsPathKind {
-    const fn name(self) -> &'static str {
+    const fn presentation(self) -> DownloadSettingsPathPresentation {
         match self {
-            Self::Config => "config",
-            Self::Logs => "logs",
-            Self::Database => "database",
-        }
-    }
-
-    const fn display_name(self) -> &'static str {
-        match self {
-            Self::Config => "配置",
-            Self::Logs => "日志",
-            Self::Database => "数据库",
-        }
-    }
-
-    const fn button_key(self) -> &'static str {
-        self.name()
-    }
-
-    const fn value_selector(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-value",
-            Self::Logs => "download-settings-path-logs-value",
-            Self::Database => "download-settings-path-database-value",
-        }
-    }
-
-    const fn value_tooltip_selector(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-value-tooltip",
-            Self::Logs => "download-settings-path-logs-value-tooltip",
-            Self::Database => "download-settings-path-database-value-tooltip",
-        }
-    }
-
-    const fn copy_button_id(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-copy-button",
-            Self::Logs => "download-settings-path-logs-copy-button",
-            Self::Database => "download-settings-path-database-copy-button",
-        }
-    }
-
-    const fn open_button_id(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-open-button",
-            Self::Logs => "download-settings-path-logs-open-button",
-            Self::Database => "download-settings-path-database-open-button",
-        }
-    }
-
-    const fn copy_tooltip(self) -> &'static str {
-        match self {
-            Self::Config => "复制配置路径",
-            Self::Logs => "复制日志路径",
-            Self::Database => "复制数据库路径",
-        }
-    }
-
-    const fn open_tooltip(self) -> &'static str {
-        match self {
-            Self::Config => "在资源管理器中显示配置文件",
-            Self::Logs => "打开日志目录",
-            Self::Database => "在资源管理器中显示数据库文件",
-        }
-    }
-
-    const fn copy_tooltip_selector(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-copy-tooltip",
-            Self::Logs => "download-settings-path-logs-copy-tooltip",
-            Self::Database => "download-settings-path-database-copy-tooltip",
-        }
-    }
-
-    const fn open_tooltip_selector(self) -> &'static str {
-        match self {
-            Self::Config => "download-settings-path-config-open-tooltip",
-            Self::Logs => "download-settings-path-logs-open-tooltip",
-            Self::Database => "download-settings-path-database-open-tooltip",
-        }
-    }
-
-    const fn shell_action(self) -> ShellOpenAction {
-        match self {
-            Self::Config | Self::Database => ShellOpenAction::SelectInExplorer,
-            Self::Logs => ShellOpenAction::Open,
+            Self::Config => DownloadSettingsPathPresentation {
+                key: "config",
+                display_name: "配置",
+                value_selector: "download-settings-path-config-value",
+                value_tooltip_selector: "download-settings-path-config-value-tooltip",
+                copy_button_id: "download-settings-path-config-copy-button",
+                open_button_id: "download-settings-path-config-open-button",
+                copy_tooltip: "复制配置路径",
+                open_tooltip: "在资源管理器中显示配置文件",
+                copy_tooltip_selector: "download-settings-path-config-copy-tooltip",
+                open_tooltip_selector: "download-settings-path-config-open-tooltip",
+                shell_action: ShellOpenAction::SelectInExplorer,
+            },
+            Self::Logs => DownloadSettingsPathPresentation {
+                key: "logs",
+                display_name: "日志",
+                value_selector: "download-settings-path-logs-value",
+                value_tooltip_selector: "download-settings-path-logs-value-tooltip",
+                copy_button_id: "download-settings-path-logs-copy-button",
+                open_button_id: "download-settings-path-logs-open-button",
+                copy_tooltip: "复制日志路径",
+                open_tooltip: "打开日志目录",
+                copy_tooltip_selector: "download-settings-path-logs-copy-tooltip",
+                open_tooltip_selector: "download-settings-path-logs-open-tooltip",
+                shell_action: ShellOpenAction::Open,
+            },
+            Self::Database => DownloadSettingsPathPresentation {
+                key: "database",
+                display_name: "数据库",
+                value_selector: "download-settings-path-database-value",
+                value_tooltip_selector: "download-settings-path-database-value-tooltip",
+                copy_button_id: "download-settings-path-database-copy-button",
+                open_button_id: "download-settings-path-database-open-button",
+                copy_tooltip: "复制数据库路径",
+                open_tooltip: "在资源管理器中显示数据库文件",
+                copy_tooltip_selector: "download-settings-path-database-copy-tooltip",
+                open_tooltip_selector: "download-settings-path-database-open-tooltip",
+                shell_action: ShellOpenAction::SelectInExplorer,
+            },
         }
     }
 }
@@ -1841,6 +1809,7 @@ impl DownloadApplication {
         action: DownloadSettingsPathAction,
         cx: &mut Context<Self>,
     ) {
+        let presentation = path_kind.presentation();
         let target = match path_kind {
             DownloadSettingsPathKind::Config => self.config_path.to_string_lossy().into_owned(),
             DownloadSettingsPathKind::Logs => self.log_directory.to_string_lossy().into_owned(),
@@ -1856,7 +1825,7 @@ impl DownloadApplication {
             DownloadSettingsPathAction::Open => {
                 PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
                     target,
-                    action: path_kind.shell_action(),
+                    action: presentation.shell_action,
                 })
             }
         };
@@ -1870,7 +1839,7 @@ impl DownloadApplication {
         info!(
             event = "download.settings_path_action.started",
             %correlation_id,
-            path_kind = path_kind.name(),
+            path_kind = presentation.key,
             action = action.name(),
             "download settings path action started"
         );
@@ -1919,6 +1888,7 @@ impl DownloadApplication {
         result: PlatformCommandResult,
         cx: &mut Context<Self>,
     ) {
+        let presentation = pending.path_kind.presentation();
         if !result.success {
             self.finish_download_settings_path_action_failure(
                 pending,
@@ -1931,7 +1901,7 @@ impl DownloadApplication {
         info!(
             event = "download.settings_path_action.completed",
             correlation_id = %pending.correlation_id,
-            path_kind = pending.path_kind.name(),
+            path_kind = presentation.key,
             action = pending.action.name(),
             elapsed_ms = pending.started_at.elapsed().as_millis(),
             "download settings path action completed"
@@ -1939,9 +1909,9 @@ impl DownloadApplication {
         if pending.action == DownloadSettingsPathAction::Copy {
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_success(
-                    format!("download-settings-path-{}-copy", pending.path_kind.name()),
+                    format!("download-settings-path-{}-copy", presentation.key),
                     "路径已复制",
-                    format!("{}路径已写入剪贴板", pending.path_kind.display_name()),
+                    format!("{}路径已写入剪贴板", presentation.display_name),
                     cx,
                 );
             });
@@ -1956,21 +1926,30 @@ impl DownloadApplication {
         native_error_code: Option<i32>,
         cx: &mut Context<Self>,
     ) {
+        let presentation = pending.path_kind.presentation();
         warn!(
             event = "download.settings_path_action.failed",
             correlation_id = %pending.correlation_id,
-            path_kind = pending.path_kind.name(),
+            path_kind = presentation.key,
             action = pending.action.name(),
             failure_kind,
             native_error_code,
             elapsed_ms = pending.started_at.elapsed().as_millis(),
             "download settings path action failed"
         );
-        let (title, message) = match pending.action {
-            DownloadSettingsPathAction::Copy => {
+        let (title, message) = match (pending.action, failure_kind) {
+            (DownloadSettingsPathAction::Copy, "timeout") => (
+                "无法复制诊断路径",
+                "Windows 未在 15 秒内确认；操作可能仍会完成。",
+            ),
+            (DownloadSettingsPathAction::Open, "timeout") => (
+                "无法打开诊断路径",
+                "Windows 未在 15 秒内确认；操作可能仍会完成。",
+            ),
+            (DownloadSettingsPathAction::Copy, _) => {
                 ("无法复制诊断路径", "Windows 剪贴板暂时不可用，请稍后重试。")
             }
-            DownloadSettingsPathAction::Open => (
+            (DownloadSettingsPathAction::Open, _) => (
                 "无法打开诊断路径",
                 "Windows 无法打开该位置，请确认目标仍然存在。",
             ),
@@ -1979,7 +1958,7 @@ impl DownloadApplication {
             notifications.show_error(
                 format!(
                     "download-settings-path-{}-{}-failed",
-                    pending.path_kind.name(),
+                    presentation.key,
                     pending.action.name()
                 ),
                 title,
@@ -7534,7 +7513,7 @@ impl Render for DownloadSettingsView {
                         ),
                         download_settings_path_row(
                             theme,
-                            "数据",
+                            "数据库",
                             self.database_path.clone(),
                             DownloadSettingsPathKind::Database,
                             self.application.clone(),
@@ -8051,16 +8030,17 @@ fn download_settings_path_row(
     path_kind: DownloadSettingsPathKind,
     application: Entity<DownloadApplication>,
 ) -> AnyElement {
-    let key = path_kind.button_key();
-    let value_selector = path_kind.value_selector();
-    let value_tooltip_selector = path_kind.value_tooltip_selector();
+    let presentation = path_kind.presentation();
+    let key = presentation.key;
+    let value_selector = presentation.value_selector;
+    let value_tooltip_selector = presentation.value_tooltip_selector;
     let path_tooltip = path.clone();
     let copy_application = application.clone();
     let copy_action = div()
         .debug_selector(move || format!("download-settings-path-{key}-copy"))
         .size(px(CONTROL_HEIGHT_ACTION))
         .child(icon_action_tooltip_surface(
-            icon_action_button(path_kind.copy_button_id(), MaterialIcon::ContentCopy)
+            icon_action_button(presentation.copy_button_id, MaterialIcon::ContentCopy)
                 .ghost()
                 .border_1()
                 .border_color(theme.border_subtle)
@@ -8077,14 +8057,14 @@ fn download_settings_path_row(
                         });
                     });
                 }),
-            path_kind.copy_tooltip(),
-            path_kind.copy_tooltip_selector(),
+            presentation.copy_tooltip,
+            presentation.copy_tooltip_selector,
         ));
     let open_action = div()
         .debug_selector(move || format!("download-settings-path-{key}-open"))
         .size(px(CONTROL_HEIGHT_ACTION))
         .child(icon_action_tooltip_surface(
-            icon_action_button(path_kind.open_button_id(), MaterialIcon::OpenInNew)
+            icon_action_button(presentation.open_button_id, MaterialIcon::OpenInNew)
                 .ghost()
                 .border_1()
                 .border_color(theme.border_subtle)
@@ -8101,8 +8081,8 @@ fn download_settings_path_row(
                         });
                     });
                 }),
-            path_kind.open_tooltip(),
-            path_kind.open_tooltip_selector(),
+            presentation.open_tooltip,
+            presentation.open_tooltip_selector,
         ));
     div()
         .debug_selector(move || format!("download-settings-path-{label}"))
@@ -14563,8 +14543,8 @@ mod tests {
                 "download-settings-path-logs-open",
             ),
             (
-                "数据",
-                "download-settings-path-数据",
+                "数据库",
+                "download-settings-path-数据库",
                 "download-settings-path-database-value",
                 "download-settings-path-database-actions",
                 "download-settings-path-database-copy",

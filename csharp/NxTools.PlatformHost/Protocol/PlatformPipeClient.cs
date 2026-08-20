@@ -167,7 +167,7 @@ internal sealed class PlatformPipeClient(
                 {
                     var started = Stopwatch.GetTimestamp();
                     var logCommandLifecycle = ShouldLogCommandLifecycle(commandName);
-                    var diagnosticCorrelationId = envelope.CorrelationId ?? envelope.Id;
+                    var diagnosticCorrelationId = ResolveDiagnosticCorrelationId(envelope);
                     if (logCommandLifecycle)
                     {
                         log.Write("info", "command.received", diagnosticCorrelationId,
@@ -180,19 +180,19 @@ internal sealed class PlatformPipeClient(
                     {
                         "paste_text" => await platformAdapter.PasteTextAsync(
                             PlatformCommandParser.ParsePasteText(envelope),
-                            envelope.Id,
+                            diagnosticCorrelationId,
                             cancellationToken),
                         "paste_files" => await platformAdapter.PasteFilesAsync(
                             PlatformCommandParser.ParsePasteFiles(envelope),
-                            envelope.Id,
+                            diagnosticCorrelationId,
                             cancellationToken),
                         "paste_image" => await platformAdapter.PasteImageAsync(
                             PlatformCommandParser.ParsePasteImage(envelope),
-                            envelope.Id,
+                            diagnosticCorrelationId,
                             cancellationToken),
                         "paste_native_formats" => await platformAdapter.PasteNativeFormatsAsync(
                             PlatformCommandParser.ParsePasteNativeFormats(envelope),
-                            envelope.Id,
+                            diagnosticCorrelationId,
                             cancellationToken),
                         "configure_clipboard" => await platformAdapter.ConfigureClipboardAsync(
                             PlatformCommandParser.ParseConfigureClipboard(envelope),
@@ -311,6 +311,9 @@ internal sealed class PlatformPipeClient(
             }
         }
     }
+
+    internal static Guid ResolveDiagnosticCorrelationId(ProtocolEnvelope envelope) =>
+        envelope.CorrelationId ?? envelope.Id;
 
     private async Task ForwardEventsAsync(
         ChannelWriter<ProtocolEnvelope> outgoing,

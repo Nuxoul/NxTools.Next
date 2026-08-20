@@ -657,18 +657,27 @@ rust/apps/nxtools-desktop/src/ui/
 - 两类动作继续经 deferred GPUI callback 进入 application owner。Copy 使用现有 copy-only
   `PasteText`，日志目录使用 `OpenShellTarget::Open`，配置/数据库文件使用
   `SelectInExplorer`；C# 仍是唯一 Windows Clipboard/Shell adapter。每次操作在 15 秒内以
-  started -> completed/failed 收口，超时释放 pending identity，迟到结果被忽略；日志只含固定
-  path/action/failure kind、elapsed 与 native code，不含路径、剪贴板文本或平台错误正文。
+  started -> completed/failed 收口，超时释放 desktop pending identity，迟到结果被忽略；已经被
+  PlatformHost 接受的 Windows 命令不可撤回，超时提示因此明确说明操作仍可能完成。日志只含
+  固定 path/action/failure kind、elapsed 与 native code，不含路径或剪贴板文本。
 - 红—绿生产门禁先在缺少配置路径值节点处失败，随后从真实
   `DownloadApplication -> DownloadSettingsView -> PlatformBridge` 验证三行全宽、长路径与
   动作 Tooltip、六个 `28 x 28` hit target、三条 copy-only 命令、目录打开/文件 reveal、成功/
   失败反馈、15 秒超时和迟到结果抑制。当前 `cargo check -p nxtools-desktop --tests`、该精确
   GPUI 测试、`download-ui-lifecycle.ps1`、rustfmt 与 `git diff --check` 均通过。
+- 严格 `cargo clippy -p nxtools-desktop --tests -- -D warnings` 在未修改的
+  `rust/apps/nxtools-desktop/build.rs:59` 被既有 `needless_borrows_for_generic_args` 阻断；仅放行
+  这一条基线 lint、其余 warnings 继续 deny 后全量 Clippy 通过。该基线未混入 DL-18 修复。
 - 一次完整 `cargo test -p nxtools-desktop` 运行得到 295/300，DL-18 精确门禁在整包中仍通过；
   其余五项在隔离复跑中稳定失败，分别属于既有分类裸 Button selector、网络设置尾距、Quick
   Launch action mode、剪贴板空态宽度和下载详情 progress selector，其中四个文件本切片未
   修改。该既有基线已记录到 `.learnings/ERRORS.md`，不把整包冒充为绿色，也不在 DL-18 中
   扩张修复范围。Release 100/125/150% DPI 截图和人工视觉验收仍保留为最终发布门禁。
+- 双轴复审修正了两处实质问题：可见标签从“数据”改为规范中的“数据库”；PlatformHost 的四类
+  paste 操作从命令 ID 改为优先继承 envelope correlation，使 copy-only 路径从 Rust started 到
+  C# `clipboard.copy.completed` 使用同一诊断身份。C# 聚焦 correlation 测试通过；完整
+  PlatformHost.Tests 已打印通过所有直接相关的协议、Shell、Clipboard、Paste 和诊断测试，但
+  在后段集成用例超过四分钟未终止，已只清理本轮测试子进程并记录为非绿色全套结果。
 
 ### 批次 2：主壳层与全局设置
 
