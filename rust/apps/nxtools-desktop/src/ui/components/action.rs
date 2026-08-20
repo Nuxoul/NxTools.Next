@@ -38,6 +38,35 @@ pub(crate) fn primary_button_variant(theme: Theme, cx: &App) -> ButtonCustomVari
         .active(theme.accent.into())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DangerHoverButtonPalette {
+    rest: gpui::Rgba,
+    foreground: gpui::Rgba,
+    border: gpui::Rgba,
+    hover: gpui::Rgba,
+    active: gpui::Rgba,
+}
+
+fn danger_hover_button_palette(theme: Theme) -> DangerHoverButtonPalette {
+    DangerHoverButtonPalette {
+        rest: theme.surface_raised,
+        foreground: theme.text_secondary,
+        border: theme.border_subtle,
+        hover: theme.danger_soft,
+        active: theme.danger_soft,
+    }
+}
+
+pub(crate) fn danger_hover_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
+    let palette = danger_hover_button_palette(theme);
+    ButtonCustomVariant::new(cx)
+        .color(palette.rest.into())
+        .foreground(palette.foreground.into())
+        .border(palette.border.into())
+        .hover(palette.hover.into())
+        .active(palette.active.into())
+}
+
 pub(crate) fn action_button(id: &'static str, label: impl Into<SharedString>) -> Button {
     Button::new(id)
         .label(label)
@@ -139,4 +168,40 @@ pub(crate) fn segmented_control(
                 .child(button)
         }))
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+
+    #[gpui::test]
+    fn destructive_action_is_neutral_at_rest_and_danger_only_on_interaction(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let theme = Theme::zed_dark();
+        let palette = danger_hover_button_palette(theme);
+        assert_eq!(palette.rest, theme.surface_raised);
+        assert_eq!(palette.foreground, theme.text_secondary);
+        assert_eq!(palette.border, theme.border_subtle);
+        assert_eq!(palette.hover, theme.danger_soft);
+        assert_eq!(palette.active, theme.danger_soft);
+
+        let actual = cx.update(|cx| danger_hover_button_variant(theme, cx));
+        let expected = cx.update(|cx| {
+            ButtonCustomVariant::new(cx)
+                .color(palette.rest.into())
+                .foreground(palette.foreground.into())
+                .border(palette.border.into())
+                .hover(palette.hover.into())
+                .active(palette.active.into())
+        });
+
+        assert!(
+            actual == expected,
+            "the destructive action tier must stay neutral at rest and use danger_soft only for hover/press"
+        );
+    }
 }

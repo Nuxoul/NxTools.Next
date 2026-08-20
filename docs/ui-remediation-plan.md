@@ -551,7 +551,25 @@ rust/apps/nxtools-desktop/src/ui/
   `libtest` 元数据；未重复链接。该生产窗口门禁、完整 Clippy
   与 Release 100/125/150% DPI 截图继续保留为提交空间恢复后的打包前验收；本切片未启动 GUI，
   也不冒领未取得的运行证据。
-- DL-13 分类动作仍是下一切片；在危险 hover、状态动作层级和真实点击门禁完成前不提前勾选。
+
+第十七个 P0 下载分类动作切片（2026-08-20）：
+
+- DL-13 将启用状态从独立输入卡片移入选中分类的 32 px 标题行，标题、状态说明与共享 toggle
+  形成同一编辑器语义边界；禁用只降低说明强调，不把整个分类编辑器处理成不可读的禁用卡片。
+- 上移/下移收敛为一个 4 px 间距的中性排序工具组，首尾边界继续使用真实 disabled 状态；删除
+  与排序组保持至少 12 px 的空间分离，静止时使用中性 raised surface，只在 hover/press 使用
+  `danger_soft`，不再以永久红色抢占主操作层级。所有动作仍只修改本地分类草稿，Apply 才持久化。
+- 真实生产下载设置窗口门禁新增标题行与 toggle containment、排序组/工具栏 containment、三项
+  28 px 命中区、删除空间分离和 hover 前后几何稳定断言；实际点击首项禁用上移证明无副作用，
+  且其回调计数保持不变，并继续点击下移、上移和删除验证草稿顺序与数量变化。门禁在 Apply
+  前重载配置证明动作没有提前落盘，点击真实 Apply 后再验证启用、顺序与删除结果精确持久化；
+  共享危险动作调色板另锁定中性静止态和 `danger_soft` hover/press。desktop `cargo check -p
+  nxtools-desktop --tests`、rustfmt、diff check 与 `download-ui-lifecycle.ps1` 已通过。
+- 当前 Windows FreeVirtual 约 2.06 GiB，未重复启动此前会在 GPUI 链接阶段触发 pagefile 1455
+  的 exact 测试；危险 hover 的最终色彩、Release 100/125/150% DPI 截图和打包仍留待统一人工
+  验收。本切片未启动 GUI，也不冒领未取得的运行或截图证据。
+- DL-14 请求上下文是下一切片；在 Header、Cookie、证书表单层级和长 Header 不挤压 footer
+  的生产门禁完成前不提前勾选。
 
 ### 批次 2：主壳层与全局设置
 

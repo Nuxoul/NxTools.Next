@@ -83,6 +83,9 @@
 
 - Icon-only actions require a tooltip and stable 28 px visible geometry.
 - Destructive color appears only for destructive actions and their terminal states.
+- State toggles belong in the heading of the editor they govern. Ordering controls form one neutral
+  group with edge-disabled states; destructive actions are spatially separated, remain neutral at
+  rest and use the danger surface only on hover or press.
 - Cross-entity GPUI callbacks defer to the next application turn.
 
 ### Notifications

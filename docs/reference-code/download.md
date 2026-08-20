@@ -2012,6 +2012,21 @@ Reverified on 2026-08-20 before the DL-11/DL-12 category master-detail migration
   selected editor. Relative destinations resolve against the current draft default directory;
   truncated rows expose the complete resolved path through one stable production Tooltip boundary.
 
+Reverified on 2026-08-20 before the DL-13 category-action hierarchy migration:
+
+- ABDM first: `shared/app/.../pages/home/CategoryActions.kt` keeps category deletion as a distinct
+  destructive action and routes it through a delete request; `BaseHomeComponent.reorderCategory`
+  expresses ordering as a bounded index delta, while desktop `Categories.kt` shows reorder affordance
+  only in the category interaction zone. The useful invariant is separation between state, ordering
+  and destructive intent; its drag-only Compose presentation is not copied into the settings form.
+- Old NxTools `CategoryWindow.axaml` keeps enable/path state with the category fields and reserves the
+  footer for Save/Cancel. It has no category-list ordering or deletion control, so it provides no
+  basis for making every editor action equally prominent or permanently red.
+- NxTools.Next keeps all four operations inside the existing local settings draft. Enable belongs in
+  the selected-category heading, Up/Down form one neutral ordering group with edge-disabled states,
+  and Delete is spatially separated. Delete is neutral at rest and gains danger semantics only on
+  hover/press; only Apply persists the resulting enabled/order/removal changes.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

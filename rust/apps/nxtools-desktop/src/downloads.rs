@@ -66,8 +66,8 @@ use crate::icons::MaterialIcon;
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::components::action::{
-    SegmentedOption, action_button, icon_action, icon_action_button, icon_action_tooltip_surface,
-    segmented_control,
+    SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,
+    icon_action_tooltip_surface, segmented_control,
 };
 use crate::ui::components::field::{field_shell, inline_error, labeled_field};
 use crate::ui::components::list::compact_list_row;
@@ -5461,6 +5461,8 @@ struct DownloadSettingsView {
     _subscriptions: Vec<Subscription>,
     #[cfg(test)]
     category_presentation_revision: usize,
+    #[cfg(test)]
+    category_action_invocations: usize,
 }
 
 // gpui-component 0.5.1 passes the full placeholder run to each rendered line of an empty
@@ -5767,6 +5769,8 @@ impl DownloadSettingsView {
             .collect(),
             #[cfg(test)]
             category_presentation_revision: 0,
+            #[cfg(test)]
+            category_action_invocations: 0,
         }
     }
 
@@ -6195,29 +6199,61 @@ impl Render for DownloadSettingsView {
                     .gap(px(SPACING_8))
                     .child(
                         div()
-                            .debug_selector(|| "download-settings-category-status-row".into())
+                            .debug_selector(|| "download-settings-category-heading".into())
                             .w_full()
                             .h(px(CONTROL_HEIGHT_INPUT))
-                            .px(px(SPACING_8))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
+                            .border_b_1()
                             .border_color(theme.border_subtle)
-                            .bg(theme.canvas)
                             .flex()
                             .items_center()
                             .justify_between()
                             .child(
                                 div()
-                                    .text_size(px(TEXT_BODY))
-                                    .line_height(px(LINE_HEIGHT_BODY))
-                                    .text_color(theme.text_secondary)
-                                    .child(if enabled {
-                                        "已启用此分类"
-                                    } else {
-                                        "此分类已停用"
-                                    }),
+                                    .min_w_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(SPACING_8))
+                                    .child(
+                                        div()
+                                            .debug_selector(|| {
+                                                "download-settings-category-heading-title".into()
+                                            })
+                                            .flex_none()
+                                            .text_size(px(TEXT_BODY))
+                                            .line_height(px(LINE_HEIGHT_BODY))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text)
+                                            .child("分类规则"),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(px(TEXT_LABEL))
+                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_color(theme.text_muted)
+                                            .child(if enabled {
+                                                "参与自动匹配"
+                                            } else {
+                                                "已停用，不参与自动匹配"
+                                            }),
+                                    ),
                             )
-                            .child(enabled_control),
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(SPACING_8))
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_LABEL))
+                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_color(theme.text_secondary)
+                                            .child("启用"),
+                                    )
+                                    .child(enabled_control),
+                            ),
                     )
                     .child(
                         div()
@@ -6294,54 +6330,81 @@ impl Render for DownloadSettingsView {
                     .child(div().flex_1())
                     .child(
                         div()
+                            .debug_selector(|| "download-settings-category-action-toolbar".into())
                             .w_full()
                             .pt(px(SPACING_8))
                             .border_t_1()
                             .border_color(theme.border_subtle)
                             .flex()
                             .items_center()
-                            .justify_end()
-                            .gap(px(SPACING_6))
+                            .justify_between()
                             .child(
                                 div()
                                     .debug_selector(|| {
-                                        "download-settings-category-up-control".into()
+                                        "download-settings-category-order-group".into()
                                     })
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(SPACING_4))
                                     .child(
-                                        action_button("download-settings-category-up", "上移")
-                                            .outline()
-                                            .border_1()
-                                            .border_color(theme.border_subtle)
-                                            .bg(theme.surface_raised)
-                                            .disabled(index == 0)
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                if index > 0 && index < this.categories.len() {
-                                                    this.categories.swap(index, index - 1);
-                                                    this.selected_category = Some(index - 1);
-                                                    cx.notify();
-                                                }
-                                            })),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(|| {
-                                        "download-settings-category-down-control".into()
-                                    })
+                                        div()
+                                            .debug_selector(|| {
+                                                "download-settings-category-up-control".into()
+                                            })
+                                            .child(
+                                                action_button(
+                                                    "download-settings-category-up",
+                                                    "上移",
+                                                )
+                                                .ghost()
+                                                .border_1()
+                                                .border_color(theme.border_subtle)
+                                                .bg(theme.surface_raised)
+                                                .disabled(index == 0)
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    #[cfg(test)]
+                                                    {
+                                                        this.category_action_invocations = this
+                                                            .category_action_invocations
+                                                            .wrapping_add(1);
+                                                    }
+                                                    if index > 0 && index < this.categories.len() {
+                                                        this.categories.swap(index, index - 1);
+                                                        this.selected_category = Some(index - 1);
+                                                        cx.notify();
+                                                    }
+                                                })),
+                                            ),
+                                    )
                                     .child(
-                                        action_button("download-settings-category-down", "下移")
-                                            .outline()
-                                            .border_1()
-                                            .border_color(theme.border_subtle)
-                                            .bg(theme.surface_raised)
-                                            .disabled(index + 1 >= self.categories.len())
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                if index + 1 < this.categories.len() {
-                                                    this.categories.swap(index, index + 1);
-                                                    this.selected_category = Some(index + 1);
-                                                    cx.notify();
-                                                }
-                                            })),
+                                        div()
+                                            .debug_selector(|| {
+                                                "download-settings-category-down-control".into()
+                                            })
+                                            .child(
+                                                action_button(
+                                                    "download-settings-category-down",
+                                                    "下移",
+                                                )
+                                                .ghost()
+                                                .border_1()
+                                                .border_color(theme.border_subtle)
+                                                .bg(theme.surface_raised)
+                                                .disabled(index + 1 >= self.categories.len())
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    #[cfg(test)]
+                                                    {
+                                                        this.category_action_invocations = this
+                                                            .category_action_invocations
+                                                            .wrapping_add(1);
+                                                    }
+                                                    if index + 1 < this.categories.len() {
+                                                        this.categories.swap(index, index + 1);
+                                                        this.selected_category = Some(index + 1);
+                                                        cx.notify();
+                                                    }
+                                                })),
+                                            ),
                                     ),
                             )
                             .child(
@@ -6354,10 +6417,8 @@ impl Render for DownloadSettingsView {
                                             "download-settings-category-delete",
                                             "删除分类",
                                         )
-                                        .outline()
                                         .border_1()
-                                        .border_color(theme.border_subtle)
-                                        .bg(theme.surface_raised)
+                                        .custom(danger_hover_button_variant(theme, cx))
                                         .on_click(
                                             cx.listener(move |this, _, _, cx| {
                                                 if index < this.categories.len() {
@@ -13522,6 +13583,11 @@ mod tests {
         let executor = cx.executor();
         let (application, directory) =
             download_application_for_window_test(cx, "category-settings-layout");
+        let config_path = directory.join("config.json");
+        let persisted_before_actions = AppConfig::default();
+        persisted_before_actions
+            .save_to(&config_path)
+            .expect("save category action persistence fixture");
         cx.update(|cx| {
             application.update(cx, |application, cx| {
                 application.open_settings_window(cx);
@@ -13696,9 +13762,76 @@ mod tests {
             "the production master row must expose the complete resolved destination through a stable tooltip"
         );
 
+        let category_heading = window
+            .debug_bounds("download-settings-category-heading")
+            .expect("selected-category heading");
+        let category_heading_title = window
+            .debug_bounds("download-settings-category-heading-title")
+            .expect("selected-category heading title");
         let enabled_toggle = window
             .debug_bounds("download-settings-category-enabled-button")
             .expect("category enabled toggle");
+        assert!(category_heading.contains(&category_heading_title.origin));
+        assert!(category_heading.contains(&category_heading_title.bottom_right()));
+        assert!(category_heading.contains(&enabled_toggle.origin));
+        assert!(category_heading.contains(&enabled_toggle.bottom_right()));
+
+        let action_toolbar = window
+            .debug_bounds("download-settings-category-action-toolbar")
+            .expect("category action toolbar");
+        let order_group = window
+            .debug_bounds("download-settings-category-order-group")
+            .expect("category order group");
+        let move_up_button = window
+            .debug_bounds("download-settings-category-up")
+            .expect("category move-up button");
+        let move_down_button = window
+            .debug_bounds("download-settings-category-down")
+            .expect("category move-down button");
+        let delete_button = window
+            .debug_bounds("download-settings-category-delete")
+            .expect("category delete button");
+        for action in [move_up_button, move_down_button, delete_button] {
+            assert_eq!(
+                action.size.height,
+                px(crate::ui::metrics::CONTROL_HEIGHT_ACTION),
+                "category tools must use the shared 28px action tier"
+            );
+            assert!(action_toolbar.contains(&action.origin));
+            assert!(action_toolbar.contains(&action.bottom_right()));
+        }
+        assert_eq!(move_up_button.origin.y, move_down_button.origin.y);
+        assert!(order_group.contains(&move_up_button.origin));
+        assert!(order_group.contains(&move_up_button.bottom_right()));
+        assert!(order_group.contains(&move_down_button.origin));
+        assert!(order_group.contains(&move_down_button.bottom_right()));
+        assert!(
+            delete_button.origin.x >= order_group.bottom_right().x + px(SPACING_12),
+            "destructive category action must be spatially separated from ordering tools"
+        );
+
+        let action_invocations_before_disabled_click =
+            cx.read(|cx| settings_view.read(cx).category_action_invocations);
+        window.simulate_click(move_up_button.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            cx.read(|cx| settings_view.read(cx).category_action_invocations),
+            action_invocations_before_disabled_click,
+            "the edge-disabled move-up button must suppress its callback, not merely rely on a callback guard"
+        );
+        assert_eq!(
+            cx.read(|cx| {
+                settings_view
+                    .read(cx)
+                    .categories
+                    .iter()
+                    .map(|category| category.id.clone())
+                    .collect::<Vec<_>>()
+            }),
+            initial_category_ids,
+            "the first category's disabled move-up action must not mutate draft order"
+        );
+
         window.simulate_click(enabled_toggle.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render disabled category row");
@@ -13791,6 +13924,23 @@ mod tests {
         let delete = window
             .debug_bounds("download-settings-category-delete-control")
             .expect("category delete action");
+        let delete_button_before_hover = window
+            .debug_bounds("download-settings-category-delete")
+            .expect("category delete button before hover");
+        window.simulate_mouse_move(
+            delete_button_before_hover.center(),
+            None,
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        window.refresh().expect("render category delete hover");
+        assert_eq!(
+            window
+                .debug_bounds("download-settings-category-delete")
+                .expect("category delete button after hover"),
+            delete_button_before_hover,
+            "danger hover must not move or resize the category delete action"
+        );
         window.simulate_click(delete.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render category after delete");
@@ -13804,6 +13954,20 @@ mod tests {
                     .all(|category| category.id != deleted_category_id),
                 "clicking delete must remove the selected category from the production draft"
             );
+        });
+        assert_eq!(
+            AppConfig::load_from(&config_path)
+                .expect("reload category settings before the Apply boundary"),
+            persisted_before_actions,
+            "category state, order and deletion actions must remain local draft changes until Apply"
+        );
+        let expected_categories_after_apply = cx.read(|cx| {
+            settings_view
+                .read(cx)
+                .categories
+                .iter()
+                .map(|category| category.settings(cx))
+                .collect::<Vec<_>>()
         });
 
         for (name, selector) in [
@@ -13884,6 +14048,20 @@ mod tests {
                 .debug_bounds("download-settings-pick-ffmpeg-tooltip")
                 .is_some(),
             "the production FFmpeg picker exposes its Chinese tooltip"
+        );
+
+        let apply = window
+            .debug_bounds("download-settings-apply")
+            .expect("settings Apply action after category draft edits");
+        window.simulate_click(apply.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            AppConfig::load_from(&config_path)
+                .expect("reload category settings after the Apply boundary")
+                .download
+                .categories,
+            expected_categories_after_apply,
+            "Apply must persist the exact enabled/order/deletion state from the category draft"
         );
 
         let _ = std::fs::remove_dir_all(directory);
