@@ -1,15 +1,22 @@
-use gpui::{AnyElement, Entity, FontWeight, IntoElement, Styled, div, prelude::*, px, relative};
+use gpui::{
+    AnyElement, Entity, FontWeight, IntoElement, Pixels, Styled, div, prelude::*, px, relative,
+};
 use gpui_component::input::{Input, InputState};
 
 use crate::theme::Theme;
 use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_6, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL};
 
-pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) -> AnyElement {
+fn field_shell_with_height(
+    theme: Theme,
+    selector: &'static str,
+    control: Input,
+    height: Pixels,
+) -> AnyElement {
     let control = Styled::h(control, relative(1.0));
     div()
         .debug_selector(move || selector.into())
-        .h(px(CONTROL_HEIGHT_INPUT))
+        .h(height)
         .w_full()
         .min_w_0()
         .rounded(px(RADIUS_CONTROL))
@@ -23,11 +30,24 @@ pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) 
         .into_any_element()
 }
 
-pub(crate) fn labeled_field(
+pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) -> AnyElement {
+    field_shell_with_height(theme, selector, control, px(CONTROL_HEIGHT_INPUT))
+}
+
+pub(crate) fn multiline_field_shell(
+    theme: Theme,
+    selector: &'static str,
+    control: Input,
+    height: Pixels,
+) -> AnyElement {
+    field_shell_with_height(theme, selector, control, height)
+}
+
+pub(crate) fn labeled_control(
     theme: Theme,
     label: &'static str,
     description: Option<&'static str>,
-    control: &Entity<InputState>,
+    control: AnyElement,
     selector: &'static str,
 ) -> AnyElement {
     div()
@@ -68,15 +88,31 @@ pub(crate) fn labeled_field(
                     )
                 }),
         )
-        .child(field_shell(
+        .child(control)
+        .into_any_element()
+}
+
+pub(crate) fn labeled_field(
+    theme: Theme,
+    label: &'static str,
+    description: Option<&'static str>,
+    control: &Entity<InputState>,
+    selector: &'static str,
+) -> AnyElement {
+    labeled_control(
+        theme,
+        label,
+        description,
+        field_shell(
             theme,
             selector,
             Input::new(control)
                 .appearance(false)
                 .bordered(false)
                 .focus_bordered(false),
-        ))
-        .into_any_element()
+        ),
+        selector,
+    )
 }
 
 #[allow(dead_code)] // Migrated path pickers consume this in later P0 slices.

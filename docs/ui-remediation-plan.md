@@ -571,6 +571,25 @@ rust/apps/nxtools-desktop/src/ui/
 - DL-14 请求上下文是下一切片；在 Header、Cookie、证书表单层级和长 Header 不挤压 footer
   的生产门禁完成前不提前勾选。
 
+第十八个 P0 下载请求上下文切片（2026-08-20）：
+
+- DL-14 将请求页收敛为两个连续 form section：`请求上下文` 以 Header 为主编辑区，Cookie 为
+  同宽次级字段；`证书校验` 独立保留严格校验默认值与显式例外 toggle。未改变 Header/Cookie
+  合并、证书策略、设置草稿或 Apply/Cancel 的业务边界。
+- 共享 Field 组件新增同一标签/说明骨架和可指定高度的 multiline shell。Header 使用固定
+  120 px、全宽、内部滚动的 inset editor，Cookie 使用同一 x/宽度的 32 px field；两者继续
+  使用 Body/Label、4 px 圆角、subtle border 与 canvas input surface，没有新卡片或危险色。
+- 真实生产下载设置窗口门禁扩展为：请求/证书两节共享内容宽度；Header/Cookie 标签与字段
+  对齐；Header 120 px、Cookie 32 px；写入 48 行有界 Header 后 editor bounds 与固定 footer
+  完全不变，完整草稿仍可读取，证书 section 始终位于 footer 之上且不移动；同一生产窗口
+  真实点击证书 toggle、遍历五页后点击 Apply，并重载配置验证 Header、Cookie 与证书策略。
+- desktop `cargo check -p nxtools-desktop --tests`、rustfmt、diff check 与
+  `download-ui-lifecycle.ps1` 已通过。当前 FreeVirtual 约 2.21 GiB，未启动会重新链接大型
+  GPUI test binary 的 exact 门禁；该生产窗口用例、Release 100/125/150% DPI 截图和人工视觉
+  验收仍保留到统一打包前。本切片未启动 GUI，也不冒领未取得的运行或截图证据。
+- DL-15 传输设置是下一切片；连接、分段、限速两列 SettingRow 的对齐与父宽门禁完成前不
+  提前勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

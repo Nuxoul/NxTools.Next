@@ -50,6 +50,10 @@
   and explanations. Meta is reserved for bounded machine metadata, never used to shrink form copy.
 - Text inputs are 32 px and ordinary actions are 28 px. Icon-only pickers are square actions with a
   tooltip; Apply is the only filled accent action and Cancel remains quiet.
+- Form sections place a fixed label/description row directly above the control it explains. A
+  dominant multiline editor stays full width and fixed height with internal scrolling; supporting
+  single-line fields follow below it, while exceptional security policy lives in a separate row.
+  Input content never grows the settings page or moves the fixed footer.
 - The settings view owns one local draft. Navigation changes presentation only; native close and
   Cancel discard the draft, while Apply keeps the existing validated persistence lifecycle.
 

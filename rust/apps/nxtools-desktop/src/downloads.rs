@@ -69,7 +69,9 @@ use crate::ui::components::action::{
     SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,
     icon_action_tooltip_surface, segmented_control,
 };
-use crate::ui::components::field::{field_shell, inline_error, labeled_field};
+use crate::ui::components::field::{
+    field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
+};
 use crate::ui::components::list::compact_list_row;
 use crate::ui::components::popover::{list_box, popover_shell};
 use crate::ui::components::settings::{
@@ -4482,6 +4484,7 @@ impl Render for DownloadShutdownCountdownView {
 
 const DOWNLOAD_SETTINGS_WINDOW_WIDTH: f32 = 984.0;
 const DOWNLOAD_SETTINGS_WINDOW_HEIGHT: f32 = 650.0;
+const DOWNLOAD_REQUEST_HEADER_EDITOR_HEIGHT: f32 = 120.0;
 
 fn download_settings_window_options(cx: &App) -> WindowOptions {
     // Match the reference settings workspace: a stable navigation rail plus a content column
@@ -6010,31 +6013,22 @@ impl Render for DownloadSettingsView {
                     )),
             )
             .into_any_element();
-        let default_headers_control = div()
-            .debug_selector(|| "download-settings-default-headers".into())
-            .w_full()
-            .h(px(76.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.canvas)
-            .p(px(SPACING_6))
-            .child(
-                Input::new(&self.default_request_headers)
-                    .appearance(false)
-                    .bordered(false)
-                    .focus_bordered(false),
-            )
-            .into_any_element();
-        let default_cookie_control = div()
-            .debug_selector(|| "download-settings-default-cookie".into())
-            .child(download_settings_input(
-                theme,
-                "download-settings-default-cookie-field",
-                &self.default_cookie,
-                px(274.0),
-            ))
-            .into_any_element();
+        let default_headers_control = multiline_field_shell(
+            theme,
+            "download-settings-default-headers-field",
+            Input::new(&self.default_request_headers)
+                .appearance(false)
+                .bordered(false)
+                .focus_bordered(false),
+            px(DOWNLOAD_REQUEST_HEADER_EDITOR_HEIGHT),
+        );
+        let default_cookie_control = labeled_field(
+            theme,
+            "默认 Cookie",
+            Some("仅在任务没有 Cookie 时带入；内容不会写入诊断日志"),
+            &self.default_cookie,
+            "download-settings-default-cookie-field",
+        );
         let certificate_toggle = settings_toggle(
             theme,
             "download-settings-accept-invalid-certificates",
@@ -6964,26 +6958,35 @@ impl Render for DownloadSettingsView {
                 .child(download_settings_section(
                     theme,
                     "请求上下文",
-                    vec![
-                        download_settings_stacked_row(
+                    vec![div()
+                        .debug_selector(|| "download-settings-request-context-form".into())
+                        .w_full()
+                        .min_w_0()
+                        .p(px(SPACING_8))
+                        .flex()
+                        .flex_col()
+                        .gap(px(SPACING_12))
+                        .child(labeled_control(
                             theme,
                             "默认 Header",
-                            "每行 Name: Value，也可写 -H 'Name: Value'；任务或浏览器捕获值优先",
+                            Some(
+                                "每行 Name: Value，也可写 -H 'Name: Value'；任务或浏览器捕获值优先",
+                            ),
                             default_headers_control,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "默认 Cookie",
-                            "仅在任务没有 Cookie 时带入；内容不会写入诊断日志",
-                            default_cookie_control,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "允许无效证书",
-                            "默认严格校验证书；仅为确有需要的服务器显式开启",
-                            certificate_toggle,
-                        ),
-                    ],
+                            "download-settings-default-headers-field",
+                        ))
+                        .child(default_cookie_control)
+                        .into_any_element()],
+                ))
+                .child(download_settings_section(
+                    theme,
+                    "证书校验",
+                    vec![download_settings_row(
+                        theme,
+                        "允许无效证书",
+                        "默认严格校验证书；仅为确有需要且可信的服务器显式开启",
+                        certificate_toggle,
+                    )],
                 ))
                 .into_any_element(),
             DownloadSettingsPage::Transfer => div()
@@ -13525,6 +13528,98 @@ mod tests {
 
         open_page!("download-settings-nav-request");
         assert_section!("请求上下文", "download-settings-section-请求上下文");
+        assert_section!("证书校验", "download-settings-section-证书校验");
+        let request_form = window
+            .debug_bounds("download-settings-request-context-form")
+            .expect("request-context form");
+        let header_field = window
+            .debug_bounds("download-settings-default-headers-field")
+            .expect("full-width Header editor");
+        let header_label = window
+            .debug_bounds("download-settings-default-headers-field-label")
+            .expect("Header editor label");
+        let cookie_field = window
+            .debug_bounds("download-settings-default-cookie-field")
+            .expect("full-width Cookie field");
+        let cookie_label = window
+            .debug_bounds("download-settings-default-cookie-field-label")
+            .expect("Cookie field label");
+        let certificate_section = window
+            .debug_bounds("download-settings-section-证书校验")
+            .expect("certificate policy section");
+        let certificate_toggle = window
+            .debug_bounds("download-settings-accept-invalid-certificates")
+            .expect("certificate policy toggle");
+        assert_eq!(header_field.size.height, px(120.0));
+        assert_eq!(cookie_field.size.height, px(CONTROL_HEIGHT_INPUT));
+        assert_eq!(header_field.origin.x, cookie_field.origin.x);
+        assert_eq!(header_field.size.width, cookie_field.size.width);
+        assert_eq!(header_label.origin.x, cookie_label.origin.x);
+        assert!(request_form.contains(&header_field.origin));
+        assert!(request_form.contains(&header_field.bottom_right()));
+        assert!(request_form.contains(&cookie_field.origin));
+        assert!(request_form.contains(&cookie_field.bottom_right()));
+        assert!(certificate_section.bottom() <= shell_footer.top());
+
+        let long_header = (0..48)
+            .map(|index| format!("X-NxTools-{index}: bounded-value-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (header_input, cookie_input) = cx.read(|cx| {
+            let settings = settings_view.read(cx);
+            (
+                settings.default_request_headers.clone(),
+                settings.default_cookie.clone(),
+            )
+        });
+        window.update(|window, cx| {
+            header_input.update(cx, |input, cx| {
+                input.set_value(&long_header, window, cx);
+            });
+            cookie_input.update(cx, |input, cx| {
+                input.set_value("session=bounded", window, cx);
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render long request context");
+        assert_eq!(
+            window
+                .debug_bounds("download-settings-default-headers-field")
+                .expect("stable Header editor after long input"),
+            header_field,
+            "long Header content must scroll inside a fixed editor instead of growing the page"
+        );
+        assert_eq!(
+            window
+                .debug_bounds("download-settings-shell-footer")
+                .expect("fixed footer after long Header input"),
+            shell_footer,
+            "long Header content must not move or resize the settings footer"
+        );
+        assert_eq!(
+            window
+                .debug_bounds("download-settings-section-证书校验")
+                .expect("stable certificate section after long Header input"),
+            certificate_section,
+            "long Header content must not move the separate certificate policy section"
+        );
+        assert!(
+            cx.read(|cx| {
+                settings_view
+                    .read(cx)
+                    .default_request_headers
+                    .read(cx)
+                    .value()
+                    .to_string()
+            }) == long_header,
+            "the fixed editor must preserve the complete Header draft"
+        );
+        window.simulate_click(certificate_toggle.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(
+            cx.read(|cx| settings_view.read(cx).accept_invalid_certificates),
+            "the production certificate toggle must update the same request-settings draft"
+        );
         open_page!("download-settings-nav-transfer");
         assert_section!("传输", "download-settings-section-传输");
         assert_section!("媒体工具", "download-settings-section-媒体工具");
@@ -13571,6 +13666,23 @@ mod tests {
             !initial_automatic_categories,
             "switching through all five production pages must preserve the local draft"
         );
+
+        let apply = window
+            .debug_bounds("download-settings-apply")
+            .expect("production settings Apply action");
+        window.simulate_click(apply.center(), Modifiers::default());
+        window.run_until_parked();
+        let persisted = AppConfig::load_from(&directory.join("config.json"))
+            .expect("reload request-context production settings");
+        assert!(
+            persisted.download.default_request_headers == long_header,
+            "Apply must preserve the complete Header draft without printing its value"
+        );
+        assert!(
+            persisted.download.default_cookie == "session=bounded",
+            "Apply must preserve the Cookie draft without printing its value"
+        );
+        assert!(persisted.download.accept_invalid_certificates);
 
         let _ = std::fs::remove_dir_all(directory);
     }
@@ -14418,11 +14530,15 @@ mod tests {
             persisted.download.ffmpeg_executable_path,
             ffmpeg_executable.display().to_string()
         );
-        assert_eq!(
-            persisted.download.default_request_headers,
-            "X-NxTools-Default: desktop\nReferer: https://example.test/"
+        assert!(
+            persisted.download.default_request_headers
+                == "X-NxTools-Default: desktop\nReferer: https://example.test/",
+            "applied Header settings must round-trip without printing their value"
         );
-        assert_eq!(persisted.download.default_cookie, "session=desktop");
+        assert!(
+            persisted.download.default_cookie == "session=desktop",
+            "applied Cookie settings must round-trip without printing their value"
+        );
         assert!(persisted.download.accept_invalid_certificates);
         assert!(persisted.download.automatic_categories_enabled);
         assert_eq!(
@@ -14468,11 +14584,15 @@ mod tests {
         });
         cancel_window.read(|cx| {
             let view = _cancel_view.read(cx);
-            assert_eq!(
-                view.default_request_headers.read(cx).value(),
-                "X-NxTools-Default: desktop\nReferer: https://example.test/"
+            assert!(
+                view.default_request_headers.read(cx).value()
+                    == "X-NxTools-Default: desktop\nReferer: https://example.test/",
+                "reopened Header settings must match without printing their value"
             );
-            assert_eq!(view.default_cookie.read(cx).value(), "session=desktop");
+            assert!(
+                view.default_cookie.read(cx).value() == "session=desktop",
+                "reopened Cookie settings must match without printing their value"
+            );
             assert!(view.accept_invalid_certificates);
             assert!(view.automatic_categories_enabled);
             assert_eq!(
@@ -14599,9 +14719,9 @@ mod tests {
             .task(task_id)
             .expect("query accepted policy task")
             .expect("policy task exists");
-        assert_eq!(
-            accepted.task.request().cookie.as_deref(),
-            Some("persisted=1")
+        assert!(
+            accepted.task.request().cookie.as_deref() == Some("persisted=1"),
+            "rollback must keep the prior Cookie without printing its value"
         );
         assert_eq!(
             accepted.task.request().certificate_policy,

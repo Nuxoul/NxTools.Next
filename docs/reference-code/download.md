@@ -2027,6 +2027,26 @@ Reverified on 2026-08-20 before the DL-13 category-action hierarchy migration:
   and Delete is spatially separated. Delete is neutral at rest and gains danger semantics only on
   hover/press; only Apply persists the resulting enabled/order/removal changes.
 
+Reverified on 2026-08-20 before the DL-14 request-context form migration:
+
+- ABDM first: `CommonSettings.ignoreSSLCertificates` presents certificate trust as a dedicated
+  boolean setting, while `PerHostSettingsItem` keeps bounded host-specific identity fields rather
+  than an application-wide free-form request editor. The useful presentation invariant is that the
+  security exception remains explicit and separate from ordinary request metadata; the missing
+  global Header/Cookie surface remains a negative finding rather than a feature to invent.
+- Old NxTools `Views/SettingsWindow.axaml::HeadersSection` gives Header and Cookie named multiline
+  fields inside one request-metadata section, while its SSL exception is a separate setting row.
+  `Services/RequestHeaderParser.cs` confirms that the dedicated Cookie value overrides a Cookie in
+  Header text and that transport-owned fields stay excluded. Its equal two-column text areas are not
+  copied because a long Header is the dominant editing task and a Cookie is normally one bounded
+  line in NxTools.Next.
+- NxTools.Next keeps one request-context form in the existing settings draft: Header owns a fixed,
+  internally scrollable full-width editor; Cookie is a full-width 32 px field below it; certificate
+  validation is a separate security section with strict validation as the quiet default. Long input
+  never grows the page or moves the fixed settings footer, and navigation, Cancel and Apply retain
+  the existing draft/persistence lifecycle. No Header or Cookie value enters diagnostics or UI test
+  failure text.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
