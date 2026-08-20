@@ -69,7 +69,8 @@ use crate::ui::components::action::{
     SegmentedOption, action_button, icon_action, icon_action_button, icon_action_tooltip_surface,
     segmented_control,
 };
-use crate::ui::components::field::{field_shell, inline_error};
+use crate::ui::components::field::{field_shell, inline_error, labeled_field};
+use crate::ui::components::list::compact_list_row;
 use crate::ui::components::popover::{list_box, popover_shell};
 use crate::ui::components::settings::{
     SettingsShellIds, dialog_footer, settings_shell, settings_toggle,
@@ -5317,6 +5318,12 @@ struct DownloadCategoryEditor {
     url_patterns: Entity<InputState>,
 }
 
+struct DownloadCategoryPresentation {
+    name: String,
+    directory: String,
+    enabled: bool,
+}
+
 impl DownloadCategoryEditor {
     fn new(category: DownloadCategorySettings, window: &mut Window, cx: &mut App) -> Self {
         let name = cx.new(|cx| {
@@ -5367,6 +5374,30 @@ impl DownloadCategoryEditor {
             save_directory: self.save_directory.read(cx).value().trim().to_owned(),
             extensions: values(&self.extensions),
             url_patterns: values(&self.url_patterns),
+        }
+    }
+
+    fn presentation(&self, default_directory: &str, cx: &App) -> DownloadCategoryPresentation {
+        let name = self.name.read(cx).value().trim().to_owned();
+        let directory = self.save_directory.read(cx).value().trim().to_owned();
+        let directory = if directory.is_empty() {
+            PathBuf::from(default_directory)
+        } else {
+            let directory = PathBuf::from(directory);
+            if directory.is_absolute() {
+                directory
+            } else {
+                PathBuf::from(default_directory).join(directory)
+            }
+        };
+        DownloadCategoryPresentation {
+            name: if name.is_empty() {
+                "未命名分类".to_owned()
+            } else {
+                name
+            },
+            directory: directory.display().to_string(),
+            enabled: self.enabled,
         }
     }
 }
@@ -5428,6 +5459,8 @@ struct DownloadSettingsView {
     saving: bool,
     error: Option<String>,
     _subscriptions: Vec<Subscription>,
+    #[cfg(test)]
+    category_presentation_revision: usize,
 }
 
 // gpui-component 0.5.1 passes the full placeholder run to each rendered line of an empty
@@ -5437,6 +5470,23 @@ const DEFAULT_REQUEST_HEADERS_PLACEHOLDER: &str =
     "每行 Name: Value，例如 User-Agent: ... 或 Referer: ...";
 
 impl DownloadSettingsView {
+    fn subscribe_category_presentation_input(
+        input: &Entity<InputState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        cx.subscribe_in(input, window, |this, _, event: &InputEvent, _, cx| {
+            if matches!(event, InputEvent::Change) {
+                #[cfg(test)]
+                {
+                    this.category_presentation_revision =
+                        this.category_presentation_revision.wrapping_add(1);
+                }
+                cx.notify();
+            }
+        })
+    }
+
     fn new(
         application: Entity<DownloadApplication>,
         initial: DownloadSettingsViewInitial,
@@ -5477,6 +5527,22 @@ impl DownloadSettingsView {
             .cloned()
             .map(|category| DownloadCategoryEditor::new(category, window, cx))
             .collect::<Vec<_>>();
+        let mut category_presentation_subscriptions = Vec::with_capacity(categories.len() * 2 + 1);
+        category_presentation_subscriptions.push(Self::subscribe_category_presentation_input(
+            &directory, window, cx,
+        ));
+        for category in &categories {
+            category_presentation_subscriptions.push(Self::subscribe_category_presentation_input(
+                &category.name,
+                window,
+                cx,
+            ));
+            category_presentation_subscriptions.push(Self::subscribe_category_presentation_input(
+                &category.save_directory,
+                window,
+                cx,
+            ));
+        }
         let ffmpeg_input_subscription = cx.subscribe_in(
             &ffmpeg_executable,
             window,
@@ -5545,16 +5611,29 @@ impl DownloadSettingsView {
                         if *target != DownloadDirectoryTarget::Settings {
                             return;
                         }
-                        this.directory.update(cx, |input, cx| {
-                            input.set_value(path.to_string_lossy().into_owned(), window, cx);
+                        let directory = this.directory.clone();
+                        let path = path.to_string_lossy().into_owned();
+                        let source_window = window.window_handle();
+                        cx.defer(move |cx| {
+                            let _ = source_window.update(cx, |_, window, cx| {
+                                directory.update(cx, |input, cx| {
+                                    input.set_value(path, window, cx);
+                                });
+                            });
                         });
                         this.error = None;
                     }
                     DownloadApplicationEvent::FfmpegExecutablePicked { path } => {
-                        this.ffmpeg_executable.update(cx, |input, cx| {
-                            input.set_value(path.to_string_lossy().into_owned(), window, cx);
+                        let ffmpeg_executable = this.ffmpeg_executable.clone();
+                        let path = path.to_string_lossy().into_owned();
+                        let source_window = window.window_handle();
+                        cx.defer(move |cx| {
+                            let _ = source_window.update(cx, |_, window, cx| {
+                                ffmpeg_executable.update(cx, |input, cx| {
+                                    input.set_value(path, window, cx);
+                                });
+                            });
                         });
-                        this.schedule_ffmpeg_discovery(cx);
                         this.error = None;
                     }
                     DownloadApplicationEvent::FfmpegInstallChanged { state } => {
@@ -5682,7 +5761,12 @@ impl DownloadSettingsView {
                 offset_y_subscription,
                 width_subscription,
                 height_subscription,
-            ],
+            ]
+            .into_iter()
+            .chain(category_presentation_subscriptions)
+            .collect(),
+            #[cfg(test)]
+            category_presentation_revision: 0,
         }
     }
 
@@ -5883,6 +5967,7 @@ impl Render for DownloadSettingsView {
         let theme = self.theme;
         let scroll = self.scroll.clone();
         let current_directory = self.directory.read(cx).value().to_string();
+        let picker_current_directory = current_directory.clone();
         let application = self.application.clone();
         let directory_control = div()
             .w(px(286.0))
@@ -5909,7 +5994,7 @@ impl Render for DownloadSettingsView {
                         .bg(theme.surface_raised)
                         .on_click(move |_, _, cx| {
                             let application = application.clone();
-                            let current_directory = current_directory.clone();
+                            let current_directory = picker_current_directory.clone();
                             cx.defer(move |cx| {
                                 application.update(cx, |application, cx| {
                                     application.request_settings_directory(current_directory, cx);
@@ -5981,353 +6066,323 @@ impl Render for DownloadSettingsView {
             }),
             cx,
         );
-        let mut category_list = self.categories.iter().enumerate().fold(
-            div().w(px(218.0)).flex().flex_col().gap(px(SPACING_6)),
+        let category_rows = self.categories.iter().enumerate().fold(
+            div().w_full().flex().flex_col(),
             |list, (index, category)| {
-                let enabled = category.enabled;
                 let selected = self.selected_category == Some(index);
-                let name = category.name.read(cx).value().trim().to_owned();
-                let directory = category.save_directory.read(cx).value().trim().to_owned();
-                let directory_label = if directory.is_empty() {
-                    "使用默认保存目录".to_owned()
-                } else {
-                    directory
-                };
-                list.child(
-                    div()
-                        .id(("download-settings-category", index))
-                        .debug_selector(move || format!("download-settings-category-{index}"))
-                        .w_full()
-                        .h(px(42.0))
-                        .px(px(SPACING_8))
-                        .rounded(px(RADIUS_CONTROL))
-                        .border_1()
-                        .border_color(if selected {
-                            theme.border_active
-                        } else {
-                            theme.border_subtle
-                        })
-                        .bg(if selected {
-                            theme.element_selected
-                        } else {
-                            theme.canvas
-                        })
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selected_category = Some(index);
-                            this.error = None;
-                            cx.notify();
-                        }))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .overflow_hidden()
-                                .flex()
-                                .flex_col()
-                                .gap(px(SPACING_2))
-                                .child(
-                                    div()
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .text_size(px(TEXT_BODY))
-                                        .line_height(px(LINE_HEIGHT_BODY))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(if enabled {
-                                            theme.text
-                                        } else {
-                                            theme.text_muted
-                                        })
-                                        .child(if name.is_empty() {
-                                            "未命名分类".to_owned()
-                                        } else {
-                                            name
-                                        }),
-                                )
-                                .child(
-                                    div()
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .text_size(px(TEXT_LABEL))
-                                        .line_height(px(LINE_HEIGHT_LABEL))
-                                        .text_color(theme.text_muted)
-                                        .child(directory_label),
-                                ),
-                        )
-                        .when(!enabled, |item| item.opacity(0.55)),
-                )
+                let presentation = category.presentation(&current_directory, cx);
+                list.child(compact_list_row(
+                    theme,
+                    format!("download-settings-category-{index}").into(),
+                    presentation.name,
+                    presentation.directory,
+                    selected,
+                    presentation.enabled,
+                    cx.listener(move |this, _, _, cx| {
+                        this.selected_category = Some(index);
+                        this.error = None;
+                        cx.notify();
+                    }),
+                ))
             },
         );
-        category_list = category_list.child(
-            div()
-                .debug_selector(|| "download-settings-category-add".into())
-                .w_full()
-                .child(
-                    action_button("download-settings-category-add-button", "+ 新增")
-                        .outline()
-                        .w_full()
-                        .border_1()
-                        .border_color(theme.border_subtle)
-                        .bg(theme.surface_raised)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            let mut suffix = this.categories.len() + 1;
-                            let id = loop {
-                                let candidate = format!("custom-{suffix}");
-                                if this
-                                    .categories
-                                    .iter()
-                                    .all(|category| category.id != candidate)
-                                {
-                                    break candidate;
-                                }
-                                suffix += 1;
-                            };
-                            let editor = DownloadCategoryEditor::new(
-                                DownloadCategorySettings {
-                                    id,
-                                    name: "新分类".into(),
-                                    enabled: true,
-                                    save_directory: "NewCategory".into(),
-                                    extensions: Vec::new(),
-                                    url_patterns: Vec::new(),
-                                },
-                                window,
-                                cx,
-                            );
-                            this.categories.push(editor);
-                            this.selected_category = Some(this.categories.len() - 1);
-                            this.error = None;
-                            cx.notify();
-                        })),
-                ),
-        );
-        let category_list = category_list.into_any_element();
-        let category_editor =
-            self.selected_category
-                .and_then(|index| self.categories.get(index).map(|category| (index, category)))
-                .map(|(index, category)| {
-                    let enabled = category.enabled;
-                    let name = category.name.clone();
-                    let directory = category.save_directory.clone();
-                    let extensions = category.extensions.clone();
-                    let url_patterns = category.url_patterns.clone();
-                    let enabled_control = settings_toggle(
-                        theme,
-                        "download-settings-category-enabled-button",
-                        enabled,
-                        cx.listener(move |this, _, _, cx| {
-                            if let Some(category) = this.categories.get_mut(index) {
-                                category.enabled = !category.enabled;
-                            }
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    );
-                    div()
-                        .w_full()
-                        .min_w_0()
-                        .h_full()
-                        .flex()
-                        .flex_col()
-                        .gap(px(SPACING_12))
-                        .child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .items_center()
-                                .gap(px(SPACING_8))
-                                .child(div().min_w_0().flex_1().child(
-                                    download_settings_editor_field(
+        let category_list = div()
+            .debug_selector(|| "download-settings-category-master".into())
+            .w(px(228.0))
+            .h_full()
+            .flex_none()
+            .rounded(px(RADIUS_CONTROL))
+            .border_1()
+            .border_color(theme.border_subtle)
+            .bg(theme.canvas)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .id("download-settings-category-master-scroll")
+                    .debug_selector(|| "download-settings-category-master-scroll".into())
+                    .w_full()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scrollbar()
+                    .child(category_rows),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "download-settings-category-add".into())
+                    .w_full()
+                    .p(px(SPACING_6))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .child(
+                        action_button("download-settings-category-add-button", "+ 新增")
+                            .ghost()
+                            .w_full()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let mut suffix = this.categories.len() + 1;
+                                let id = loop {
+                                    let candidate = format!("custom-{suffix}");
+                                    if this
+                                        .categories
+                                        .iter()
+                                        .all(|category| category.id != candidate)
+                                    {
+                                        break candidate;
+                                    }
+                                    suffix += 1;
+                                };
+                                let editor = DownloadCategoryEditor::new(
+                                    DownloadCategorySettings {
+                                        id,
+                                        name: "新分类".into(),
+                                        enabled: true,
+                                        save_directory: "NewCategory".into(),
+                                        extensions: Vec::new(),
+                                        url_patterns: Vec::new(),
+                                    },
+                                    window,
+                                    cx,
+                                );
+                                let name_subscription = Self::subscribe_category_presentation_input(
+                                    &editor.name,
+                                    window,
+                                    cx,
+                                );
+                                let directory_subscription =
+                                    Self::subscribe_category_presentation_input(
+                                        &editor.save_directory,
+                                        window,
+                                        cx,
+                                    );
+                                this._subscriptions
+                                    .extend([name_subscription, directory_subscription]);
+                                this.categories.push(editor);
+                                this.selected_category = Some(this.categories.len() - 1);
+                                this.error = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .into_any_element();
+        let category_editor = self
+            .selected_category
+            .and_then(|index| self.categories.get(index).map(|category| (index, category)))
+            .map(|(index, category)| {
+                let enabled = category.enabled;
+                let name = category.name.clone();
+                let directory = category.save_directory.clone();
+                let extensions = category.extensions.clone();
+                let url_patterns = category.url_patterns.clone();
+                let enabled_control = settings_toggle(
+                    theme,
+                    "download-settings-category-enabled-button",
+                    enabled,
+                    cx.listener(move |this, _, _, cx| {
+                        if let Some(category) = this.categories.get_mut(index) {
+                            category.enabled = !category.enabled;
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(SPACING_8))
+                    .child(
+                        div()
+                            .debug_selector(|| "download-settings-category-status-row".into())
+                            .w_full()
+                            .h(px(CONTROL_HEIGHT_INPUT))
+                            .px(px(SPACING_8))
+                            .rounded(px(RADIUS_CONTROL))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.canvas)
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_BODY))
+                                    .line_height(px(LINE_HEIGHT_BODY))
+                                    .text_color(theme.text_secondary)
+                                    .child(if enabled {
+                                        "已启用此分类"
+                                    } else {
+                                        "此分类已停用"
+                                    }),
+                            )
+                            .child(enabled_control),
+                    )
+                    .child(
+                        div()
+                            .debug_selector(|| "download-settings-category-primary-fields".into())
+                            .w_full()
+                            .flex()
+                            .gap(px(SPACING_8))
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-name-cell".into()
+                                    })
+                                    .min_w_0()
+                                    .flex_1()
+                                    .child(labeled_field(
                                         theme,
                                         "分类名称",
                                         None,
                                         &name,
                                         "download-settings-category-name-field",
-                                    ),
-                                ))
-                                .child(
-                                    div()
-                                        .id("download-settings-category-enabled-card")
-                                        .debug_selector(|| {
-                                            "download-settings-category-enabled".into()
-                                        })
-                                        .w(px(148.0))
-                                        .flex()
-                                        .flex_col()
-                                        .gap(px(SPACING_4))
-                                        .cursor_pointer()
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            if let Some(category) = this.categories.get_mut(index) {
-                                                category.enabled = !category.enabled;
-                                            }
-                                            cx.notify();
-                                        }))
-                                        .child(
-                                            div()
-                                                .text_size(px(TEXT_LABEL))
-                                                .line_height(px(LINE_HEIGHT_LABEL))
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_color(theme.text_secondary)
-                                                .child("分类状态"),
-                                        )
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .h(px(CONTROL_HEIGHT_INPUT))
-                                                .px(px(SPACING_8))
-                                                .rounded(px(RADIUS_CONTROL))
-                                                .border_1()
-                                                .border_color(theme.border_subtle)
-                                                .bg(theme.canvas)
-                                                .flex()
-                                                .items_center()
-                                                .justify_between()
-                                                .child(
-                                                    div()
-                                                        .text_size(px(TEXT_BODY))
-                                                        .line_height(px(LINE_HEIGHT_BODY))
-                                                        .text_color(theme.text_secondary)
-                                                        .child(if enabled {
-                                                            "启用分类"
-                                                        } else {
-                                                            "停用分类"
-                                                        }),
-                                                )
-                                                .child(enabled_control),
-                                        ),
-                                ),
-                        )
-                        .child(download_settings_editor_field(
-                            theme,
-                            "保存目录",
-                            Some("留空使用默认保存目录；相对路径位于默认目录下，也可填写绝对路径"),
-                            &directory,
-                            "download-settings-category-directory-field",
-                        ))
-                        .child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .gap(px(SPACING_8))
-                                .child(div().min_w_0().flex_1().child(
-                                    download_settings_editor_field(
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-directory-cell".into()
+                                    })
+                                    .min_w_0()
+                                    .flex_1()
+                                    .child(labeled_field(
+                                        theme,
+                                        "保存目录",
+                                        Some("留空使用默认目录；相对路径位于默认目录下"),
+                                        &directory,
+                                        "download-settings-category-directory-field",
+                                    )),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .debug_selector(|| "download-settings-category-rule-fields".into())
+                            .w_full()
+                            .flex()
+                            .gap(px(SPACING_8))
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-extensions-cell".into()
+                                    })
+                                    .min_w_0()
+                                    .flex_1()
+                                    .child(labeled_field(
                                         theme,
                                         "扩展名规则",
-                                        Some("以逗号分隔，例如 zip, 7z, rar"),
+                                        Some("逗号分隔，例如 zip, 7z, rar"),
                                         &extensions,
                                         "download-settings-category-extensions-field",
-                                    ),
-                                ))
-                                .child(div().min_w_0().flex_1().child(
-                                    download_settings_editor_field(
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "download-settings-category-url-cell".into())
+                                    .min_w_0()
+                                    .flex_1()
+                                    .child(labeled_field(
                                         theme,
                                         "URL 通配规则",
-                                        Some("以逗号分隔；与扩展名规则同时存在时必须同时命中"),
+                                        Some("逗号分隔；与扩展名规则同时存在时均须命中"),
                                         &url_patterns,
                                         "download-settings-category-url-field",
+                                    )),
+                            ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .w_full()
+                            .pt(px(SPACING_8))
+                            .border_t_1()
+                            .border_color(theme.border_subtle)
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .gap(px(SPACING_6))
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-up-control".into()
+                                    })
+                                    .child(
+                                        action_button("download-settings-category-up", "上移")
+                                            .outline()
+                                            .border_1()
+                                            .border_color(theme.border_subtle)
+                                            .bg(theme.surface_raised)
+                                            .disabled(index == 0)
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                if index > 0 && index < this.categories.len() {
+                                                    this.categories.swap(index, index - 1);
+                                                    this.selected_category = Some(index - 1);
+                                                    cx.notify();
+                                                }
+                                            })),
                                     ),
-                                )),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .w_full()
-                                .pt(px(SPACING_8))
-                                .border_t_1()
-                                .border_color(theme.border_subtle)
-                                .flex()
-                                .items_center()
-                                .justify_end()
-                                .gap(px(SPACING_6))
-                                .child(
-                                    div()
-                                        .debug_selector(|| {
-                                            "download-settings-category-up-control".into()
-                                        })
-                                        .child(
-                                            action_button("download-settings-category-up", "上移")
-                                                .outline()
-                                                .border_1()
-                                                .border_color(theme.border_subtle)
-                                                .bg(theme.surface_raised)
-                                                .disabled(index == 0)
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    if index > 0 && index < this.categories.len() {
-                                                        this.categories.swap(index, index - 1);
-                                                        this.selected_category = Some(index - 1);
-                                                        cx.notify();
-                                                    }
-                                                })),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .debug_selector(|| {
-                                            "download-settings-category-down-control".into()
-                                        })
-                                        .child(
-                                            action_button(
-                                                "download-settings-category-down",
-                                                "下移",
-                                            )
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-down-control".into()
+                                    })
+                                    .child(
+                                        action_button("download-settings-category-down", "下移")
                                             .outline()
                                             .border_1()
                                             .border_color(theme.border_subtle)
                                             .bg(theme.surface_raised)
                                             .disabled(index + 1 >= self.categories.len())
-                                            .on_click(
-                                                cx.listener(move |this, _, _, cx| {
-                                                    if index + 1 < this.categories.len() {
-                                                        this.categories.swap(index, index + 1);
-                                                        this.selected_category = Some(index + 1);
-                                                        cx.notify();
-                                                    }
-                                                }),
-                                            ),
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                if index + 1 < this.categories.len() {
+                                                    this.categories.swap(index, index + 1);
+                                                    this.selected_category = Some(index + 1);
+                                                    cx.notify();
+                                                }
+                                            })),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| {
+                                        "download-settings-category-delete-control".into()
+                                    })
+                                    .child(
+                                        action_button(
+                                            "download-settings-category-delete",
+                                            "删除分类",
+                                        )
+                                        .outline()
+                                        .border_1()
+                                        .border_color(theme.border_subtle)
+                                        .bg(theme.surface_raised)
+                                        .on_click(
+                                            cx.listener(move |this, _, _, cx| {
+                                                if index < this.categories.len() {
+                                                    this.categories.remove(index);
+                                                    this.selected_category =
+                                                        (!this.categories.is_empty()).then_some(
+                                                            index.min(this.categories.len() - 1),
+                                                        );
+                                                    cx.notify();
+                                                }
+                                            }),
                                         ),
-                                )
-                                .child(
-                                    div()
-                                        .debug_selector(|| {
-                                            "download-settings-category-delete-control".into()
-                                        })
-                                        .child(
-                                            action_button(
-                                                "download-settings-category-delete",
-                                                "删除分类",
-                                            )
-                                            .outline()
-                                            .border_1()
-                                            .border_color(theme.border_subtle)
-                                            .bg(theme.surface_raised)
-                                            .on_click(
-                                                cx.listener(move |this, _, _, cx| {
-                                                    if index < this.categories.len() {
-                                                        this.categories.remove(index);
-                                                        this.selected_category =
-                                                            (!this.categories.is_empty())
-                                                                .then_some(index.min(
-                                                                    this.categories.len() - 1,
-                                                                ));
-                                                        cx.notify();
-                                                    }
-                                                }),
-                                            ),
-                                        ),
-                                ),
-                        )
-                        .into_any_element()
-                })
-                .unwrap_or_else(|| {
-                    div()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child("暂无分类；可新增自定义规则")
-                        .into_any_element()
-                });
+                                    ),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .unwrap_or_else(|| {
+                div()
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .child("暂无分类；可新增自定义规则")
+                    .into_any_element()
+            });
         let category_management = div()
             .w_full()
             .h(px(310.0))
@@ -7278,56 +7333,6 @@ fn download_settings_input(
             .bordered(false)
             .focus_bordered(false),
     ))
-}
-
-fn download_settings_editor_field(
-    theme: Theme,
-    label: &'static str,
-    description: Option<&'static str>,
-    input: &Entity<InputState>,
-    selector: &'static str,
-) -> AnyElement {
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .gap(px(SPACING_4))
-        .child(
-            div()
-                .debug_selector(move || format!("{selector}-label"))
-                .flex()
-                .items_center()
-                .gap(px(SPACING_6))
-                .child(
-                    div()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.text_secondary)
-                        .child(label),
-                )
-                .when_some(description, |row, description| {
-                    row.child(
-                        div()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_muted)
-                            .child(description),
-                    )
-                }),
-        )
-        .child(field_shell(
-            theme,
-            selector,
-            Input::new(input)
-                .appearance(false)
-                .bordered(false)
-                .focus_bordered(false),
-        ))
-        .into_any_element()
 }
 
 fn download_settings_anchor(
@@ -13544,44 +13549,173 @@ mod tests {
         let category_item = window
             .debug_bounds("download-settings-category-0")
             .expect("first category item");
-        assert!(
-            category_item.size.height.as_f32() >= 36.0,
-            "category navigation remains a tiny {}px chip",
-            category_item.size.height.as_f32()
+        assert_eq!(
+            category_item.size.height,
+            px(crate::ui::metrics::SETTINGS_ROW_MIN_HEIGHT),
+            "category master rows must use the shared compact-list height"
         );
+        let category_master = window
+            .debug_bounds("download-settings-category-master")
+            .expect("category master list");
+        let first_marker = window
+            .debug_bounds("download-settings-category-0-marker")
+            .expect("selected category edge");
+        assert_eq!(first_marker.size.width, px(2.0));
+        assert!(category_master.contains(&category_item.origin));
+        assert!(category_master.contains(&category_item.bottom_right()));
+        assert!(category_item.contains(&first_marker.origin));
+        assert!(category_item.contains(&first_marker.bottom_right()));
+
+        let name_label = window
+            .debug_bounds("download-settings-category-name-field-label")
+            .expect("category name label");
+        let directory_label = window
+            .debug_bounds("download-settings-category-directory-field-label")
+            .expect("category directory label");
+        let extensions_label = window
+            .debug_bounds("download-settings-category-extensions-field-label")
+            .expect("category extensions label");
+        let url_label = window
+            .debug_bounds("download-settings-category-url-field-label")
+            .expect("category URL label");
+        assert_eq!(name_label.origin.y, directory_label.origin.y);
+        assert_eq!(extensions_label.origin.y, url_label.origin.y);
+
+        let name_cell = window
+            .debug_bounds("download-settings-category-name-cell")
+            .expect("category name cell");
+        let directory_cell = window
+            .debug_bounds("download-settings-category-directory-cell")
+            .expect("category directory cell");
+        let extensions_cell = window
+            .debug_bounds("download-settings-category-extensions-cell")
+            .expect("category extensions cell");
+        let url_cell = window
+            .debug_bounds("download-settings-category-url-cell")
+            .expect("category URL cell");
+        assert_eq!(name_cell.origin.y, directory_cell.origin.y);
+        assert_eq!(extensions_cell.origin.y, url_cell.origin.y);
+        assert!((name_cell.size.width.as_f32() - directory_cell.size.width.as_f32()).abs() <= 1.0);
+        assert!((extensions_cell.size.width.as_f32() - url_cell.size.width.as_f32()).abs() <= 1.0);
 
         let name_field = window
             .debug_bounds("download-settings-category-name-field")
             .expect("labeled category name field");
-        let directory_label = window
-            .debug_bounds("download-settings-category-directory-field-label")
-            .expect("category directory label");
         let directory_field = window
             .debug_bounds("download-settings-category-directory-field")
             .expect("category directory field");
-        assert_eq!(
-            name_field.size.height,
-            px(CONTROL_HEIGHT_INPUT),
-            "category editors must use the shared 32px input tier"
-        );
-        assert_eq!(
-            directory_field.size.height,
-            px(CONTROL_HEIGHT_INPUT),
-            "category directory must use the shared 32px input tier"
-        );
+        let extensions_field = window
+            .debug_bounds("download-settings-category-extensions-field")
+            .expect("category extensions field");
+        let url_field = window
+            .debug_bounds("download-settings-category-url-field")
+            .expect("category URL field");
+        for field in [name_field, directory_field, extensions_field, url_field] {
+            assert_eq!(
+                field.size.height,
+                px(CONTROL_HEIGHT_INPUT),
+                "all category editor fields must use the shared 32px input tier"
+            );
+        }
+        for (cell, description_selector) in [
+            (
+                directory_cell,
+                "download-settings-category-directory-field-description",
+            ),
+            (
+                extensions_cell,
+                "download-settings-category-extensions-field-description",
+            ),
+            (url_cell, "download-settings-category-url-field-description"),
+        ] {
+            let description = window
+                .debug_bounds(description_selector)
+                .unwrap_or_else(|| panic!("missing {description_selector}"));
+            assert!(cell.contains(&description.origin));
+            assert!(cell.contains(&description.bottom_right()));
+        }
+
+        let initial_presentation_revision =
+            cx.read(|cx| settings_view.read(cx).category_presentation_revision);
+        let presentation_root = r"C:\Users\Administrator\Downloads\NxTools-Categories";
+        let long_relative_directory =
+            r"Compressed\A-Long-Readable-Category-Destination-For-Tooltip";
+        let (directory_input, category_name_input, category_directory_input) = cx.read(|cx| {
+            let settings = settings_view.read(cx);
+            let category = settings.categories.first().expect("first category editor");
+            (
+                settings.directory.clone(),
+                category.name.clone(),
+                category.save_directory.clone(),
+            )
+        });
+        window.update(|window, cx| {
+            directory_input.update(cx, |input, cx| {
+                input.set_value(presentation_root, window, cx);
+            });
+            category_name_input.update(cx, |input, cx| {
+                input.set_value("压缩与归档文件", window, cx);
+            });
+            category_directory_input.update(cx, |input, cx| {
+                input.set_value(long_relative_directory, window, cx);
+            });
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render edited category presentation");
+        cx.read(|cx| {
+            let settings = settings_view.read(cx);
+            assert!(
+                settings.category_presentation_revision >= initial_presentation_revision + 3,
+                "default directory, category name and category directory changes must each invalidate the master presentation"
+            );
+            let presentation = settings.categories[0].presentation(presentation_root, cx);
+            assert_eq!(presentation.name, "压缩与归档文件");
+            assert_eq!(
+                presentation.directory,
+                PathBuf::from(presentation_root)
+                    .join(long_relative_directory)
+                    .display()
+                    .to_string(),
+                "relative category destinations must resolve against the current default directory"
+            );
+        });
+
+        let edited_category_item = window
+            .debug_bounds("download-settings-category-0")
+            .expect("edited category master row");
+        window.simulate_mouse_move(edited_category_item.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        window.run_until_parked();
+        window.refresh().expect("render category directory tooltip");
         assert!(
-            directory_field.top() > name_field.bottom(),
-            "the category save directory must have its own readable row"
+            window
+                .debug_bounds("download-settings-category-0-tooltip")
+                .is_some(),
+            "the production master row must expose the complete resolved destination through a stable tooltip"
         );
-        assert!(
-            directory_label.top() >= name_field.bottom(),
-            "the per-category save directory label must be visible"
-        );
-        assert!(
-            directory_field.size.width.as_f32() >= 430.0,
-            "the per-category directory editor is still cramped at {}px",
-            directory_field.size.width.as_f32()
-        );
+
+        let enabled_toggle = window
+            .debug_bounds("download-settings-category-enabled-button")
+            .expect("category enabled toggle");
+        window.simulate_click(enabled_toggle.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render disabled category row");
+        assert!(!cx.read(|cx| settings_view.read(cx).categories[0].enabled));
+        let disabled_row = window
+            .debug_bounds("download-settings-category-0")
+            .expect("disabled category row remains rendered");
+        let disabled_title = window
+            .debug_bounds("download-settings-category-0-title")
+            .expect("disabled category title remains readable");
+        let disabled_detail = window
+            .debug_bounds("download-settings-category-0-detail")
+            .expect("disabled category directory remains readable");
+        assert!(disabled_row.contains(&disabled_title.origin));
+        assert!(disabled_row.contains(&disabled_title.bottom_right()));
+        assert!(disabled_row.contains(&disabled_detail.origin));
+        assert!(disabled_row.contains(&disabled_detail.bottom_right()));
 
         let second_category = window
             .debug_bounds("download-settings-category-1")
@@ -13589,6 +13723,18 @@ mod tests {
         window.simulate_click(second_category.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render second category editor");
+        assert!(
+            window
+                .debug_bounds("download-settings-category-0-marker")
+                .is_none(),
+            "the old master row must lose its selected edge"
+        );
+        assert!(
+            window
+                .debug_bounds("download-settings-category-1-marker")
+                .is_some(),
+            "the clicked master row must own the selected edge"
+        );
         assert!(
             window
                 .debug_bounds("download-settings-category-directory-field")
@@ -13886,7 +14032,7 @@ mod tests {
             .expect("reject duplicate strategy");
         window.simulate_click(reject_duplicates.center(), Modifiers::default());
         let first_category_enabled = window
-            .debug_bounds("download-settings-category-enabled")
+            .debug_bounds("download-settings-category-enabled-button")
             .expect("selected category enable control");
         window.simulate_click(first_category_enabled.center(), Modifiers::default());
         let initial_category_count = window.read(|cx| settings.read(cx).categories.len());

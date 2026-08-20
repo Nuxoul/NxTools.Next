@@ -53,6 +53,17 @@
 - The settings view owns one local draft. Navigation changes presentation only; native close and
   Cancel discard the draft, while Apply keeps the existing validated persistence lifecycle.
 
+### Master-detail settings
+
+- Repeated editable identities use a continuous master list beside one detail editor. Master rows
+  are 42 px, square within one enclosing boundary, and use Body name plus Label resolved context.
+- Selection uses a neutral fill and a non-shifting 2 px leading edge. Disabled rows remain legible
+  through muted text and reduced emphasis; they do not become disabled-looking cards.
+- The detail editor uses shared 32 px field shells. Related fields form equal-width rows with one
+  8 px gutter and aligned 16 px label baselines; descriptions truncate before they move controls.
+- Changing the master selection only changes the visible draft entity. It never persists, validates
+  or starts native work before the settings shell's existing Apply boundary.
+
 ### Work surfaces
 
 - Lists and inspectors use continuous surfaces separated by low-contrast rules.

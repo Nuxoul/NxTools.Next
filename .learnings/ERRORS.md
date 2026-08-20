@@ -9520,3 +9520,180 @@ Tooltip owners must have a stable element ID before the stateful interactive ext
 - **Resolved**: 2026-08-20T00:00:00+08:00
 - **Notes**: Added the unique static tooltip selector as the wrapper's stable element ID before
   attaching the tooltip; GPUI does not accept a tuple made from two string slices as an element ID.
+
+---
+
+## [ERR-20260820-DL1112-SHARED-RENDER-VALUES] shared render values were moved before reuse
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The DL-11/DL-12 category master-detail refactor reused a directory string after moving it into an
+earlier picker callback, and returned `SharedString` from debug-selector closures that require owned
+`String` values.
+
+### Error
+`cargo check -p nxtools-desktop --tests` reported one moved-value error for `current_directory` and
+four selector type mismatches (`SharedString` versus `String`).
+
+### Suggested Fix
+Fork shared render data into purpose-named clones before any `move` callback and convert dynamic
+debug-selector values to `String` at the selector boundary.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs,
+  rust/apps/nxtools-desktop/src/ui/components/list.rs
+- See Also: ERR-20260820-TOOLTIP-STATEFUL-DIV
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Forked the picker directory before the move callback, converted dynamic debug
+  selectors at the API boundary, and reran the desktop test check successfully.
+
+---
+
+## [ERR-20260820-RUST196-EMBED-RESOURCE-LINT] Rust 1.96 blocks desktop Clippy in unchanged build script
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: tests
+
+### Summary
+The DL-11/DL-12 package Clippy gate reached an unchanged resource build script and Rust 1.96's new
+`needless_borrows_for_generic_args` lint was promoted to an error by `-D warnings`.
+
+### Error
+`rust/apps/nxtools-desktop/build.rs:59` passes `&["nxtools-desktop"]` where the current generic API
+accepts the array directly.
+
+### Suggested Fix
+Repair the build-script call in a dedicated tooling cleanup, or temporarily allow only this named
+pre-existing lint while running the scoped UI Clippy gate.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/build.rs
+- See Also: ERR-20260820-DL1112-SHARED-RENDER-VALUES
+
+---
+
+## [ERR-20260820-DL1112-CLIPPY-COMMIT] scoped desktop Clippy exhausted Windows commit
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+After allowing the one pre-existing Rust 1.96 build-script lint, the scoped desktop Clippy gate
+compiled dependency crates but rustc aborted when Windows could not commit a 501,760-byte allocation.
+
+### Error
+`memory allocation of 501760 bytes failed` with no source diagnostic.
+
+### Context
+- The required single-job, non-incremental, 256 codegen-unit environment was active.
+- `cargo check -p nxtools-desktop --tests` had passed immediately beforehand.
+- The command was not retried after commit pressure increased.
+
+### Suggested Fix
+Rerun the scoped Clippy gate only after Windows FreeVirtual headroom recovers; do not treat this as a
+source failure or start a duplicate Cargo process.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs,
+  rust/apps/nxtools-desktop/src/ui/components/field.rs,
+  rust/apps/nxtools-desktop/src/ui/components/list.rs
+- See Also: ERR-20260820-DL09-RELINK-COMMIT
+
+---
+
+## [ERR-20260820-DL1112-WINDOWS-FIXTURE-LITERAL] Windows fixture path was not a raw Rust string
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The long relative category-directory fixture used a backslash in a normal Rust string literal, so
+rustfmt could not parse the test module.
+
+### Error
+`unknown character escape: A` at the `Compressed\A-Long-...` fixture.
+
+### Suggested Fix
+Use raw Rust strings for Windows fixture paths and run rustfmt immediately after adding them.
+
+### Metadata
+- Reproducible: yes
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260820-DL1112-SHARED-RENDER-VALUES
+
+### Resolution
+- **Resolved**: 2026-08-20T00:00:00+08:00
+- **Notes**: Converted the fixture to a raw string before rerunning formatting and compiled gates.
+
+---
+
+## [ERR-20260820-DL1112-GPUI-LIBTEST-MAP] production category GPUI gate could not map libtest
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+The exact production category-settings GPUI test began compiling after FreeVirtual briefly recovered,
+but Windows commit pressure returned before rustc could map the standard `libtest` metadata.
+
+### Error
+`failed to mmap ... libtest...rmeta/rlib: 页面文件太小，无法完成操作。 (os error 1455)`.
+
+### Context
+- Required low-memory Cargo variables and one build job were active.
+- The same updated source passed `cargo check -p nxtools-desktop --tests` immediately beforehand.
+- The error surfaced in unrelated clipboard test attributes because the complete desktop test binary
+  must compile before Cargo can filter to the requested GPUI test.
+
+### Suggested Fix
+Rerun the exact production category test only after durable pagefile/commit headroom is available.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260820-DL1112-CLIPPY-COMMIT
+
+---
+
+## [ERR-20260820-DL1112-FINAL-CHECK-HOST] final low-memory Cargo check lost its tool host
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+After the GPUI re-entry fix, the final desktop check command closed its execution host without
+returning stdout, a session ID or an exit code while Windows FreeVirtual was near 0.58 GiB.
+
+### Context
+- No Cargo or rustc process survived the tool-host closure.
+- Rustfmt and `git diff --check` passed immediately afterward.
+- The preceding version, including the new subscriptions and tooltip gate but before only the defer
+  boundary adjustment, had passed `cargo check -p nxtools-desktop --tests`.
+
+### Suggested Fix
+Do not retry Cargo at current commit pressure. Rerun the final check when FreeVirtual headroom is
+stable, before packaging.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260820-DL1112-GPUI-LIBTEST-MAP

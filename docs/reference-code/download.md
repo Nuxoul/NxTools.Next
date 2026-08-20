@@ -1992,6 +1992,26 @@ Reverified on 2026-08-20 for the DL-09/DL-10 download-settings shell migration:
   discard it, and Apply keeps the existing validation, persistence, cross-entity defer and correlated
   failure lifecycle. The migration adds no download command, protocol field or diagnostic payload.
 
+Reverified on 2026-08-20 before the DL-11/DL-12 category master-detail migration:
+
+- ABDM category ownership remains in the previously indexed `Category`, `CategoryManager` and
+  `DefaultCategories` path: order, enabled state, matching rules and optional save directory are one
+  persisted category identity. Presentation must not split those values into a second state owner.
+- Old NxTools `Views/CategoryWindow.axaml` and `ViewModels/CategoryDialogViewModel.cs` were followed
+  through the editable name, save directory, extension and URL-rule fields to `BuildState()`. The
+  useful compatibility invariant is one coherent form with aligned labels and one save result; its
+  separate dialog and 34 px local control dialect are not migrated into the shared settings shell.
+- NxTools.Next keeps the existing local settings draft and Apply/Cancel boundary. The left side is a
+  continuous master list with Body category name, Label directory state, neutral hover/selection and
+  a non-shifting 2 px selected edge. Disabled categories remain readable but visually demoted.
+- The selected category editor uses the shared 32 px `Field` shell for name, save directory,
+  extensions and URL rules. Name/directory and extension/URL form two equal-width rows with aligned
+  label baselines; switching the master selection only changes which existing draft entity is shown.
+- Default-directory, category-name and category-directory input changes explicitly invalidate the
+  owning settings view, so the master identity and resolved destination cannot lag behind the
+  selected editor. Relative destinations resolve against the current draft default directory;
+  truncated rows expose the complete resolved path through one stable production Tooltip boundary.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

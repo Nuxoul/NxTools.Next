@@ -1,8 +1,8 @@
-use gpui::{AnyElement, IntoElement, Styled, div, prelude::*, px, relative};
-use gpui_component::input::Input;
+use gpui::{AnyElement, Entity, FontWeight, IntoElement, Styled, div, prelude::*, px, relative};
+use gpui_component::input::{Input, InputState};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_6, SPACING_8};
+use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_6, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL};
 
 pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) -> AnyElement {
@@ -20,6 +20,62 @@ pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) 
         .flex()
         .items_center()
         .child(div().size_full().min_w_0().child(control))
+        .into_any_element()
+}
+
+pub(crate) fn labeled_field(
+    theme: Theme,
+    label: &'static str,
+    description: Option<&'static str>,
+    control: &Entity<InputState>,
+    selector: &'static str,
+) -> AnyElement {
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(px(SPACING_4))
+        .child(
+            div()
+                .debug_selector(move || format!("{selector}-label"))
+                .h(px(LINE_HEIGHT_LABEL))
+                .flex()
+                .items_center()
+                .gap(px(SPACING_6))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.text_secondary)
+                        .child(label),
+                )
+                .when_some(description, |row, description| {
+                    row.child(
+                        div()
+                            .debug_selector(move || format!("{selector}-description"))
+                            .min_w_0()
+                            .flex_1()
+                            .truncate()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .text_color(theme.text_muted)
+                            .child(description),
+                    )
+                }),
+        )
+        .child(field_shell(
+            theme,
+            selector,
+            Input::new(control)
+                .appearance(false)
+                .bordered(false)
+                .focus_bordered(false),
+        ))
         .into_any_element()
 }
 

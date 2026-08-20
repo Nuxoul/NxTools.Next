@@ -528,6 +528,31 @@ rust/apps/nxtools-desktop/src/ui/
   启动会重链 GPUI 测试二进制的 exact run。更新后 exact 门禁、Release 100/125/150% DPI 截图
   和打包继续待提交空间恢复；本切片未启动 GUI，也不冒领最终运行或人工视觉验收。
 
+第十六个 P0 下载分类主从编辑切片（2026-08-20）：
+
+- DL-11 将分类入口收敛为一个连续的 228 px master list：42 px 行使用 Body 分类名和 Label
+  解析后保存目录，选中态为中性底色加不改变布局的 2 px 左边，禁用分类仍可读；长目录由
+  完整 Tooltip 补充。列表拥有单一滚动层，新增入口固定在同一边界底部。
+- DL-12 将选中分类编辑器收敛到共享 `labeled_field + field_shell`：名称/保存目录与扩展名/
+  URL 各组成一行等宽两列，Label 基线对齐，全部输入保持 32 px。切换分类只替换当前草稿
+  entity，既有启停、排序、删除、新增和 Apply/Cancel 持久化边界不变。
+- 真实生产下载设置窗口门禁已扩展为：断言 42 px master 行、2 px 选中边、点击后选中边转移、
+  两组等宽字段、四个 32 px 输入，以及原排序/删除/启停/保存回归。desktop
+  `cargo check -p nxtools-desktop --tests` 已在规定的单 job/禁增量/高 codegen-unit 配置下通过，
+  rustfmt、diff check 和 `download-ui-lifecycle.ps1` 通过。复审后新增默认目录/分类名称/分类目录
+  的父视图订阅，确保编辑时 master 名称、解析路径和完整 Tooltip 实时更新；该版本 desktop
+  `cargo check -p nxtools-desktop --tests` 通过。复审随后把 picker 结果与测试输入更新移到父视图
+  租约之外，关闭订阅写回导致的 GPUI 重入风险；最终增量的 rustfmt、diff check 与静态生命周期
+  门禁通过，但 Cargo check 在 FreeVirtual 约 0.58 GiB 时由工具宿主直接关闭输出且无存活进程，
+  因而该最后一次增量不冒领 compiled gate。定向 Clippy 先被 Rust 1.96 在未改动
+  `build.rs` 中新增的 lint 阻断；仅放行该既有 lint 后继续编译依赖，Windows FreeVirtual 又降至
+  约 0.74 GiB，rustc 因 501,760-byte allocation failed 退出且没有源码诊断。FreeVirtual 短暂
+  恢复后启动一次 exact 生产 GPUI 门禁，但在进入测试逻辑前因 pagefile 1455 无法 mmap Rust
+  `libtest` 元数据；未重复链接。该生产窗口门禁、完整 Clippy
+  与 Release 100/125/150% DPI 截图继续保留为提交空间恢复后的打包前验收；本切片未启动 GUI，
+  也不冒领未取得的运行证据。
+- DL-13 分类动作仍是下一切片；在危险 hover、状态动作层级和真实点击门禁完成前不提前勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
