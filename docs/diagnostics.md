@@ -303,6 +303,21 @@ one correlation ID. A settings change affects only a later standalone probe or n
 task; it never mutates an accepted task or active HTTP client. Certificate details, subject names, trust chains and
 TLS payloads are not logged.
 
+## Download settings path actions
+
+Every diagnostics-page path action creates one correlation ID and emits
+`download.settings_path_action.started`, followed by exactly one
+`download.settings_path_action.completed` or `download.settings_path_action.failed`. The operation
+is bounded by a 15-second PlatformHost timeout; enqueue failure, native failure and timeout all use
+the same terminal failure event with a fixed `failure_kind`.
+
+These events carry only `path_kind=config|logs|database`, `action=copy|open`, elapsed time, a fixed
+failure kind and the optional native error code. The config, log and database paths, clipboard text,
+PlatformHost error text and any file contents are never logged. Copy uses the existing typed
+copy-only clipboard command; open uses the existing typed shell command, selecting file targets in
+Explorer and opening the log directory directly. UI callbacks remain deferred and C# remains the
+only Windows clipboard/Shell owner.
+
 ## Download classification and target conflicts
 
 The central task-acceptance boundary first performs a bounded HTTP probe when an ordinary request

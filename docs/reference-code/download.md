@@ -2103,6 +2103,31 @@ Reverified on 2026-08-20 before the DL-17 window/progress settings migration:
   entities and validation. Entering, updating, applying, cancelling or closing taskbar layout edit
   mode keeps the existing deferred GPUI and typed PlatformHost lifecycle.
 
+Reverified on 2026-08-20 before the DL-18 diagnostics-path migration:
+
+- ABDM first: `DesktopSettingsComponent.kt` has Appearance, Download Engine and Browser Integration
+  settings but no diagnostics-path page or path-copy controls, so it supplies no UI to imitate.
+  `DefinedPaths.kt` and `AppInfo.kt` do supply the useful ownership invariant: config, data, system,
+  log and download-database locations are centralized runtime facts rather than editable settings.
+  `WindowsFileUtils.kt` routes folder open/reveal through the platform adapter after validating the
+  target; its direct presentation and fallback details are not copied into GPUI.
+- Old NxTools next: `Views/SettingsWindow.axaml` keeps a **日志输出** row with an adjacent
+  `OpenLogFolderCommand`, and `MainWindowViewModel.OpenLogFolder` opens the AppLogService-owned log
+  directory. Its clipboard storage surface exposes the complete `ClipboardDatabasePathText` rather
+  than hiding the database identity. The old direct `Process.Start` call and any diagnostics that
+  print paths are negative references, not architecture to migrate.
+- NxTools.Next keeps the three existing runtime-owned values from `AppPaths -> DesktopRuntime ->
+  DownloadRuntimeContext -> DownloadApplication -> DownloadSettingsView`: config file, log directory
+  and download database file. The diagnostics page presents them as three continuous full-width
+  rows. Each path owns a stable text region plus adjacent 28 px Copy and Open/Reveal icon actions;
+  truncation never creates a half-width column, and the complete bounded value remains available in
+  a Tooltip and through Copy.
+- GPUI continues to own rendering and defers every cross-entity callback. Copy reuses the typed
+  copy-only `PasteText` platform command; directory open and file reveal reuse `OpenShellTarget`.
+  C# remains the only Windows Shell/clipboard adapter. One bounded operation identity follows each
+  request to a terminal success, failure or timeout, while diagnostics record only fixed path kind,
+  action kind, elapsed time and bounded native/error metadata—never the path or clipboard payload.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

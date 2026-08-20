@@ -640,8 +640,35 @@ rust/apps/nxtools-desktop/src/ui/
   约 0.66 GiB，未重复启动此前已因 commit 枯竭失败的 desktop Cargo/GPUI 链接；desktop
   check、精确生产窗口门禁、Release 100/125/150% DPI 截图与人工视觉验收仍待提交空间恢复。
   本切片未启动 GUI，也未打包。
-- 在 desktop check 与精确生产 GPUI 门禁实际通过前，DL-17 不标记完成，也不开始 DL-18。
-  通过后下一切片为 DL-18 诊断页；三条路径的复制/打开操作与全宽裁切门禁完成前不提前勾选。
+- DL-17 自动门禁已于 2026-08-20 在恢复提交空间后通过：
+  `cargo check -p nxtools-desktop --tests`、精确生产 GPUI 设置窗口测试
+  `settings_sections_share_one_content_width_and_diagnostics_are_not_half_width`、
+  `download-ui-lifecycle.ps1` 与 `git diff --check` 均为绿色。首次执行同时暴露并修正了门禁自身的
+  三处问题：裸 Button ID 不是稳定调试边界、等宽公式漏算两个外框和一个中缝、持久化场景缺少
+  初始配置夹具；修正后的测试仍从生产 `DownloadApplication -> DownloadSettingsView` 边界验证
+  同一布局、草稿和 Apply 生命周期。DL-17 因此完成；Release 100/125/150% DPI 截图与人工视觉
+  验收仍属于最终发布门禁，不冒充本切片证据。
+- 下一切片为 DL-18 诊断页；三条路径的复制/打开操作、完整路径 Tooltip、有界操作诊断与全宽
+  裁切门禁完成前不提前勾选。
+- DL-18 诊断页实现已落地：配置文件、日志目录和下载数据库使用三条连续全宽 `42 px` 行；路径
+  文本占据剩余主列，以 Label/Consolas 呈现并在截断时通过有界 Tooltip 暴露完整值。每行右侧
+  紧邻一个 Copy 与一个 Open/Reveal 动作，均复用共享 `28 px` 方形图标层和中文 Tooltip，未
+  增加卡片、阴影、颜色或局部控件尺寸。
+- 两类动作继续经 deferred GPUI callback 进入 application owner。Copy 使用现有 copy-only
+  `PasteText`，日志目录使用 `OpenShellTarget::Open`，配置/数据库文件使用
+  `SelectInExplorer`；C# 仍是唯一 Windows Clipboard/Shell adapter。每次操作在 15 秒内以
+  started -> completed/failed 收口，超时释放 pending identity，迟到结果被忽略；日志只含固定
+  path/action/failure kind、elapsed 与 native code，不含路径、剪贴板文本或平台错误正文。
+- 红—绿生产门禁先在缺少配置路径值节点处失败，随后从真实
+  `DownloadApplication -> DownloadSettingsView -> PlatformBridge` 验证三行全宽、长路径与
+  动作 Tooltip、六个 `28 x 28` hit target、三条 copy-only 命令、目录打开/文件 reveal、成功/
+  失败反馈、15 秒超时和迟到结果抑制。当前 `cargo check -p nxtools-desktop --tests`、该精确
+  GPUI 测试、`download-ui-lifecycle.ps1`、rustfmt 与 `git diff --check` 均通过。
+- 一次完整 `cargo test -p nxtools-desktop` 运行得到 295/300，DL-18 精确门禁在整包中仍通过；
+  其余五项在隔离复跑中稳定失败，分别属于既有分类裸 Button selector、网络设置尾距、Quick
+  Launch action mode、剪贴板空态宽度和下载详情 progress selector，其中四个文件本切片未
+  修改。该既有基线已记录到 `.learnings/ERRORS.md`，不把整包冒充为绿色，也不在 DL-18 中
+  扩张修复范围。Release 100/125/150% DPI 截图和人工视觉验收仍保留为最终发布门禁。
 
 ### 批次 2：主壳层与全局设置
 

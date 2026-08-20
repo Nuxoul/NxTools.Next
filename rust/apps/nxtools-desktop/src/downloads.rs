@@ -41,10 +41,10 @@ use nxtools_download::{
 };
 #[cfg(test)]
 use nxtools_download::{DownloadCertificatePolicy, FfmpegInstallSource};
-use nxtools_ipc::{PlatformBridge, PlatformNotification};
+use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
-    OpenShellTargetCommand, PickDirectoryCommand, PickProgramCommand,
+    OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
     PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
     SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
     ShutdownSystemCommand, TaskbarOverlayAnchor, TaskbarProgressState,
@@ -79,12 +79,12 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6,
-    SPACING_8, SPACING_12,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT,
+    SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_MONO_FONT_FAMILY,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +199,130 @@ struct DownloadSettingsViewInitial {
 
 const FFMPEG_PICKER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const FFMPEG_DOWNLOAD_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
+const DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DownloadSettingsPathKind {
+    Config,
+    Logs,
+    Database,
+}
+
+impl DownloadSettingsPathKind {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Config => "config",
+            Self::Logs => "logs",
+            Self::Database => "database",
+        }
+    }
+
+    const fn display_name(self) -> &'static str {
+        match self {
+            Self::Config => "配置",
+            Self::Logs => "日志",
+            Self::Database => "数据库",
+        }
+    }
+
+    const fn button_key(self) -> &'static str {
+        self.name()
+    }
+
+    const fn value_selector(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-value",
+            Self::Logs => "download-settings-path-logs-value",
+            Self::Database => "download-settings-path-database-value",
+        }
+    }
+
+    const fn value_tooltip_selector(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-value-tooltip",
+            Self::Logs => "download-settings-path-logs-value-tooltip",
+            Self::Database => "download-settings-path-database-value-tooltip",
+        }
+    }
+
+    const fn copy_button_id(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-copy-button",
+            Self::Logs => "download-settings-path-logs-copy-button",
+            Self::Database => "download-settings-path-database-copy-button",
+        }
+    }
+
+    const fn open_button_id(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-open-button",
+            Self::Logs => "download-settings-path-logs-open-button",
+            Self::Database => "download-settings-path-database-open-button",
+        }
+    }
+
+    const fn copy_tooltip(self) -> &'static str {
+        match self {
+            Self::Config => "复制配置路径",
+            Self::Logs => "复制日志路径",
+            Self::Database => "复制数据库路径",
+        }
+    }
+
+    const fn open_tooltip(self) -> &'static str {
+        match self {
+            Self::Config => "在资源管理器中显示配置文件",
+            Self::Logs => "打开日志目录",
+            Self::Database => "在资源管理器中显示数据库文件",
+        }
+    }
+
+    const fn copy_tooltip_selector(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-copy-tooltip",
+            Self::Logs => "download-settings-path-logs-copy-tooltip",
+            Self::Database => "download-settings-path-database-copy-tooltip",
+        }
+    }
+
+    const fn open_tooltip_selector(self) -> &'static str {
+        match self {
+            Self::Config => "download-settings-path-config-open-tooltip",
+            Self::Logs => "download-settings-path-logs-open-tooltip",
+            Self::Database => "download-settings-path-database-open-tooltip",
+        }
+    }
+
+    const fn shell_action(self) -> ShellOpenAction {
+        match self {
+            Self::Config | Self::Database => ShellOpenAction::SelectInExplorer,
+            Self::Logs => ShellOpenAction::Open,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DownloadSettingsPathAction {
+    Copy,
+    Open,
+}
+
+impl DownloadSettingsPathAction {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Open => "open",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingDownloadSettingsPathAction {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+    path_kind: DownloadSettingsPathKind,
+    action: DownloadSettingsPathAction,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FfmpegDownloadSource {
@@ -422,6 +546,7 @@ pub(crate) struct DownloadApplication {
     show_progress_window: bool,
     show_completion_window: bool,
     pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
+    pending_settings_path_actions: HashMap<uuid::Uuid, PendingDownloadSettingsPathAction>,
     pending_ffmpeg_operations: HashMap<uuid::Uuid, PendingFfmpegPlatformOperation>,
     ffmpeg_install_state: FfmpegInstallViewState,
     pending_ffmpeg_install: Option<PendingFfmpegInstall>,
@@ -602,6 +727,7 @@ impl DownloadApplication {
             show_progress_window,
             show_completion_window,
             pending_directory_picker: None,
+            pending_settings_path_actions: HashMap::new(),
             pending_ffmpeg_operations: HashMap::new(),
             ffmpeg_install_state: FfmpegInstallViewState::Idle,
             pending_ffmpeg_install: None,
@@ -1706,6 +1832,161 @@ impl DownloadApplication {
     fn set_ffmpeg_install_state(&mut self, state: FfmpegInstallViewState, cx: &mut Context<Self>) {
         self.ffmpeg_install_state = state.clone();
         cx.emit(DownloadApplicationEvent::FfmpegInstallChanged { state });
+        cx.notify();
+    }
+
+    fn perform_download_settings_path_action(
+        &mut self,
+        path_kind: DownloadSettingsPathKind,
+        action: DownloadSettingsPathAction,
+        cx: &mut Context<Self>,
+    ) {
+        let target = match path_kind {
+            DownloadSettingsPathKind::Config => self.config_path.to_string_lossy().into_owned(),
+            DownloadSettingsPathKind::Logs => self.log_directory.to_string_lossy().into_owned(),
+            DownloadSettingsPathKind::Database => self.database_path.to_string_lossy().into_owned(),
+        };
+        let command = match action {
+            DownloadSettingsPathAction::Copy => PlatformCommand::PasteText(PasteTextCommand {
+                text: target,
+                paste_after_write: false,
+                target_window_handle: 0,
+                target_focus_window_handle: 0,
+            }),
+            DownloadSettingsPathAction::Open => {
+                PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                    target,
+                    action: path_kind.shell_action(),
+                })
+            }
+        };
+        let correlation_id = uuid::Uuid::new_v4();
+        let pending = PendingDownloadSettingsPathAction {
+            correlation_id,
+            started_at: Instant::now(),
+            path_kind,
+            action,
+        };
+        info!(
+            event = "download.settings_path_action.started",
+            %correlation_id,
+            path_kind = path_kind.name(),
+            action = action.name(),
+            "download settings path action started"
+        );
+        match self
+            .platform
+            .send_command_correlated(command, correlation_id)
+        {
+            Ok(command_id) => {
+                self.pending_settings_path_actions
+                    .insert(command_id, pending);
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT)
+                        .await;
+                    let _ = this.update(cx, |application, cx| {
+                        application.download_settings_path_action_timed_out(command_id, cx);
+                    });
+                })
+                .detach();
+            }
+            Err(error) => {
+                let failure_kind = match error {
+                    PlatformBridgeError::Disconnected => "platform_disconnected",
+                    PlatformBridgeError::Busy => "queue_busy",
+                };
+                self.finish_download_settings_path_action_failure(pending, failure_kind, None, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn download_settings_path_action_timed_out(
+        &mut self,
+        command_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_settings_path_actions.remove(&command_id) else {
+            return;
+        };
+        self.finish_download_settings_path_action_failure(pending, "timeout", None, cx);
+    }
+
+    fn handle_download_settings_path_action_result(
+        &mut self,
+        pending: PendingDownloadSettingsPathAction,
+        result: PlatformCommandResult,
+        cx: &mut Context<Self>,
+    ) {
+        if !result.success {
+            self.finish_download_settings_path_action_failure(
+                pending,
+                "platform",
+                result.native_error_code,
+                cx,
+            );
+            return;
+        }
+        info!(
+            event = "download.settings_path_action.completed",
+            correlation_id = %pending.correlation_id,
+            path_kind = pending.path_kind.name(),
+            action = pending.action.name(),
+            elapsed_ms = pending.started_at.elapsed().as_millis(),
+            "download settings path action completed"
+        );
+        if pending.action == DownloadSettingsPathAction::Copy {
+            self.notifications.update(cx, |notifications, cx| {
+                notifications.show_success(
+                    format!("download-settings-path-{}-copy", pending.path_kind.name()),
+                    "路径已复制",
+                    format!("{}路径已写入剪贴板", pending.path_kind.display_name()),
+                    cx,
+                );
+            });
+        }
+        cx.notify();
+    }
+
+    fn finish_download_settings_path_action_failure(
+        &mut self,
+        pending: PendingDownloadSettingsPathAction,
+        failure_kind: &'static str,
+        native_error_code: Option<i32>,
+        cx: &mut Context<Self>,
+    ) {
+        warn!(
+            event = "download.settings_path_action.failed",
+            correlation_id = %pending.correlation_id,
+            path_kind = pending.path_kind.name(),
+            action = pending.action.name(),
+            failure_kind,
+            native_error_code,
+            elapsed_ms = pending.started_at.elapsed().as_millis(),
+            "download settings path action failed"
+        );
+        let (title, message) = match pending.action {
+            DownloadSettingsPathAction::Copy => {
+                ("无法复制诊断路径", "Windows 剪贴板暂时不可用，请稍后重试。")
+            }
+            DownloadSettingsPathAction::Open => (
+                "无法打开诊断路径",
+                "Windows 无法打开该位置，请确认目标仍然存在。",
+            ),
+        };
+        self.notifications.update(cx, |notifications, cx| {
+            notifications.show_error(
+                format!(
+                    "download-settings-path-{}-{}-failed",
+                    pending.path_kind.name(),
+                    pending.action.name()
+                ),
+                title,
+                message,
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -3318,6 +3599,10 @@ impl DownloadApplication {
                     );
                 }
             }
+            return;
+        }
+        if let Some(pending) = self.pending_settings_path_actions.remove(&correlation_id) {
+            self.handle_download_settings_path_action_result(pending, result, cx);
             return;
         }
         if let Some(pending) = self.pending_ffmpeg_operations.remove(&correlation_id) {
@@ -6890,24 +7175,28 @@ impl Render for DownloadSettingsView {
                 cx.notify();
             }),
         );
-        let taskbar_edit_control = action_button(
-            "download-settings-taskbar-edit",
-            if self.taskbar_overlay_editing {
-                "结束预览"
-            } else {
-                "编辑布局"
-            },
-        )
-        .icon(Icon::new(if self.taskbar_overlay_editing {
-            MaterialIcon::Check
-        } else {
-            MaterialIcon::Edit
-        }))
-        .custom(download_primary_button_variant(theme, cx))
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.toggle_taskbar_overlay_edit(cx);
-        }))
-        .into_any_element();
+        let taskbar_edit_control = div()
+            .debug_selector(|| "download-settings-taskbar-edit".into())
+            .child(
+                action_button(
+                    "download-settings-taskbar-edit-button",
+                    if self.taskbar_overlay_editing {
+                        "结束预览"
+                    } else {
+                        "编辑布局"
+                    },
+                )
+                .icon(Icon::new(if self.taskbar_overlay_editing {
+                    MaterialIcon::Check
+                } else {
+                    MaterialIcon::Edit
+                }))
+                .custom(download_primary_button_variant(theme, cx))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.toggle_taskbar_overlay_edit(cx);
+                })),
+            )
+            .into_any_element();
         let page_content = match self.page {
             DownloadSettingsPage::General => div()
                 .w_full()
@@ -7229,9 +7518,27 @@ impl Render for DownloadSettingsView {
                     theme,
                     "诊断",
                     vec![
-                        download_settings_path_row(theme, "配置", self.config_path.clone()),
-                        download_settings_path_row(theme, "日志", self.log_directory.clone()),
-                        download_settings_path_row(theme, "数据", self.database_path.clone()),
+                        download_settings_path_row(
+                            theme,
+                            "配置",
+                            self.config_path.clone(),
+                            DownloadSettingsPathKind::Config,
+                            self.application.clone(),
+                        ),
+                        download_settings_path_row(
+                            theme,
+                            "日志",
+                            self.log_directory.clone(),
+                            DownloadSettingsPathKind::Logs,
+                            self.application.clone(),
+                        ),
+                        download_settings_path_row(
+                            theme,
+                            "数据",
+                            self.database_path.clone(),
+                            DownloadSettingsPathKind::Database,
+                            self.application.clone(),
+                        ),
                     ],
                 ))
                 .into_any_element(),
@@ -7737,10 +8044,71 @@ fn download_settings_stacked_row(
         .into_any_element()
 }
 
-fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -> AnyElement {
+fn download_settings_path_row(
+    theme: Theme,
+    label: &'static str,
+    path: String,
+    path_kind: DownloadSettingsPathKind,
+    application: Entity<DownloadApplication>,
+) -> AnyElement {
+    let key = path_kind.button_key();
+    let value_selector = path_kind.value_selector();
+    let value_tooltip_selector = path_kind.value_tooltip_selector();
+    let path_tooltip = path.clone();
+    let copy_application = application.clone();
+    let copy_action = div()
+        .debug_selector(move || format!("download-settings-path-{key}-copy"))
+        .size(px(CONTROL_HEIGHT_ACTION))
+        .child(icon_action_tooltip_surface(
+            icon_action_button(path_kind.copy_button_id(), MaterialIcon::ContentCopy)
+                .ghost()
+                .border_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.surface_raised)
+                .on_click(move |_, _, cx| {
+                    let application = copy_application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, cx| {
+                            application.perform_download_settings_path_action(
+                                path_kind,
+                                DownloadSettingsPathAction::Copy,
+                                cx,
+                            );
+                        });
+                    });
+                }),
+            path_kind.copy_tooltip(),
+            path_kind.copy_tooltip_selector(),
+        ));
+    let open_action = div()
+        .debug_selector(move || format!("download-settings-path-{key}-open"))
+        .size(px(CONTROL_HEIGHT_ACTION))
+        .child(icon_action_tooltip_surface(
+            icon_action_button(path_kind.open_button_id(), MaterialIcon::OpenInNew)
+                .ghost()
+                .border_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.surface_raised)
+                .on_click(move |_, _, cx| {
+                    let application = application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, cx| {
+                            application.perform_download_settings_path_action(
+                                path_kind,
+                                DownloadSettingsPathAction::Open,
+                                cx,
+                            );
+                        });
+                    });
+                }),
+            path_kind.open_tooltip(),
+            path_kind.open_tooltip_selector(),
+        ));
     div()
         .debug_selector(move || format!("download-settings-path-{label}"))
-        .min_h(px(CONTROL_HEIGHT_INPUT))
+        .w_full()
+        .min_w_0()
+        .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
         .px(px(SPACING_8))
         .border_b_1()
         .border_color(theme.border_subtle)
@@ -7750,6 +8118,7 @@ fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -
         .child(
             div()
                 .w(px(36.0))
+                .flex_none()
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_muted)
@@ -7757,13 +8126,42 @@ fn download_settings_path_row(theme: Theme, label: &'static str, path: String) -
         )
         .child(
             div()
+                .id(value_selector)
+                .debug_selector(move || value_selector.into())
                 .min_w_0()
                 .flex_1()
-                .truncate()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .line_clamp(1)
+                .font_family(UI_MONO_FONT_FAMILY)
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_secondary)
+                .tooltip(move |window, cx| {
+                    let complete_path = path_tooltip.clone();
+                    Tooltip::element(move |_, _| {
+                        div()
+                            .debug_selector(move || value_tooltip_selector.into())
+                            .max_w(px(720.0))
+                            .whitespace_normal()
+                            .font_family(UI_MONO_FONT_FAMILY)
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .child(complete_path.clone())
+                    })
+                    .build(window, cx)
+                })
                 .child(path),
+        )
+        .child(
+            div()
+                .debug_selector(move || format!("download-settings-path-{key}-actions"))
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_4))
+                .child(copy_action)
+                .child(open_action),
         )
         .into_any_element()
 }
@@ -12726,10 +13124,23 @@ mod tests {
         cx: &mut TestAppContext,
         label: &str,
     ) -> (Entity<DownloadApplication>, PathBuf) {
+        let (application, directory, _platform_endpoint) =
+            download_application_for_window_test_with_platform(cx, label);
+        (application, directory)
+    }
+
+    fn download_application_for_window_test_with_platform(
+        cx: &mut TestAppContext,
+        label: &str,
+    ) -> (
+        Entity<DownloadApplication>,
+        PathBuf,
+        nxtools_ipc::PlatformServerEndpoint,
+    ) {
         let directory = unique_download_settings_test_directory(label);
         std::fs::create_dir_all(&directory).expect("create download window test directory");
         let engine = DownloadEngine::open_in_memory().expect("open download window test engine");
-        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let (platform, platform_endpoint) = nxtools_ipc::platform_bridge(16);
         let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
         let application = cx.update(|cx| {
             cx.new(|cx| {
@@ -12749,7 +13160,7 @@ mod tests {
                 )
             })
         });
-        (application, directory)
+        (application, directory, platform_endpoint)
     }
 
     #[gpui::test]
@@ -13471,10 +13882,26 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.update(gpui_component::init);
-        let (application, directory) =
-            download_application_for_window_test(cx, "settings-section-widths");
+        let (application, directory, platform_endpoint) =
+            download_application_for_window_test_with_platform(cx, "settings-section-widths");
+        platform_endpoint.set_connected_for_contract_test(true);
+        let diagnostic_root = directory
+            .join("diagnostics-path-that-is-deliberately-long-for-the-production-settings-window")
+            .join("runtime-owned-locations");
+        let log_directory = diagnostic_root.join("logs");
+        std::fs::create_dir_all(&log_directory).expect("create long diagnostics log directory");
+        let config_path = diagnostic_root.join("nxtools-production-configuration.json");
+        let database_path = diagnostic_root.join("downloads-production-database.sqlite3");
+        AppConfig::default()
+            .save_to(&config_path)
+            .expect("save production settings layout config fixture");
+        std::fs::write(&database_path, b"diagnostics database fixture")
+            .expect("save production settings database fixture");
         cx.update(|cx| {
             application.update(cx, |application, cx| {
+                application.config_path = config_path.clone();
+                application.log_directory = log_directory.clone();
+                application.database_path = database_path.clone();
                 application.open_settings_window(cx);
             });
         });
@@ -13762,10 +14189,10 @@ mod tests {
             "the executable path must consume the full sequence-row content width"
         );
         let install_button = window
-            .debug_bounds("download-settings-ffmpeg-install-button")
+            .debug_bounds("download-settings-ffmpeg-install")
             .expect("primary managed-install action");
         let gyan_button = window
-            .debug_bounds("download-settings-ffmpeg-gyan-button")
+            .debug_bounds("download-settings-ffmpeg-gyan")
             .expect("quiet Gyan fallback action");
         assert!(
             (install_button.origin.x.as_f32() - ffmpeg_install_actions.origin.x.as_f32()).abs()
@@ -13814,7 +14241,7 @@ mod tests {
             "install progress and Cancel must not move the fixed settings footer"
         );
         let active_cancel = window
-            .debug_bounds("download-settings-ffmpeg-cancel-button")
+            .debug_bounds("download-settings-ffmpeg-cancel")
             .expect("quiet Cancel action during FFmpeg installation");
         assert!(
             installing_media_rows[1].contains(&active_cancel.origin)
@@ -13839,9 +14266,18 @@ mod tests {
             "the first two transfer settings are not in the same grid row"
         );
         assert!(
-            (first_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0
-                && (second_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0,
-            "transfer grid cells must each use half of the {expected_width}px content width"
+            (first_transfer_cell.size.width.as_f32() - second_transfer_cell.size.width.as_f32())
+                .abs()
+                <= 1.0
+                && (first_transfer_cell.size.width.as_f32()
+                    + second_transfer_cell.size.width.as_f32()
+                    + 3.0
+                    - expected_width)
+                    .abs()
+                    <= 2.0,
+            "transfer grid cells must equally fill the {expected_width}px section after its two 1px borders and 1px center seam; actual widths were {}px and {}px",
+            first_transfer_cell.size.width.as_f32(),
+            second_transfer_cell.size.width.as_f32()
         );
         let transfer_section = window
             .debug_bounds("download-settings-section-传输")
@@ -14109,20 +14545,272 @@ mod tests {
         open_page!("download-settings-nav-diagnostics");
         assert_section!("诊断", "download-settings-section-诊断");
 
-        for (label, selector) in [
-            ("配置", "download-settings-path-配置"),
-            ("日志", "download-settings-path-日志"),
-            ("数据", "download-settings-path-数据"),
+        for (label, row_selector, value_selector, actions_selector, copy_selector, open_selector) in [
+            (
+                "配置",
+                "download-settings-path-配置",
+                "download-settings-path-config-value",
+                "download-settings-path-config-actions",
+                "download-settings-path-config-copy",
+                "download-settings-path-config-open",
+            ),
+            (
+                "日志",
+                "download-settings-path-日志",
+                "download-settings-path-logs-value",
+                "download-settings-path-logs-actions",
+                "download-settings-path-logs-copy",
+                "download-settings-path-logs-open",
+            ),
+            (
+                "数据",
+                "download-settings-path-数据",
+                "download-settings-path-database-value",
+                "download-settings-path-database-actions",
+                "download-settings-path-database-copy",
+                "download-settings-path-database-open",
+            ),
         ] {
-            let bounds = window
-                .debug_bounds(selector)
+            let row = window
+                .debug_bounds(row_selector)
                 .unwrap_or_else(|| panic!("missing {label} diagnostic path"));
             assert!(
-                bounds.size.width.as_f32() >= expected_width - 2.0,
+                row.size.width.as_f32() >= expected_width - 2.0,
                 "{label} diagnostic row is only {}px inside a {expected_width}px section",
-                bounds.size.width.as_f32()
+                row.size.width.as_f32()
+            );
+            let value = window
+                .debug_bounds(value_selector)
+                .unwrap_or_else(|| panic!("missing {label} diagnostic path value"));
+            let actions = window
+                .debug_bounds(actions_selector)
+                .unwrap_or_else(|| panic!("missing {label} diagnostic action rail"));
+            assert!(
+                value.size.width.as_f32() >= expected_width * 0.7,
+                "{label} long path is still constrained to a narrow column"
+            );
+            assert!(row.contains(&value.origin) && row.contains(&actions.bottom_right()));
+            for (action_name, selector) in [("复制", copy_selector), ("打开", open_selector)] {
+                let action = window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("missing {label} {action_name} action"));
+                assert_eq!(
+                    action.size,
+                    size(px(28.0), px(28.0)),
+                    "{label} {action_name} must use the shared square action tier"
+                );
+                assert!(
+                    actions.contains(&action.origin) && actions.contains(&action.bottom_right())
+                );
+            }
+        }
+
+        let executor = cx.executor();
+        let config_value = window
+            .debug_bounds("download-settings-path-config-value")
+            .expect("long config path value");
+        window.simulate_mouse_move(config_value.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render complete diagnostic path tooltip");
+        assert!(
+            window
+                .debug_bounds("download-settings-path-config-value-tooltip")
+                .is_some(),
+            "the complete long path must remain readable from the production tooltip"
+        );
+        for (selector, tooltip_selector) in [
+            (
+                "download-settings-path-config-copy",
+                "download-settings-path-config-copy-tooltip",
+            ),
+            (
+                "download-settings-path-config-open",
+                "download-settings-path-config-open-tooltip",
+            ),
+        ] {
+            let action = window
+                .debug_bounds(selector)
+                .expect("diagnostic action with tooltip");
+            window.simulate_mouse_move(action.center(), None, Modifiers::default());
+            executor.advance_clock(Duration::from_millis(600));
+            window.run_until_parked();
+            window.refresh().expect("render diagnostic action tooltip");
+            assert!(
+                window.debug_bounds(tooltip_selector).is_some(),
+                "diagnostic icon actions must expose bounded Chinese tooltips"
             );
         }
+
+        for (selector, expected_path) in [
+            (
+                "download-settings-path-config-copy",
+                config_path.to_string_lossy().into_owned(),
+            ),
+            (
+                "download-settings-path-logs-copy",
+                log_directory.to_string_lossy().into_owned(),
+            ),
+            (
+                "download-settings-path-database-copy",
+                database_path.to_string_lossy().into_owned(),
+            ),
+        ] {
+            let action = window
+                .debug_bounds(selector)
+                .expect("diagnostic copy action");
+            window.simulate_click(action.center(), Modifiers::default());
+            window.run_until_parked();
+            let envelope = platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("copy-only platform command");
+            assert!(
+                envelope.correlation_id.is_some(),
+                "diagnostic path actions must keep one operation correlation across PlatformHost"
+            );
+            assert_eq!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::PasteText(
+                    nxtools_protocol::PasteTextCommand {
+                        text: expected_path,
+                        paste_after_write: false,
+                        target_window_handle: 0,
+                        target_focus_window_handle: 0,
+                    }
+                ))
+            );
+            window.update(|_, cx| {
+                application.update(cx, |application, cx| {
+                    application.handle_platform_notification(
+                        PlatformNotification::CommandResult {
+                            correlation_id: envelope.id,
+                            result: PlatformCommandResult {
+                                success: true,
+                                error: None,
+                                native_error_code: None,
+                                data: None,
+                            },
+                        },
+                        cx,
+                    );
+                });
+            });
+        }
+        let notifications = cx.read(|cx| application.read(cx).notifications.clone());
+        assert!(cx.read(|cx| {
+            notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|item| item.title.as_ref() == "路径已复制")
+        }));
+
+        for (selector, target, action, success) in [
+            (
+                "download-settings-path-config-open",
+                config_path.to_string_lossy().into_owned(),
+                ShellOpenAction::SelectInExplorer,
+                true,
+            ),
+            (
+                "download-settings-path-logs-open",
+                log_directory.to_string_lossy().into_owned(),
+                ShellOpenAction::Open,
+                true,
+            ),
+            (
+                "download-settings-path-database-open",
+                database_path.to_string_lossy().into_owned(),
+                ShellOpenAction::SelectInExplorer,
+                false,
+            ),
+        ] {
+            let action_bounds = window
+                .debug_bounds(selector)
+                .expect("diagnostic open action");
+            window.simulate_click(action_bounds.center(), Modifiers::default());
+            window.run_until_parked();
+            let envelope = platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("shell path platform command");
+            assert!(
+                envelope.correlation_id.is_some(),
+                "diagnostic path actions must keep one operation correlation across PlatformHost"
+            );
+            assert_eq!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                    OpenShellTargetCommand { target, action }
+                ))
+            );
+            window.update(|_, cx| {
+                application.update(cx, |application, cx| {
+                    application.handle_platform_notification(
+                        PlatformNotification::CommandResult {
+                            correlation_id: envelope.id,
+                            result: PlatformCommandResult {
+                                success,
+                                error: (!success)
+                                    .then(|| "sensitive path must not be logged".into()),
+                                native_error_code: (!success).then_some(2),
+                                data: None,
+                            },
+                        },
+                        cx,
+                    );
+                });
+            });
+        }
+        assert!(cx.read(|cx| {
+            notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|item| item.title.as_ref() == "无法打开诊断路径")
+        }));
+
+        let timeout_action = window
+            .debug_bounds("download-settings-path-config-copy")
+            .expect("diagnostic copy timeout action");
+        window.simulate_click(timeout_action.center(), Modifiers::default());
+        window.run_until_parked();
+        let timed_out_envelope = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("copy command that will time out");
+        executor.advance_clock(DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT);
+        window.run_until_parked();
+        assert!(cx.read(|cx| {
+            notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|item| item.title.as_ref() == "无法复制诊断路径")
+        }));
+        window.update(|_, cx| {
+            application.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: timed_out_envelope.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert!(cx.read(|cx| {
+            notifications
+                .read(cx)
+                .items()
+                .iter()
+                .all(|item| item.title.as_ref() != "路径已复制")
+        }));
 
         open_page!("download-settings-nav-general");
         assert_eq!(
@@ -14136,8 +14824,8 @@ mod tests {
             .expect("production settings Apply action");
         window.simulate_click(apply.center(), Modifiers::default());
         window.run_until_parked();
-        let persisted = AppConfig::load_from(&directory.join("config.json"))
-            .expect("reload request-context production settings");
+        let persisted =
+            AppConfig::load_from(&config_path).expect("reload request-context production settings");
         assert!(
             persisted.download.default_request_headers == long_header,
             "Apply must preserve the complete Header draft without printing its value"
