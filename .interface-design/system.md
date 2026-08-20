@@ -68,6 +68,18 @@
 - Changing the master selection only changes the visible draft entity. It never persists, validates
   or starts native work before the settings shell's existing Apply boundary.
 
+### Settings matrix
+
+- Dense numeric and boolean policies may share one two-column matrix inside a single section. The
+  matrix owns one outer boundary, one title row and one quiet 1 px center seam; cells never receive
+  independent card backgrounds, radii or elevation.
+- Each matrix row has two equal flexible cells, a shared minimum height and aligned trailing control
+  rails. Pairing follows task meaning rather than source-field order, so capacity, adaptive splitting
+  and transfer limits can be scanned horizontally without creating a dashboard of mini cards.
+- The matrix only subdivides its parent's width. It never supplies a minimum width that can stretch
+  the settings viewport, and changing a value still belongs to the enclosing settings draft and its
+  existing Apply/Cancel boundary.
+
 ### Work surfaces
 
 - Lists and inspectors use continuous surfaces separated by low-contrast rules.

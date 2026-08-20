@@ -8321,6 +8321,8 @@ Use a table of static display labels and static selector literals when querying 
 ### Metadata
 - Reproducible: yes
 - Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- Recurrence-Count: 3
+- Last-Seen: 2026-08-20
 
 ## [ERR-20260812-LAYOUT1455] GPUI layout regression compile exhausted Windows commit
 
@@ -9697,3 +9699,35 @@ stable, before packaging.
 - Reproducible: environment-dependent
 - Related Files: rust/apps/nxtools-desktop/src/downloads.rs
 - See Also: ERR-20260820-DL1112-GPUI-LIBTEST-MAP
+
+---
+
+## [ERR-20260820-DL15-CHECK-COMMIT] desktop check exhausted Windows commit
+
+**Logged**: 2026-08-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+The DL-15 desktop test check reached the desktop crate and then rustc failed a 24 KiB allocation
+while Windows FreeVirtual was approximately 0.96 GiB.
+
+### Error
+`memory allocation of 24576 bytes failed`; rustc exited with `0xc0000409` and emitted no Rust source
+diagnostic.
+
+### Context
+- Required low-memory Cargo variables and one build job were active.
+- The preceding compile attempt had reached and reported only four static-selector lifetime errors;
+  those were replaced with a fixed selector table before this retry.
+- No Cargo or rustc process survived the failed command; rustfmt completed successfully.
+
+### Suggested Fix
+Do not repeat the desktop Cargo gate at current commit pressure. Rerun the check and exact production
+settings-window regression after durable pagefile/commit headroom recovers, before packaging.
+
+### Metadata
+- Reproducible: environment-dependent
+- Related Files: rust/apps/nxtools-desktop/src/downloads.rs
+- See Also: ERR-20260820-DL1112-FINAL-CHECK-HOST, ERR-20260820-DL09-RELINK-COMMIT

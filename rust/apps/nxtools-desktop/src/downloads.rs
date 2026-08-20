@@ -6995,45 +6995,51 @@ impl Render for DownloadSettingsView {
                 .flex()
                 .flex_col()
                 .gap(px(SPACING_8))
-                .child(download_settings_grid_section(
+                .child(download_settings_matrix_section(
                     theme,
                     "传输",
                     vec![
-                        download_settings_row(
-                            theme,
-                            "连接上限",
-                            "新任务从开始即使用的最大并行连接数，范围 1–64",
-                            connection_control,
+                        (
+                            download_settings_row(
+                                theme,
+                                "连接上限",
+                                "新任务从开始即使用的最大并行连接数，范围 1–64",
+                                connection_control,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "同时下载",
+                                "默认队列允许同时运行的任务数，范围 1–64",
+                                concurrent_control,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "动态分段",
-                            "速度稳定时拆分长尾；连接数仍保持在上限内",
-                            adaptive_toggle,
+                        (
+                            download_settings_row(
+                                theme,
+                                "动态分段",
+                                "速度稳定时拆分长尾；连接数仍保持在上限内",
+                                adaptive_toggle,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "分段上限",
+                                "动态拆分后的最大分段数，范围为连接数到 256",
+                                adaptive_max_control,
+                            ),
                         ),
-                        download_settings_row(
-                            theme,
-                            "分段上限",
-                            "动态拆分后的最大分段数，范围为连接数到 256",
-                            adaptive_max_control,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "最小长尾",
-                            "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
-                            adaptive_min_control,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "同时下载",
-                            "默认队列允许同时运行的任务数，范围 1–64",
-                            concurrent_control,
-                        ),
-                        download_settings_row(
-                            theme,
-                            "全局限速",
-                            "单位 KiB/s；填 0 表示不限速",
-                            speed_control,
+                        (
+                            download_settings_row(
+                                theme,
+                                "最小长尾",
+                                "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
+                                adaptive_min_control,
+                            ),
+                            download_settings_row(
+                                theme,
+                                "全局限速",
+                                "单位 KiB/s；填 0 表示不限速",
+                                speed_control,
+                            ),
                         ),
                     ],
                 ))
@@ -7556,6 +7562,103 @@ fn download_settings_grid_section(
                         .w(gpui::relative(0.5))
                         .min_w(px(350.0))
                         .child(row)
+                })),
+        )
+        .into_any_element()
+}
+
+fn download_settings_matrix_section(
+    theme: Theme,
+    title: &'static str,
+    rows: Vec<(AnyElement, AnyElement)>,
+) -> AnyElement {
+    div()
+        .debug_selector(move || format!("download-settings-section-{title}"))
+        .w_full()
+        .rounded(px(RADIUS_CONTROL))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .h(px(28.0))
+                .px(px(SPACING_8))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .flex()
+                .items_center()
+                .debug_selector(move || format!("download-settings-section-{title}-title"))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(title),
+        )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .children(rows.into_iter().enumerate().map(move |(row_index, row)| {
+                    let (left, right) = row;
+                    let left_index = row_index * 2;
+                    let right_index = left_index + 1;
+                    div()
+                        .debug_selector(move || {
+                            format!("download-settings-matrix-{title}-row-{row_index}")
+                        })
+                        .w_full()
+                        .min_w_0()
+                        .flex()
+                        .child(
+                            div()
+                                .debug_selector(move || {
+                                    format!(
+                                        "download-settings-matrix-{title}-cell-{row_index}-left"
+                                    )
+                                })
+                                .flex_1()
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .debug_selector(move || {
+                                            format!("download-settings-grid-{title}-{left_index}")
+                                        })
+                                        .w_full()
+                                        .min_w_0()
+                                        .child(left),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(move || {
+                                    format!("download-settings-matrix-{title}-seam-{row_index}")
+                                })
+                                .w(px(1.0))
+                                .flex_none()
+                                .bg(theme.border_subtle),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(move || {
+                                    format!(
+                                        "download-settings-matrix-{title}-cell-{row_index}-right"
+                                    )
+                                })
+                                .flex_1()
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .debug_selector(move || {
+                                            format!("download-settings-grid-{title}-{right_index}")
+                                        })
+                                        .w_full()
+                                        .min_w_0()
+                                        .child(right),
+                                ),
+                        )
                 })),
         )
         .into_any_element()
@@ -13638,6 +13741,115 @@ mod tests {
             (first_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0
                 && (second_transfer_cell.size.width.as_f32() * 2.0 - expected_width).abs() <= 2.0,
             "transfer grid cells must each use half of the {expected_width}px content width"
+        );
+        let transfer_section = window
+            .debug_bounds("download-settings-section-传输")
+            .expect("continuous transfer settings section");
+        let transfer_matrix_selectors = [
+            (
+                "download-settings-matrix-传输-row-0",
+                "download-settings-matrix-传输-cell-0-left",
+                "download-settings-matrix-传输-seam-0",
+                "download-settings-matrix-传输-cell-0-right",
+            ),
+            (
+                "download-settings-matrix-传输-row-1",
+                "download-settings-matrix-传输-cell-1-left",
+                "download-settings-matrix-传输-seam-1",
+                "download-settings-matrix-传输-cell-1-right",
+            ),
+            (
+                "download-settings-matrix-传输-row-2",
+                "download-settings-matrix-传输-cell-2-left",
+                "download-settings-matrix-传输-seam-2",
+                "download-settings-matrix-传输-cell-2-right",
+            ),
+        ];
+        let mut transfer_rows = Vec::new();
+        for (row_index, (row_selector, left_selector, seam_selector, right_selector)) in
+            transfer_matrix_selectors.into_iter().enumerate()
+        {
+            let row = window
+                .debug_bounds(row_selector)
+                .unwrap_or_else(|| panic!("missing transfer matrix row {row_index}"));
+            let left = window
+                .debug_bounds(left_selector)
+                .unwrap_or_else(|| panic!("missing left transfer cell {row_index}"));
+            let seam = window
+                .debug_bounds(seam_selector)
+                .unwrap_or_else(|| panic!("missing transfer seam {row_index}"));
+            let right = window
+                .debug_bounds(right_selector)
+                .unwrap_or_else(|| panic!("missing right transfer cell {row_index}"));
+            assert!(
+                (left.origin.y.as_f32() - right.origin.y.as_f32()).abs() <= 1.0
+                    && (left.size.height.as_f32() - right.size.height.as_f32()).abs() <= 1.0,
+                "transfer matrix row {row_index} must share one vertical baseline"
+            );
+            assert!(
+                (seam.size.width.as_f32() - 1.0).abs() <= 0.5
+                    && (left.origin.x.as_f32() + left.size.width.as_f32() - seam.origin.x.as_f32())
+                        .abs()
+                        <= 1.0
+                    && (seam.origin.x.as_f32() + seam.size.width.as_f32()
+                        - right.origin.x.as_f32())
+                    .abs()
+                        <= 1.0,
+                "transfer matrix row {row_index} must use one 1 px center seam without card gaps"
+            );
+            assert!(
+                (left.size.width.as_f32() - right.size.width.as_f32()).abs() <= 2.0,
+                "transfer matrix row {row_index} must split the parent into equal cells"
+            );
+            assert!(
+                left.origin.x.as_f32() >= transfer_section.origin.x.as_f32()
+                    && right.origin.x.as_f32() + right.size.width.as_f32()
+                        <= transfer_section.origin.x.as_f32()
+                            + transfer_section.size.width.as_f32()
+                            + 1.0,
+                "transfer matrix row {row_index} must stay inside the section width"
+            );
+            transfer_rows.push(row);
+        }
+        assert!(
+            transfer_rows
+                .windows(2)
+                .all(
+                    |rows| (rows[0].origin.x.as_f32() - rows[1].origin.x.as_f32()).abs() <= 1.0
+                        && (rows[0].size.width.as_f32() - rows[1].size.width.as_f32()).abs() <= 1.0
+                ),
+            "all transfer matrix rows must share one parent-width geometry"
+        );
+        let left_control_edges = [
+            "download-settings-connection-limit-field",
+            "download-settings-adaptive-segments",
+            "download-settings-adaptive-min-field",
+        ]
+        .map(|selector| {
+            let bounds = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing transfer control {selector}"));
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        let right_control_edges = [
+            "download-settings-concurrent-tasks-field",
+            "download-settings-adaptive-max-field",
+            "download-settings-speed-limit-field",
+        ]
+        .map(|selector| {
+            let bounds = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing transfer control {selector}"));
+            bounds.origin.x.as_f32() + bounds.size.width.as_f32()
+        });
+        assert!(
+            left_control_edges
+                .windows(2)
+                .all(|edges| (edges[0] - edges[1]).abs() <= 1.0)
+                && right_control_edges
+                    .windows(2)
+                    .all(|edges| (edges[0] - edges[1]).abs() <= 1.0),
+            "transfer controls must align to stable left and right trailing rails"
         );
         open_page!("download-settings-nav-window");
         assert_section!("窗口", "download-settings-section-窗口");

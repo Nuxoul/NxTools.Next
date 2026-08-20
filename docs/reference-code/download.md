@@ -2047,6 +2047,23 @@ Reverified on 2026-08-20 before the DL-14 request-context form migration:
   the existing draft/persistence lifecycle. No Header or Cookie value enters diagnostics or UI test
   failure text.
 
+Reverified on 2026-08-20 before the DL-15 transfer-settings matrix migration:
+
+- ABDM first: `DesktopSettingsComponent.kt::DownloadEngine` keeps speed limit, connection/thread
+  count, concurrent downloads and dynamic part download in one `ConfigurableGroup`. The settings
+  component owns their presentation while the existing repository flows remain the value authority;
+  it does not promote every transfer parameter into an independent card or commit on navigation.
+- Old NxTools `Views/SettingsWindow.axaml::DownloadEngineSection` likewise keeps automatic scaling,
+  its numeric bounds, global speed and thread/queue policy as continuous setting rows inside one
+  download-engine surface. Its larger spacing, steppers and unrelated retry field are not migrated.
+- NxTools.Next therefore presents the six existing transfer fields as three aligned two-cell rows in
+  one bounded section: connection capacity beside queue concurrency, adaptive splitting beside its
+  segment ceiling, and the minimum split tail beside the global speed ceiling. The matrix has one
+  outer boundary and one quiet center seam; cells do not gain card surfaces, radii or shadows.
+- This is presentation-only. The same local draft, validation ranges, toggle/input entities and
+  Apply/Cancel persistence lifecycle remain authoritative. The matrix only subdivides the current
+  settings content width and must not impose a child minimum width that stretches the parent.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
