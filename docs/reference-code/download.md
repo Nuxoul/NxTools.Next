@@ -2064,6 +2064,27 @@ Reverified on 2026-08-20 before the DL-15 transfer-settings matrix migration:
   Apply/Cancel persistence lifecycle remain authoritative. The matrix only subdivides the current
   settings content width and must not impose a child minimum width that stretches the parent.
 
+Reverified on 2026-08-20 before the DL-16 FFmpeg settings-flow migration:
+
+- ABDM was checked first through the previously recorded repository-wide negative finding: it still
+  has no FFmpeg resolver, installer or settings entry, so it supplies no presentation or lifecycle
+  contract for this slice. Old NxTools remains the product-behavior reference at
+  `Views/VideoSettingsWindow.axaml`, `MainWindowVideoViewModel::{InstallFfmpegAsync,
+  CancelFfmpegInstall}` and `Services/FfmpegInstallerService`.
+- The useful old-product order is explicit: show the configured executable, let the user browse for
+  one, expose one primary automatic-download action with visible progress/cancellation, and keep
+  manual acquisition as the fallback. The old separate video window, card surfaces, large button
+  pair, GPU refresh and unsafe installer edges are not migrated.
+- NxTools.Next keeps one continuous Media Tools section with three full-width sequential rows. The
+  executable field and picker lead; automatic install is the sole filled action; Gyan.dev and BtbN
+  remain quiet public-source fallbacks. All three action groups begin on one left control rail so a
+  short button is not isolated at the far right of a mostly empty settings row.
+- Existing ownership is unchanged: the settings view owns the configured-path draft, the application
+  owns the bounded install/cancel and shell-open operations, every cross-entity callback remains
+  deferred, successful managed install keeps its existing immediate configuration transaction, and
+  ordinary Apply/Cancel still governs manual path edits. Install state may replace copy or reveal
+  Cancel without moving the fixed settings footer.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

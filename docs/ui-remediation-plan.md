@@ -609,6 +609,30 @@ rust/apps/nxtools-desktop/src/ui/
 - DL-16 FFmpeg 是下一切片；路径、自动安装和公开来源整理为全宽顺序行并完成真实交互门禁前
   不提前勾选。
 
+第二十个 P0 下载 FFmpeg 设置流切片（2026-08-20）：
+
+- DL-16 将媒体工具收敛为同一 section 内的三条全宽顺序行：`FFmpeg 可执行文件` 先展示候选
+  路径和 picker，`自动安装` 保留唯一 filled action 与同轨取消，`公开下载来源` 最后提供两个
+  outline fallback。短按钮不再被推到远离说明文字的最右侧，也不再形成大片无意义空洞。
+- 路径控制删除 350 px 子级最小宽，三条控制轨道均使用 `w_full + min_w_0` 服从设置内容列；
+  每行沿用 Body/Label、72 px 密度、32 px 输入和 28 px action。没有新增卡片背景、阴影、颜色
+  或本地尺寸方言。
+- 原路径输入、picker、自动安装、取消、Gyan.dev/BtbN 打开动作和所有 application-owned 状态
+  保持不变；跨实体回调继续 defer。成功托管安装仍使用既有即时配置事务，手动路径仍由设置
+  Apply/Cancel 管理，安装状态只替换说明或显示同轨 Cancel。
+- 真实生产 `984 x 650` 设置窗口门禁要求三行同 x/同宽、上下连续且不高于 72 px；路径、安装
+  与来源拥有同一全宽左控制轨道；主安装按钮和第一个 fallback 都从该轨道起点开始。旧的两条
+  尾部控件行缺少顺序行/轨道 selector 且按钮位于右侧，因此门禁可对原布局和回归变红。既有
+  生产 picker Tooltip、自动下载/取消、两个公开来源和 Apply/Cancel 点击门禁继续保留；同一
+  生产窗口另注入 Installing 状态，确认 quiet Cancel 出现后，三行及固定 footer 的 bounds 完全
+  不变，且 Cancel 仍位于自动安装行内。
+- rustfmt、`git diff --check` 与 `download-ui-lifecycle.ps1` 已通过。当前 Windows FreeVirtual
+  约 1.1 GiB，未重复启动上一切片已因 commit 枯竭失败的 desktop Cargo 检查或大型 GPUI
+  test link；desktop check、精确生产窗口门禁、Release 100/125/150% DPI 截图与人工视觉验收
+  继续保留到提交空间恢复后。本切片未启动 GUI，也不冒领这些证据。
+- DL-17 窗口/进度设置是下一切片；任务窗口和任务栏进度拆成稳定小节、并完成 toggle/数值/
+  模式对齐门禁前不提前勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

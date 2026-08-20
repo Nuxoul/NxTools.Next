@@ -80,6 +80,18 @@
   the settings viewport, and changing a value still belongs to the enclosing settings draft and its
   existing Apply/Cancel boundary.
 
+### External tool setup
+
+- An external tool follows one vertical acquisition sequence inside a single settings section:
+  configured executable first, managed acquisition second and public manual sources last. Every
+  step owns the same full-width row and left control rail; actions are never stranded at the far
+  edge of a mostly empty row.
+- The configured path is a 32 px inset field with one 28 px icon picker. Managed acquisition is the
+  only filled action because it completes the workflow in-product; cancellation stays quiet beside
+  it. Public source links are outline actions and read as a final fallback, not peer primary actions.
+- Status copy stays in the row that owns it. Progress, cancellation and failure may change text or
+  reveal a sibling action, but must not resize the settings shell or move its fixed footer.
+
 ### Work surfaces
 
 - Lists and inspectors use continuous surfaces separated by low-contrast rules.

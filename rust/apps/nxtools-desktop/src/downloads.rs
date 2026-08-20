@@ -6477,7 +6477,7 @@ impl Render for DownloadSettingsView {
         let ffmpeg_control = div()
             .debug_selector(|| "download-settings-ffmpeg-control".into())
             .w_full()
-            .min_w(px(350.0))
+            .min_w_0()
             .flex()
             .items_center()
             .gap(px(SPACING_6))
@@ -6557,6 +6557,8 @@ impl Render for DownloadSettingsView {
         let install_application = self.application.clone();
         let cancel_application = self.application.clone();
         let ffmpeg_install_control = div()
+            .debug_selector(|| "download-settings-ffmpeg-install-actions".into())
+            .w_full()
             .flex()
             .items_center()
             .gap(px(SPACING_6))
@@ -6590,10 +6592,7 @@ impl Render for DownloadSettingsView {
                         .debug_selector(|| "download-settings-ffmpeg-cancel".into())
                         .child(
                             action_button("download-settings-ffmpeg-cancel-button", "取消")
-                                .outline()
-                                .border_1()
-                                .border_color(theme.border_subtle)
-                                .bg(theme.surface_raised)
+                                .ghost()
                                 .on_click(move |_, _, cx| {
                                     let application = cancel_application.clone();
                                     cx.defer(move |cx| {
@@ -6609,6 +6608,8 @@ impl Render for DownloadSettingsView {
         let gyan_application = self.application.clone();
         let btbn_application = self.application.clone();
         let ffmpeg_source_control = div()
+            .debug_selector(|| "download-settings-ffmpeg-source-actions".into())
+            .w_full()
             .flex()
             .items_center()
             .gap(px(SPACING_6))
@@ -7057,13 +7058,13 @@ impl Render for DownloadSettingsView {
                                     ffmpeg_description,
                                     ffmpeg_control,
                                 ),
-                                download_settings_row(
+                                download_settings_stacked_row(
                                     theme,
                                     "自动安装",
                                     install_description,
                                     ffmpeg_install_control,
                                 ),
-                                download_settings_row(
+                                download_settings_stacked_row(
                                     theme,
                                     "公开下载来源",
                                     "手动安装备用入口；FFmpeg 不会随 NxTools 安装包携带",
@@ -7715,6 +7716,7 @@ fn download_settings_stacked_row(
     control: AnyElement,
 ) -> AnyElement {
     div()
+        .debug_selector(move || format!("download-settings-stacked-row-{title}"))
         .w_full()
         .min_h(px(72.0))
         .px(px(SPACING_8))
@@ -13726,6 +13728,127 @@ mod tests {
         open_page!("download-settings-nav-transfer");
         assert_section!("传输", "download-settings-section-传输");
         assert_section!("媒体工具", "download-settings-section-媒体工具");
+        let media_rows = [
+            "download-settings-stacked-row-FFmpeg 可执行文件",
+            "download-settings-stacked-row-自动安装",
+            "download-settings-stacked-row-公开下载来源",
+        ]
+        .map(|selector| {
+            window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing FFmpeg sequence row {selector}"))
+        });
+        assert!(
+            media_rows.windows(2).all(|rows| {
+                (rows[0].origin.x.as_f32() - rows[1].origin.x.as_f32()).abs() <= 1.0
+                    && (rows[0].size.width.as_f32() - rows[1].size.width.as_f32()).abs() <= 1.0
+                    && (rows[0].origin.y.as_f32() + rows[0].size.height.as_f32()
+                        - rows[1].origin.y.as_f32())
+                    .abs()
+                        <= 1.0
+            }),
+            "FFmpeg setup must render as three continuous full-width rows"
+        );
+        assert!(
+            media_rows
+                .iter()
+                .all(|row| row.size.height.as_f32() <= 72.0),
+            "FFmpeg setup rows must stay on the dense 72 px sequence tier"
+        );
+        let ffmpeg_path_control = window
+            .debug_bounds("download-settings-ffmpeg-control")
+            .expect("full-width FFmpeg path control");
+        let ffmpeg_install_actions = window
+            .debug_bounds("download-settings-ffmpeg-install-actions")
+            .expect("full-width FFmpeg install action rail");
+        let ffmpeg_source_actions = window
+            .debug_bounds("download-settings-ffmpeg-source-actions")
+            .expect("full-width FFmpeg source action rail");
+        assert!(
+            [
+                ffmpeg_path_control,
+                ffmpeg_install_actions,
+                ffmpeg_source_actions
+            ]
+            .windows(2)
+            .all(|controls| {
+                (controls[0].origin.x.as_f32() - controls[1].origin.x.as_f32()).abs() <= 1.0
+                    && (controls[0].size.width.as_f32() - controls[1].size.width.as_f32()).abs()
+                        <= 1.0
+            }),
+            "path, managed install and public sources must share one full-width left control rail"
+        );
+        assert!(
+            ffmpeg_path_control.size.width.as_f32()
+                >= media_rows[0].size.width.as_f32() - SPACING_8 * 2.0 - 2.0,
+            "the executable path must consume the full sequence-row content width"
+        );
+        let install_button = window
+            .debug_bounds("download-settings-ffmpeg-install-button")
+            .expect("primary managed-install action");
+        let gyan_button = window
+            .debug_bounds("download-settings-ffmpeg-gyan-button")
+            .expect("quiet Gyan fallback action");
+        assert!(
+            (install_button.origin.x.as_f32() - ffmpeg_install_actions.origin.x.as_f32()).abs()
+                <= 1.0
+                && (gyan_button.origin.x.as_f32() - ffmpeg_source_actions.origin.x.as_f32()).abs()
+                    <= 1.0,
+            "managed install and public fallbacks must begin at the shared left rail"
+        );
+        window.update(|_, cx| {
+            application.update(cx, |application, cx| {
+                application.set_ffmpeg_install_state(
+                    FfmpegInstallViewState::Installing {
+                        phase: FfmpegInstallPhase::Downloading,
+                        percent: 48,
+                        downloaded_bytes: 48,
+                        total_bytes: Some(100),
+                        cancelling: false,
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render active FFmpeg installation in production settings");
+        let installing_media_rows = [
+            "download-settings-stacked-row-FFmpeg 可执行文件",
+            "download-settings-stacked-row-自动安装",
+            "download-settings-stacked-row-公开下载来源",
+        ]
+        .map(|selector| {
+            window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing active FFmpeg sequence row {selector}"))
+        });
+        assert_eq!(
+            installing_media_rows, media_rows,
+            "install progress and Cancel must not move or resize the FFmpeg sequence rows"
+        );
+        assert_eq!(
+            window
+                .debug_bounds("download-settings-shell-footer")
+                .expect("fixed footer during FFmpeg installation"),
+            shell_footer,
+            "install progress and Cancel must not move the fixed settings footer"
+        );
+        let active_cancel = window
+            .debug_bounds("download-settings-ffmpeg-cancel-button")
+            .expect("quiet Cancel action during FFmpeg installation");
+        assert!(
+            installing_media_rows[1].contains(&active_cancel.origin)
+                && installing_media_rows[1].contains(&active_cancel.bottom_right()),
+            "the active Cancel action must remain inside the automatic-install row"
+        );
+        window.update(|_, cx| {
+            application.update(cx, |application, cx| {
+                application.set_ffmpeg_install_state(FfmpegInstallViewState::Idle, cx);
+            });
+        });
+        window.run_until_parked();
         let first_transfer_cell = window
             .debug_bounds("download-settings-grid-传输-0")
             .expect("first transfer grid cell");
