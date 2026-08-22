@@ -2193,6 +2193,37 @@ Reverified on 2026-08-22 before the DL-22 category-information migration:
   requires the complete-directory tooltip boundary before continuing through the existing overlay,
   keyboard-selection and native Cancel lifecycle.
 
+Reverified on 2026-08-22 before the DL-23 HLS/DASH track-list migration:
+
+- AB Download Manager's HLS boundary remains
+  `shared/app/.../hls/HLSLinkChecker.kt -> HLSDownloadJobExtraConfig ->
+  downloader/core/.../hls/HLSResponseInfo.kt`; it separates HLS from ordinary HTTP but still does
+  not expose a complete master-quality chooser. Its reusable queue selection surface uses native
+  radio controls, confirming the single-choice interaction grammar without supplying NxTools's
+  product-specific quality metadata.
+- Old NxTools's product chain remains
+  `Services/HlsPlaylistParser.cs::{Parse,SelectBestVariant,ResolveUrl} ->
+  DownloadManagerService.BuildHlsResourceOptionsAsync ->
+  AddDownloadDialogViewModel::{ApplyHlsResources,HlsResource_PropertyChanged} ->
+  Views/AddDownloadWindow.axaml`. It preserves resolution, frame rate, bitrate and codecs and rejects
+  submission when a discovered media list has no selection. Its legacy multi-resource checkbox
+  table is not copied into Next's already typed single-playlist request.
+- Before DL-23, NxTools.Next's `NewDownloadView::render -> hls_quality_options/dash_track_options ->
+  dash_track_option_row` rebuilt two card-like selectors with 8–10 px private typography. HLS placed
+  frame rate in the primary label and bitrate in a separate trailing column; DASH used the same
+  visual card language independently. Missing HLS resolution was already classified from codec, and
+  that “视频流/音频流/未标注分辨率” behavior must survive so absence never becomes “自动”.
+- DL-23 keeps probe, request and submission ownership unchanged. Both media surfaces use one shared
+  42 px radio-list row: the primary line is the concrete resolution or track identity, while codec,
+  bitrate and optional frame rate occupy the secondary line. The selected row uses a neutral surface
+  plus a 14 px ring and 6 px accent dot; unselected rows have no dot, and ordinary rows do not become
+  separate rounded cards. DASH video remains required single-select, while its existing optional
+  audio track can return to no selection on a second click.
+- `new_download_window_size_for_probe -> bounded_media_rows_height` remains the native size owner and
+  now uses the shared 42 px row height with a three-row cap. The red-capable GPUI gates render HLS and
+  DASH choices, assert row/radio/title/detail geometry and both radio states, then exercise selection,
+  optional-audio cancellation and typed-media submission through the existing view boundary.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

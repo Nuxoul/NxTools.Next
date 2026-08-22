@@ -73,7 +73,7 @@ use crate::ui::components::field::{
     field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
     path_picker_shell,
 };
-use crate::ui::components::list::compact_list_row;
+use crate::ui::components::list::{compact_list_row, radio_list_row};
 use crate::ui::components::popover::{list_box, popover_shell};
 use crate::ui::components::settings::{
     SettingsShellIds, dialog_footer, settings_shell, settings_toggle,
@@ -9853,104 +9853,29 @@ fn hls_quality_options(
     view: gpui::WeakEntity<NewDownloadView>,
 ) -> AnyElement {
     let rows = variants.iter().enumerate().map(|(index, variant)| {
-        let row_selector = format!("download-hls-quality-{index}");
-        let selected_selector = format!("download-hls-quality-selected-{index}");
         let selected_row = index == selected;
         let view = view.clone();
-        let resolution = hls_variant_primary_label(variant);
-        let frame_rate = variant
-            .frame_rate_milli
-            .map(|value| format!(" · {:.2} fps", value as f64 / 1000.0))
-            .unwrap_or_default();
-        let bandwidth = variant.average_bandwidth.unwrap_or(variant.bandwidth);
-        let bitrate = format!("{:.2} Mbps", bandwidth as f64 / 1_000_000.0);
-        let codec = variant.codecs.clone();
-        div()
-            .id(("download-hls-quality", index))
-            .debug_selector(move || row_selector.clone())
-            .h(px(34.0))
-            .px(px(8.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(if selected_row {
-                theme.border_active
-            } else {
-                theme.border_subtle
-            })
-            .bg(if selected_row {
-                theme.accent_soft
-            } else {
-                theme.surface
-            })
-            .cursor_pointer()
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .child(
-                div()
-                    .debug_selector(move || selected_selector.clone())
-                    .size(px(13.0))
-                    .rounded_full()
-                    .border_1()
-                    .border_color(if selected_row {
-                        theme.accent
-                    } else {
-                        theme.border
-                    })
-                    .when(selected_row, |marker| {
-                        marker.child(
-                            div()
-                                .m(px(3.0))
-                                .size(px(5.0))
-                                .rounded_full()
-                                .bg(theme.accent),
-                        )
-                    }),
-            )
-            .child(
-                div()
-                    .min_w_0()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(format!("{resolution}{frame_rate}")),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(8.5))
-                            .text_color(theme.text_muted)
-                            .child(if codec.is_empty() {
-                                "编码未知".into()
-                            } else {
-                                codec
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .text_size(px(9.0))
-                    .text_color(theme.text_secondary)
-                    .child(bitrate),
-            )
-            .on_click(move |_, _, cx| {
+        radio_list_row(
+            theme,
+            format!("download-hls-quality-{index}").into(),
+            hls_variant_primary_label(variant),
+            hls_variant_detail_label(variant),
+            selected_row,
+            move |_, _, cx| {
                 let _ = view.update(cx, |view, cx| {
                     view.selected_hls_variant = Some(index);
                     view.error = None;
                     cx.notify();
                 });
-            })
+            },
+        )
     });
     div()
         .debug_selector(|| "download-hls-quality-options".into())
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(5.0))
+        .gap(px(SPACING_4))
         .child(
             div()
                 .flex()
@@ -9958,27 +9883,42 @@ fn hls_quality_options(
                 .child(
                     div()
                         .flex_1()
-                        .text_size(px(9.0))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("HLS 清晰度"),
                 )
                 .child(
                     div()
-                        .text_size(px(8.5))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("支持未加密点播分片传输"),
                 ),
         )
         .child(
             div()
-                .max_h(px(108.0))
+                .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
                 .overflow_y_scrollbar()
                 .flex()
                 .flex_col()
-                .gap(px(4.0))
                 .children(rows),
         )
         .into_any_element()
+}
+
+fn hls_variant_detail_label(variant: &nxtools_download::HlsVariantProbe) -> String {
+    let bandwidth = variant.average_bandwidth.unwrap_or(variant.bandwidth);
+    let codec = if variant.codecs.is_empty() {
+        "编码未知"
+    } else {
+        variant.codecs.as_str()
+    };
+    let mut detail = format!("{codec} · {:.2} Mbps", bandwidth as f64 / 1_000_000.0);
+    if let Some(frame_rate_milli) = variant.frame_rate_milli {
+        detail.push_str(&format!(" · {:.2} fps", frame_rate_milli as f64 / 1000.0));
+    }
+    detail
 }
 
 fn hls_variant_primary_label(variant: &nxtools_download::HlsVariantProbe) -> String {
@@ -10012,7 +9952,7 @@ fn dash_track_options(
     let video_rows = dash.video_tracks.iter().enumerate().map(|(index, track)| {
         dash_track_option_row(
             theme,
-            "video",
+            DashTrackKind::Video,
             index,
             track,
             selected_video == Some(index),
@@ -10022,7 +9962,7 @@ fn dash_track_options(
     let audio_rows = dash.audio_tracks.iter().enumerate().map(|(index, track)| {
         dash_track_option_row(
             theme,
-            "audio",
+            DashTrackKind::Audio,
             index,
             track,
             selected_audio == Some(index),
@@ -10035,20 +9975,20 @@ fn dash_track_options(
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(4.0))
+            .gap(px(SPACING_4))
             .child(
                 div()
-                    .text_size(px(9.0))
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
                     .text_color(theme.text_muted)
                     .child(label),
             )
             .child(
                 div()
-                    .max_h(px(112.0))
+                    .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
                     .overflow_y_scrollbar()
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
                     .children(rows),
             )
     };
@@ -10057,7 +9997,7 @@ fn dash_track_options(
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(5.0))
+        .gap(px(SPACING_4))
         .child(
             div()
                 .flex()
@@ -10065,13 +10005,15 @@ fn dash_track_options(
                 .child(
                     div()
                         .flex_1()
-                        .text_size(px(9.0))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("DASH 轨道"),
                 )
                 .child(
                     div()
-                        .text_size(px(8.5))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("音频可再次点击取消 · 双轨用 FFmpeg 无损封装"),
                 ),
@@ -10087,22 +10029,50 @@ fn dash_track_options(
         .into_any_element()
 }
 
+#[derive(Clone, Copy)]
+enum DashTrackKind {
+    Video,
+    Audio,
+}
+
+impl DashTrackKind {
+    fn selector_segment(self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+
+    fn primary_label(self, track: &nxtools_download::DashTrackProbe) -> String {
+        match self {
+            Self::Video => track.resolution.map_or_else(
+                || "视频轨".into(),
+                |(width, height)| format!("{width}×{height}"),
+            ),
+            Self::Audio => track.language.clone().unwrap_or_else(|| "默认音轨".into()),
+        }
+    }
+
+    fn select(self, view: &mut NewDownloadView, index: usize) {
+        match self {
+            Self::Video => view.selected_dash_video_track = Some(index),
+            Self::Audio => {
+                view.selected_dash_audio_track =
+                    (view.selected_dash_audio_track != Some(index)).then_some(index);
+            }
+        }
+    }
+}
+
 fn dash_track_option_row(
     theme: Theme,
-    kind: &'static str,
+    kind: DashTrackKind,
     index: usize,
     track: &nxtools_download::DashTrackProbe,
     selected: bool,
     view: gpui::WeakEntity<NewDownloadView>,
 ) -> AnyElement {
-    let label = if kind == "video" {
-        track.resolution.map_or_else(
-            || "视频轨".into(),
-            |(width, height)| format!("{width}×{height}"),
-        )
-    } else {
-        track.language.clone().unwrap_or_else(|| "默认音轨".into())
-    };
+    let label = kind.primary_label(track);
     let detail = if track.codecs.is_empty() {
         format!("{:.2} Mbps", track.bandwidth as f64 / 1_000_000.0)
     } else {
@@ -10112,77 +10082,20 @@ fn dash_track_option_row(
             track.bandwidth as f64 / 1_000_000.0
         )
     };
-    let selector = format!("download-dash-{kind}-track-{index}");
-    div()
-        .id((kind, index))
-        .debug_selector(move || selector.clone())
-        .h(px(38.0))
-        .px(px(8.0))
-        .rounded(px(4.0))
-        .border_1()
-        .border_color(if selected {
-            theme.border_active
-        } else {
-            theme.border_subtle
-        })
-        .bg(if selected {
-            theme.accent_soft
-        } else {
-            theme.surface
-        })
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .gap(px(7.0))
-        .child(
-            div()
-                .size(px(12.0))
-                .rounded_full()
-                .border_1()
-                .border_color(if selected { theme.accent } else { theme.border })
-                .when(selected, |marker| {
-                    marker.child(
-                        div()
-                            .m(px(3.0))
-                            .size(px(4.0))
-                            .rounded_full()
-                            .bg(theme.accent),
-                    )
-                }),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .text_size(px(9.5))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(8.0))
-                        .text_color(theme.text_muted)
-                        .child(detail),
-                ),
-        )
-        .on_click(move |_, _, cx| {
+    radio_list_row(
+        theme,
+        format!("download-dash-{}-track-{index}", kind.selector_segment()).into(),
+        label,
+        detail,
+        selected,
+        move |_, _, cx| {
             let _ = view.update(cx, |view, cx| {
-                if kind == "video" {
-                    view.selected_dash_video_track = Some(index);
-                } else {
-                    view.selected_dash_audio_track =
-                        (view.selected_dash_audio_track != Some(index)).then_some(index);
-                }
+                kind.select(view, index);
                 view.error = None;
                 cx.notify();
             });
-        })
-        .into_any_element()
+        },
+    )
 }
 
 fn delayed_start_calendar(
@@ -10379,12 +10292,22 @@ fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
 fn new_download_window_size_for_probe(probe: &DownloadProbe) -> gpui::Size<gpui::Pixels> {
     match probe.media.as_ref() {
         Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
-            let rows_height = bounded_media_rows_height(hls.variants.len(), 34.0, 4.0, 108.0);
+            let rows_height = bounded_media_rows_height(
+                hls.variants.len(),
+                SETTINGS_ROW_MIN_HEIGHT,
+                0.0,
+                SETTINGS_ROW_MIN_HEIGHT * 3.0,
+            );
             size(px(560.0), px(260.0 + 16.0 + rows_height))
         }
         Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
             let row_count = dash.video_tracks.len().max(dash.audio_tracks.len());
-            let rows_height = bounded_media_rows_height(row_count, 38.0, 4.0, 112.0);
+            let rows_height = bounded_media_rows_height(
+                row_count,
+                SETTINGS_ROW_MIN_HEIGHT,
+                0.0,
+                SETTINGS_ROW_MIN_HEIGHT * 3.0,
+            );
             size(px(560.0), px(260.0 + 16.0 + 15.0 + rows_height))
         }
         _ => new_download_window_size(true),
@@ -12958,19 +12881,68 @@ mod tests {
 
         assert!(window.debug_bounds("download-hls-quality-0").is_some());
         assert!(window.debug_bounds("download-hls-quality-1").is_some());
+        let first_row = window
+            .debug_bounds("download-hls-quality-0")
+            .expect("first HLS quality row");
+        let first_radio = window
+            .debug_bounds("download-hls-quality-0-radio")
+            .expect("first HLS radio control");
+        let first_title = window
+            .debug_bounds("download-hls-quality-0-title")
+            .expect("first HLS quality title");
+        let first_detail = window
+            .debug_bounds("download-hls-quality-0-detail")
+            .expect("first HLS quality detail");
+        assert!(first_row.contains(&first_radio.origin));
+        assert!(first_row.contains(&first_radio.bottom_right()));
+        assert!(first_row.contains(&first_title.origin));
+        assert!(first_row.contains(&first_detail.bottom_right()));
+        assert_eq!(first_row.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
+        assert_eq!(first_radio.size, size(px(14.0), px(14.0)));
+        assert_eq!(first_title.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(first_detail.size.height, px(LINE_HEIGHT_LABEL));
+        assert_eq!(first_title.left(), first_detail.left());
+        assert!(first_title.bottom() <= first_detail.top());
+        let first_selected_dot = window
+            .debug_bounds("download-hls-quality-0-radio-selected")
+            .expect("selected HLS radio dot");
+        assert_eq!(first_selected_dot.size, size(px(SPACING_6), px(SPACING_6)));
+        assert!(
+            first_radio.contains(&first_selected_dot.origin)
+                && first_radio.contains(&first_selected_dot.bottom_right()),
+            "the selected concrete quality must show a filled radio marker"
+        );
         assert!(
             window
-                .debug_bounds("download-hls-quality-selected-0")
+                .debug_bounds("download-hls-quality-1-radio-selected")
+                .is_none(),
+            "an unselected concrete quality must remain visually distinct"
+        );
+        assert!(
+            window
+                .debug_bounds("download-hls-quality-1-radio-unselected")
                 .is_some()
         );
         let lower_quality = window
             .debug_bounds("download-hls-quality-1")
             .expect("lower HLS quality row");
         window.simulate_click(lower_quality.center(), Modifiers::default());
+        window.run_until_parked();
         window.refresh().expect("render changed HLS selection");
         assert_eq!(
             window.read(|cx| view.read(cx).selected_hls_variant),
             Some(1)
+        );
+        assert!(
+            window
+                .debug_bounds("download-hls-quality-1-radio-selected")
+                .is_some()
+        );
+        assert!(
+            window
+                .debug_bounds("download-hls-quality-0-radio-unselected")
+                .is_some(),
+            "the previous concrete quality must render its current unselected state"
         );
         let add_to_queue = window
             .debug_bounds("download-add-to-queue")
@@ -13013,6 +12985,10 @@ mod tests {
         };
 
         assert_eq!(hls_variant_primary_label(&variant), "视频流");
+        assert_eq!(
+            hls_variant_detail_label(&variant),
+            "mp4a.40.2, avc1.4d401f · 1.93 Mbps"
+        );
     }
 
     #[test]
@@ -13054,7 +13030,7 @@ mod tests {
             new_download_window_size_for_probe(&dash_probe)
                 .height
                 .as_f32(),
-            329.0,
+            333.0,
             "a one-video/one-audio DASH choice should use one visible row, not the maximum scroller height"
         );
 
@@ -13086,7 +13062,7 @@ mod tests {
             new_download_window_size_for_probe(&hls_probe)
                 .height
                 .as_f32(),
-            384.0,
+            402.0,
             "five HLS choices should use the bounded three-row viewport without extra footer whitespace"
         );
     }
@@ -13194,24 +13170,76 @@ mod tests {
             });
         });
         window.refresh().expect("render DASH track choices");
+        let first_video_row = window
+            .debug_bounds("download-dash-video-track-0")
+            .expect("first DASH video track row");
+        let first_video_radio = window
+            .debug_bounds("download-dash-video-track-0-radio")
+            .expect("first DASH video radio control");
+        let first_video_title = window
+            .debug_bounds("download-dash-video-track-0-title")
+            .expect("first DASH video title");
+        let first_video_detail = window
+            .debug_bounds("download-dash-video-track-0-detail")
+            .expect("first DASH video detail");
+        assert!(first_video_row.contains(&first_video_radio.origin));
+        assert!(first_video_row.contains(&first_video_detail.bottom_right()));
+        assert_eq!(first_video_row.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
+        assert_eq!(first_video_radio.size, size(px(14.0), px(14.0)));
+        assert_eq!(first_video_title.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(first_video_detail.size.height, px(LINE_HEIGHT_LABEL));
+        assert_eq!(first_video_title.left(), first_video_detail.left());
+        assert!(first_video_title.bottom() <= first_video_detail.top());
+        let first_video_dot = window
+            .debug_bounds("download-dash-video-track-0-radio-selected")
+            .expect("selected DASH video radio dot");
+        assert_eq!(first_video_dot.size, size(px(SPACING_6), px(SPACING_6)));
+        assert!(
+            window
+                .debug_bounds("download-dash-video-track-1-radio-selected")
+                .is_none()
+        );
+        assert!(
+            window
+                .debug_bounds("download-dash-video-track-1-radio-unselected")
+                .is_some()
+        );
         let lower_video = window
             .debug_bounds("download-dash-video-track-1")
             .expect("lower DASH video track row");
         assert!(window.debug_bounds("download-dash-audio-track-0").is_some());
         window.simulate_click(lower_video.center(), Modifiers::default());
+        window.run_until_parked();
         window.refresh().expect("render changed DASH selection");
         assert_eq!(
             window.read(|cx| view.read(cx).selected_dash_video_track),
             Some(1)
         );
+        assert!(
+            window
+                .debug_bounds("download-dash-video-track-1-radio-selected")
+                .is_some()
+        );
+        assert!(
+            window
+                .debug_bounds("download-dash-video-track-0-radio-unselected")
+                .is_some()
+        );
         let audio = window
             .debug_bounds("download-dash-audio-track-0")
             .expect("selected DASH audio track row");
         window.simulate_click(audio.center(), Modifiers::default());
+        window.run_until_parked();
         window.refresh().expect("render deselected DASH audio");
         assert_eq!(
             window.read(|cx| view.read(cx).selected_dash_audio_track),
             None
+        );
+        assert!(
+            window
+                .debug_bounds("download-dash-audio-track-0-radio-unselected")
+                .is_some(),
+            "cancelling the optional audio track must render an empty radio"
         );
         let media = window.read(|cx| {
             let view = view.read(cx);

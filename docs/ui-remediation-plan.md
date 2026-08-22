@@ -733,6 +733,26 @@ rust/apps/nxtools-desktop/src/ui/
 - DL-23 HLS/DASH 轨道是下一切片；在标准 radio list、主副行信息层级和自动/具体轨道视觉区分的
   生产边界完成前不提前勾选。
 
+第二十四个 P0 HLS/DASH 轨道切片（2026-08-22）：
+
+- DL-23 新增共享 `radio_list_row`，HLS 清晰度与 DASH 视频/音频轨统一为 42 px 连续列表行；普通行
+  不再绘制独立圆角卡片和整行强调边框，选中态只使用中性 `element_selected` 表面、14 px radio
+  外圈与 6 px accent 圆点，hover 使用共享语义色。主行使用 Body 12/18，副行使用 Label 11/16，
+  原 8–9.5 px 私有字号全部从这两个媒体选择面移除。
+- HLS 主行只显示实际分辨率；无分辨率时根据有界 codec 明确显示“视频流”“音频流”或“未标注
+  分辨率”，不再把缺失元数据表现为“自动”。编码、平均/声明码率与帧率统一进入副行。DASH 主行
+  保留视频清晰度或音轨语言，编码与码率统一进入副行；视频单选、音频再次点击取消、typed media
+  构造、QueueOnly/StartNow、FFmpeg 封装和协议/引擎 owner 均未改变。
+- HLS/DASH scroller 仍最多显示三行，但按共享 42 px 行高连续计算；一视频/一音频 DASH 窗口为
+  560 x 333 px，五项 HLS 窗口为 560 x 402 px，不保留最大高度空白。红—绿 GPUI 门禁先在旧实现
+  缺少标准 radio selector 处失败，修复后覆盖选中/未选中圆点、主副行边界、点击切换与 typed
+  media 提交；无分辨率 HLS、媒体窗口高度和既有 4 条 `new_download` 回归均通过。
+- `cargo check -p nxtools-desktop --tests`、仅放行既有 build-script lint 的严格 Clippy、
+  `download-ui-lifecycle.ps1`、rustfmt 与 `git diff --check` 均通过。desktop 全套保持 298/302；分类
+  按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与 DL-20/DL-22
+  已记录基线完全相同。DL-24 Footer 是下一切片，在四项 28 px 操作层级和唯一主操作获得真实窗口
+  门禁前不提前完成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
