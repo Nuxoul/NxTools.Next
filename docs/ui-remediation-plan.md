@@ -793,6 +793,26 @@ rust/apps/nxtools-desktop/src/ui/
   和下载详情 progress selector 四项失败与前序基线完全相同。DL-26 完成窗是下一切片，在主/次动作
   层级和拖放行为获得生产窗口门禁前不提前完成。
 
+第二十七个 P0 完成窗动作层级切片（2026-08-22）：
+
+- DL-26 新增 `CompletedTaskWindowAction`，统一拥有 Drag、Reveal、Open 三项的 Button ID、图标、
+  label、role selector 和 emphasis。三项全部复用共享 28 px action primitive：“打开文件”是唯一
+  accent-filled Primary；“打开所在目录”是 labelled outline secondary；拖放是带 Tooltip 的
+  28 x 28 px outline icon secondary。原私有 labelled drag `div` 和 Reveal ghost 层级已移除。
+- Rust 仍选择已完成任务的最终路径，`OpenShellTarget::{Open,SelectInExplorer}` 与
+  `BeginFileDrag` 仍穿过原 PlatformHost typed boundary。拖放继续直接绑定真实 Button 的
+  `on_mouse_down(MouseButton::Left)`，使用建窗时解析并注入 View 的 source HWND，同步进入现有 C# OLE 协调器；没有改成
+  click、`cx.defer` 或 GPUI 内部 drag loop。完成动作模型不包含 Delete，删除仍留在独立确认路径。
+- 红—绿生产 GPUI 门禁先在旧实现缺少 drag secondary role 处失败；修复后从三项真实 role hit
+  target 断言 28 px 几何、唯一主操作和顺序，悬停 600 ms 后要求“拖拽文件”Tooltip 真实出现，
+  并实际触发 SelectInExplorer、Open、BeginFileDrag。三条命令都携带同一最终路径，拖放命令另断言
+  非零 source HWND（测试值 42）。纯映射门禁要求 Open 是唯一 Primary；升级后的生命周期架构门禁
+  同时锁定共享 action primitive、Tooltip、无 Delete 和同步 pointer-down/source-HWND 链。8 条任务窗生命周期
+  测试、`cargo check -p nxtools-desktop --tests`、仅放行既有 build-script lint 的严格 Clippy、
+  rustfmt 与 `git diff --check` 均通过。desktop 全套为 302/306；分类按钮 selector、网络尾距、
+  剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全相同。DL-27 计划/删除/关机
+  DialogShell 是下一切片，在三类辅助窗口共享安全动作语义与原生关闭生命周期门禁前不提前完成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

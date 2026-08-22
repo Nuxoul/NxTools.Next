@@ -3122,6 +3122,7 @@ impl DownloadApplication {
                     DownloadTaskWindowView::new(
                         application,
                         task_id,
+                        resolved_native_handle,
                         snapshot,
                         progress,
                         shutdown_armed,
@@ -10580,6 +10581,85 @@ fn download_task_window_shell(
         )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletedTaskWindowAction {
+    Drag,
+    Reveal,
+    Open,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletedTaskWindowEmphasis {
+    Primary,
+    Outline,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CompletedTaskWindowActionSpec {
+    button_id: &'static str,
+    role_selector: &'static str,
+    icon: MaterialIcon,
+    label: Option<&'static str>,
+    emphasis: CompletedTaskWindowEmphasis,
+    tooltip: Option<&'static str>,
+    tooltip_selector: Option<&'static str>,
+}
+
+impl CompletedTaskWindowAction {
+    const ALL: [Self; 3] = [Self::Drag, Self::Reveal, Self::Open];
+
+    fn spec(self) -> CompletedTaskWindowActionSpec {
+        match self {
+            Self::Drag => CompletedTaskWindowActionSpec {
+                button_id: "download-complete-drag",
+                role_selector: "download-complete-secondary-drag-action",
+                icon: MaterialIcon::OpenInFull,
+                label: None,
+                emphasis: CompletedTaskWindowEmphasis::Outline,
+                tooltip: Some("拖拽文件"),
+                tooltip_selector: Some("download-complete-drag-tooltip"),
+            },
+            Self::Reveal => CompletedTaskWindowActionSpec {
+                button_id: "download-complete-reveal",
+                role_selector: "download-complete-secondary-reveal-action",
+                icon: MaterialIcon::Folder,
+                label: Some("打开所在目录"),
+                emphasis: CompletedTaskWindowEmphasis::Outline,
+                tooltip: None,
+                tooltip_selector: None,
+            },
+            Self::Open => CompletedTaskWindowActionSpec {
+                button_id: "download-complete-open",
+                role_selector: "download-complete-primary-open-action",
+                icon: MaterialIcon::OpenInNew,
+                label: Some("打开文件"),
+                emphasis: CompletedTaskWindowEmphasis::Primary,
+                tooltip: None,
+                tooltip_selector: None,
+            },
+        }
+    }
+}
+
+fn completed_task_window_action(
+    action: CompletedTaskWindowAction,
+    theme: Theme,
+    cx: &App,
+) -> Button {
+    let spec = action.spec();
+    let button = match spec.label {
+        Some(label) => {
+            action_button(spec.button_id, label).icon(Icon::new(spec.icon).size(px(14.0)))
+        }
+        None => icon_action_button(spec.button_id, spec.icon),
+    };
+    let button = match spec.emphasis {
+        CompletedTaskWindowEmphasis::Primary => button.custom(primary_button_variant(theme, cx)),
+        CompletedTaskWindowEmphasis::Outline => button.outline(),
+    };
+    button.debug_selector(move || spec.role_selector.into())
+}
+
 #[allow(
     dead_code,
     reason = "retained for the Phase 3 task context-menu delete action"
@@ -10667,6 +10747,7 @@ struct DownloadTaskWindowView {
     theme: Theme,
     application: Entity<DownloadApplication>,
     task_id: DownloadTaskId,
+    native_window_handle: i64,
     snapshot: Option<DownloadEngineTask>,
     progress: Option<DownloadProgress>,
     shutdown_armed: bool,
@@ -10676,6 +10757,7 @@ impl DownloadTaskWindowView {
     fn new(
         application: Entity<DownloadApplication>,
         task_id: DownloadTaskId,
+        native_window_handle: i64,
         snapshot: Option<DownloadEngineTask>,
         progress: Option<DownloadProgress>,
         shutdown_armed: bool,
@@ -10684,6 +10766,7 @@ impl DownloadTaskWindowView {
             theme: Theme::zed_dark(),
             application,
             task_id,
+            native_window_handle,
             snapshot,
             progress,
             shutdown_armed,
@@ -10709,6 +10792,7 @@ impl Render for DownloadTaskWindowView {
         let theme = self.theme;
         let application = self.application.clone();
         let task_id = self.task_id;
+        let source_window_handle = self.native_window_handle;
         let snapshot = self.snapshot.clone();
         let progress_event = self.progress.clone();
         let Some(task) = snapshot else {
@@ -10756,6 +10840,7 @@ impl Render for DownloadTaskWindowView {
             let open_application = application.clone();
             let reveal_application = application.clone();
             let drag_application = application.clone();
+            let drag_spec = CompletedTaskWindowAction::Drag.spec();
             return download_task_window_shell(
                 theme,
                 DownloadWindowPhase::Completed,
@@ -10819,26 +10904,9 @@ impl Render for DownloadTaskWindowView {
                     .items_center()
                     .justify_end()
                     .gap(px(6.0))
-                    .child(
-                        div()
-                            .id("download-complete-drag")
-                            .h(px(28.0))
-                            .px(px(8.0))
-                            .rounded(px(4.0))
-                            .border_1()
-                            .border_color(theme.border_subtle)
-                            .bg(theme.surface_raised)
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.0))
-                            .text_size(px(10.0))
-                            .hover(move |style| {
-                                style.bg(theme.surface_hover).border_color(theme.border)
-                            })
-                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                                let source_window_handle =
-                                    native_window_handle(window).unwrap_or_default();
+                    .child(icon_action_tooltip_surface(
+                        completed_task_window_action(CompletedTaskWindowAction::Drag, theme, cx)
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                 drag_application.update(cx, |application, cx| {
                                     application.begin_task_file_drag(
                                         task_id,
@@ -10847,20 +10915,14 @@ impl Render for DownloadTaskWindowView {
                                     );
                                 });
                                 cx.stop_propagation();
-                            })
-                            .child(
-                                Icon::new(MaterialIcon::OpenInFull)
-                                    .size(px(14.0))
-                                    .text_color(theme.icon_muted),
-                            )
-                            .child("拖拽文件"),
-                    )
+                            }),
+                        drag_spec.tooltip.expect("completed drag action tooltip"),
+                        drag_spec
+                            .tooltip_selector
+                            .expect("completed drag action tooltip selector"),
+                    ))
                     .child(
-                        Button::new("download-complete-reveal")
-                            .icon(Icon::new(MaterialIcon::Folder))
-                            .label("打开所在目录")
-                            .small()
-                            .ghost()
+                        completed_task_window_action(CompletedTaskWindowAction::Reveal, theme, cx)
                             .on_click(move |_, _, cx| {
                                 let application = reveal_application.clone();
                                 cx.defer(move |cx| {
@@ -10875,11 +10937,7 @@ impl Render for DownloadTaskWindowView {
                             }),
                     )
                     .child(
-                        Button::new("download-complete-open")
-                            .icon(Icon::new(MaterialIcon::OpenInNew))
-                            .label("打开文件")
-                            .small()
-                            .custom(download_primary_button_variant(theme, cx))
+                        completed_task_window_action(CompletedTaskWindowAction::Open, theme, cx)
                             .on_click(move |_, _, cx| {
                                 let application = open_application.clone();
                                 cx.defer(move |cx| {
@@ -13765,6 +13823,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[test]
+    fn completed_task_window_maps_exactly_one_action_to_primary_emphasis() {
+        assert_eq!(CompletedTaskWindowAction::ALL.len(), 3);
+        assert_eq!(
+            CompletedTaskWindowAction::ALL
+                .into_iter()
+                .filter(|action| { action.spec().emphasis == CompletedTaskWindowEmphasis::Primary })
+                .collect::<Vec<_>>(),
+            vec![CompletedTaskWindowAction::Open]
+        );
+        assert!(
+            CompletedTaskWindowAction::ALL
+                .into_iter()
+                .filter(|action| { action.spec().emphasis == CompletedTaskWindowEmphasis::Outline })
+                .all(|action| matches!(
+                    action,
+                    CompletedTaskWindowAction::Drag | CompletedTaskWindowAction::Reveal
+                ))
+        );
+    }
+
     #[gpui::test]
     fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         cx: &mut TestAppContext,
@@ -13948,6 +14027,92 @@ mod tests {
                 .debug_bounds("download-task-window-body")
                 .expect("completed shared body")
         );
+        let drag_action = window
+            .debug_bounds("download-complete-secondary-drag-action")
+            .expect("completed drag secondary action");
+        let reveal_action = window
+            .debug_bounds("download-complete-secondary-reveal-action")
+            .expect("completed reveal secondary action");
+        let open_action = window
+            .debug_bounds("download-complete-primary-open-action")
+            .expect("completed open primary action");
+        for action in [drag_action, reveal_action, open_action] {
+            assert_eq!(action.size.height, px(CONTROL_HEIGHT_ACTION));
+        }
+        assert_eq!(drag_action.size.width, px(CONTROL_HEIGHT_ACTION));
+        assert!(drag_action.right() <= reveal_action.left());
+        assert!(reveal_action.right() <= open_action.left());
+        assert!(
+            window
+                .debug_bounds("download-complete-delete-action")
+                .is_none(),
+            "delete must not enter the completed-window action path"
+        );
+        let executor = cx.executor();
+        window.simulate_mouse_move(drag_action.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render completed drag action tooltip");
+        assert!(
+            window
+                .debug_bounds("download-complete-drag-tooltip")
+                .is_some(),
+            "the completed icon-only drag action must expose its Chinese tooltip"
+        );
+        while platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+
+        window.simulate_click(reveal_action.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("completed reveal platform command")
+                .message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                OpenShellTargetCommand {
+                    target: directory.join("shared-skeleton.bin").display().to_string(),
+                    action: ShellOpenAction::SelectInExplorer,
+                }
+            ))
+        );
+        window.simulate_click(open_action.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("completed open platform command")
+                .message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                OpenShellTargetCommand {
+                    target: directory.join("shared-skeleton.bin").display().to_string(),
+                    action: ShellOpenAction::Open,
+                }
+            ))
+        );
+        window.simulate_mouse_down(
+            drag_action.center(),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        let drag_command = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("completed drag platform command");
+        let nxtools_protocol::Message::PlatformCommand(PlatformCommand::BeginFileDrag(command)) =
+            drag_command.message
+        else {
+            panic!("completed drag must cross the typed native file-drag boundary");
+        };
+        assert_eq!(
+            command.path,
+            directory.join("shared-skeleton.bin").display().to_string()
+        );
+        assert_eq!(command.source_window_handle, 42);
         cx.read(|cx| {
             let application = application.read(cx);
             assert_eq!(application.task_windows.len(), 1);

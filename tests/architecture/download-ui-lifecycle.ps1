@@ -74,8 +74,34 @@ if ($completedStart -lt 0 -or $failedStart -le $completedStart) {
     throw "Could not isolate the completed download presentation."
 }
 $completedBody = $source.Substring($completedStart, $failedStart - $completedStart)
-$dragStart = $completedBody.IndexOf('.id("download-complete-drag")')
-$revealStart = $completedBody.IndexOf('Button::new("download-complete-reveal")', $dragStart)
+$completedActionStart = $source.IndexOf("enum CompletedTaskWindowAction")
+$completedActionEnd = $source.IndexOf("#[allow(", $completedActionStart)
+if ($completedActionStart -lt 0 -or $completedActionEnd -le $completedActionStart) {
+    throw "Could not isolate the completed action model."
+}
+$completedActionBody = $source.Substring($completedActionStart, $completedActionEnd - $completedActionStart)
+foreach ($requiredActionContract in @(
+    'const ALL: [Self; 3] = [Self::Drag, Self::Reveal, Self::Open]',
+    'download-complete-secondary-drag-action',
+    'download-complete-secondary-reveal-action',
+    'download-complete-primary-open-action',
+    'let spec = action.spec()',
+    'action_button(spec.button_id, label)',
+    'icon_action_button(spec.button_id, spec.icon)',
+    'tooltip: Some("拖拽文件")',
+    'tooltip_selector: Some("download-complete-drag-tooltip")',
+    'button.custom(primary_button_variant(theme, cx))',
+    'CompletedTaskWindowEmphasis::Outline => button.outline()'
+)) {
+    if (-not $completedActionBody.Contains($requiredActionContract)) {
+        throw "The completed action hierarchy must derive its shared primary and secondary controls from one model."
+    }
+}
+if ($completedActionBody.Contains("Delete")) {
+    throw "Delete must not enter the completed-window action model."
+}
+$dragStart = $completedBody.IndexOf("CompletedTaskWindowAction::Drag")
+$revealStart = $completedBody.IndexOf("CompletedTaskWindowAction::Reveal", $dragStart)
 if ($dragStart -lt 0 -or $revealStart -le $dragStart) {
     throw "Could not isolate the completed artifact drag source."
 }

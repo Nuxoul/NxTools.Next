@@ -2273,6 +2273,37 @@ Reverified on 2026-08-22 before the DL-25 task-window skeleton migration:
   view generation. Center-preserving resize math and the one-entry registry remain explicit gates;
   completion action hierarchy and drag behavior belong to DL-26 and are not redesigned here.
 
+Reverified on 2026-08-22 before the DL-26 completed-window action migration:
+
+- Old NxTools exposes the same completed action row in both
+  `Views/DownloadProgressWindow.axaml::{CompletedFooter,CompletedContent}` and
+  `Views/DownloadCompletedWindow.axaml`: Open, Open Folder, an icon-only drag source and Close.
+  `CompletedOpenButton_Click` and `CompletedOpenFolderButton_Click` execute the final-artifact action
+  and close the terminal window; neither completed footer contains Delete. Both drag surfaces start
+  from `PointerPressed`, require the left button to remain pressed and keep the native/file-transfer
+  gesture attached to the visible completed window.
+- AB Download Manager's
+  `desktop/app/.../singleDownloadPage/CompletedDownloadPage.kt::Actions` uses the same order and
+  hierarchy: Open and Open Folder are labelled actions, drag is an icon action with a tooltip and
+  Close is separated at the far edge. Open/folder dismiss through
+  `BaseSingleDownloadComponent::{openFile,openFolder}`. The Compose `dragAndDropSource` stays on the
+  icon's visible hit target and supplies the operating-system file-list transferable directly.
+- NxTools.Next already keeps the correct typed owners:
+  `DownloadTaskWindowView::render -> DownloadApplication::{open_task_artifact,
+  begin_task_file_drag} -> PlatformCommand::{OpenShellTarget,BeginFileDrag}`. Rust selects the final
+  artifact; C# owns Shell/OLE adaptation. The drag begins synchronously from the still-pressed GPUI
+  `on_mouse_down`, carries the source HWND and must not move behind `cx.defer` or a click-only action.
+- Before DL-26, Open File was visually primary, but the three actions had no stable completed-footer
+  role contract. Drag was a private 28 px labelled `div`, Reveal was ghost and Open rebuilt a private
+  small button, so the two secondary actions did not share the standard action tier and tests could
+  not prove that Open remained the only primary action or that Delete stayed outside the completed
+  path.
+- DL-26 must use the shared 28 px action primitives: Open File is the sole accent-filled primary;
+  Open Directory is an outlined labelled secondary; drag is an outlined square icon secondary with
+  a tooltip. The role selector must live on each real hit target. Existing typed Shell actions,
+  pointer-down OLE handoff, source HWND, final path, window lifecycle and the absence of Delete remain
+  explicit production gates.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
