@@ -892,13 +892,17 @@ rust/apps/nxtools-desktop/src/ui/
   同时记录耗时、成功/失败和 native error code，且不写入查询、目标路径等敏感载荷。
 - 红—绿生产 GPUI 门禁使用应用、文件、命令、计算、网址五类真实 `SearchResult`，逐栏比较 icon、
   copy、title、subtitle、shortcut bounds，并通过连接的内存平台端点验证实际 `ctrl-2` 键击发出第二
-  行的类型化命令且 pending action 复用相同 correlation ID。103 条 Quick Launch
+  行的类型化命令且 pending action 复用相同 correlation ID。用户复核发现首版验收图虽然保留了
+  26 px 图标栏，栏内却没有实际图标像素；根因为平台返回“存在但不可解码”的路径后，路径存在判断
+  提前压掉了语义 fallback。修复后只接收具有有效尺寸的 PNG Shell 资源，并在资源加载中或解码失败时
+  保留来源语义图标；新增真实截图逐行像素门禁，防止只验证栏位几何却再次漏掉可见内容。104 条 Quick Launch
   定向回归、生命周期架构门禁、`cargo check -p nxtools-desktop --tests`、放行四项已记录基线后的包级
   严格 Clippy、rustfmt、`git diff --check` 与 PlatformHost `dotnet build` 均通过。workspace 全套中
-  desktop 为 309/313；分类按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector
+  desktop 为 310/314；分类按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector
   四项失败与前序基线完全相同；原样 workspace Clippy 仍先命中同一 build-script needless-borrow。
   96 DPI 当前真实 GPUI [结果行验收图](audits/quick-launch-ql02-2026-08-22/01-result-rails-100pct.png)
-  已人工确认九行列坐标与截断行为；125%/150% 继续由 Release 截图矩阵在速启视觉批次收口时验收。
+  已重新捕获并人工确认九行图标像素、列坐标与截断行为；125%/150% 继续由 Release 截图矩阵在速启
+  视觉批次收口时验收。
   QL-02 完成，下一切片为 QL-03 选择态。
 
 ### 批次 2：主壳层与全局设置

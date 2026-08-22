@@ -175,6 +175,16 @@ fn icon_resource_key(result: &SearchResult, size: u32) -> String {
     }
 }
 
+fn shell_icon_path_is_renderable(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+        && imagesize::size(path)
+            .is_ok_and(|dimensions| dimensions.width > 0 && dimensions.height > 0)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuickLaunchPreviewKind {
     Image,
@@ -3317,7 +3327,7 @@ impl QuickLaunchApplication {
                 .then_some(result.data.as_deref())
                 .flatten()
                 .map(PathBuf::from)
-                .filter(|path| path.is_file());
+                .filter(|path| shell_icon_path_is_renderable(path));
             if let Some(path) = icon_path {
                 self.failed_icon_resources.remove(&resource_key);
                 self.icon_resources.insert(resource_key, path.clone());
@@ -5888,6 +5898,7 @@ impl QuickLaunchPanel {
     ) -> AnyElement {
         let theme = self.theme;
         let selected = index == self.selected;
+        let source = result.entry.source;
         let result_for_click = result.clone();
         let application = self.application.clone();
         let click_action = if self.recent_directory_mode {
@@ -5900,6 +5911,7 @@ impl QuickLaunchPanel {
         let pointer_panel = panel.clone();
         let right_click_panel = panel;
         let icon_path = self.icons.get(&result.entry.id).cloned();
+        let has_icon_path = icon_path.is_some();
         let subtitle = if let Some(subtitle) = &result.subtitle {
             subtitle.clone()
         } else if result.copy_text().is_some() {
@@ -6008,13 +6020,20 @@ impl QuickLaunchPanel {
                         theme.icon_muted
                     })
                     .when_some(icon_path, |container, path| {
-                        container.child(img(path).size(px(21.0)).object_fit(ObjectFit::Contain))
-                    })
-                    .when(!self.icons.contains_key(&result.entry.id), |container| {
                         container.child(
-                            gpui_component::Icon::new(source_icon(result.entry.source))
-                                .size(px(18.0)),
+                            img(path)
+                                .size(px(21.0))
+                                .object_fit(ObjectFit::Contain)
+                                .with_loading(move || {
+                                    quick_launch_result_fallback_icon(index, source)
+                                })
+                                .with_fallback(move || {
+                                    quick_launch_result_fallback_icon(index, source)
+                                }),
                         )
+                    })
+                    .when(!has_icon_path, |container| {
+                        container.child(quick_launch_result_fallback_icon(index, source))
                     }),
             )
             .child(
@@ -6451,6 +6470,15 @@ impl Render for QuickLaunchPanel {
     }
 }
 
+fn quick_launch_result_fallback_icon(index: usize, source: ApplicationSource) -> AnyElement {
+    div()
+        .debug_selector(move || format!("quick-launch-result-icon-fallback-{index}"))
+        .size(px(18.0))
+        .flex_none()
+        .child(gpui_component::Icon::new(source_icon(source)).size(px(18.0)))
+        .into_any_element()
+}
+
 fn source_icon(source: ApplicationSource) -> MaterialIcon {
     match source {
         ApplicationSource::Calculator => MaterialIcon::Calculate,
@@ -6639,6 +6667,12 @@ mod tests {
         window
             .refresh()
             .expect("render heterogeneous quick-launch results");
+        assert!(
+            window
+                .debug_bounds("quick-launch-result-icon-fallback-0")
+                .is_some(),
+            "a result without a decoded Shell icon must keep a visible semantic fallback"
+        );
         let mut expected_icon = None;
         let mut expected_copy = None;
         let mut expected_shortcut = None;
@@ -7092,6 +7126,31 @@ mod tests {
             failed_at + ICON_RETRY_DELAY / 2
         ));
         assert!(!icon_retry_pending(failed_at, failed_at + ICON_RETRY_DELAY));
+    }
+
+    #[test]
+    fn shell_icon_results_accept_valid_pngs_and_reject_undecodable_files() {
+        const ONE_PIXEL_PNG: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00,
+            0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0xda, 0x63, 0x64, 0xf8, 0x0f, 0x00, 0x01, 0x05, 0x01, 0x01, 0x27, 0x18, 0xe3, 0x66,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let temp = tempfile::tempdir().expect("temporary Shell icon fixtures");
+        let valid = temp.path().join("valid.png");
+        let invalid = temp.path().join("invalid.png");
+        let wrong_extension = temp.path().join("valid.svg");
+        std::fs::write(&valid, ONE_PIXEL_PNG).expect("valid PNG fixture");
+        std::fs::write(&invalid, b"not a decodable image").expect("invalid image fixture");
+        std::fs::write(&wrong_extension, ONE_PIXEL_PNG).expect("wrong-extension fixture");
+
+        assert!(shell_icon_path_is_renderable(&valid));
+        assert!(!shell_icon_path_is_renderable(&invalid));
+        assert!(!shell_icon_path_is_renderable(&wrong_extension));
+        assert!(!shell_icon_path_is_renderable(
+            &temp.path().join("missing.png")
+        ));
     }
 
     #[test]

@@ -1039,6 +1039,20 @@ virtual list's rendered range is the presentation boundary for all four paths.
 
 Write-Host 'PASS visible quick-launch rows request icons without pointer hover'
 
+if ($quickLaunchSource -notmatch 'fn shell_icon_path_is_renderable' -or
+    $quickLaunchSource -notmatch '\.filter\(\|path\| shell_icon_path_is_renderable\(path\)\)' -or
+    $quickLaunchSource -notmatch '\.with_loading\(' -or
+    $quickLaunchSource -notmatch '\.with_fallback\(' -or
+    $quickLaunchSource -notmatch 'quick_launch_result_fallback_icon') {
+    throw @'
+Quick-launch icon-visibility regression: an existing path is not enough to
+replace the source icon. Platform results must be validated as renderable PNGs,
+and loading or decode failure must retain a visible semantic fallback.
+'@
+}
+
+Write-Host 'PASS invalid or loading Shell images retain visible result icons'
+
 if ($shellIconSource -notmatch 'ShgfiUseFileAttributes' -or
     $shellIconSource -notmatch 'FileAttributeNormal' -or
     $shellIconSource -notmatch 'Path\.GetExtension') {
