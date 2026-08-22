@@ -69,6 +69,7 @@ use crate::ui::components::action::{
     SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,
     icon_action_tooltip_surface, primary_button_variant, segmented_control,
 };
+use crate::ui::components::dialog::{DialogShellIds, dialog_shell};
 use crate::ui::components::field::{
     field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
     path_picker_shell,
@@ -80,13 +81,14 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT,
-    SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT,
+    SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
+    TITLEBAR_HEIGHT,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, TEXT_BODY, TEXT_LABEL, TEXT_META,
-    UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
+    TEXT_LABEL, TEXT_META, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1285,11 +1287,23 @@ impl DownloadApplication {
                 display_id: None,
                 window_background: WindowBackgroundAppearance::Opaque,
                 app_id: Some("NxTools.Download.DeleteConfirmation".into()),
-                window_min_size: Some(download_task_window_size(DownloadWindowPhase::Completed)),
+                window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                let close_application = application.clone();
+                let closing_window = window.window_handle();
+                window.on_window_should_close(cx, move |_, cx| {
+                    let application = close_application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, _| {
+                            application
+                                .handle_native_delete_confirmation_close(task_id, closing_window);
+                        });
+                    });
+                    true
+                });
                 let view = cx.new(|_| DeleteDownloadView {
                     theme: Theme::zed_dark(),
                     application,
@@ -1314,6 +1328,28 @@ impl DownloadApplication {
                     );
                 });
             }
+        }
+    }
+
+    fn close_delete_confirmation(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if let Some(window) = self.delete_confirmation_windows.remove(&task_id) {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
+    fn handle_native_delete_confirmation_close(
+        &mut self,
+        task_id: DownloadTaskId,
+        closing_window: AnyWindowHandle,
+    ) {
+        if self.delete_confirmation_windows.get(&task_id) == Some(&closing_window) {
+            self.delete_confirmation_windows.remove(&task_id);
+        }
+    }
+
+    fn confirm_delete_artifact(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if self.remove(task_id, true, cx).is_ok() {
+            self.close_delete_confirmation(task_id, cx);
         }
     }
 
@@ -2355,6 +2391,17 @@ impl DownloadApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
+                let close_application = application.clone();
+                let closing_window = window.window_handle();
+                window.on_window_should_close(cx, move |_, cx| {
+                    let application = close_application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, _| {
+                            application.handle_native_schedule_window_close(closing_window);
+                        });
+                    });
+                    true
+                });
                 let view = cx.new(|cx| DownloadScheduleView::new(application, queue, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
@@ -2371,6 +2418,18 @@ impl DownloadApplication {
                     );
                 });
             }
+        }
+    }
+
+    fn close_schedule_window(&mut self, cx: &mut Context<Self>) {
+        if let Some(window) = self.schedule_window.take() {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
+    fn handle_native_schedule_window_close(&mut self, closing_window: AnyWindowHandle) {
+        if self.schedule_window == Some(closing_window) {
+            self.schedule_window = None;
         }
     }
 
@@ -4236,9 +4295,20 @@ impl DownloadApplication {
             move |window, cx| {
                 let close_application = application.clone();
                 window.on_window_should_close(cx, move |_, cx| {
-                    close_application.update(cx, |application, _| {
-                        application.native_close_shutdown_countdown(countdown.correlation_id)
-                    })
+                    let accepted = close_application
+                        .read(cx)
+                        .can_native_close_shutdown_countdown(countdown.correlation_id);
+                    if accepted {
+                        let application = close_application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, _| {
+                                application.finish_native_close_shutdown_countdown(
+                                    countdown.correlation_id,
+                                );
+                            });
+                        });
+                    }
+                    accepted
                 });
                 *opened_native_handle.borrow_mut() =
                     native_window_handle(window).unwrap_or_default();
@@ -4373,16 +4443,28 @@ impl DownloadApplication {
         self.close_shutdown_window(countdown.correlation_id, cx);
     }
 
-    fn native_close_shutdown_countdown(&mut self, correlation_id: uuid::Uuid) -> bool {
-        if self.pending_shutdown_command.is_some() {
-            return false;
+    fn can_native_close_shutdown_countdown(&self, correlation_id: uuid::Uuid) -> bool {
+        self.pending_shutdown_command.is_none()
+            && self
+                .completion_actions
+                .active_countdown()
+                .is_none_or(|countdown| countdown.correlation_id == correlation_id)
+    }
+
+    fn finish_native_close_shutdown_countdown(&mut self, correlation_id: uuid::Uuid) {
+        if !self.can_native_close_shutdown_countdown(correlation_id) {
+            return;
         }
         let Some(countdown) = self.completion_actions.clear_countdown() else {
-            return true;
+            if self
+                .shutdown_window
+                .as_ref()
+                .is_some_and(|window| window.correlation_id == correlation_id)
+            {
+                self.shutdown_window.take();
+            }
+            return;
         };
-        if countdown.correlation_id != correlation_id {
-            return false;
-        }
         info!(
             event = "download.shutdown_countdown.cancelled",
             %correlation_id,
@@ -4390,8 +4472,13 @@ impl DownloadApplication {
             elapsed_ms = countdown.started_at.elapsed().as_millis(),
             "download shutdown countdown cancelled by native window close"
         );
-        self.shutdown_window.take();
-        true
+        if self
+            .shutdown_window
+            .as_ref()
+            .is_some_and(|window| window.correlation_id == correlation_id)
+        {
+            self.shutdown_window.take();
+        }
     }
 
     fn execute_shutdown(
@@ -4569,178 +4656,133 @@ impl Render for DownloadShutdownCountdownView {
         let cancel_application = self.application.clone();
         let close_application = self.application.clone();
         let execute_application = self.application.clone();
-        div()
+        let titlebar = client_titlebar(
+            theme,
+            "download-shutdown-titlebar",
+            "download-shutdown-close",
+            "自动关机",
+            move |_, _, cx| {
+                let application = close_application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.cancel_shutdown_countdown(correlation_id, "window_closed", cx);
+                    });
+                });
+            },
+        );
+        let body = div()
             .size_full()
-            .bg(theme.canvas)
-            .text_color(theme.text)
+            .px(px(SPACING_16))
+            .py(px(SPACING_12))
             .flex()
-            .flex_col()
+            .items_center()
+            .gap(px(SPACING_16))
             .child(
                 div()
-                    .h(px(34.0))
-                    .pl(px(14.0))
-                    .border_b_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .window_control_area(WindowControlArea::Drag)
+                    .size(px(76.0))
+                    .rounded(px(38.0))
+                    .border_1()
+                    .border_color(theme.danger)
+                    .bg(theme.surface_raised)
                     .flex()
-                    .items_center()
+                    .items_end()
+                    .justify_center()
+                    .pb(px(SPACING_16))
                     .child(
                         div()
-                            .flex_1()
-                            .text_size(px(12.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("自动关机"),
-                    )
-                    .child(
-                        div()
-                            .id("download-shutdown-close")
-                            .w(px(38.0))
-                            .h_full()
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .hover(move |style| {
-                                style.bg(theme.danger).text_color(gpui::white())
-                            })
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(move |_, _, cx| {
-                                let application = close_application.clone();
-                                cx.defer(move |cx| {
-                                    application.update(cx, |application, cx| {
-                                        application.cancel_shutdown_countdown(
-                                            correlation_id,
-                                            "window_closed",
-                                            cx,
-                                        );
-                                    });
-                                });
-                            })
-                            .child(Icon::new(MaterialIcon::Close).size(px(15.0))),
+                            .text_size(px(28.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.danger)
+                            .child(if self.executing {
+                                "…".into()
+                            } else {
+                                format!("{:02}", self.remaining_seconds)
+                            }),
                     ),
             )
             .child(
                 div()
+                    .min_w_0()
                     .flex_1()
-                    .px(px(18.0))
-                    .py(px(14.0))
                     .flex()
-                    .items_center()
-                    .gap(px(16.0))
+                    .flex_col()
+                    .gap(px(SPACING_6))
                     .child(
                         div()
-                            .size(px(76.0))
-                            .rounded(px(38.0))
-                            .border_1()
-                            .border_color(theme.danger)
-                            .bg(theme.surface_raised)
-                            .flex()
-                            .items_end()
-                            .justify_center()
-                            .pb(px(18.0))
-                            .child(
-                                div()
-                                    .text_size(px(28.0))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.danger)
-                                    .child(if self.executing {
-                                        "…".into()
-                                    } else {
-                                        format!("{:02}", self.remaining_seconds)
-                                    }),
-                            ),
+                            .text_size(px(TEXT_TITLE))
+                            .line_height(px(LINE_HEIGHT_TITLE))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.danger)
+                            .child(if self.executing {
+                                "正在请求 Windows 关机"
+                            } else {
+                                "所有下载已完成，即将关机"
+                            }),
                     )
                     .child(
                         div()
-                            .min_w_0()
-                            .flex_1()
-                            .flex()
-                            .flex_col()
-                            .gap(px(6.0))
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(theme.danger)
-                                    .child(if self.executing {
-                                        "正在请求 Windows 关机"
-                                    } else {
-                                        "所有下载已完成，即将关机"
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.5))
-                                    .text_color(theme.text_muted)
-                                    .child("这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。"),
-                            ),
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .text_color(theme.text_muted)
+                            .child("这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。"),
                     ),
             )
-            .child(
-                div()
-                    .h(px(46.0))
-                    .px(px(14.0))
-                    .border_t_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(6.0))
-                    .child(
-                        div()
-                            .debug_selector(|| "download-shutdown-now".into())
-                            .child(
-                                Button::new("download-shutdown-now-button")
-                                    .label("立即关机")
-                                    .small()
-                                    .h(px(28.0))
-                                    .px(px(11.0))
-                                    .rounded(px(4.0))
-                                    .disabled(self.executing)
-                                    .custom(download_primary_button_variant(theme, cx))
-                                    .on_click(move |_, _, cx| {
-                                        let application = execute_application.clone();
-                                        cx.defer(move |cx| {
-                                            application.update(cx, |application, cx| {
-                                                application.execute_shutdown(
-                                                    correlation_id,
-                                                    "user_requested",
-                                                    cx,
-                                                );
-                                            });
-                                        });
-                                    }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "download-shutdown-cancel".into())
-                            .child(
-                                Button::new("download-shutdown-cancel-button")
-                                    .label("取消")
-                                    .small()
-                                    .ghost()
-                                    .h(px(28.0))
-                                    .px(px(10.0))
-                                    .rounded(px(4.0))
-                                    .disabled(self.executing)
-                                    .on_click(move |_, _, cx| {
-                                        let application = cancel_application.clone();
-                                        cx.defer(move |cx| {
-                                            application.update(cx, |application, cx| {
-                                                application.cancel_shutdown_countdown(
-                                                    correlation_id,
-                                                    "user_cancelled",
-                                                    cx,
-                                                );
-                                            });
-                                        });
-                                    }),
-                            ),
-                    )
-            )
+            .into_any_element();
+        let footer = dialog_footer(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(
+                    action_button("download-shutdown-now-button", "立即关机")
+                        .debug_selector(|| "download-shutdown-danger-now-action".into())
+                        .custom(danger_hover_button_variant(theme, cx))
+                        .disabled(self.executing)
+                        .on_click(move |_, _, cx| {
+                            let application = execute_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.execute_shutdown(
+                                        correlation_id,
+                                        "user_requested",
+                                        cx,
+                                    );
+                                });
+                            });
+                        }),
+                )
+                .child(
+                    action_button("download-shutdown-cancel-button", "取消")
+                        .debug_selector(|| "download-shutdown-secondary-cancel-action".into())
+                        .outline()
+                        .disabled(self.executing)
+                        .on_click(move |_, _, cx| {
+                            let application = cancel_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.cancel_shutdown_countdown(
+                                        correlation_id,
+                                        "user_cancelled",
+                                        cx,
+                                    );
+                                });
+                            });
+                        }),
+                )
+                .into_any_element(),
+        );
+        dialog_shell(
+            theme,
+            DialogShellIds {
+                root: "download-shutdown-dialog-shell",
+                titlebar: "download-shutdown-dialog-titlebar",
+                body: "download-shutdown-dialog-body",
+                footer: "download-shutdown-dialog-footer",
+            },
+            titlebar,
+            body,
+            footer,
+        )
     }
 }
 
@@ -4936,7 +4978,7 @@ impl DownloadScheduleView {
         }
     }
 
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.saving {
             return;
         }
@@ -4956,24 +4998,31 @@ impl DownloadScheduleView {
         };
         self.saving = true;
         self.error = None;
-        let result = self.application.update(cx, |application, cx| {
-            application.set_default_queue_schedule(schedule, cx)
-        });
-        match result {
-            Ok(()) => window.remove_window(),
-            Err(error) => {
-                self.saving = false;
-                self.error = Some(error);
-                cx.notify();
+        let application = self.application.clone();
+        let view = cx.entity();
+        cx.defer(move |cx| {
+            let result = application.update(cx, |application, cx| {
+                let result = application.set_default_queue_schedule(schedule, cx);
+                if result.is_ok() {
+                    application.close_schedule_window(cx);
+                }
+                result
+            });
+            if let Err(error) = result {
+                view.update(cx, |view, cx| {
+                    view.saving = false;
+                    view.error = Some(error);
+                    cx.notify();
+                });
             }
-        }
+        });
     }
 }
 
 impl Render for DownloadScheduleView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
-        let mut weekdays = div().flex().items_center().gap(px(4.0));
+        let mut weekdays = div().flex().items_center().gap(px(SPACING_4));
         for (index, day) in DownloadWeekday::ALL.into_iter().enumerate() {
             let selected = self.days.contains(&day);
             weekdays = weekdays.child(
@@ -4981,7 +5030,7 @@ impl Render for DownloadScheduleView {
                     .id(("download-schedule-day", index))
                     .w(px(38.0))
                     .h(px(26.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(if selected {
                         theme.accent
@@ -4997,7 +5046,8 @@ impl Render for DownloadScheduleView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(10.0))
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
                     .text_color(if selected {
                         theme.accent_text
                     } else {
@@ -5039,135 +5089,147 @@ impl Render for DownloadScheduleView {
                 cx.notify();
             }),
         );
-        div()
+        let close_application = self.application.clone();
+        let cancel_application = self.application.clone();
+        let titlebar = client_titlebar(
+            theme,
+            "download-schedule-titlebar",
+            "download-schedule-close",
+            "每日计划",
+            move |_, _, cx| {
+                let application = close_application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.close_schedule_window(cx);
+                    });
+                });
+            },
+        );
+        let body = div()
             .size_full()
-            .bg(theme.canvas)
-            .text_color(theme.text)
+            .px(px(SPACING_12))
+            .py(px(SPACING_8))
             .flex()
             .flex_col()
+            .gap(px(SPACING_8))
             .child(
                 div()
-                    .h(px(34.0))
-                    .pl(px(14.0))
-                    .border_b_1()
+                    .h(px(32.0))
+                    .px(px(SPACING_8))
+                    .rounded(px(RADIUS_CONTROL))
+                    .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface)
-                    .window_control_area(WindowControlArea::Drag)
                     .flex()
                     .items_center()
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(12.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("每日计划"),
-                    )
-                    .child(download_window_close_button(theme)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .px(px(14.0))
-                    .py(px(10.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .child(
-                        div()
-                            .h(px(32.0))
-                            .px(px(9.0))
-                            .rounded(px(4.0))
-                            .border_1()
-                            .border_color(theme.border_subtle)
-                            .bg(theme.surface)
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(10.0))
-                                    .text_color(theme.text_secondary)
-                                    .child("默认下载队列"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(9.5))
-                                    .text_color(if self.queue_running {
-                                        theme.success
-                                    } else {
-                                        theme.text_muted
-                                    })
-                                    .child(if self.queue_running {
-                                        "运行中"
-                                    } else {
-                                        "计划暂停"
-                                    }),
-                            ),
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
+                            .text_color(theme.text_secondary)
+                            .child("默认下载队列"),
                     )
                     .child(
                         div()
-                            .h(px(44.0))
-                            .px(px(9.0))
-                            .rounded(px(4.0))
-                            .border_1()
-                            .border_color(theme.border_subtle)
-                            .bg(theme.surface)
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .w(px(82.0))
-                                    .text_size(px(10.0))
-                                    .text_color(theme.text_secondary)
-                                    .child("生效星期"),
-                            )
-                            .child(weekdays),
-                    )
-                    .child(start_control)
-                    .child(stop_control)
-                    .when_some(self.error.clone(), |body, error| {
-                        body.child(download_inline_error(theme, error))
-                    }),
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .text_color(if self.queue_running {
+                                theme.success
+                            } else {
+                                theme.text_muted
+                            })
+                            .child(if self.queue_running {
+                                "运行中"
+                            } else {
+                                "计划暂停"
+                            }),
+                    ),
             )
             .child(
                 div()
                     .h(px(44.0))
-                    .px(px(14.0))
-                    .border_t_1()
+                    .px(px(SPACING_8))
+                    .rounded(px(RADIUS_CONTROL))
+                    .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface)
                     .flex()
                     .items_center()
                     .child(
                         div()
-                            .flex_1()
-                            .text_size(px(9.0))
-                            .text_color(theme.text_muted)
-                            .child("本地时间 · 支持跨午夜"),
+                            .w(px(82.0))
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
+                            .text_color(theme.text_secondary)
+                            .child("生效星期"),
                     )
-                    .child(
-                        Button::new("download-schedule-cancel")
-                            .label("取消")
-                            .small()
-                            .ghost()
-                            .disabled(self.saving)
-                            .on_click(|_, window, _| window.remove_window()),
-                    )
-                    .child(
-                        Button::new("download-schedule-save")
-                            .label(if self.saving {
-                                "正在应用…"
-                            } else {
-                                "应用"
-                            })
-                            .small()
-                            .primary()
-                            .disabled(self.saving)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.save(window, cx);
-                            })),
-                    ),
+                    .child(weekdays),
             )
+            .child(start_control)
+            .child(stop_control)
+            .when_some(self.error.clone(), |body, error| {
+                body.child(download_inline_error(theme, error))
+            })
+            .into_any_element();
+        let footer = dialog_footer(
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child("本地时间 · 支持跨午夜"),
+                )
+                .child(
+                    action_button("download-schedule-cancel", "取消")
+                        .debug_selector(|| "download-schedule-secondary-cancel-action".into())
+                        .outline()
+                        .disabled(self.saving)
+                        .on_click(move |_, _, cx| {
+                            let application = cancel_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.close_schedule_window(cx);
+                                });
+                            });
+                        }),
+                )
+                .child(
+                    action_button(
+                        "download-schedule-save",
+                        if self.saving {
+                            "正在应用…"
+                        } else {
+                            "应用"
+                        },
+                    )
+                    .debug_selector(|| "download-schedule-primary-apply-action".into())
+                    .custom(primary_button_variant(theme, cx))
+                    .disabled(self.saving)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.save(window, cx);
+                    })),
+                )
+                .into_any_element(),
+        );
+        dialog_shell(
+            theme,
+            DialogShellIds {
+                root: "download-schedule-dialog-shell",
+                titlebar: "download-schedule-dialog-titlebar",
+                body: "download-schedule-dialog-body",
+                footer: "download-schedule-dialog-footer",
+            },
+            titlebar,
+            body,
+            footer,
+        )
     }
 }
 
@@ -5182,8 +5244,8 @@ fn schedule_trigger_row(
 ) -> AnyElement {
     div()
         .h(px(44.0))
-        .px(px(9.0))
-        .rounded(px(4.0))
+        .px(px(SPACING_8))
+        .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface)
@@ -5194,11 +5256,17 @@ fn schedule_trigger_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(1.0))
-                .child(div().text_size(px(10.0)).child(title))
+                .gap(px(SPACING_2))
                 .child(
                     div()
-                        .text_size(px(9.0))
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child(description),
                 ),
@@ -5209,8 +5277,8 @@ fn schedule_trigger_row(
                 .debug_selector(move || id.into())
                 .h(px(24.0))
                 .w(px(50.0))
-                .mr(px(7.0))
-                .rounded(px(4.0))
+                .mr(px(SPACING_8))
+                .rounded(px(RADIUS_CONTROL))
                 .border_1()
                 .border_color(if enabled {
                     theme.accent
@@ -5226,7 +5294,8 @@ fn schedule_trigger_row(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(10.5))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(if enabled {
                     theme.accent_text
                 } else {
@@ -5239,11 +5308,11 @@ fn schedule_trigger_row(
             div()
                 .w(px(82.0))
                 .h(px(28.0))
-                .rounded(px(4.0))
+                .rounded(px(RADIUS_CONTROL))
                 .border_1()
                 .border_color(theme.border_subtle)
                 .bg(theme.canvas)
-                .px(px(6.0))
+                .px(px(SPACING_6))
                 .flex()
                 .items_center()
                 .child(
@@ -5256,7 +5325,8 @@ fn schedule_trigger_row(
         } else {
             div()
                 .w(px(82.0))
-                .text_size(px(9.5))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_muted)
                 .text_center()
                 .child("未启用")
@@ -10672,74 +10742,96 @@ struct DeleteDownloadView {
 }
 
 impl Render for DeleteDownloadView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let task_id = self.task_id;
-        let application = self.application.clone();
+        let close_application = self.application.clone();
+        let cancel_application = self.application.clone();
+        let confirm_application = self.application.clone();
         let path = self.path.clone();
-        div()
+        let titlebar = client_titlebar(
+            theme,
+            "download-delete-titlebar",
+            "download-delete-close",
+            "删除本地文件",
+            move |_, _, cx| {
+                let application = close_application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.close_delete_confirmation(task_id, cx);
+                    });
+                });
+            },
+        );
+        let body = div()
             .size_full()
-            .bg(theme.canvas)
-            .text_color(theme.text)
+            .px(px(SPACING_16))
+            .py(px(SPACING_12))
             .flex()
             .flex_col()
-            .child(download_window_titlebar(theme, "删除本地文件"))
+            .gap(px(SPACING_6))
             .child(
                 div()
-                    .flex_1()
-                    .px(px(16.0))
-                    .py(px(12.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(5.0))
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("将同时移除任务记录，且无法撤销。"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(9.5))
-                            .text_color(theme.text_muted)
-                            .truncate()
-                            .child(path),
-                    ),
+                    .text_size(px(TEXT_BODY))
+                    .line_height(px(LINE_HEIGHT_BODY))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child("将同时移除任务记录，且无法撤销。"),
             )
             .child(
                 div()
-                    .h(px(48.0))
-                    .px(px(14.0))
-                    .border_t_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(6.0))
-                    .child(
-                        Button::new("download-delete-cancel")
-                            .label("取消")
-                            .small()
-                            .ghost()
-                            .on_click(|_, window, _| window.remove_window()),
-                    )
-                    .child(
-                        Button::new("download-delete-confirm")
-                            .icon(Icon::new(MaterialIcon::Delete))
-                            .label("删除文件")
-                            .small()
-                            .danger()
-                            .on_click(move |_, window, cx| {
-                                let result = application.update(cx, |application, cx| {
-                                    application.remove(task_id, true, cx)
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .truncate()
+                    .child(path),
+            )
+            .into_any_element();
+        let footer = dialog_footer(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(
+                    action_button("download-delete-cancel", "取消")
+                        .debug_selector(|| "download-delete-secondary-cancel-action".into())
+                        .outline()
+                        .on_click(move |_, _, cx| {
+                            let application = cancel_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.close_delete_confirmation(task_id, cx);
                                 });
-                                if result.is_ok() {
-                                    window.remove_window();
-                                }
-                            }),
-                    ),
-            )
+                            });
+                        }),
+                )
+                .child(
+                    action_button("download-delete-confirm", "删除文件")
+                        .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
+                        .debug_selector(|| "download-delete-danger-confirm-action".into())
+                        .custom(danger_hover_button_variant(theme, cx))
+                        .on_click(move |_, _, cx| {
+                            let application = confirm_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.confirm_delete_artifact(task_id, cx);
+                                });
+                            });
+                        }),
+                )
+                .into_any_element(),
+        );
+        dialog_shell(
+            theme,
+            DialogShellIds {
+                root: "download-delete-dialog-shell",
+                titlebar: "download-delete-dialog-titlebar",
+                body: "download-delete-dialog-body",
+                footer: "download-delete-dialog-footer",
+            },
+            titlebar,
+            body,
+            footer,
+        )
     }
 }
 
@@ -13633,6 +13725,32 @@ mod tests {
         (application, directory)
     }
 
+    fn assert_shared_dialog_shell(
+        window: &mut VisualTestContext,
+        shell_selector: &'static str,
+        titlebar_selector: &'static str,
+        body_selector: &'static str,
+        footer_selector: &'static str,
+    ) {
+        let shell = window
+            .debug_bounds(shell_selector)
+            .expect("shared dialog shell");
+        let titlebar = window
+            .debug_bounds(titlebar_selector)
+            .expect("shared dialog titlebar");
+        let body = window
+            .debug_bounds(body_selector)
+            .expect("shared dialog body");
+        let footer = window
+            .debug_bounds(footer_selector)
+            .expect("shared dialog footer");
+        assert_eq!(titlebar.size.height, px(TITLEBAR_HEIGHT));
+        assert_eq!(footer.size.height, px(SETTINGS_FOOTER_HEIGHT));
+        assert_eq!(titlebar.bottom(), body.top());
+        assert_eq!(body.bottom(), footer.top());
+        assert_eq!(footer.bottom(), shell.bottom());
+    }
+
     fn download_application_for_window_test_with_platform(
         cx: &mut TestAppContext,
         label: &str,
@@ -13668,7 +13786,9 @@ mod tests {
     }
 
     #[gpui::test]
-    fn schedule_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
+    fn schedule_dialog_uses_shared_shell_and_preserves_cancel_close_apply_lifecycle(
+        cx: &mut TestAppContext,
+    ) {
         cx.update(gpui_component::init);
         let (application, directory) = download_application_for_window_test(cx, "schedule-window");
 
@@ -13677,8 +13797,250 @@ mod tests {
                 application.open_schedule_window(cx);
             });
         });
+        cx.run_until_parked();
 
-        assert!(cx.read(|cx| application.read(cx).schedule_window.is_some()));
+        let window_handle = cx
+            .read(|cx| application.read(cx).schedule_window)
+            .expect("production schedule window");
+        let mut window = VisualTestContext::from_window(window_handle, cx);
+        window.refresh().expect("render production schedule dialog");
+        assert_shared_dialog_shell(
+            &mut window,
+            "download-schedule-dialog-shell",
+            "download-schedule-dialog-titlebar",
+            "download-schedule-dialog-body",
+            "download-schedule-dialog-footer",
+        );
+        let cancel = window
+            .debug_bounds("download-schedule-secondary-cancel-action")
+            .expect("schedule cancel secondary action");
+        let apply = window
+            .debug_bounds("download-schedule-primary-apply-action")
+            .expect("schedule apply primary action");
+        assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert_eq!(apply.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert!(cancel.right() <= apply.left());
+        window.simulate_click(cancel.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(window_handle.update(cx, |_, _, _| ()).is_err());
+        assert!(cx.read(|cx| application.read(cx).schedule_window.is_none()));
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_schedule_window(cx);
+            });
+        });
+        cx.run_until_parked();
+        let native_close_handle = cx
+            .read(|cx| application.read(cx).schedule_window)
+            .expect("reopened schedule window for native close");
+        let mut native_close_window = VisualTestContext::from_window(native_close_handle, cx);
+        native_close_window
+            .refresh()
+            .expect("render schedule draft before native close");
+        let start_toggle = native_close_window
+            .debug_bounds("download-schedule-start-toggle")
+            .expect("schedule start toggle");
+        native_close_window.simulate_click(start_toggle.center(), Modifiers::default());
+        native_close_window.run_until_parked();
+        assert!(native_close_window.simulate_close());
+        native_close_window.run_until_parked();
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.schedule_window.is_none()
+                && application
+                    .default_queue()
+                    .is_none_or(|queue| queue.schedule.is_none())
+        }));
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_schedule_window(cx);
+            });
+        });
+        cx.run_until_parked();
+        let apply_handle = cx
+            .read(|cx| application.read(cx).schedule_window)
+            .expect("reopened schedule window for apply");
+        let mut apply_window = VisualTestContext::from_window(apply_handle, cx);
+        apply_window
+            .refresh()
+            .expect("render schedule apply dialog");
+        let start_toggle = apply_window
+            .debug_bounds("download-schedule-start-toggle")
+            .expect("schedule start toggle after discarded draft");
+        apply_window.simulate_click(start_toggle.center(), Modifiers::default());
+        apply_window.run_until_parked();
+        let apply = apply_window
+            .debug_bounds("download-schedule-primary-apply-action")
+            .expect("schedule apply action after discarded draft");
+        apply_window.simulate_click(apply.center(), Modifiers::default());
+        apply_window.run_until_parked();
+        assert!(apply_handle.update(cx, |_, _, _| ()).is_err());
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            application.schedule_window.is_none()
+                && application.default_queue().is_some_and(|queue| {
+                    queue
+                        .schedule
+                        .as_ref()
+                        .is_some_and(|schedule| schedule.daily.enabled_start)
+                })
+        }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn delete_dialog_uses_shared_danger_semantics_and_closes_only_after_a_decision(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "delete-dialog-shell");
+        let task_id = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .enqueue(
+                    DownloadRequest {
+                        source_url: "https://example.test/delete-dialog.bin".into(),
+                        save_directory: directory.clone(),
+                        save_directory_explicit: false,
+                        file_name: Some("delete-dialog.bin".into()),
+                        headers: Vec::new(),
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: None,
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                    },
+                    RequestOrigin::Internal,
+                )
+                .expect("enqueue delete-dialog fixture")
+        });
+        cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .cancel(task_id)
+                .expect("cancel delete-dialog fixture")
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.refresh(cx);
+                application.request_delete_confirmation(task_id, cx);
+            });
+        });
+        cx.run_until_parked();
+
+        let first_window_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .delete_confirmation_windows
+                    .get(&task_id)
+                    .copied()
+            })
+            .expect("production delete dialog");
+        let mut first_window = VisualTestContext::from_window(first_window_handle, cx);
+        first_window
+            .refresh()
+            .expect("render production delete dialog");
+        assert_shared_dialog_shell(
+            &mut first_window,
+            "download-delete-dialog-shell",
+            "download-delete-dialog-titlebar",
+            "download-delete-dialog-body",
+            "download-delete-dialog-footer",
+        );
+        let cancel = first_window
+            .debug_bounds("download-delete-secondary-cancel-action")
+            .expect("delete cancel secondary action");
+        let confirm = first_window
+            .debug_bounds("download-delete-danger-confirm-action")
+            .expect("delete danger confirmation action");
+        assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert_eq!(confirm.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert!(cancel.right() <= confirm.left());
+        first_window.simulate_click(cancel.center(), Modifiers::default());
+        first_window.run_until_parked();
+        assert!(first_window_handle.update(cx, |_, _, _| ()).is_err());
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            !application
+                .delete_confirmation_windows
+                .contains_key(&task_id)
+                && application.task(task_id).is_some()
+        }));
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.request_delete_confirmation(task_id, cx);
+            });
+        });
+        cx.run_until_parked();
+        let native_close_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .delete_confirmation_windows
+                    .get(&task_id)
+                    .copied()
+            })
+            .expect("reopened delete dialog for native close");
+        let mut native_close_window = VisualTestContext::from_window(native_close_handle, cx);
+        native_close_window
+            .refresh()
+            .expect("render delete dialog before native close");
+        assert!(native_close_window.simulate_close());
+        native_close_window.run_until_parked();
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            !application
+                .delete_confirmation_windows
+                .contains_key(&task_id)
+                && application.task(task_id).is_some()
+        }));
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.request_delete_confirmation(task_id, cx);
+            });
+        });
+        cx.run_until_parked();
+        let confirm_window_handle = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .delete_confirmation_windows
+                    .get(&task_id)
+                    .copied()
+            })
+            .expect("reopened production delete dialog for confirmation");
+        let mut confirm_window = VisualTestContext::from_window(confirm_window_handle, cx);
+        confirm_window
+            .refresh()
+            .expect("render confirmed delete dialog");
+        let confirm = confirm_window
+            .debug_bounds("download-delete-danger-confirm-action")
+            .expect("reopened delete confirmation action");
+        confirm_window.simulate_click(confirm.center(), Modifiers::default());
+        confirm_window.run_until_parked();
+        assert!(confirm_window_handle.update(cx, |_, _, _| ()).is_err());
+        assert!(cx.read(|cx| {
+            let application = application.read(cx);
+            !application
+                .delete_confirmation_windows
+                .contains_key(&task_id)
+                && application.task(task_id).is_none()
+        }));
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -14212,9 +14574,22 @@ mod tests {
         shutdown_window
             .refresh()
             .expect("render production shutdown countdown");
+        assert_shared_dialog_shell(
+            &mut shutdown_window,
+            "download-shutdown-dialog-shell",
+            "download-shutdown-dialog-titlebar",
+            "download-shutdown-dialog-body",
+            "download-shutdown-dialog-footer",
+        );
         let cancel = shutdown_window
-            .debug_bounds("download-shutdown-cancel")
-            .expect("shutdown cancel action");
+            .debug_bounds("download-shutdown-secondary-cancel-action")
+            .expect("shutdown cancel secondary action");
+        let shutdown_now = shutdown_window
+            .debug_bounds("download-shutdown-danger-now-action")
+            .expect("shutdown danger action");
+        assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert_eq!(shutdown_now.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert!(shutdown_now.right() <= cancel.left());
         shutdown_window.simulate_click(cancel.center(), Modifiers::default());
         shutdown_window.run_until_parked();
         assert!(cx.read(|cx| {
@@ -14398,7 +14773,7 @@ mod tests {
         let mut window = VisualTestContext::from_window(window_handle, cx);
         window.refresh().expect("render shutdown countdown window");
         let shutdown_now = window
-            .debug_bounds("download-shutdown-now")
+            .debug_bounds("download-shutdown-danger-now-action")
             .expect("immediate shutdown action");
         window.simulate_click(shutdown_now.center(), Modifiers::default());
         window.run_until_parked();

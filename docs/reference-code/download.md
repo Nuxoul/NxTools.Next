@@ -2304,6 +2304,33 @@ Reverified on 2026-08-22 before the DL-26 completed-window action migration:
   pointer-down OLE handoff, source HWND, final path, window lifecycle and the absence of Delete remain
   explicit production gates.
 
+Reverified on 2026-08-22 before the DL-27 auxiliary-dialog shell migration:
+
+- AB Download Manager first: `desktop/app/.../ui/template/DialogUi.kt` keeps dialog content and a
+  separated footer in one stable column; `ConfirmDialog.kt` maps native close to Cancel and keeps
+  confirmation distinct from cancellation. `PowerActionAlertWindow.kt` uses the same fixed content
+  plus footer topology, maps native close to `performCancel`, disables actions while shutdown is in
+  flight and closes only after the platform action succeeds. `QueueInfoComponent.kt` keeps schedule
+  edits as configuration state with independent start/stop controls and weekday validation.
+- Old NxTools `Views/DeleteConfirmationWindow.axaml{,.cs}` keeps deletion in a dedicated compact
+  window. Cancel and native close return no confirmation; Delete returns the explicit local-file
+  choice before closing. `SettingsWindow.axaml::SchedulerSection` keeps schedule controls together,
+  while `DownloadProgressWindow.axaml::完成后` treats shutdown as a task-local, non-durable intent.
+  The old immediate shutdown execution remains a negative reference; Next's cancellable typed
+  PlatformHost boundary stays authoritative.
+- Before DL-27, Next's schedule, delete and shutdown windows each rebuild their own 34 px titlebar,
+  44/46/48 px footer and private button sizing. Schedule Apply is accent-primary, but Delete uses a
+  permanently dangerous button and Shutdown Now uses an accent primary, so two destructive actions
+  do not share the neutral-at-rest/danger-on-interaction contract. Schedule/Delete programmatic
+  closes also leave stale keyed registrations until the next open attempt.
+- DL-27 must render all three through one shared `DialogShell`: shared 36 px `ClientTitlebar`, one
+  bounded body and one 48 px `DialogFooter`, with 28 px shared actions. Schedule Apply is the only
+  accent primary. Delete File and Shutdown Now use the shared danger-hover variant; Cancel remains
+  an outlined secondary action. Native close and Cancel discard local work, Delete closes only after
+  removal succeeds, Shutdown actions remain disabled while execution is pending, and schedule/delete
+  keyed registrations are cleared on every accepted close path. All cross-entity action callbacks
+  remain deferred outside the leased GPUI view.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

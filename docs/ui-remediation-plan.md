@@ -813,6 +813,29 @@ rust/apps/nxtools-desktop/src/ui/
   剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全相同。DL-27 计划/删除/关机
   DialogShell 是下一切片，在三类辅助窗口共享安全动作语义与原生关闭生命周期门禁前不提前完成。
 
+第二十八个 P0 辅助 DialogShell 切片（2026-08-22）：
+
+- DL-27 新增共享 `DialogShell`，以 `DialogShellIds` 统一 36 px `ClientTitlebar`、有界 body、
+  48 px `DialogFooter`、UI 字体与连续 canvas/surface 边界。每日计划、删除本地文件、自动关机三个
+  生产窗口不再各自维护 34 px 标题栏、44/46/48 px footer 和私有按钮高度，全部动作回到共享
+  28 px action tier。
+- 每日计划的“应用”保持唯一 accent Primary，“取消”为 outlined secondary；“删除文件”和
+  “立即关机”统一使用 neutral-at-rest、danger-on-interaction 变体，取消仍是 outlined secondary。
+  关机执行中继续禁用两项动作，既有 correlation ID、typed `ShutdownSystem` 平台确认与成功后关闭
+  契约不变。
+- 计划与删除窗口新增显式 owned-close 路径：Cancel/标题栏关闭通过下一 application turn 清理 keyed
+  registration 并关闭窗口；原生关闭只同步判定是否允许，注册清理由下一 application turn 按
+  window/correlation identity 防陈旧执行。计划草稿在取消或原生关闭后丢弃，Apply 仅在校验及
+  持久化成功后关闭；删除 Cancel/原生关闭不移除任务，确认删除仅在 engine removal 成功后关闭。
+  三个 View 的跨实体动作回调均由 `cx.defer` 隔离。
+- 红—绿生产 GPUI 门禁覆盖三套 shell role、36/48 px 几何、28 px 动作与顺序；计划窗实际验证
+  Cancel、修改草稿后 native close、重开及 Apply，删除窗验证 Cancel、native close、重开及成功
+  Confirm，关机窗继续验证 Cancel、native close、立即关机 typed boundary 和平台成功后关闭。
+  `cargo check -p nxtools-desktop --tests`、仅放行既有 build-script lint 的严格 Clippy、rustfmt、
+  diff check 与升级后的生命周期架构门禁均通过。desktop 全套为 303/307；分类按钮 selector、
+  网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全相同。DL-28
+  任务栏覆盖条是下一切片，在正常/编辑态信息位置和数字清晰度获得生产窗口门禁前不提前完成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

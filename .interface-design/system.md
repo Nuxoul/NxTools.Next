@@ -57,6 +57,18 @@
 - The settings view owns one local draft. Navigation changes presentation only; native close and
   Cancel discard the draft, while Apply keeps the existing validated persistence lifecycle.
 
+### Auxiliary dialogs
+
+- Schedule, confirmation and transient safety windows use one `DialogShell`: the shared 36 px
+  client titlebar, one bounded body and one fixed 48 px footer. Dialog content never paints a second
+  titlebar/footer boundary or invents a local action height.
+- Footer actions stay on the 28 px action tier. Apply is the sole filled accent action; Cancel is an
+  outlined secondary. Destructive confirmation remains neutral at rest and uses the danger surface
+  only on hover or press.
+- Native close and Cancel discard local work and clear the owned window registration. Confirmation
+  closes only after the underlying operation succeeds, and all cross-entity callbacks defer to the
+  next application turn.
+
 ### Master-detail settings
 
 - Repeated editable identities use a continuous master list beside one detail editor. Master rows
