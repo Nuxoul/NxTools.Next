@@ -44,10 +44,10 @@ use nxtools_download::{DownloadCertificatePolicy, FfmpegInstallSource};
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
-    OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
-    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
-    SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction,
-    ShutdownSystemCommand, TaskbarOverlayAnchor, TaskbarProgressState,
+    ExtractShellIconCommand, OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand,
+    PickProgramCommand, PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult,
+    PlatformEvent, SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand,
+    ShellOpenAction, ShutdownSystemCommand, TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -62,7 +62,7 @@ use crate::download_taskbar_overlay::{
 use crate::download_window_lifecycle::{
     DownloadWindowDirective, DownloadWindowLifecycle, DownloadWindowPhase,
 };
-use crate::icons::MaterialIcon;
+use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::components::action::{
@@ -466,6 +466,52 @@ struct PendingShutdownCommand {
     countdown: ShutdownCountdown,
 }
 
+struct PendingDownloadTaskIcon {
+    resource_key: String,
+    task_ids: HashSet<DownloadTaskId>,
+    resource_scope: &'static str,
+    started_at: Instant,
+}
+
+const DOWNLOAD_TASK_ICON_SIZE: u32 = 24;
+
+fn download_task_icon_target(task: &DownloadEngineTask) -> Option<String> {
+    if task.task.status() == DownloadStatus::Completed
+        && let Some(path) = task.final_path.as_ref()
+    {
+        return Some(path.to_string_lossy().into_owned());
+    }
+    task.task
+        .request()
+        .file_name
+        .clone()
+        .or_else(|| task.probe.as_ref()?.file_name.clone())
+        .or_else(|| {
+            task.final_path
+                .as_ref()?
+                .file_name()?
+                .to_str()
+                .map(str::to_owned)
+        })
+}
+
+fn download_task_icon_resource_key(task: &DownloadEngineTask) -> Option<String> {
+    let target = download_task_icon_target(task)?;
+    if task.task.status() == DownloadStatus::Completed && task.final_path.is_some() {
+        return Some(format!(
+            "{DOWNLOAD_TASK_ICON_SIZE}:target:{}",
+            target.replace('/', "\\").to_lowercase()
+        ));
+    }
+    let path = Path::new(&target);
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())?
+        .trim()
+        .to_ascii_lowercase();
+    (!extension.is_empty()).then(|| format!("{DOWNLOAD_TASK_ICON_SIZE}:type:.{extension}"))
+}
+
 struct DownloadShutdownWindow {
     window: AnyWindowHandle,
     view: Entity<DownloadShutdownCountdownView>,
@@ -490,6 +536,12 @@ pub(crate) struct DownloadApplication {
     task_detail_error: Option<(DownloadTaskId, String)>,
     queues: Vec<DownloadQueue>,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
+    task_icons: HashMap<DownloadTaskId, PathBuf>,
+    task_icon_resource_assignments: HashMap<DownloadTaskId, String>,
+    task_icon_resources: HashMap<String, PathBuf>,
+    pending_task_icons: HashMap<uuid::Uuid, PendingDownloadTaskIcon>,
+    pending_task_icon_resources: HashMap<String, uuid::Uuid>,
+    failed_task_icon_resources: HashSet<String>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
@@ -675,6 +727,12 @@ impl DownloadApplication {
             task_detail_error: None,
             queues,
             latest_progress: HashMap::new(),
+            task_icons: HashMap::new(),
+            task_icon_resource_assignments: HashMap::new(),
+            task_icon_resources: HashMap::new(),
+            pending_task_icons: HashMap::new(),
+            pending_task_icon_resources: HashMap::new(),
+            failed_task_icon_resources: HashSet::new(),
             awaiting_delayed_progress,
             task_window_lifecycle,
             task_windows: HashMap::new(),
@@ -744,6 +802,17 @@ impl DownloadApplication {
     }
 
     #[cfg(test)]
+    pub(crate) fn replace_task_icon_for_test(
+        &mut self,
+        task_id: DownloadTaskId,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.task_icons.insert(task_id, path);
+        cx.notify();
+    }
+
+    #[cfg(test)]
     pub(crate) fn replace_task_detail_error_for_test(
         &mut self,
         task_id: DownloadTaskId,
@@ -757,6 +826,10 @@ impl DownloadApplication {
 
     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
         &self.tasks
+    }
+
+    pub(crate) fn task_icon_path(&self, task_id: DownloadTaskId) -> Option<&Path> {
+        self.task_icons.get(&task_id).map(PathBuf::as_path)
     }
 
     pub(crate) fn taskbar_overlay_model(&self) -> DownloadTaskbarOverlayModel {
@@ -3576,6 +3649,8 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         if matches!(&notification, PlatformNotification::Connected) {
+            self.failed_task_icon_resources.clear();
+            self.request_task_icons();
             let correlation_id = uuid::Uuid::new_v4();
             match self.platform.send_command_correlated(
                 PlatformCommand::EnsureBrowserNativeMessaging(
@@ -3636,6 +3711,54 @@ impl DownloadApplication {
         else {
             return;
         };
+        if let Some(pending) = self.pending_task_icons.remove(&correlation_id) {
+            let native_error_code = result.native_error_code;
+            let error_present = result.error.is_some();
+            self.pending_task_icon_resources
+                .remove(&pending.resource_key);
+            let icon_path = result
+                .success
+                .then_some(result.data.as_deref())
+                .flatten()
+                .map(PathBuf::from)
+                .filter(|path| shell_icon_path_is_renderable(path));
+            if let Some(path) = icon_path {
+                self.failed_task_icon_resources
+                    .remove(&pending.resource_key);
+                let resource_key = pending.resource_key;
+                self.task_icon_resources
+                    .insert(resource_key.clone(), path.clone());
+                for task_id in pending.task_ids {
+                    if self.tasks.iter().any(|task| task.task.id() == task_id)
+                        && self.task_icon_resource_assignments.get(&task_id) == Some(&resource_key)
+                    {
+                        self.task_icons.insert(task_id, path.clone());
+                    }
+                }
+                info!(
+                    event = "download.list.icon_completed",
+                    %correlation_id,
+                    success = true,
+                    resource_scope = pending.resource_scope,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download task Shell icon request completed"
+                );
+            } else {
+                warn!(
+                    event = "download.list.icon_failed",
+                    %correlation_id,
+                    success = false,
+                    resource_scope = pending.resource_scope,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    ?native_error_code,
+                    error_present,
+                    "download task Shell icon request failed"
+                );
+                self.failed_task_icon_resources.insert(pending.resource_key);
+            }
+            cx.notify();
+            return;
+        }
         if let Some(operation_id) = self.completion_feedback_commands.remove(&correlation_id) {
             self.handle_completion_feedback_result(operation_id, correlation_id, result, cx);
             return;
@@ -3809,6 +3932,99 @@ impl DownloadApplication {
         self.refresh_snapshot(true, cx);
     }
 
+    fn request_task_icons(&mut self) {
+        let live_task_ids = self
+            .tasks
+            .iter()
+            .map(|task| task.task.id())
+            .collect::<HashSet<_>>();
+        self.task_icons
+            .retain(|task_id, _| live_task_ids.contains(task_id));
+        self.task_icon_resource_assignments
+            .retain(|task_id, _| live_task_ids.contains(task_id));
+
+        let descriptors = self
+            .tasks
+            .iter()
+            .filter_map(|task| {
+                Some((
+                    task.task.id(),
+                    download_task_icon_resource_key(task)?,
+                    download_task_icon_target(task)?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let live_resource_keys = descriptors
+            .iter()
+            .map(|(_, resource_key, _)| resource_key.clone())
+            .collect::<HashSet<_>>();
+        self.task_icon_resources
+            .retain(|resource_key, _| live_resource_keys.contains(resource_key));
+        self.failed_task_icon_resources
+            .retain(|resource_key| live_resource_keys.contains(resource_key));
+        for (task_id, resource_key, target) in descriptors {
+            let resource_scope = if resource_key.contains(":target:") {
+                "target"
+            } else {
+                "file_type"
+            };
+            if self
+                .task_icon_resource_assignments
+                .insert(task_id, resource_key.clone())
+                .is_some_and(|previous| previous != resource_key)
+            {
+                self.task_icons.remove(&task_id);
+            }
+            if let Some(path) = self.task_icon_resources.get(&resource_key) {
+                self.task_icons.insert(task_id, path.clone());
+                continue;
+            }
+            if let Some(command_id) = self.pending_task_icon_resources.get(&resource_key).copied() {
+                if let Some(pending) = self.pending_task_icons.get_mut(&command_id) {
+                    pending.task_ids.insert(task_id);
+                }
+                continue;
+            }
+            if self.failed_task_icon_resources.contains(&resource_key) {
+                continue;
+            }
+            match self
+                .platform
+                .send_command(PlatformCommand::ExtractShellIcon(ExtractShellIconCommand {
+                    target,
+                    size: DOWNLOAD_TASK_ICON_SIZE,
+                })) {
+                Ok(command_id) => {
+                    self.pending_task_icon_resources
+                        .insert(resource_key.clone(), command_id);
+                    self.pending_task_icons.insert(
+                        command_id,
+                        PendingDownloadTaskIcon {
+                            resource_key,
+                            task_ids: HashSet::from([task_id]),
+                            resource_scope,
+                            started_at: Instant::now(),
+                        },
+                    );
+                    info!(
+                        event = "download.list.icon_accepted",
+                        correlation_id = %command_id,
+                        resource_scope,
+                        "download task Shell icon request accepted"
+                    );
+                }
+                Err(error) => {
+                    self.failed_task_icon_resources.insert(resource_key);
+                    warn!(
+                        event = "download.list.icon_request_failed",
+                        %error,
+                        "download task Shell icon request could not be queued"
+                    );
+                }
+            }
+        }
+    }
+
     fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
         let snapshot = match load_download_snapshot(&self.engine) {
             Ok(snapshot) => snapshot,
@@ -3825,6 +4041,7 @@ impl DownloadApplication {
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
         self.queues = snapshot.queues;
+        self.request_task_icons();
         if refresh_task_detail
             && let Some(task_id) = self
                 .task_detail
@@ -11679,6 +11896,130 @@ mod tests {
     #[test]
     fn multiline_header_placeholder_stays_on_one_line_for_windows_directwrite() {
         assert!(!DEFAULT_REQUEST_HEADERS_PLACEHOLDER.contains(['\r', '\n']));
+    }
+
+    #[gpui::test]
+    fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory, platform_endpoint) =
+            download_application_for_window_test_with_platform(cx, "task-shell-icons");
+        platform_endpoint.set_connected_for_contract_test(true);
+        let (task_id, sibling_task_id) = cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                let task_id = application
+                    .engine
+                    .enqueue(
+                        DownloadRequest {
+                            source_url: "https://example.test/archive.zip".into(),
+                            save_directory: directory.clone(),
+                            save_directory_explicit: false,
+                            file_name: Some("archive.zip".into()),
+                            headers: Vec::new(),
+                            cookie: None,
+                            referrer: None,
+                            certificate_policy: Default::default(),
+                            connection_limit: Some(1),
+                            speed_limit_bytes_per_second: None,
+                            expected_total_bytes: None,
+                            scheduled_at_unix_ms: None,
+                            adaptive_segment_policy: None,
+                            media: None,
+                            category_id: None,
+                            category_name: None,
+                            duplicate_strategy:
+                                nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                        },
+                        RequestOrigin::Internal,
+                    )
+                    .expect("enqueue icon fixture task");
+                let sibling_task_id = application
+                    .engine
+                    .enqueue(
+                        DownloadRequest {
+                            source_url: "https://example.test/second.zip".into(),
+                            save_directory: directory.clone(),
+                            save_directory_explicit: false,
+                            file_name: Some("second.zip".into()),
+                            headers: Vec::new(),
+                            cookie: None,
+                            referrer: None,
+                            certificate_policy: Default::default(),
+                            connection_limit: Some(1),
+                            speed_limit_bytes_per_second: None,
+                            expected_total_bytes: None,
+                            scheduled_at_unix_ms: None,
+                            adaptive_segment_policy: None,
+                            media: None,
+                            category_id: None,
+                            category_name: None,
+                            duplicate_strategy:
+                                nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                        },
+                        RequestOrigin::Internal,
+                    )
+                    .expect("enqueue sibling icon fixture task");
+                application.refresh_snapshot(false, cx);
+                (task_id, sibling_task_id)
+            })
+        });
+
+        let envelope = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("typed Shell icon command");
+        match &envelope.message {
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(
+                ExtractShellIconCommand { target, size },
+            )) => {
+                assert_eq!(target, "archive.zip");
+                assert_eq!(*size, DOWNLOAD_TASK_ICON_SIZE);
+            }
+            message => panic!("unexpected platform message: {message:?}"),
+        }
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "tasks with the same extension must share one bounded Shell request"
+        );
+        let icon_path = directory.join("archive-icon.png");
+        std::fs::write(&icon_path, crate::icons::ONE_PIXEL_PNG).expect("write Shell icon result");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: envelope.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(icon_path.to_string_lossy().into_owned()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert_eq!(
+            cx.read(|cx| {
+                application
+                    .read(cx)
+                    .task_icon_path(task_id)
+                    .map(Path::to_path_buf)
+            }),
+            Some(icon_path.clone())
+        );
+        assert_eq!(
+            cx.read(|cx| {
+                application
+                    .read(cx)
+                    .task_icon_path(sibling_task_id)
+                    .map(Path::to_path_buf)
+            }),
+            Some(icon_path)
+        );
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]

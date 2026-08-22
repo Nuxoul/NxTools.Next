@@ -857,6 +857,28 @@ rust/apps/nxtools-desktop/src/ui/
   和下载详情 progress selector 四项失败与前序基线完全相同。下载 DL-01 至 DL-28 至此完成，下一
   批次从 QL-01 主弹窗开始。
 
+下载主列表 Release 复核修正（2026-08-22）：
+
+- 包级实机复核发现 46 px 任务行仍把所有文件画成 raised surface 内的通用 Download glyph，并把
+  `DownloadFault.message` 的英文协议详情和任务 UUID 直接放进辅助行；这不改变 DL-01 至 DL-28 的
+  功能完成状态，但不满足文件身份扫描和失败信息层级。
+- 主列表现复用既有 typed `ExtractShellIcon` PlatformHost 通道：未完成任务按扩展名共享 24 px Windows
+  文件类型图标，已完成任务按实际目标路径请求 Shell 图标；Rust 以 resource key 合并请求、以任务 ID
+  和当前 resource assignment 防护陈旧结果。图标直接进入 26 px 透明槽，不再有 raised tile；加载或
+  失败期间才显示中性 fallback。
+- 失败辅助行根据完整 `DownloadFaultCode` 映射短中文摘要，并对资源变化、服务器忽略 Range/返回 200
+  两个高频协议场景给出可执行提示。完整原始信息仍保留在有界 Tooltip 和底部详情 dock。名称恢复 Body
+  regular，路径与数字提升至 secondary contrast，行、进度与固定列几何保持不变。
+- 2 条失败摘要单测、typed Shell 请求/同扩展名合并/任务回填回归、真实 GPUI Shell 图标透明槽回归和
+  共享 PNG 校验共 5 条定向测试通过；`cargo check -p nxtools-desktop --tests`、下载/UI state/桌面 shell
+  三项架构门禁、package memory policy、rustfmt 与 diff check 通过；desktop 全套为 314/318，分类按钮
+  selector、网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全相同。
+  PlatformHost 运行输出确认缺失文件按 Windows 文件类型取图标、
+  不同快捷方式保留不同应用图标；Release 内存预检、Rust/C# 打包、PE subsystem 与产品图标门禁通过。
+  [100% DPI 实机截图](audits/download-main-remediation-2026-08-22/01-download-list-100pct.png)为
+  1076 x 508（含原生阴影，对应 1060 x 492 客户区），当前样本均为 `.bin`，因此 Windows 正确返回相同
+  文件类型图标；125%/150% 仍归 Release 人工截图矩阵统一收口。
+
 第三十个 P1 速启主弹窗切片（2026-08-22）：
 
 - QL-01 保留一个复用的 620 x 410 graphite 工作面与 42 px 搜索栏；普通空查询时原生窗口收起为

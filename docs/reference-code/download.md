@@ -960,6 +960,30 @@ Reverified on 2026-08-13 for the P0 task-table refinement:
   and status columns, but retains enough width for useful file identity. Header and row geometry are
   verified through the production download workspace rather than a component-only fixture.
 
+Reverified on 2026-08-22 after the packaged main-list review:
+
+- AB Download Manager's `TableDownloadItem.kt::NameCell -> FileIconProvider::rememberIcon` places
+  the operating-system file-type icon directly beside the name, while `OSFileIconProvider` caches
+  it by extension. Its failure row uses the mapped `DownloadErrorReason.title`; the raw throwable
+  message remains supporting diagnostic detail rather than becoming the table label.
+- Old NxTools `Views/MainWindow.axaml` used one generic `draft` glyph for every task and
+  `DownloadTaskViewModel` supplied localized status text. The generic glyph is a compatibility
+  baseline only: it does not preserve file identity and is not carried into the corrected Next
+  workbench.
+- Before this correction, NxTools.Next likewise rendered every task as a tinted Download glyph in
+  a raised 26 px tile and copied `DownloadFault.message` directly into the auxiliary line.
+  That exposed internal English protocol strings and task UUIDs in the primary scanning surface.
+- The corrected row reuses the existing typed `ExtractShellIcon` PlatformHost boundary and its
+  bounded PNG cache. It requests one 24 px Windows Shell icon per unfinished file-type resource and
+  uses the actual target path for completed tasks, then renders the result in
+  the existing transparent icon slot and keeps a neutral file fallback while the request is pending
+  or rejected. Rust continues to own the task/icon association; C# only adapts the Windows Shell.
+- Failure rows derive one short localized summary from the typed error category and known protocol
+  cases. The complete bounded engine message remains in the existing tooltip and detail dock, so
+  diagnostics are preserved without letting correlation IDs or raw transport prose dominate the
+  task table. Icon completion and failure notify the observed `DownloadApplication` only; they do
+  not mutate task state, queue order, selection or download lifecycle.
+
 ### Phase 1A new-download presentation invariants
 
 Reverified on 2026-07-27 after the first packaged interaction pass:

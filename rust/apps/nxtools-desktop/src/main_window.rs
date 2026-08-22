@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,9 +25,10 @@ use nxtools_core::{
     ClipboardSettings, CustomCommandSettings, SystemSettings,
 };
 use nxtools_download::{
-    DownloadBatchAction, DownloadEngineTask, DownloadProgress, DownloadQueuePlacement,
-    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskDetail, DownloadTaskId,
-    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, RequestOrigin,
+    DownloadBatchAction, DownloadEngineTask, DownloadFault, DownloadFaultCode, DownloadProgress,
+    DownloadQueuePlacement, DownloadSegment, DownloadSegmentState, DownloadStatus,
+    DownloadTaskDetail, DownloadTaskId, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    RequestOrigin,
 };
 use nxtools_ipc::PlatformBridge;
 use nxtools_protocol::{
@@ -384,6 +386,37 @@ fn download_task_name(task: &DownloadEngineTask) -> &str {
                 .and_then(|probe| probe.file_name.as_deref())
         })
         .unwrap_or("正在解析文件名")
+}
+
+fn download_failure_summary(error: &DownloadFault) -> &'static str {
+    let message = error.message.to_ascii_lowercase();
+    if error.code == DownloadFaultCode::Protocol {
+        if message.contains("resource changed")
+            || message.contains("validator changed")
+            || message.contains("etag changed")
+        {
+            return "远程文件已变化，请重新下载";
+        }
+        if message.contains("ignored the requested byte range")
+            || message.contains("range") && message.contains("http 200")
+        {
+            return "服务器不支持断点续传，请重新开始";
+        }
+    }
+    match error.code {
+        DownloadFaultCode::InvalidRequest => "下载请求无效，请检查地址",
+        DownloadFaultCode::NotFound => "下载任务或文件不存在",
+        DownloadFaultCode::InvalidState => "当前状态无法执行此操作",
+        DownloadFaultCode::Storage => "无法写入下载文件，请检查保存位置",
+        DownloadFaultCode::Network => "网络连接失败，请检查网络后重试",
+        DownloadFaultCode::Protocol => "服务器响应异常，请重试",
+        DownloadFaultCode::Permission => "没有权限写入保存位置",
+        DownloadFaultCode::DiskFull => "磁盘空间不足",
+        DownloadFaultCode::FileInUse => "目标文件正在被其他程序使用",
+        DownloadFaultCode::Cancelled => "下载已取消",
+        DownloadFaultCode::Unavailable => "下载服务暂时不可用，请稍后重试",
+        DownloadFaultCode::Internal => "下载发生内部错误，请重试",
+    }
 }
 
 fn download_task_matches_search(task: &DownloadEngineTask, query: &str) -> bool {
@@ -2057,7 +2090,7 @@ impl MainWindow {
             .value()
             .trim()
             .to_owned();
-        let (total_count, counts, visible_tasks, visible_progress) = self
+        let (total_count, counts, visible_tasks, visible_progress, visible_icons) = self
             .downloads
             .upgrade()
             .map(|application| {
@@ -2078,11 +2111,20 @@ impl MainWindow {
                             .map(|progress| (task.task.id(), progress))
                     })
                     .collect::<HashMap<_, _>>();
+                let visible_icons = visible_tasks
+                    .iter()
+                    .filter_map(|task| {
+                        application
+                            .task_icon_path(task.task.id())
+                            .map(|path| (task.task.id(), path.to_path_buf()))
+                    })
+                    .collect::<HashMap<_, _>>();
                 (
                     tasks.len(),
                     download_filter_counts(tasks.iter().map(|task| task.task.status())),
                     visible_tasks,
                     visible_progress,
+                    visible_icons,
                 )
             })
             .unwrap_or_default();
@@ -2187,6 +2229,7 @@ impl MainWindow {
         let virtual_tasks = Arc::new(visible_tasks);
         let virtual_task_ids = Arc::new(visible_task_ids);
         let virtual_progress = Arc::new(visible_progress);
+        let virtual_icons = Arc::new(visible_icons);
         let virtual_main_window = main_window.clone();
         let task_list = uniform_list(
             "download-task-list",
@@ -2196,6 +2239,7 @@ impl MainWindow {
                     .filter_map(|index| virtual_tasks.get(index).cloned())
                     .map(|task| {
                         let progress = virtual_progress.get(&task.task.id()).cloned();
+                        let icon_path = virtual_icons.get(&task.task.id()).cloned();
                         download_task_row(
                             theme,
                             this.downloads.clone(),
@@ -2206,6 +2250,7 @@ impl MainWindow {
                             },
                             task,
                             progress,
+                            icon_path,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -4249,6 +4294,7 @@ fn download_task_row(
     selection: DownloadRowSelection,
     task: DownloadEngineTask,
     live_progress: Option<DownloadProgress>,
+    icon_path: Option<PathBuf>,
 ) -> AnyElement {
     let DownloadRowSelection {
         selected,
@@ -4274,10 +4320,11 @@ fn download_task_row(
     );
     let failed = task.error.is_some();
     let (secondary_text, secondary_color) = task.error.as_ref().map_or_else(
-        || (path, theme.text_muted),
-        |error| (error.message.clone(), theme.danger),
+        || (path, theme.text_secondary),
+        |error| (download_failure_summary(error).to_owned(), theme.danger),
     );
     let error_tooltip = task.error.as_ref().map(|error| error.message.clone());
+    let has_icon_path = icon_path.is_some();
     let row_open_application = application.clone();
     let context_application = application;
     let click_main_window = main_window.clone();
@@ -4378,8 +4425,8 @@ fn download_task_row(
         .child(
             div()
                 .size_full()
-                .pl(px(8.0))
-                .pr(px(10.0))
+                .pl(px(SPACING_8))
+                .pr(px(SPACING_8))
                 .border_l_2()
                 .border_color(if selected {
                     theme.accent
@@ -4388,22 +4435,41 @@ fn download_task_row(
                 })
                 .flex()
                 .items_center()
-                .gap(px(10.0))
+                .gap(px(SPACING_8))
                 .child(
                     div()
                         .size(px(26.0))
-                        .rounded(px(4.0))
-                        .bg(theme.surface_raised)
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(Icon::new(MaterialIcon::Download).size(px(15.0)).text_color(
-                            if status == DownloadStatus::Completed {
-                                theme.success
-                            } else {
-                                theme.accent
-                            },
-                        )),
+                        .when_some(icon_path, |slot, path| {
+                            slot.child(
+                                div()
+                                    .when(selected, |icon| {
+                                        icon.debug_selector(|| {
+                                            "download-task-shell-icon-selected".into()
+                                        })
+                                    })
+                                    .size(px(20.0))
+                                    .child(img(path).size_full().object_fit(ObjectFit::Contain)),
+                            )
+                        })
+                        .when(!has_icon_path, |slot| {
+                            slot.child(
+                                div()
+                                    .when(selected, |icon| {
+                                        icon.debug_selector(|| {
+                                            "download-task-icon-fallback-selected".into()
+                                        })
+                                    })
+                                    .size(px(15.0))
+                                    .child(
+                                        Icon::new(MaterialIcon::Download)
+                                            .size_full()
+                                            .text_color(theme.icon_muted),
+                                    ),
+                            )
+                        }),
                 )
                 .child(
                     div()
@@ -4415,7 +4481,7 @@ fn download_task_row(
                         .overflow_hidden()
                         .flex()
                         .flex_col()
-                        .gap(px(1.0))
+                        .gap(px(SPACING_2))
                         .child(
                             div()
                                 .when(selected, |text| {
@@ -4427,7 +4493,6 @@ fn download_task_row(
                                 .whitespace_nowrap()
                                 .text_size(px(TEXT_BODY))
                                 .line_height(px(LINE_HEIGHT_BODY))
-                                .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(theme.text)
                                 .child(name),
                         )
@@ -4495,7 +4560,7 @@ fn download_task_row(
                                 .items_center()
                                 .font_family(UI_MONO_FONT_FAMILY)
                                 .text_size(px(TEXT_META))
-                                .text_color(theme.text_muted)
+                                .text_color(theme.text_secondary)
                                 .child(
                                     div()
                                         .when(selected, |value| {
@@ -5992,15 +6057,14 @@ fn download_table_header(
         .id("download-table-header")
         .debug_selector(|| "download-table-header".into())
         .h(px(DOWNLOAD_TABLE_HEADER_HEIGHT))
-        .px(px(10.0))
+        .px(px(SPACING_8))
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface)
         .flex()
         .items_center()
-        .gap(px(10.0))
+        .gap(px(SPACING_8))
         .text_size(px(TEXT_META))
-        .font_weight(gpui::FontWeight::MEDIUM)
         .text_color(theme.text_muted)
         .child(name_header)
         .child(progress_header)
@@ -6077,6 +6141,65 @@ mod tests {
     use crate::notifications::{NotificationAction, NotificationCenter, NotificationDetail};
     use crate::quick_launch::QuickLaunchApplication;
     use crate::shell::MainModule;
+
+    #[test]
+    fn download_failure_summary_localizes_typed_errors_without_exposing_engine_ids() {
+        let resource_changed = DownloadFault {
+            code: DownloadFaultCode::Protocol,
+            message: "download resource changed while task DownloadTaskId(d3660bd8-3e06-480e-b738-d783e303165e) was active".into(),
+            retryable: false,
+        };
+        assert_eq!(
+            super::download_failure_summary(&resource_changed),
+            "远程文件已变化，请重新下载"
+        );
+
+        let ignored_range = DownloadFault {
+            code: DownloadFaultCode::Protocol,
+            message: "server ignored the requested byte range and returned HTTP 200".into(),
+            retryable: false,
+        };
+        assert_eq!(
+            super::download_failure_summary(&ignored_range),
+            "服务器不支持断点续传，请重新开始"
+        );
+        assert!(!super::download_failure_summary(&resource_changed).contains("DownloadTaskId"));
+    }
+
+    #[test]
+    fn download_failure_summary_covers_every_typed_category() {
+        let expected = [
+            (
+                DownloadFaultCode::InvalidRequest,
+                "下载请求无效，请检查地址",
+            ),
+            (DownloadFaultCode::NotFound, "下载任务或文件不存在"),
+            (DownloadFaultCode::InvalidState, "当前状态无法执行此操作"),
+            (DownloadFaultCode::Network, "网络连接失败，请检查网络后重试"),
+            (DownloadFaultCode::Protocol, "服务器响应异常，请重试"),
+            (
+                DownloadFaultCode::Storage,
+                "无法写入下载文件，请检查保存位置",
+            ),
+            (DownloadFaultCode::Permission, "没有权限写入保存位置"),
+            (DownloadFaultCode::DiskFull, "磁盘空间不足"),
+            (DownloadFaultCode::FileInUse, "目标文件正在被其他程序使用"),
+            (DownloadFaultCode::Cancelled, "下载已取消"),
+            (
+                DownloadFaultCode::Unavailable,
+                "下载服务暂时不可用，请稍后重试",
+            ),
+            (DownloadFaultCode::Internal, "下载发生内部错误，请重试"),
+        ];
+        for (code, summary) in expected {
+            let error = DownloadFault {
+                code,
+                message: "internal engine detail".into(),
+                retryable: false,
+            };
+            assert_eq!(super::download_failure_summary(&error), summary);
+        }
+    }
 
     #[test]
     fn download_row_transfer_uses_live_values_only_for_active_tasks() {
@@ -7652,6 +7775,120 @@ mod tests {
                 key: DownloadSortKey::Name,
                 descending: true,
             }
+        );
+    }
+
+    #[gpui::test]
+    fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let engine = DownloadEngine::open_in_memory().expect("open download icon test engine");
+        let task_id = engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/archive.zip".into(),
+                    save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
+                    file_name: Some("archive.zip".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    certificate_policy: Default::default(),
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                    media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue download icon task");
+        let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let downloads = cx.update(|cx| {
+            cx.new(|cx| {
+                DownloadApplication::new(
+                    engine,
+                    Rc::new(platform),
+                    notifications.clone(),
+                    DownloadRuntimeContext {
+                        fallback_default_directory: r"C:\Downloads".into(),
+                        config: AppConfig::default(),
+                        config_path: std::env::temp_dir().join("nxtools-test-config.json"),
+                        log_directory: std::env::temp_dir(),
+                        database_path: std::env::temp_dir().join("downloads.sqlite3"),
+                        ffmpeg_install_directory: std::env::temp_dir()
+                            .join("nxtools-test-tools")
+                            .join("ffmpeg"),
+                    },
+                    cx,
+                )
+            })
+        });
+        let icon_fixture = tempfile::tempdir().expect("download row icon fixture directory");
+        let icon_path = icon_fixture.path().join("archive-zip.png");
+        std::fs::write(&icon_path, crate::icons::ONE_PIXEL_PNG)
+            .expect("write production row icon fixture");
+        cx.update(|cx| {
+            downloads.update(cx, |application, cx| {
+                application.replace_task_icon_for_test(task_id, icon_path, cx);
+            });
+        });
+        let downloads_for_window = downloads.downgrade();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                downloads_for_window,
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Downloads);
+            main_window
+        });
+        let row_selector: &'static str = Box::leak(
+            format!("download-task-row-{}", task_id.as_uuid().as_u64_pair().0).into_boxed_str(),
+        );
+        let row = window
+            .debug_bounds(row_selector)
+            .expect("production download icon row");
+        window.simulate_click(row.center(), Modifiers::default());
+
+        let shell_icon = window
+            .debug_bounds("download-task-shell-icon-selected")
+            .expect("selected download row must render its resolved Shell icon");
+        assert_eq!(shell_icon.size, size(px(20.0), px(20.0)));
+        assert!(
+            window
+                .debug_bounds("download-task-icon-fallback-selected")
+                .is_none(),
+            "a resolved Shell icon must replace the generic fallback"
+        );
+        let row_source = include_str!("main_window.rs")
+            .split("fn download_task_row(")
+            .nth(1)
+            .and_then(|source| source.split("fn download_popup_item(").next())
+            .expect("download task row source");
+        let icon_source = row_source
+            .split(".when_some(icon_path")
+            .nth(1)
+            .and_then(|source| source.split(".child(\n                    div()\n                        .when(selected").next())
+            .expect("resolved Shell icon slot source");
+        assert!(icon_source.contains("img(path)"));
+        assert!(
+            !icon_source.contains(".bg("),
+            "Shell icons must stay on a transparent slot"
         );
     }
 

@@ -43,7 +43,7 @@ use nxtools_protocol::{
 };
 use tracing::{error, info, warn};
 
-use crate::icons::MaterialIcon;
+use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
 use crate::theme::{
@@ -173,16 +173,6 @@ fn icon_resource_key(result: &SearchResult, size: u32) -> String {
             result.entry.target.trim().replace('/', "\\").to_lowercase()
         ),
     }
-}
-
-fn shell_icon_path_is_renderable(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
-        && imagesize::size(path)
-            .is_ok_and(|dimensions| dimensions.width > 0 && dimensions.height > 0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7130,20 +7120,14 @@ mod tests {
 
     #[test]
     fn shell_icon_results_accept_valid_pngs_and_reject_undecodable_files() {
-        const ONE_PIXEL_PNG: &[u8] = &[
-            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
-            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00,
-            0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78,
-            0xda, 0x63, 0x64, 0xf8, 0x0f, 0x00, 0x01, 0x05, 0x01, 0x01, 0x27, 0x18, 0xe3, 0x66,
-            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-        ];
         let temp = tempfile::tempdir().expect("temporary Shell icon fixtures");
         let valid = temp.path().join("valid.png");
         let invalid = temp.path().join("invalid.png");
         let wrong_extension = temp.path().join("valid.svg");
-        std::fs::write(&valid, ONE_PIXEL_PNG).expect("valid PNG fixture");
+        std::fs::write(&valid, crate::icons::ONE_PIXEL_PNG).expect("valid PNG fixture");
         std::fs::write(&invalid, b"not a decodable image").expect("invalid image fixture");
-        std::fs::write(&wrong_extension, ONE_PIXEL_PNG).expect("wrong-extension fixture");
+        std::fs::write(&wrong_extension, crate::icons::ONE_PIXEL_PNG)
+            .expect("wrong-extension fixture");
 
         assert!(shell_icon_path_is_renderable(&valid));
         assert!(!shell_icon_path_is_renderable(&invalid));
