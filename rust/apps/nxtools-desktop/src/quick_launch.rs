@@ -51,9 +51,9 @@ use crate::theme::{
     ROW_HORIZONTAL_PADDING, SURFACE_INSET, Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 use crate::ui::components::state::{empty_state, progress_state};
-use crate::ui::metrics::SPACING_8;
+use crate::ui::metrics::{SPACING_2, SPACING_8};
 use crate::ui::native_window_handle;
-use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY};
+use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 mod file_dialog_search;
 use file_dialog_search::FileDialogSearchSession;
@@ -82,6 +82,12 @@ const QUICK_LAUNCH_PREVIEW_LEAVE_DELAY: Duration = Duration::from_millis(140);
 const QUICK_LAUNCH_PREVIEW_APPEAR_DURATION: Duration = Duration::from_millis(120);
 const QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION: Duration = Duration::from_millis(90);
 const QUICK_LAUNCH_EMPTY_RESULTS_LABEL: &str = "没有匹配项";
+const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0;
+const QUICK_LAUNCH_RESULT_ICON_WIDTH: f32 = 26.0;
+const QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH: f32 = 48.0;
+const QUICK_LAUNCH_RESULT_SHORTCUT_HINTS: [&str; 9] = [
+    "Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9",
+];
 const QUICK_LAUNCH_PREVIEW_WIDTH: f32 = 400.0;
 const QUICK_LAUNCH_PREVIEW_HEIGHT: f32 = 410.0;
 const QUICK_LAUNCH_PREVIEW_GAP: f32 = 10.0;
@@ -676,6 +682,32 @@ fn visible_icon_prefetch_range(
         .min(result_count)
         .max(start);
     start..end
+}
+
+fn quick_launch_shortcut_hint(visible_position: usize) -> Option<&'static str> {
+    QUICK_LAUNCH_RESULT_SHORTCUT_HINTS
+        .get(visible_position)
+        .copied()
+}
+
+fn quick_launch_shortcut_target(
+    key: &str,
+    modifiers: gpui::Modifiers,
+    visible_range: Range<usize>,
+    result_count: usize,
+) -> Option<usize> {
+    if !modifiers.control
+        || modifiers.alt
+        || modifiers.shift
+        || modifiers.platform
+        || modifiers.function
+    {
+        return None;
+    }
+    let shortcut_position = key.parse::<usize>().ok()?.checked_sub(1)?;
+    QUICK_LAUNCH_RESULT_SHORTCUT_HINTS.get(shortcut_position)?;
+    let target = visible_range.start.checked_add(shortcut_position)?;
+    (target < visible_range.end && target < result_count).then_some(target)
 }
 
 fn quick_launch_match_ranges(text: &str, query: &str) -> Vec<std::ops::Range<usize>> {
@@ -1357,6 +1389,7 @@ impl IndexSearchSession {
 
 #[derive(Clone)]
 struct PendingQuickLaunchAction {
+    correlation_id: uuid::Uuid,
     popup_session_id: uuid::Uuid,
     entry_id: String,
     display_name: String,
@@ -1364,6 +1397,9 @@ struct PendingQuickLaunchAction {
     query: String,
     action: QuickLaunchAction,
     directory_visit: Option<String>,
+    trigger: QuickLaunchActionTrigger,
+    source: ApplicationSource,
+    started_at: Instant,
 }
 
 fn pending_action_targets_session(
@@ -1437,6 +1473,27 @@ enum QuickLaunchAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QuickLaunchActionTrigger {
+    Enter,
+    Shortcut,
+    Pointer,
+    ActionMode,
+    RecentDirectory,
+}
+
+impl QuickLaunchActionTrigger {
+    const fn diagnostic_label(self) -> &'static str {
+        match self {
+            Self::Enter => "enter",
+            Self::Shortcut => "shortcut",
+            Self::Pointer => "pointer",
+            Self::ActionMode => "action_mode",
+            Self::RecentDirectory => "recent_directory",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActionSuccessPolicy {
     RecordAndHide,
     HideWithoutRecording,
@@ -1475,6 +1532,19 @@ fn quick_launch_action_label(action: &QuickLaunchAction) -> &str {
         .find(|item| &item.action == action)
         .map(|item| item.label)
         .unwrap_or("执行操作")
+}
+
+fn quick_launch_action_diagnostic_label(action: &QuickLaunchAction) -> &'static str {
+    match action {
+        QuickLaunchAction::Open => "open",
+        QuickLaunchAction::SwitchDirectory { .. } => "switch_directory",
+        QuickLaunchAction::Reveal => "reveal",
+        QuickLaunchAction::CopyPath => "copy_path",
+        QuickLaunchAction::CopyResult => "copy_result",
+        QuickLaunchAction::CopyCommand => "copy_command",
+        QuickLaunchAction::RunElevated => "run_elevated",
+        QuickLaunchAction::Shell { .. } => "shell_action",
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3317,6 +3387,42 @@ impl QuickLaunchApplication {
         let Some(pending_action) = self.pending_actions.remove(&correlation_id) else {
             return;
         };
+        let elapsed_ms = pending_action
+            .started_at
+            .elapsed()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        let action_kind = quick_launch_action_diagnostic_label(&pending_action.action);
+        let action_correlation_id = pending_action.correlation_id;
+        let trigger = pending_action.trigger.diagnostic_label();
+        let source = pending_action.source.label();
+        if result.success {
+            info!(
+                event = "quick_launch.action.completed",
+                correlation_id = %action_correlation_id,
+                action = action_kind,
+                trigger,
+                source,
+                outcome = "success",
+                elapsed_ms,
+                native_error_code = ?result.native_error_code,
+                "quick-launch action completed"
+            );
+        } else {
+            error!(
+                event = "quick_launch.action.completed",
+                correlation_id = %action_correlation_id,
+                action = action_kind,
+                trigger,
+                source,
+                outcome = "failure",
+                elapsed_ms,
+                native_error_code = ?result.native_error_code,
+                error_reported = result.error.is_some(),
+                "quick-launch action failed"
+            );
+        }
         let targets_current_session =
             pending_action_targets_session(&pending_action, self.popup_session_id);
         if result.success {
@@ -3366,7 +3472,6 @@ impl QuickLaunchApplication {
             let reason = result
                 .error
                 .unwrap_or_else(|| "Windows 未返回错误详情".into());
-            error!(target = %pending_action.display_name, %reason, "quick-launch action failed");
             if targets_current_session && let Some(popup) = self.popup.clone() {
                 if let QuickLaunchAction::SwitchDirectory { window_handle, .. } =
                     &pending_action.action
@@ -4566,8 +4671,11 @@ impl QuickLaunchApplication {
         result: SearchResult,
         action: QuickLaunchAction,
         query: String,
+        trigger: QuickLaunchActionTrigger,
         cx: &mut Context<Self>,
     ) {
+        let started_at = Instant::now();
+        let action_correlation_id = uuid::Uuid::new_v4();
         let owner_window_handle = self
             .popup
             .as_ref()
@@ -4585,6 +4693,18 @@ impl QuickLaunchApplication {
         };
         let Some(command) = platform_command_for_action(&result, &action, owner_window_handle)
         else {
+            warn!(
+                event = "quick_launch.action.rejected",
+                correlation_id = %action_correlation_id,
+                action = quick_launch_action_diagnostic_label(&action),
+                trigger = trigger.diagnostic_label(),
+                source = result.entry.source.label(),
+                outcome = "failure",
+                elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                native_error_code = ?Option::<i32>::None,
+                reason = "unsupported_action",
+                "quick-launch action rejected before dispatch"
+            );
             if let Some(popup) = self.popup.clone() {
                 let _ = popup.panel.update(cx, |panel, cx| {
                     panel.set_error("系统工具没有可定位的快捷方式".into(), cx);
@@ -4592,11 +4712,23 @@ impl QuickLaunchApplication {
             }
             return;
         };
-        match self.platform.send_command(command) {
+        match self
+            .platform
+            .send_command_correlated(command, action_correlation_id)
+        {
             Ok(command_id) => {
+                info!(
+                    event = "quick_launch.action.accepted",
+                    correlation_id = %action_correlation_id,
+                    action = quick_launch_action_diagnostic_label(&action),
+                    trigger = trigger.diagnostic_label(),
+                    source = result.entry.source.label(),
+                    "quick-launch action accepted"
+                );
                 self.pending_actions.insert(
                     command_id,
                     PendingQuickLaunchAction {
+                        correlation_id: action_correlation_id,
                         popup_session_id: self.popup_session_id,
                         entry_id: result.entry.id,
                         display_name: result.entry.name,
@@ -4604,10 +4736,26 @@ impl QuickLaunchApplication {
                         query,
                         action,
                         directory_visit,
+                        trigger,
+                        source: result.entry.source,
+                        started_at,
                     },
                 );
             }
             Err(error) => {
+                warn!(
+                    event = "quick_launch.action.rejected",
+                    correlation_id = %action_correlation_id,
+                    action = quick_launch_action_diagnostic_label(&action),
+                    trigger = trigger.diagnostic_label(),
+                    source = result.entry.source.label(),
+                    outcome = "failure",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis())
+                        .unwrap_or(u64::MAX),
+                    native_error_code = ?Option::<i32>::None,
+                    reason = %error,
+                    "quick-launch action rejected before dispatch"
+                );
                 if let Some(popup) = self.popup.clone() {
                     let _ = popup.panel.update(cx, |panel, cx| {
                         panel.set_error(format!("Windows 适配器不可用：{error}"), cx);
@@ -4925,6 +5073,7 @@ pub(crate) struct QuickLaunchPanel {
     results_appearance_generation: u64,
     result_scroll: UniformListScrollHandle,
     action_scroll: ScrollHandle,
+    visible_result_range: Range<usize>,
     last_presented_icon_range: Option<Range<usize>>,
     pointer_selection_gate: PointerSelectionGate,
     ime_enter_gate: ImeEnterGate,
@@ -4961,7 +5110,7 @@ impl QuickLaunchPanel {
                         this.selected = 0;
                         this.results = recent_directory_results(&this.recent_directories, &query);
                         this.search_pending = false;
-                        this.last_presented_icon_range = None;
+                        this.reset_presented_results();
                         this.result_scroll
                             .0
                             .borrow()
@@ -4997,6 +5146,7 @@ impl QuickLaunchPanel {
                                     *secondary,
                                     window.modifiers().shift,
                                 ),
+                                QuickLaunchActionTrigger::Enter,
                                 cx,
                             );
                         }
@@ -5018,7 +5168,7 @@ impl QuickLaunchPanel {
             }
             if this.handle_navigation_key(
                 event.keystroke.key.as_str(),
-                event.keystroke.modifiers.modified(),
+                event.keystroke.modifiers,
                 window,
                 cx,
             ) {
@@ -5047,6 +5197,7 @@ impl QuickLaunchPanel {
             results_appearance_generation: 0,
             result_scroll: UniformListScrollHandle::new(),
             action_scroll: ScrollHandle::new(),
+            visible_result_range: 0..0,
             last_presented_icon_range: None,
             pointer_selection_gate: PointerSelectionGate::default(),
             ime_enter_gate: ImeEnterGate::default(),
@@ -5082,7 +5233,7 @@ impl QuickLaunchPanel {
         self.is_open = true;
         self.results_visible = false;
         self.search_pending = false;
-        self.last_presented_icon_range = None;
+        self.reset_presented_results();
         self.result_scroll
             .0
             .borrow()
@@ -5164,7 +5315,7 @@ impl QuickLaunchPanel {
                 .borrow()
                 .base_handle
                 .set_offset(point(px(0.0), px(0.0)));
-            self.last_presented_icon_range = None;
+            self.reset_presented_results();
             self.retain_icons_for_results();
             self.pointer_selection_gate.reset();
         }
@@ -5193,7 +5344,7 @@ impl QuickLaunchPanel {
         self.results = results;
         self.selected = 0;
         self.search_pending = false;
-        self.last_presented_icon_range = None;
+        self.reset_presented_results();
         self.result_scroll
             .0
             .borrow()
@@ -5216,7 +5367,7 @@ impl QuickLaunchPanel {
         self.recent_directory_mode = false;
         self.results.clear();
         self.selected = 0;
-        self.last_presented_icon_range = None;
+        self.reset_presented_results();
         self.search_input.update(cx, |state, cx| {
             state.set_placeholder("搜索应用、文件或文件夹", window, cx);
             state.set_value(String::new(), window, cx);
@@ -5229,11 +5380,27 @@ impl QuickLaunchPanel {
     fn handle_navigation_key(
         &mut self,
         key: &str,
-        modified: bool,
+        modifiers: gpui::Modifiers,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if modified {
+        if self.action_mode.is_none()
+            && !self.recent_directory_mode
+            && let Some(index) = quick_launch_shortcut_target(
+                key,
+                modifiers,
+                self.visible_result_range.clone(),
+                self.results.len(),
+            )
+        {
+            self.dismiss_preview(cx);
+            self.selected = index;
+            let action = quick_launch_primary_action(&self.results[index], false, false);
+            cx.notify();
+            self.activate_selected(action, QuickLaunchActionTrigger::Shortcut, cx);
+            return true;
+        }
+        if modifiers.modified() {
             return false;
         }
         if key.eq_ignore_ascii_case("escape") {
@@ -5353,11 +5520,13 @@ impl QuickLaunchPanel {
         );
     }
 
-    fn request_presented_result_icons(
-        &mut self,
-        visible_range: Range<usize>,
-        cx: &mut Context<Self>,
-    ) {
+    fn reset_presented_results(&mut self) {
+        self.visible_result_range = 0..0;
+        self.last_presented_icon_range = None;
+    }
+
+    fn update_presented_results(&mut self, visible_range: Range<usize>, cx: &mut Context<Self>) {
+        self.visible_result_range = visible_range.clone();
         if self.action_mode.is_some()
             || self.recent_directory_mode
             || visible_range.is_empty()
@@ -5477,7 +5646,7 @@ impl QuickLaunchPanel {
             .borrow()
             .base_handle
             .set_offset(point(px(0.0), px(0.0)));
-        self.last_presented_icon_range = None;
+        self.reset_presented_results();
         let value_will_change = self.search_input.read(cx).value().as_ref() != context.query;
         self.pending_results_selection = value_will_change.then_some(context.clone());
         let placeholder = if self.recent_directory_mode {
@@ -5498,7 +5667,7 @@ impl QuickLaunchPanel {
         self.selected = selection_after_results_refresh(&self.results, self.selected, &results);
         self.results = results;
         self.retain_icons_for_results();
-        self.last_presented_icon_range = None;
+        self.reset_presented_results();
         self.result_scroll
             .scroll_to_item(self.selected, ScrollStrategy::Center);
         self.search_pending = false;
@@ -5506,14 +5675,19 @@ impl QuickLaunchPanel {
         cx.notify();
     }
 
-    fn activate_selected(&mut self, action: QuickLaunchAction, cx: &mut Context<Self>) {
+    fn activate_selected(
+        &mut self,
+        action: QuickLaunchAction,
+        trigger: QuickLaunchActionTrigger,
+        cx: &mut Context<Self>,
+    ) {
         let Some(result) = self.results.get(self.selected).cloned() else {
             return;
         };
         let query = self.search_input.read(cx).value().to_string();
         schedule_application_update(
             self.application.clone(),
-            move |application, cx| application.execute(result, action, query, cx),
+            move |application, cx| application.execute(result, action, query, trigger, cx),
             cx,
         );
     }
@@ -5529,7 +5703,15 @@ impl QuickLaunchPanel {
         };
         schedule_application_update(
             self.application.clone(),
-            move |application, cx| application.execute(result, action, String::new(), cx),
+            move |application, cx| {
+                application.execute(
+                    result,
+                    action,
+                    String::new(),
+                    QuickLaunchActionTrigger::RecentDirectory,
+                    cx,
+                )
+            },
             cx,
         );
     }
@@ -5575,7 +5757,15 @@ impl QuickLaunchPanel {
         let query = mode.parent.query.clone();
         schedule_application_update(
             self.application.clone(),
-            move |application, cx| application.execute(result, action, query, cx),
+            move |application, cx| {
+                application.execute(
+                    result,
+                    action,
+                    query,
+                    QuickLaunchActionTrigger::ActionMode,
+                    cx,
+                )
+            },
             cx,
         );
     }
@@ -5691,6 +5881,7 @@ impl QuickLaunchPanel {
     fn render_result(
         &self,
         index: usize,
+        visible_position: usize,
         result: &SearchResult,
         query: String,
         panel: WeakEntity<QuickLaunchPanel>,
@@ -5716,6 +5907,7 @@ impl QuickLaunchPanel {
         } else {
             result.entry.target.clone()
         };
+        let shortcut_hint = quick_launch_shortcut_hint(visible_position);
         let name_highlights = quick_launch_match_ranges(&result.entry.name, &query)
             .into_iter()
             .map(|range| {
@@ -5733,7 +5925,7 @@ impl QuickLaunchPanel {
             .id(("quick-launch-result", index))
             .debug_selector(|| "quick-launch-result-row".into())
             .w_full()
-            .h(px(40.0))
+            .h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))
             .px(px(ROW_HORIZONTAL_PADDING))
             .rounded(px(COMPACT_RADIUS))
             .flex()
@@ -5791,13 +5983,22 @@ impl QuickLaunchPanel {
                 let query = query.clone();
                 schedule_application_update(
                     application.clone(),
-                    move |application, cx| application.execute(result, action, query, cx),
+                    move |application, cx| {
+                        application.execute(
+                            result,
+                            action,
+                            query,
+                            QuickLaunchActionTrigger::Pointer,
+                            cx,
+                        )
+                    },
                     cx,
                 );
             })
             .child(
                 div()
-                    .size(px(26.0))
+                    .debug_selector(move || format!("quick-launch-result-icon-{index}"))
+                    .size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -5818,15 +6019,18 @@ impl QuickLaunchPanel {
             )
             .child(
                 div()
+                    .debug_selector(move || format!("quick-launch-result-copy-{index}"))
                     .min_w_0()
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(1.0))
+                    .gap(px(SPACING_2))
                     .child(
                         div()
-                            .text_size(px(RESULT_TITLE_SIZE))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .debug_selector(move || format!("quick-launch-result-title-{index}"))
+                            .h(px(LINE_HEIGHT_BODY))
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
                             .text_color(theme.text)
                             .truncate()
                             .child(
@@ -5836,7 +6040,10 @@ impl QuickLaunchPanel {
                     )
                     .child(
                         div()
-                            .text_size(px(RESULT_DETAIL_SIZE))
+                            .debug_selector(move || format!("quick-launch-result-subtitle-{index}"))
+                            .h(px(LINE_HEIGHT_LABEL))
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(if selected {
                                 theme.text_secondary
                             } else {
@@ -5845,6 +6052,20 @@ impl QuickLaunchPanel {
                             .truncate()
                             .child(subtitle),
                     ),
+            )
+            .child(
+                div()
+                    .debug_selector(move || format!("quick-launch-result-shortcut-{index}"))
+                    .w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))
+                    .h(px(LINE_HEIGHT_LABEL))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .when_some(shortcut_hint, |rail, hint| rail.child(hint)),
             )
             .into_any_element()
     }
@@ -6076,12 +6297,14 @@ impl Render for QuickLaunchPanel {
                 "quick-launch-results",
                 result_count,
                 cx.processor(move |panel, visible_range: Range<usize>, _window, cx| {
-                    panel.request_presented_result_icons(visible_range.clone(), cx);
+                    let visible_start = visible_range.start;
+                    panel.update_presented_results(visible_range.clone(), cx);
                     visible_range
                         .filter_map(|index| {
                             panel.results.get(index).map(|result| {
                                 panel.render_result(
                                     index,
+                                    index.saturating_sub(visible_start),
                                     result,
                                     result_query.clone(),
                                     result_panel.clone(),
@@ -6318,6 +6541,223 @@ mod tests {
     }
 
     #[gpui::test]
+    fn production_heterogeneous_result_rows_keep_one_three_rail_geometry(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let temp = tempfile::tempdir().expect("temporary heterogeneous result catalog");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open heterogeneous result catalog");
+        let (application, endpoint) = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
+            endpoint.set_connected_for_contract_test(true);
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            let application = cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications,
+                )
+            });
+            (application, endpoint)
+        });
+        let results = [
+            (
+                "application",
+                ApplicationSource::StartMenu,
+                "NxTools",
+                "应用",
+            ),
+            (
+                "file",
+                ApplicationSource::IndexedFile,
+                "ui-remediation-plan.md",
+                "D:\\RiderProject\\NxTools.Next\\docs",
+            ),
+            (
+                "command",
+                ApplicationSource::CustomCommand,
+                "打开终端",
+                "自定义命令",
+            ),
+            (
+                "calculator",
+                ApplicationSource::Calculator,
+                "42",
+                "计算结果",
+            ),
+            (
+                "website",
+                ApplicationSource::WebUrl,
+                "OpenAI",
+                "https://openai.com",
+            ),
+        ]
+        .into_iter()
+        .map(|(id, source, name, subtitle)| {
+            let mut result = search_result(id, source);
+            result.entry.name = name.into();
+            result.subtitle = Some(subtitle.into());
+            result
+        })
+        .collect::<Vec<_>>();
+        let panel_slot = Rc::new(RefCell::new(None));
+        let panel_slot_for_window = Rc::clone(&panel_slot);
+        let application_for_window = application.clone();
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
+            let panel = cx.new(|cx| {
+                let mut panel = QuickLaunchPanel::new(
+                    results,
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    None,
+                    Vec::new(),
+                    application_for_window.downgrade(),
+                    window,
+                    cx,
+                );
+                panel.results_visible = true;
+                panel
+            });
+            *panel_slot_for_window.borrow_mut() = Some(panel.clone());
+            Root::new(panel, window, cx)
+        });
+        let panel = panel_slot
+            .borrow_mut()
+            .take()
+            .expect("heterogeneous quick-launch panel");
+
+        window
+            .refresh()
+            .expect("render heterogeneous quick-launch results");
+        let mut expected_icon = None;
+        let mut expected_copy = None;
+        let mut expected_shortcut = None;
+        let selectors = [
+            (
+                "quick-launch-result-icon-0",
+                "quick-launch-result-copy-0",
+                "quick-launch-result-title-0",
+                "quick-launch-result-subtitle-0",
+                "quick-launch-result-shortcut-0",
+            ),
+            (
+                "quick-launch-result-icon-1",
+                "quick-launch-result-copy-1",
+                "quick-launch-result-title-1",
+                "quick-launch-result-subtitle-1",
+                "quick-launch-result-shortcut-1",
+            ),
+            (
+                "quick-launch-result-icon-2",
+                "quick-launch-result-copy-2",
+                "quick-launch-result-title-2",
+                "quick-launch-result-subtitle-2",
+                "quick-launch-result-shortcut-2",
+            ),
+            (
+                "quick-launch-result-icon-3",
+                "quick-launch-result-copy-3",
+                "quick-launch-result-title-3",
+                "quick-launch-result-subtitle-3",
+                "quick-launch-result-shortcut-3",
+            ),
+            (
+                "quick-launch-result-icon-4",
+                "quick-launch-result-copy-4",
+                "quick-launch-result-title-4",
+                "quick-launch-result-subtitle-4",
+                "quick-launch-result-shortcut-4",
+            ),
+        ];
+        for (icon_selector, copy_selector, title_selector, subtitle_selector, shortcut_selector) in
+            selectors
+        {
+            let icon = window
+                .debug_bounds(icon_selector)
+                .expect("fixed result icon rail");
+            let copy = window
+                .debug_bounds(copy_selector)
+                .expect("fixed result copy rail");
+            let title = window.debug_bounds(title_selector).expect("result title");
+            let subtitle = window
+                .debug_bounds(subtitle_selector)
+                .expect("result subtitle");
+            let shortcut = window
+                .debug_bounds(shortcut_selector)
+                .expect("fixed shortcut rail");
+
+            assert_eq!(icon.size.width, px(26.0));
+            assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
+            assert_eq!(subtitle.size.height, px(LINE_HEIGHT_LABEL));
+            assert_eq!(shortcut.size.width, px(48.0));
+            let icon_rail = (icon.origin.x, icon.size.width);
+            let copy_rail = (copy.origin.x, copy.size.width);
+            let shortcut_rail = (shortcut.origin.x, shortcut.size.width);
+            assert_eq!(*expected_icon.get_or_insert(icon_rail), icon_rail);
+            assert_eq!(*expected_copy.get_or_insert(copy_rail), copy_rail);
+            assert_eq!(
+                *expected_shortcut.get_or_insert(shortcut_rail),
+                shortcut_rail
+            );
+        }
+
+        panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
+        window.simulate_keystrokes("ctrl-2");
+        panel.read_with(cx, |panel, _| assert_eq!(panel.selected, 1));
+        cx.run_until_parked();
+        let command = (0..8)
+            .filter_map(|_| endpoint.try_receive_command_for_contract_test().ok())
+            .find(|envelope| {
+                matches!(
+                    &envelope.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::OpenShellTarget(open)
+                    ) if open.target == "file.lnk" && open.action == ShellOpenAction::Open
+                )
+            })
+            .expect("typed command for the second visible result");
+        let action_correlation_id = application.read_with(cx, |application, _| {
+            let pending = application
+                .pending_actions
+                .get(&command.id)
+                .expect("transport command id retains the pending action");
+            assert_eq!(command.correlation_id, Some(pending.correlation_id));
+            assert_eq!(pending.trigger, QuickLaunchActionTrigger::Shortcut);
+            assert_eq!(pending.source, ApplicationSource::IndexedFile);
+            assert_eq!(pending.action, QuickLaunchAction::Open);
+            pending.correlation_id
+        });
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: command.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+        });
+        application.read_with(cx, |application, _| {
+            assert!(!application.pending_actions.contains_key(&command.id));
+            assert_ne!(action_correlation_id, command.id);
+        });
+    }
+
+    #[gpui::test]
     fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
         cx: &mut TestAppContext,
     ) {
@@ -6533,6 +6973,31 @@ mod tests {
             query_activation_count: 0,
             last_query_activation_at_unix_ms: None,
         }
+    }
+
+    #[test]
+    fn result_shortcuts_address_only_the_visible_first_nine_rows() {
+        let control = gpui::Modifiers {
+            control: true,
+            ..Default::default()
+        };
+
+        assert_eq!(quick_launch_shortcut_hint(0), Some("Ctrl+1"));
+        assert_eq!(quick_launch_shortcut_hint(8), Some("Ctrl+9"));
+        assert_eq!(quick_launch_shortcut_hint(9), None);
+        assert_eq!(
+            quick_launch_shortcut_target("1", control, 5..13, 20),
+            Some(5)
+        );
+        assert_eq!(
+            quick_launch_shortcut_target("8", control, 5..13, 20),
+            Some(12)
+        );
+        assert_eq!(quick_launch_shortcut_target("9", control, 5..13, 20), None);
+        assert_eq!(
+            quick_launch_shortcut_target("1", gpui::Modifiers::default(), 5..13, 20),
+            None
+        );
     }
 
     fn finish_shell_loading(mode: &mut QuickLaunchActionMode) {
@@ -7656,6 +8121,7 @@ mod tests {
         let original_session = uuid::Uuid::new_v4();
         let reopened_session = uuid::Uuid::new_v4();
         let pending = PendingQuickLaunchAction {
+            correlation_id: uuid::Uuid::new_v4(),
             popup_session_id: original_session,
             entry_id: "reports".into(),
             display_name: "Reports".into(),
@@ -7668,6 +8134,9 @@ mod tests {
                 host_context_id: None,
             },
             directory_visit: Some(r"C:\Reports".into()),
+            trigger: QuickLaunchActionTrigger::RecentDirectory,
+            source: ApplicationSource::IndexedDirectory,
+            started_at: Instant::now(),
         };
 
         assert!(pending_action_targets_session(&pending, original_session));
@@ -7678,6 +8147,7 @@ mod tests {
     fn pending_directory_navigation_owns_its_foreground_transition() {
         let session = uuid::Uuid::new_v4();
         let pending = PendingQuickLaunchAction {
+            correlation_id: uuid::Uuid::new_v4(),
             popup_session_id: session,
             entry_id: "reports".into(),
             display_name: "Reports".into(),
@@ -7690,6 +8160,9 @@ mod tests {
                 host_context_id: None,
             },
             directory_visit: Some(r"C:\Reports".into()),
+            trigger: QuickLaunchActionTrigger::RecentDirectory,
+            source: ApplicationSource::IndexedDirectory,
+            started_at: Instant::now(),
         };
 
         assert!(pending_action_owns_foreground(&pending, session, 77));
@@ -9086,7 +9559,7 @@ mod tests {
 
         assert!(render_result.contains(".id((\"quick-launch-result\", index))"));
         assert!(render_result.contains(".w_full()"));
-        assert!(render_result.contains(".h(px(40.0))"));
+        assert!(render_result.contains(".h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))"));
     }
 
     #[test]
@@ -9138,9 +9611,9 @@ mod tests {
             .and_then(|source| source.split("fn source_icon(").next())
             .expect("quick-launch render source");
 
-        assert!(render.contains("request_presented_result_icons"));
+        assert!(render.contains("update_presented_results"));
         assert!(render.contains("visible_range"));
-        assert!(source.contains("fn request_presented_result_icons("));
+        assert!(source.contains("fn update_presented_results("));
     }
 
     #[test]

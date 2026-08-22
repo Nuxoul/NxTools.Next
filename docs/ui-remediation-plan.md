@@ -877,6 +877,30 @@ rust/apps/nxtools-desktop/src/ui/
   与[展开结果态](audits/quick-launch-ql01-2026-08-22/02-results-100pct.png)已人工检查；125%/150% 继续由
   Release 截图矩阵在速启视觉批次收口时验收。QL-01 完成，下一切片为 QL-02 结果列表。
 
+第三十一个 P1 速启结果行切片（2026-08-22）：
+
+- QL-02 将应用、文件、命令、计算和网址收敛到同一 40 px 三栏结果行：26 px 透明图标槽、可伸缩的
+  双行文案栏和 48 px 快捷提示栏。真实 Shell 图标与语义 fallback 直接位于透明槽中，不增加色块；
+  标题、父路径/结果语义和快捷提示切换来源时保持同一横坐标，长文案只在自身栏内截断。
+- 标题从私有 13 px medium 迁移到共享 Body 12/18 regular，副信息与快捷提示使用 Label 11/16，
+  双行间距由任意 1 px 改为 `SPACING_2`，栏间继续使用 8 px 节奏。选中、hover、动作模式和预览
+  生命周期未在本切片提前重做。
+- 参考实现确认 Listary 的普通异构结果共享 `Title/Subtitle/Icon/Hotkey` 模板，SwiftList 对当前可见
+  前九行分配快捷提示。NxTools.Next 因此为可见普通结果显示并实现 Ctrl+1 至 Ctrl+9；滚动后按键
+  依据当前可见范围定位，范围外保留固定栏但不显示不可执行提示。快捷键、回车、鼠标、动作模式和
+  最近目录执行均记录触发来源；Windows 命令从 accepted 到 terminal 复用同一 correlation ID，终态
+  同时记录耗时、成功/失败和 native error code，且不写入查询、目标路径等敏感载荷。
+- 红—绿生产 GPUI 门禁使用应用、文件、命令、计算、网址五类真实 `SearchResult`，逐栏比较 icon、
+  copy、title、subtitle、shortcut bounds，并通过连接的内存平台端点验证实际 `ctrl-2` 键击发出第二
+  行的类型化命令且 pending action 复用相同 correlation ID。103 条 Quick Launch
+  定向回归、生命周期架构门禁、`cargo check -p nxtools-desktop --tests`、放行四项已记录基线后的包级
+  严格 Clippy、rustfmt、`git diff --check` 与 PlatformHost `dotnet build` 均通过。workspace 全套中
+  desktop 为 309/313；分类按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector
+  四项失败与前序基线完全相同；原样 workspace Clippy 仍先命中同一 build-script needless-borrow。
+  96 DPI 当前真实 GPUI [结果行验收图](audits/quick-launch-ql02-2026-08-22/01-result-rails-100pct.png)
+  已人工确认九行列坐标与截断行为；125%/150% 继续由 Release 截图矩阵在速启视觉批次收口时验收。
+  QL-02 完成，下一切片为 QL-03 选择态。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

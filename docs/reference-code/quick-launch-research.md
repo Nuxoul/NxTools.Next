@@ -969,6 +969,27 @@ Reverified on 2026-08-22 before the QL-01 main-popup token migration:
   with the main-popup stable-expansion contract rather than redesigning
   result-row content ahead of QL-02.
 
+Reverified on 2026-08-22 before the QL-02 result-row migration:
+
+- Listary's ordinary heterogeneous results still converge on
+  `SearchItemViewSelector::DefaultDataTemplate`. `SearchItemViewModelBase` supplies the shared
+  `Title`, `Subtitle`, `Icon`, `PreferredHotkey` and assigned `Hotkey` contract; path results place
+  the parent/root-relative path in `Subtitle`, while application results may intentionally leave it
+  empty. Special templates remain limited to no-results, separators, group titles and explicit
+  one-line rows, so application, file, command, calculator and URL sources do not justify separate
+  column geometries.
+- Listary's `SearchMode::UpdateHotkeys` assigns the visible selectable results Ctrl+1 through
+  Ctrl+9 unless a result supplies a preferred key. SwiftList independently confirms the same
+  behavior in `QuickSearchWindowLayoutManager::UpdateShortcutHints`: its shared
+  `SearchResultTemplate` is exactly icon / flexible name-plus-parent-path / trailing shortcut, and
+  only the currently visible first nine ordinary rows receive a hint. NxTools.Next therefore keeps
+  one fixed-width trailing rail and implements the displayed Ctrl+1…Ctrl+9 routes; it does not show
+  a non-functional hint.
+- QL-02 preserves the existing 40 px virtual row and result-selection lifecycle. The visual
+  migration is limited to a transparent fixed icon slot, a two-line shared copy rail and the fixed
+  shortcut rail. It uses Body 12/18 for the title and Label 11/16 for subtitle and shortcut, without
+  importing SwiftList's badge treatment or advancing the QL-03 selection redesign.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

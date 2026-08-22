@@ -136,6 +136,12 @@
 - Expansion motion runs only for the collapsed-to-expanded transition. Query-to-query result
   replacement keeps the expanded geometry and does not replay motion. The animation wrapper remains
   a definite flex container so the existing 40 px virtualized result rows cannot collapse.
+- Ordinary application, file, command, calculator and URL results share one 40 px three-rail row:
+  a transparent fixed 26 px icon slot, a flexible two-line copy rail and a fixed 48 px shortcut
+  rail. No source may add a decorative icon tile, badge or alternate column geometry.
+- Result titles use Body 12/18; subtitles and shortcuts use Label 11/16. The two copy lines use the
+  2 px spacing token, while rails use the 8 px rhythm. Visible ordinary rows expose working
+  Ctrl+1 through Ctrl+9 hints; rows outside that range retain the shortcut rail without fake copy.
 
 ### Work states
 

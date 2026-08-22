@@ -56,6 +56,58 @@ foreach ($requiredSearchInputTypeRole in @(
         throw 'Quick Launch search input must apply the shared Body type role directly.'
     }
 }
+$resultRenderStart = $quickLaunchSource.IndexOf('    fn render_result(')
+$resultRenderEnd = $quickLaunchSource.IndexOf('    fn render_action(', $resultRenderStart)
+if ($resultRenderStart -lt 0 -or $resultRenderEnd -le $resultRenderStart) {
+    throw 'Could not isolate the production Quick Launch result renderer.'
+}
+$resultRender = $quickLaunchSource.Substring(
+    $resultRenderStart,
+    $resultRenderEnd - $resultRenderStart
+)
+foreach ($requiredResultConstant in @(
+    'const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0',
+    'const QUICK_LAUNCH_RESULT_ICON_WIDTH: f32 = 26.0',
+    'const QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH: f32 = 48.0'
+)) {
+    if (-not $quickLaunchSource.Contains($requiredResultConstant)) {
+        throw 'Quick Launch result rows must preserve the fixed three-rail geometry.'
+    }
+}
+foreach ($requiredResultRenderContract in @(
+    'quick-launch-result-icon-',
+    'quick-launch-result-copy-',
+    'quick-launch-result-title-',
+    'quick-launch-result-subtitle-',
+    'quick-launch-result-shortcut-',
+    '.gap(px(SPACING_2))',
+    '.text_size(px(TEXT_BODY))',
+    '.line_height(px(LINE_HEIGHT_BODY))',
+    '.text_size(px(TEXT_LABEL))',
+    '.line_height(px(LINE_HEIGHT_LABEL))',
+    '.size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))',
+    '.w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))'
+)) {
+    if (-not $resultRender.Contains($requiredResultRenderContract)) {
+        throw 'Quick Launch heterogeneous results must share one tokenized three-rail row.'
+    }
+}
+if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
+    $resultRender.Contains('RESULT_DETAIL_SIZE') -or
+    $resultRender.Contains('.gap(px(1.0))') -or
+    $resultRender.Contains('.bg(theme.surface_raised)')) {
+    throw 'Quick Launch result rows must not restore private type, spacing or decorative icon tiles.'
+}
+if (-not $quickLaunchSource.Contains('fn quick_launch_shortcut_target(') -or
+    -not $quickLaunchSource.Contains('visible_result_range: Range<usize>') -or
+    -not $quickLaunchSource.Contains(
+        'fn production_heterogeneous_result_rows_keep_one_three_rail_geometry('
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'fn result_shortcuts_address_only_the_visible_first_nine_rows('
+    )) {
+    throw 'Quick Launch result shortcut rails require visible-range routing and production coverage.'
+}
 $desktopMainPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs'
 $desktopMainSource = Get-Content -Raw -LiteralPath $desktopMainPath
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'
@@ -449,7 +501,7 @@ the current GPUI entity lease has ended.
 
 Write-Host 'PASS cached search icons defer panel updates past the active GPUI lease'
 
-$presentedIconsStart = $quickLaunchSource.IndexOf('fn request_presented_result_icons(')
+$presentedIconsStart = $quickLaunchSource.IndexOf('fn update_presented_results(')
 if ($pointerMoveStart -lt 0 -or $presentedIconsStart -le $pointerMoveStart) {
     throw 'Quick-launch pointer lifecycle regression: result-pointer callback boundaries could not be located.'
 }
@@ -637,7 +689,7 @@ if ($protocolSource -notmatch '(?s)DirectoryNavigationHost\s*\{.*?Desktop' -or
     $quickLaunchSource -notmatch 'apply_recorded_directory_visit' -or
     $quickLaunchSource -notmatch 'captured_directory_reaches_sqlite_after_the_popup_session_changes' -or
     $quickLaunchSource -notmatch '(?s)fn schedule_directory_record.*?background_executor\(\).*?FinderCatalog::persist_directory_visit' -or
-    $quickLaunchSource -notmatch '(?s)fn request_presented_result_icons.*?self\.recent_directory_mode' -or
+    $quickLaunchSource -notmatch '(?s)fn update_presented_results.*?self\.recent_directory_mode' -or
     $finderSource -notmatch 'quick_launch_directory_history' -or
     $finderSource -notmatch 'MAX_RECENT_DIRECTORIES' -or
     $finderSource -notmatch 'pub fn recent_directories' -or
@@ -901,6 +953,45 @@ error overlay; successful execution is confirmed by the target application.
 
 Write-Host 'PASS successful quick-launch dispatch does not paint a status strip'
 
+$actionDispatchStart = $quickLaunchSource.IndexOf('    fn execute(')
+$togglePanelStart = $quickLaunchSource.IndexOf('    fn toggle_panel(', $actionDispatchStart)
+$commandResultStart = $quickLaunchSource.IndexOf('    fn handle_command_result(')
+$applyShellActionsStart = $quickLaunchSource.IndexOf('    fn apply_shell_actions(', $commandResultStart)
+if ($actionDispatchStart -lt 0 -or $togglePanelStart -le $actionDispatchStart -or
+    $commandResultStart -lt 0 -or $applyShellActionsStart -le $commandResultStart) {
+    throw 'Quick-launch action diagnostic boundaries could not be located.'
+}
+$actionDispatchBody = $quickLaunchSource.Substring(
+    $actionDispatchStart,
+    $togglePanelStart - $actionDispatchStart
+)
+$commandResultBody = $quickLaunchSource.Substring(
+    $commandResultStart,
+    $applyShellActionsStart - $commandResultStart
+)
+if ($actionDispatchBody -notmatch 'quick_launch\.action\.accepted' -or
+    $actionDispatchBody -notmatch 'quick_launch\.action\.rejected' -or
+    $actionDispatchBody -notmatch 'send_command_correlated\(command, action_correlation_id\)' -or
+    ([regex]::Matches(
+        $actionDispatchBody,
+        'correlation_id\s*=\s*%action_correlation_id'
+    )).Count -lt 3 -or
+    $actionDispatchBody -notmatch 'trigger\.diagnostic_label\(\)' -or
+    $commandResultBody -notmatch 'quick_launch\.action\.completed' -or
+    $commandResultBody -notmatch 'correlation_id\s*=\s*%action_correlation_id' -or
+    $commandResultBody -notmatch 'elapsed_ms' -or
+    $commandResultBody -notmatch 'native_error_code' -or
+    $commandResultBody -notmatch 'outcome\s*=\s*"success"' -or
+    $commandResultBody -notmatch 'outcome\s*=\s*"failure"') {
+    throw @'
+Quick-launch action diagnostic regression: dispatch must record accepted or
+rejected intent with its trigger, then terminal success/failure must retain the
+same IPC correlation id plus elapsed time and the native Windows error code.
+'@
+}
+
+Write-Host 'PASS quick-launch actions preserve correlated terminal diagnostics'
+
 $statusRenderStart = $quickLaunchSource.IndexOf('.when_some(self.status.clone(), |panel, status|')
 $sourceIconStart = $quickLaunchSource.IndexOf('fn source_icon(')
 if ($statusRenderStart -lt 0 -or $sourceIconStart -le $statusRenderStart) {
@@ -936,8 +1027,8 @@ query currently visible in the popup and replace that result set in place.
 
 Write-Host 'PASS application refresh stays off the UI thread and reapplies the current query'
 
-if ($quickLaunchSource -notmatch 'fn request_presented_result_icons' -or
-    $quickLaunchSource -notmatch '(?s)uniform_list\(.*?visible_range.*?request_presented_result_icons\(visible_range') {
+if ($quickLaunchSource -notmatch 'fn update_presented_results' -or
+    $quickLaunchSource -notmatch '(?s)uniform_list\(.*?visible_range.*?update_presented_results\(visible_range') {
     throw @'
 Quick-launch icon-loading regression: every result row that becomes visible
 through initial layout, wheel scrolling, scrollbar dragging or keyboard
