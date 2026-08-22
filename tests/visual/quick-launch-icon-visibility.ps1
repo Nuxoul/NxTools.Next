@@ -14,6 +14,7 @@ try {
     }
 
     $emptyRows = @()
+    $iconFingerprints = [System.Collections.Generic.HashSet[string]]::new()
     for ($row = 0; $row -lt 9; $row++) {
         $top = 64 + (40 * $row)
         $colors = @{}
@@ -36,14 +37,30 @@ try {
         if ($nonDominantPixels -lt 12) {
             $emptyRows += $row + 1
         }
+
+        $background = [System.Drawing.Color]::FromArgb([int]$dominant.Key)
+        $mask = [System.Text.StringBuilder]::new()
+        for ($y = $top + 4; $y -le $top + 35; $y++) {
+            for ($x = 30; $x -le 58; $x++) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $distance = [Math]::Abs([int]$pixel.R - [int]$background.R) +
+                    [Math]::Abs([int]$pixel.G - [int]$background.G) +
+                    [Math]::Abs([int]$pixel.B - [int]$background.B)
+                [void]$mask.Append($(if ($distance -ge 42) { '1' } else { '0' }))
+            }
+        }
+        [void]$iconFingerprints.Add($mask.ToString())
     }
 
     if ($emptyRows.Count -gt 0) {
         throw "Quick-launch result icon rail is visually empty in rows: $($emptyRows -join ', ')."
+    }
+    if ($iconFingerprints.Count -lt 4) {
+        throw "Quick-launch result rows use only $($iconFingerprints.Count) icon silhouettes; expected application-owned Shell icon diversity."
     }
 }
 finally {
     $bitmap.Dispose()
 }
 
-Write-Host 'PASS visible quick-launch rows contain rendered icon pixels'
+Write-Host 'PASS visible quick-launch rows contain diverse application-owned icon silhouettes'

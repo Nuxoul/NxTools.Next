@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using NxTools.PlatformHost.Diagnostics;
@@ -101,6 +102,7 @@ internal static class Program
             ("shell icon extraction command preserves target and size", ShellIconCommandPreservesPayload),
             ("missing files fall back to their Windows file type icon", MissingFileUsesTypeIcon),
             ("shortcut icon resolves to its target without the link overlay", ShortcutIconResolvesWithoutOverlay),
+            ("shortcut extraction preserves distinct application icons", ShortcutExtractionPreservesApplicationIcons),
             ("shortcut navigation resolves the real target directory", ShortcutNavigationResolvesRealTargetDirectory),
             ("clipboard archive picker preserves mode and suggested name", ClipboardArchivePickerPreservesPayload),
             ("clipboard storage picker preserves current directory", ClipboardStoragePickerPreservesPayload),
@@ -3598,26 +3600,7 @@ internal static class Program
             var target = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Test process path is unavailable.");
             var shortcutPath = Path.Combine(root, "target.lnk");
-            var shellType = Type.GetTypeFromProgID("WScript.Shell")
-                ?? throw new InvalidOperationException("Windows Script Host is unavailable.");
-            var shell = Activator.CreateInstance(shellType)
-                ?? throw new InvalidOperationException("Windows Script Host could not be created.");
-            try
-            {
-                dynamic shortcut = shellType.InvokeMember(
-                    "CreateShortcut",
-                    System.Reflection.BindingFlags.InvokeMethod,
-                    null,
-                    shell,
-                    [shortcutPath])!;
-                shortcut.TargetPath = target;
-                shortcut.Save();
-                Marshal.FinalReleaseComObject(shortcut);
-            }
-            finally
-            {
-                Marshal.FinalReleaseComObject(shell);
-            }
+            CreateShortcut(shortcutPath, target);
 
             var source = ShellIconExtractor.ResolveIconTarget(shortcutPath)
                 ?? throw new InvalidOperationException("Shortcut icon target was not resolved.");
@@ -3629,6 +3612,74 @@ internal static class Program
             Directory.Delete(root, recursive: true);
         }
         return Task.CompletedTask;
+    }
+
+    private static Task ShortcutExtractionPreservesApplicationIcons()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "nxtools-shortcut-icon-identity-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var command = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            var explorer = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "explorer.exe");
+            var commandShortcut = Path.Combine(root, "Command Prompt.lnk");
+            var explorerShortcut = Path.Combine(root, "File Explorer.lnk");
+            CreateShortcut(commandShortcut, command);
+            CreateShortcut(explorerShortcut, explorer);
+
+            var commandIcon = ShellIconExtractor.Extract(
+                new ExtractShellIconCommand(commandShortcut, 32));
+            var explorerIcon = ShellIconExtractor.Extract(
+                new ExtractShellIconCommand(explorerShortcut, 32));
+            if (!commandIcon.Success || commandIcon.Data is not string)
+                throw new InvalidOperationException($"Command shortcut extraction failed: {commandIcon.Error}");
+            if (!explorerIcon.Success || explorerIcon.Data is not string)
+                throw new InvalidOperationException($"Explorer shortcut extraction failed: {explorerIcon.Error}");
+            var commandPath = (string)commandIcon.Data!;
+            var explorerPath = (string)explorerIcon.Data!;
+            Assert(File.Exists(commandPath));
+            Assert(File.Exists(explorerPath));
+            if (SHA256.HashData(File.ReadAllBytes(commandPath))
+                .SequenceEqual(SHA256.HashData(File.ReadAllBytes(explorerPath))))
+            {
+                throw new InvalidOperationException(
+                    "Distinct application shortcuts collapsed to one generic Shell icon.");
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static void CreateShortcut(string shortcutPath, string targetPath)
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")
+            ?? throw new InvalidOperationException("Windows Script Host is unavailable.");
+        var shell = Activator.CreateInstance(shellType)
+            ?? throw new InvalidOperationException("Windows Script Host could not be created.");
+        try
+        {
+            dynamic shortcut = shellType.InvokeMember(
+                "CreateShortcut",
+                System.Reflection.BindingFlags.InvokeMethod,
+                null,
+                shell,
+                [shortcutPath])!;
+            shortcut.TargetPath = targetPath;
+            shortcut.Save();
+            Marshal.FinalReleaseComObject(shortcut);
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(shell);
+        }
     }
 
     private static Task ShortcutNavigationResolvesRealTargetDirectory()
@@ -3645,36 +3696,8 @@ internal static class Program
             File.WriteAllBytes(target, []);
             var shortcutPath = Path.Combine(root, "Editor.lnk");
             var directoryShortcutPath = Path.Combine(root, "Installed App.lnk");
-            var shellType = Type.GetTypeFromProgID("WScript.Shell")
-                ?? throw new InvalidOperationException("Windows Script Host is unavailable.");
-            var shell = Activator.CreateInstance(shellType)
-                ?? throw new InvalidOperationException("Windows Script Host could not be created.");
-            try
-            {
-                dynamic shortcut = shellType.InvokeMember(
-                    "CreateShortcut",
-                    System.Reflection.BindingFlags.InvokeMethod,
-                    null,
-                    shell,
-                    [shortcutPath])!;
-                shortcut.TargetPath = target;
-                shortcut.Save();
-                Marshal.FinalReleaseComObject(shortcut);
-
-                dynamic directoryShortcut = shellType.InvokeMember(
-                    "CreateShortcut",
-                    System.Reflection.BindingFlags.InvokeMethod,
-                    null,
-                    shell,
-                    [directoryShortcutPath])!;
-                directoryShortcut.TargetPath = targetDirectory;
-                directoryShortcut.Save();
-                Marshal.FinalReleaseComObject(directoryShortcut);
-            }
-            finally
-            {
-                Marshal.FinalReleaseComObject(shell);
-            }
+            CreateShortcut(shortcutPath, target);
+            CreateShortcut(directoryShortcutPath, targetDirectory);
 
             var resolved = ShellIconExtractor.ResolveNavigationDirectory(shortcutPath);
             Assert(string.Equals(resolved, targetDirectory, StringComparison.OrdinalIgnoreCase));

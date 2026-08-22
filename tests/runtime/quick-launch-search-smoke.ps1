@@ -1,11 +1,16 @@
 param(
     [string]$Executable = "$PSScriptRoot\..\..\artifacts\win-x64\NxTools.exe",
     [int]$StartupMilliseconds = 2200,
-    [int]$ResultTimeoutMilliseconds = 2500
+    [int]$ResultTimeoutMilliseconds = 2500,
+    [switch]$UseRealPlatformHost,
+    [string]$ScreenshotPath
 )
 
 $ErrorActionPreference = 'Stop'
 $resolvedExecutable = (Resolve-Path -LiteralPath $Executable).Path
+if (-not [string]::IsNullOrWhiteSpace($ScreenshotPath) -and -not $UseRealPlatformHost) {
+    throw 'Quick-launch screenshots require -UseRealPlatformHost so native Shell icons are real.'
+}
 
 Add-Type -TypeDefinition @'
 using System;
@@ -64,6 +69,16 @@ public static class NxToolsQuickLaunchSmokeInput
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr SendMessageW(IntPtr window, uint message, UIntPtr word, IntPtr data);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowExW(
+        IntPtr parent,
+        IntPtr childAfter,
+        string className,
+        string windowName);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessageW(IntPtr window, uint message, IntPtr word, IntPtr data);
+
     private const uint LeftDown = 0x0002;
     private const uint LeftUp = 0x0004;
 
@@ -83,6 +98,22 @@ public static class NxToolsQuickLaunchSmokeInput
         Tap(0x11);
         Thread.Sleep(110);
         Tap(0x11);
+    }
+
+    public static bool RequestPanelThroughRealPlatformHost(uint processId)
+    {
+        var messageOnlyWindow = IntPtr.Zero;
+        while ((messageOnlyWindow = FindWindowExW(
+                    new IntPtr(-3),
+                    messageOnlyWindow,
+                    null,
+                    "NxTools.PlatformHost.Events")) != IntPtr.Zero)
+        {
+            GetWindowThreadProcessId(messageOnlyWindow, out var ownerProcessId);
+            if (ownerProcessId == processId)
+                return PostMessageW(messageOnlyWindow, 0x0312, new IntPtr(2), IntPtr.Zero);
+        }
+        return false;
     }
 
     public static void TypeQuery()
@@ -122,6 +153,13 @@ public static class NxToolsQuickLaunchSmokeInput
         mouse_event(LeftDown, 0, 0, 0, UIntPtr.Zero);
         mouse_event(LeftUp, 0, 0, 0, UIntPtr.Zero);
         return true;
+    }
+
+    public static int[] GetFocusedPanelBounds()
+    {
+        if (focusedPanel == IntPtr.Zero || !GetWindowRect(focusedPanel, out var rect))
+            throw new InvalidOperationException("The quick-launch result window is unavailable for capture.");
+        return new[] { rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top };
     }
 
     public static bool TrySweepVisibleResults(uint processId)
@@ -347,14 +385,49 @@ try {
         throw "NxTools exited during startup with code $($process.ExitCode)."
     }
 
-    $platformHost = Get-Process -Name 'NxTools.PlatformHost' -ErrorAction Stop |
-        Where-Object StartTime -ge $process.StartTime |
-        Sort-Object StartTime -Descending |
-        Select-Object -First 1
-    Stop-Process -Id $platformHost.Id -Force
-    Start-Sleep -Milliseconds 250
-    $probe = [NxToolsQuickLaunchProtocolProbe]::Connect($resolvedExecutable)
-    $probe.RequestPanel()
+    $platformHost = $null
+    $platformHostDeadline = [DateTime]::UtcNow.AddSeconds(6)
+    $expectedPlatformHost = [IO.Path]::GetFullPath([IO.Path]::Combine(
+        (Split-Path -Parent $resolvedExecutable),
+        'NxTools.PlatformHost.exe'))
+    while (-not $platformHost -and [DateTime]::UtcNow -lt $platformHostDeadline) {
+        $platformHost = Get-Process -Name 'NxTools.PlatformHost' -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.StartTime -ge $process.StartTime -and
+                $_.Path -and
+                [IO.Path]::GetFullPath($_.Path) -eq $expectedPlatformHost
+            } |
+            Sort-Object StartTime -Descending |
+            Select-Object -First 1
+        if (-not $platformHost) {
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    if (-not $platformHost) {
+        throw 'NxTools did not launch PlatformHost before the smoke-test timeout.'
+    }
+    if ($UseRealPlatformHost) {
+        $requestedThroughPlatformHost = $false
+        $messageWindowDeadline = [DateTime]::UtcNow.AddSeconds(3)
+        while (-not $requestedThroughPlatformHost -and
+            [DateTime]::UtcNow -lt $messageWindowDeadline) {
+            $requestedThroughPlatformHost =
+                [NxToolsQuickLaunchSmokeInput]::RequestPanelThroughRealPlatformHost(
+                    [uint32]$platformHost.Id)
+            if (-not $requestedThroughPlatformHost) {
+                Start-Sleep -Milliseconds 25
+            }
+        }
+        if (-not $requestedThroughPlatformHost) {
+            throw 'The real PlatformHost message window was unavailable for the quick-launch request.'
+        }
+    }
+    else {
+        Stop-Process -Id $platformHost.Id -Force
+        Start-Sleep -Milliseconds 250
+        $probe = [NxToolsQuickLaunchProtocolProbe]::Connect($resolvedExecutable)
+        $probe.RequestPanel()
+    }
 
     $panelDeadline = [DateTime]::UtcNow.AddMilliseconds(2500)
     $focusedPanel = $false
@@ -380,7 +453,41 @@ try {
     if (-not $sweptResults) {
         throw 'Quick-launch did not publish a populated result window before the timeout.'
     }
-    Start-Sleep -Milliseconds 900
+    $visualSettleMilliseconds = if ($UseRealPlatformHost) { 5000 } else { 900 }
+    Start-Sleep -Milliseconds $visualSettleMilliseconds
+    if (-not [string]::IsNullOrWhiteSpace($ScreenshotPath)) {
+        Add-Type -AssemblyName System.Drawing.Common
+        $captureBounds = [NxToolsQuickLaunchSmokeInput]::GetFocusedPanelBounds()
+        $shadowPadding = 8
+        $resolvedScreenshot = [IO.Path]::GetFullPath($ScreenshotPath)
+        $screenshotDirectory = Split-Path -Parent $resolvedScreenshot
+        if (-not [string]::IsNullOrWhiteSpace($screenshotDirectory)) {
+            [IO.Directory]::CreateDirectory($screenshotDirectory) | Out-Null
+        }
+        $bitmap = [Drawing.Bitmap]::new(
+            $captureBounds[2] + (2 * $shadowPadding),
+            $captureBounds[3] + (2 * $shadowPadding))
+        try {
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.CopyFromScreen(
+                    $captureBounds[0] - $shadowPadding,
+                    $captureBounds[1] - $shadowPadding,
+                    0,
+                    0,
+                    [Drawing.Size]::new(
+                        $captureBounds[2] + (2 * $shadowPadding),
+                        $captureBounds[3] + (2 * $shadowPadding)))
+            }
+            finally {
+                $graphics.Dispose()
+            }
+            $bitmap.Save($resolvedScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+        }
+        finally {
+            $bitmap.Dispose()
+        }
+    }
 
     $process.Refresh()
     if ($process.HasExited) {
