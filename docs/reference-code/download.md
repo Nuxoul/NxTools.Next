@@ -2174,6 +2174,25 @@ Reverified on 2026-08-22 before the DL-20 probe-summary migration:
   the view seam, resizes through the same confirmed size helper, and asserts the right rail plus all
   three visible rows remain inside the form and above the fixed footer.
 
+Reverified on 2026-08-22 before the DL-22 category-information migration:
+
+- ABDM `desktop/app/.../addDownload/shared/CategorySelect.kt::RenderCategory` shows a compact icon
+  plus category name in its bounded dropdown. Old NxTools `AddDownloadWindow.axaml` likewise shows
+  only the category name. NxTools.Next keeps its intentional product extension: the destination is
+  necessary secondary information when several categories have similar names.
+- The existing NxTools.Next row already contained name and directory strings and attached a generic
+  directory tooltip, but the name used a private 16 px line height and neither the name nor tooltip
+  exposed a stable production boundary. A regression could collapse the row or silently remove the
+  only complete-path surface while the earlier directory-height assertion remained green.
+- DL-22 keeps each option as one dense two-line row: category name uses shared Body 12/18 and the
+  destination uses Label 11/16. Both lines own the available row width and truncate only inside the
+  ListBox; hovering the row opens a stable, wrapped, monospace tooltip containing the complete
+  destination. Selection, highlight, search, scroll and focus-return ownership remain unchanged.
+- The production gate opens the real 32-category Popover, asserts both visible lines are ordered and
+  contained by the same option, then advances the tooltip clock after hovering the long-path row and
+  requires the complete-directory tooltip boundary before continuing through the existing overlay,
+  keyboard-selection and native Cancel lifecycle.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

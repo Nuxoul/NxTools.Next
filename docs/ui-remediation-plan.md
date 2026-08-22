@@ -713,8 +713,25 @@ rust/apps/nxtools-desktop/src/ui/
   `cargo check --tests`、仅放行既有 build-script lint 的严格 Clippy、生命周期架构门禁、rustfmt
   与 `git diff --check` 均通过。desktop 全套为 298/302，DL-20 门禁在整包中通过；其余分类按钮
   selector、网络尾距、剪贴板空态宽度和下载详情 selector 四项为已记录的切片外既有基线。
-- DL-21 分类弹层是下一切片；在有界可滚动 ListBox、键盘搜索和 32 类全可达的独立验收边界完成
-  前不提前勾选。
+- DL-21 分类弹层已由 2026-08-13 的第三个 P0 纵向切片完成；下一项是 DL-22 分类信息，在名称/
+  目录双行和完整目录 Tooltip 获得稳定生产边界前不提前勾选。
+
+第二十三个 P0 分类信息切片（2026-08-22）：
+
+- DL-22 保留已完成 DL-21 的 `320 x 240 px` Popover、搜索和单一可滚动 ListBox，只整改每个
+  分类项的信息层级：名称使用共享 Body 12/18，目录使用 Label 11/16；两行各自占满可用宽度并
+  仅在列表内截断。悬停行使用稳定 selector 的 wrapped monospace Tooltip 显示完整目录，不再
+  依赖无法从生产门禁观察的默认 Tooltip。
+- 自动匹配、已选与键盘高亮、目录/扩展名搜索、同一 ScrollHandle、鼠标/Enter 选择、Escape/
+  overlay 关闭及文件名焦点回归均保持原 view owner；本切片不改变分类规则、目录应用、下载请求、
+  诊断或 Popover 生命周期。
+- 红—绿门禁先在真实 32 分类窗口缺少名称行边界处失败；修复后断言名称 18 px、目录 16 px 且
+  在同一 38 px 选项内按两行排列，长目录悬停 600 ms 后出现完整路径 Tooltip。同一用例继续通过
+  真实滚动范围、无分页器、最后一类键盘搜索/选择、焦点回归和 Cancel 原生关闭。desktop
+  `cargo check --tests`、仅放行既有 build-script lint 的严格 Clippy、生命周期架构门禁、rustfmt
+  与 `git diff --check` 均通过；全套保持 298/302，四项失败与 DL-20 已记录基线完全相同。
+- DL-23 HLS/DASH 轨道是下一切片；在标准 radio list、主副行信息层级和自动/具体轨道视觉区分的
+  生产边界完成前不提前勾选。
 
 ### 批次 2：主壳层与全局设置
 

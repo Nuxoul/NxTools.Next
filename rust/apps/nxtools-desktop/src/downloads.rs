@@ -9204,7 +9204,7 @@ impl Render for NewDownloadView {
                                     .child(
                                         div()
                                             .text_size(px(TEXT_BODY))
-                                            .line_height(px(16.0))
+                                            .line_height(px(LINE_HEIGHT_BODY))
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(theme.text)
                                             .child("自动匹配"),
@@ -9272,7 +9272,22 @@ impl Render for NewDownloadView {
                                             highlighted,
                                         ))
                                         .tooltip(move |window, cx| {
-                                            Tooltip::new(directory_tooltip.clone()).build(window, cx)
+                                            let directory_tooltip = directory_tooltip.clone();
+                                            Tooltip::element(move |_, _| {
+                                                div()
+                                                    .debug_selector(move || {
+                                                        format!(
+                                                            "download-new-category-option-tooltip-{index}"
+                                                        )
+                                                    })
+                                                    .max_w(px(720.0))
+                                                    .whitespace_normal()
+                                                    .font_family(UI_MONO_FONT_FAMILY)
+                                                    .text_size(px(TEXT_LABEL))
+                                                    .line_height(px(LINE_HEIGHT_LABEL))
+                                                    .child(directory_tooltip.clone())
+                                            })
+                                            .build(window, cx)
                                         })
                                         .cursor_pointer()
                                         .flex()
@@ -9280,10 +9295,16 @@ impl Render for NewDownloadView {
                                         .justify_center()
                                         .child(
                                             div()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
+                                                .debug_selector(move || {
+                                                    format!(
+                                                        "download-new-category-option-title-{index}"
+                                                    )
+                                                })
+                                                .w_full()
+                                                .min_w_0()
+                                                .truncate()
                                                 .text_size(px(TEXT_BODY))
-                                                .line_height(px(16.0))
+                                                .line_height(px(LINE_HEIGHT_BODY))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text)
                                                 .child(category_name),
@@ -9295,8 +9316,9 @@ impl Render for NewDownloadView {
                                                         "download-new-category-option-directory-{index}"
                                                     )
                                                 })
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
+                                                .w_full()
+                                                .min_w_0()
+                                                .truncate()
                                                 .text_size(px(TEXT_LABEL))
                                                 .line_height(px(LINE_HEIGHT_LABEL))
                                                 .text_color(theme.text_muted)
@@ -11927,9 +11949,38 @@ mod tests {
         let first_directory = window
             .debug_bounds("download-new-category-option-directory-0")
             .expect("first category directory summary");
+        let first_category = window
+            .debug_bounds("download-new-category-option-0")
+            .expect("first category option");
+        let first_title = window
+            .debug_bounds("download-new-category-option-title-0")
+            .expect("first category name line");
+        assert_eq!(first_title.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(first_directory.size.height, px(LINE_HEIGHT_LABEL));
+        let category_content_left = first_category.left().as_f32() + SPACING_8;
+        let category_content_right = first_category.right().as_f32() - SPACING_8;
         assert!(
-            first_directory.size.height.as_f32() >= 14.0,
-            "category directory summary must remain readable"
+            first_title.top() >= first_category.top()
+                && first_title.bottom() <= first_directory.top()
+                && first_directory.bottom() <= first_category.bottom()
+                && (first_title.left().as_f32() - category_content_left).abs() <= 1.0
+                && (first_title.right().as_f32() - category_content_right).abs() <= 1.0
+                && (first_directory.left().as_f32() - category_content_left).abs() <= 1.0
+                && (first_directory.right().as_f32() - category_content_right).abs() <= 1.0,
+            "category name and directory must remain two bounded rows"
+        );
+        let executor = cx.executor();
+        window.simulate_mouse_move(first_category.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(600));
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render complete category-directory tooltip");
+        assert!(
+            window
+                .debug_bounds("download-new-category-option-tooltip-0")
+                .is_some(),
+            "the complete category directory must remain readable from a stable tooltip"
         );
         let titlebar = window
             .debug_bounds("download-new-titlebar")
