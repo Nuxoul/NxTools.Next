@@ -948,6 +948,27 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 
 ### 阶段 5：最终验收与质感静态收尾（2026-07-27 复核）
 
+Reverified on 2026-08-22 before the QL-01 main-popup token migration:
+
+- Listary's managed chain remains `LauncherSearchWindowFactory` → `LauncherSearchWindow` →
+  `SearchWindowBase`. The launcher owns one search box and one result list; the base owns show,
+  activation and focus, while `SearchMode::Query` cancels and clears results for an empty query when
+  `SearchWhenQueryIsEmpty` is false. `ShowResultList` is true only for a non-empty committed result
+  collection, so a fresh summon is a compact search surface rather than an empty permanent panel.
+- `Class293` still creates the ordinary launcher as one merged multi-provider mode, and its normal
+  `SearchMode` awaits provider completion before replacing the committed collection. QL-01 therefore
+  preserves the existing single collapsed-to-expanded transition and does not replay entrance motion
+  when one non-empty query replaces another.
+- SwiftList's `QuickSearchWindowController::ShowWindow` independently confirms the same ownership:
+  one reused quick-search HWND is positioned near the active display's upper quarter, shown, verified
+  as foreground and then given search focus. It does not justify a second shell or a permanently
+  expanded empty-results region.
+- Old NxTools still has no Quick Launch surface to migrate. NxTools.Next remains the product geometry
+  authority: 620 x 410 expanded, a 42 px search header and a 44 px collapsed native window. The
+  QL-01 animated-wrapper repair restores the intended 40 px production row; its regression stays
+  with the main-popup stable-expansion contract rather than redesigning
+  result-row content ahead of QL-02.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。
@@ -955,9 +976,9 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   当前运行截图
   `docs/audits/launcher-clipboard-ui-2026-07-27/01-launcher-results-preview.png`
   证明八行结果、整行选中和相邻预览的基本密度已经成立，本轮不再次任意缩放。
-- 主搜索、动作菜单、预览与文件对话框附着搜索共用 `13.5 / 13 / 10.5 / 10 px` 紧凑字号层级、
-  4 px 圆角、语义选中态和 80 ms 轻动效。详情使用次要文本色，时间使用弱化文本色；保持中性
-  窗口边框和现有生命周期，不把速启改成高饱和强调色界面。
+- QL-01 后主搜索使用共享 Body 12/18；动作菜单、预览与文件对话框附着搜索仍保留后续切片待迁移的
+  `13 / 10.5 / 10 px` 紧凑字号。各表面维持 4 px 圆角、语义选中态和 80 ms 轻动效；详情使用次要
+  文本色，时间使用弱化文本色；保持中性窗口边框和现有生命周期，不把速启改成高饱和强调色界面。
 - 预览窗口保持 400 × 410 px 固定尺寸。该窗口会跨条目复用，且为保护键盘焦点与避免闪烁，切换
   内容时不会调用 GPUI/Windows resize；因此元数据、文本和图片不能采用不同窗口高度，否则先出现
   的小窗口会裁剪后续文本/图片。元数据只在固定窗口内部使用紧凑内容块。主速启与附着搜索只共享

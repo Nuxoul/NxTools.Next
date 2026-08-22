@@ -5,6 +5,57 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$panelRenderStart = $quickLaunchSource.IndexOf('impl Render for QuickLaunchPanel')
+$panelRenderEnd = $quickLaunchSource.IndexOf('fn source_icon(', $panelRenderStart)
+if ($panelRenderStart -lt 0 -or $panelRenderEnd -le $panelRenderStart) {
+    throw 'Could not isolate the production Quick Launch panel renderer.'
+}
+$panelRender = $quickLaunchSource.Substring($panelRenderStart, $panelRenderEnd - $panelRenderStart)
+foreach ($requiredPopupConstant in @(
+    'const PANEL_WIDTH: f32 = 620.0',
+    'const PANEL_HEIGHT: f32 = 410.0',
+    'const SEARCH_HEADER_HEIGHT: f32 = 42.0',
+    'const QUICK_LAUNCH_SEARCH_TEXT_SIZE: f32 = TEXT_BODY'
+)) {
+    if (-not $quickLaunchSource.Contains($requiredPopupConstant)) {
+        throw 'Quick Launch must preserve the tokenized collapsed/expanded popup constants.'
+    }
+}
+foreach ($requiredPopupRenderContract in @(
+    'quick-launch-search-header',
+    'quick-launch-results-surface',
+    '.font_family(UI_FONT_FAMILY)',
+    '.bg(theme.canvas)',
+    '.text_color(theme.text)',
+    '.border_color(theme.window_border)',
+    '.border_color(theme.border_subtle)',
+    '.text_color(theme.icon_muted)',
+    '.line_height(px(LINE_HEIGHT_BODY))',
+    '.when(self.results_visible'
+)) {
+    if (-not $panelRender.Contains($requiredPopupRenderContract)) {
+        throw 'Quick Launch must preserve the tokenized collapsed/expanded popup contract.'
+    }
+}
+if (-not $quickLaunchSource.Contains(
+        'fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface('
+    )) {
+    throw 'Quick Launch popup geometry requires a real production-window regression test.'
+}
+$searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
+$searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)
+if ($searchInputStart -lt 0 -or $searchInputEnd -le $searchInputStart) {
+    throw 'Could not isolate the production Quick Launch search input.'
+}
+$searchInputRender = $panelRender.Substring($searchInputStart, $searchInputEnd - $searchInputStart)
+foreach ($requiredSearchInputTypeRole in @(
+    '.text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))',
+    '.line_height(px(LINE_HEIGHT_BODY))'
+)) {
+    if (-not $searchInputRender.Contains($requiredSearchInputTypeRole)) {
+        throw 'Quick Launch search input must apply the shared Body type role directly.'
+    }
+}
 $desktopMainPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs'
 $desktopMainSource = Get-Content -Raw -LiteralPath $desktopMainPath
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'

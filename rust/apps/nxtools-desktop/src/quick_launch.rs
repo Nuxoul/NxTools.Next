@@ -48,11 +48,12 @@ use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
 use crate::theme::{
     ACTION_TEXT_SIZE, COMPACT_RADIUS, META_TEXT_SIZE, RESULT_DETAIL_SIZE, RESULT_TITLE_SIZE,
-    ROW_HORIZONTAL_PADDING, SEARCH_TEXT_SIZE, SURFACE_INSET, Theme, UI_FONT_FAMILY,
-    UI_MONO_FONT_FAMILY,
+    ROW_HORIZONTAL_PADDING, SURFACE_INSET, Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 use crate::ui::components::state::{empty_state, progress_state};
+use crate::ui::metrics::SPACING_8;
 use crate::ui::native_window_handle;
+use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY};
 
 mod file_dialog_search;
 use file_dialog_search::FileDialogSearchSession;
@@ -61,6 +62,7 @@ const PANEL_WIDTH: f32 = 620.0;
 const PANEL_HEIGHT: f32 = 410.0;
 const SEARCH_HEADER_HEIGHT: f32 = 42.0;
 const COLLAPSED_PANEL_HEIGHT: f32 = SEARCH_HEADER_HEIGHT + 2.0;
+const QUICK_LAUNCH_SEARCH_TEXT_SIZE: f32 = TEXT_BODY;
 const RESULT_LIMIT: usize = 200;
 const RECENT_DIRECTORY_LIMIT: usize = 64;
 const INDEX_CANDIDATE_LIMIT: usize = 200;
@@ -5595,8 +5597,6 @@ impl QuickLaunchPanel {
         mode.apply_shell_menu(level_id, menu);
         self.action_scroll.set_offset(point(px(0.0), px(0.0)));
         self.pointer_selection_gate.reset();
-        self.results_appearance_generation =
-            self.results_appearance_generation.wrapping_add(1).max(1);
         cx.notify();
     }
 
@@ -5731,6 +5731,7 @@ impl QuickLaunchPanel {
             .collect::<Vec<_>>();
         div()
             .id(("quick-launch-result", index))
+            .debug_selector(|| "quick-launch-result-row".into())
             .w_full()
             .h(px(40.0))
             .px(px(ROW_HORIZONTAL_PADDING))
@@ -6112,9 +6113,12 @@ impl Render for QuickLaunchPanel {
                 .into_any_element()
         };
         let result_surface = div()
+            .debug_selector(|| "quick-launch-results-surface".into())
             .w_full()
             .flex_1()
             .min_h_0()
+            .flex()
+            .flex_col()
             .child(result_surface)
             .with_animation(
                 ("quick-launch-results", self.results_appearance_generation),
@@ -6136,15 +6140,18 @@ impl Render for QuickLaunchPanel {
             .flex_col()
             .child(
                 div()
+                    .debug_selector(|| "quick-launch-search-header".into())
                     .h(px(SEARCH_HEADER_HEIGHT))
-                    .px(px(ROW_HORIZONTAL_PADDING))
+                    .px(px(SPACING_8))
                     .flex_none()
                     .border_b_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.canvas)
                     .flex()
                     .items_center()
-                    .gap(px(8.0))
+                    .gap(px(SPACING_8))
+                    .text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))
+                    .line_height(px(LINE_HEIGHT_BODY))
                     .child(
                         gpui_component::Icon::new(MaterialIcon::Search)
                             .size(px(16.0))
@@ -6156,7 +6163,8 @@ impl Render for QuickLaunchPanel {
                                 .appearance(false)
                                 .bordered(false)
                                 .focus_bordered(false)
-                                .text_size(px(SEARCH_TEXT_SIZE)),
+                                .text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))
+                                .line_height(px(LINE_HEIGHT_BODY)),
                         ),
                     )
                     .when(recent_button_visible, |header| {
@@ -6269,6 +6277,150 @@ fn quick_launch_bounds(
 mod tests {
     use super::*;
     use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn production_result_row_keeps_height_through_animated_surface(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
+            let panel = cx.new(|cx| {
+                let mut panel = QuickLaunchPanel::new(
+                    vec![search_result(
+                        "first-result",
+                        ApplicationSource::IndexedFile,
+                    )],
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    None,
+                    Vec::new(),
+                    WeakEntity::new_invalid(),
+                    window,
+                    cx,
+                );
+                panel.results_visible = true;
+                panel
+            });
+            Root::new(panel, window, cx)
+        });
+
+        window
+            .refresh()
+            .expect("render populated quick-launch results");
+        let row = window
+            .debug_bounds("quick-launch-result-row")
+            .expect("production quick-launch result row");
+        assert_eq!(row.size.height, px(40.0));
+    }
+
+    #[gpui::test]
+    fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let panel_slot = Rc::new(RefCell::new(None));
+        let panel_slot_for_window = Rc::clone(&panel_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
+            let panel = cx.new(|cx| {
+                QuickLaunchPanel::new(
+                    Vec::new(),
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    None,
+                    Vec::new(),
+                    WeakEntity::new_invalid(),
+                    window,
+                    cx,
+                )
+            });
+            *panel_slot_for_window.borrow_mut() = Some(panel.clone());
+            Root::new(panel, window, cx)
+        });
+        let panel = panel_slot
+            .borrow_mut()
+            .take()
+            .expect("production quick-launch panel");
+
+        window
+            .refresh()
+            .expect("render collapsed quick-launch popup");
+        assert!(window.debug_bounds("quick-launch-window").is_some());
+        let collapsed_header = window
+            .debug_bounds("quick-launch-search-header")
+            .expect("collapsed quick-launch search header");
+        window.update(|window, _| {
+            assert_eq!(
+                window.bounds().size,
+                size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT))
+            );
+        });
+        assert_eq!(collapsed_header.size.height, px(SEARCH_HEADER_HEIGHT));
+        assert!(
+            window
+                .debug_bounds("quick-launch-results-surface")
+                .is_none()
+        );
+
+        panel.update_in(window, |panel, window, cx| {
+            panel.sync_window_content_size("zed", window);
+            cx.notify();
+        });
+        window
+            .refresh()
+            .expect("render expanded quick-launch popup");
+        let expanded_root = window
+            .debug_bounds("quick-launch-window")
+            .expect("expanded quick-launch root");
+        let expanded_header = window
+            .debug_bounds("quick-launch-search-header")
+            .expect("expanded quick-launch search header");
+        let results_surface = window
+            .debug_bounds("quick-launch-results-surface")
+            .expect("expanded quick-launch results surface");
+        window.update(|window, _| {
+            assert_eq!(
+                window.bounds().size,
+                size(px(PANEL_WIDTH), px(PANEL_HEIGHT))
+            );
+        });
+        assert_eq!(expanded_header, collapsed_header);
+        assert_eq!(results_surface.top(), expanded_header.bottom() + px(1.0));
+        assert_eq!(results_surface.bottom(), expanded_root.bottom());
+
+        panel.update_in(window, |panel, window, cx| {
+            let expanded_generation = panel.results_appearance_generation;
+            panel.sync_window_content_size("zed editor", window);
+            assert_eq!(panel.results_appearance_generation, expanded_generation);
+
+            let mode = QuickLaunchActionMode::enter(
+                search_result("first-result", ApplicationSource::IndexedFile),
+                "zed editor".into(),
+                0,
+            );
+            let mode_id = mode.id();
+            let level_id = mode.current_level_id();
+            let entry_id = mode.target().entry.id.clone();
+            panel.action_mode = Some(mode);
+            panel.apply_shell_actions(mode_id, level_id, &entry_id, None, cx);
+            assert_eq!(panel.results_appearance_generation, expanded_generation);
+        });
+    }
+
+    #[test]
+    fn main_popup_search_uses_the_shared_body_type_role() {
+        assert_eq!(QUICK_LAUNCH_SEARCH_TEXT_SIZE, TEXT_BODY);
+        assert_eq!(LINE_HEIGHT_BODY, 18.0);
+    }
 
     #[gpui::test]
     fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut TestAppContext) {
@@ -8932,12 +9084,9 @@ mod tests {
             .and_then(|source| source.split("fn render_action(").next())
             .expect("render_result source");
 
-        assert!(
-            render_result.contains(
-                ".id((\"quick-launch-result\", index))\n            .w_full()\n            .h(px(40.0))"
-            ),
-            "the selectable row root must fill the uniform-list viewport"
-        );
+        assert!(render_result.contains(".id((\"quick-launch-result\", index))"));
+        assert!(render_result.contains(".w_full()"));
+        assert!(render_result.contains(".h(px(40.0))"));
     }
 
     #[test]

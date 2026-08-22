@@ -857,6 +857,26 @@ rust/apps/nxtools-desktop/src/ui/
   和下载详情 progress selector 四项失败与前序基线完全相同。下载 DL-01 至 DL-28 至此完成，下一
   批次从 QL-01 主弹窗开始。
 
+第三十个 P1 速启主弹窗切片（2026-08-22）：
+
+- QL-01 保留一个复用的 620 x 410 graphite 工作面与 42 px 搜索栏；普通空查询时原生窗口收起为
+  620 x 44，只保留搜索框且不挂载结果 surface，非空查询在同一窗口、同一宽度和同一搜索栏坐标下
+  稳定展开到 410 px。查询间替换结果不重播入场动画，既有激活、焦点、provider 和执行生命周期不变。
+- 主搜索从私有 13.5 px 迁移到共享 Body 12/18，并继承 `UI_FONT_FAMILY`。背景、正文、占位、边框、
+  搜索图标、光标和选择态继续由共享 `Theme` / component theme 提供；搜索栏水平留白及间距统一为
+  8 px，未引入搜索卡片、accent 填充或新的装饰层。
+- 修复动画结果 wrapper 缺少纵向 flex 约束导致 40 px 结果行在展开后塌缩的问题；结果 surface 现在
+  填满搜索栏下方的连续区域，既有行密度、selection、action、preview 和滚动职责留给后续 QL 切片。
+- 红—绿生产 GPUI 门禁实际验证空查询 620 x 44、非空 620 x 410、搜索栏坐标不漂移、结果 surface
+  连续填充以及动画 surface 内 40 px 行高。90 条 Quick Launch 定向回归、升级后的生命周期架构门禁、
+  `cargo check -p nxtools-desktop --tests`、包级仅放行既有 build-script lint 的严格 Clippy、rustfmt、
+  `git diff --check` 与 PlatformHost `dotnet build` 均通过。`cargo test --workspace` 中 desktop 为
+  307/311；分类按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与
+  前序基线完全相同。原样 workspace Clippy 还命中同一 build-script lint 及下载模块三个既有未使用项，
+  本切片不跨域修改。100% DPI 当前真实 GPUI [收起态](audits/quick-launch-ql01-2026-08-22/01-collapsed-100pct.png)
+  与[展开结果态](audits/quick-launch-ql01-2026-08-22/02-results-100pct.png)已人工检查；125%/150% 继续由
+  Release 截图矩阵在速启视觉批次收口时验收。QL-01 完成，下一切片为 QL-02 结果列表。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

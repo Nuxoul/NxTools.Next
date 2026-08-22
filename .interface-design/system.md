@@ -125,6 +125,18 @@
 - Transfer ticks repaint GPUI only. Move/resize and native-close mutations retain the typed Windows
   boundary, correlation identity and deferred cross-entity lifecycle.
 
+### Quick Launch popup
+
+- The primary launcher is one reused 620 x 410 graphite work surface with a 42 px search header. An
+  empty ordinary query collapses the native window to 44 px and renders no result surface; a
+  non-empty query expands it to the full height without changing width or creating another shell.
+- The search header is the focal control: UI font, Body 12/18, semantic text/placeholder/icon roles,
+  an 8 px horizontal rhythm and one quiet bottom rule. The popup consumes `Theme` roles only; it
+  does not add a search card, decorative accent fill or private fractional Chinese type size.
+- Expansion motion runs only for the collapsed-to-expanded transition. Query-to-query result
+  replacement keeps the expanded geometry and does not replay motion. The animation wrapper remains
+  a definite flex container so the existing 40 px virtualized result rows cannot collapse.
+
 ### Work states
 
 - Empty, progress and recoverable error states share one 72 px minimum row, 12 px inset, 18 px icon
