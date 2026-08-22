@@ -71,6 +71,7 @@ use crate::ui::components::action::{
 };
 use crate::ui::components::field::{
     field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
+    path_picker_shell,
 };
 use crate::ui::components::list::compact_list_row;
 use crate::ui::components::popover::{list_box, popover_shell};
@@ -9175,7 +9176,8 @@ impl Render for NewDownloadView {
                             .small()
                             .outline()
                             .w_full()
-                            .h(px(30.0)),
+                            .h(px(CONTROL_HEIGHT_INPUT))
+                            .rounded(px(RADIUS_CONTROL)),
                     )
                     .content(move |_, _, _| {
                         let mut rows = Vec::with_capacity(categories.len() + 1);
@@ -9456,13 +9458,20 @@ impl Render for NewDownloadView {
                     .unwrap_or_else(|| "大小未知".into()),
             };
             div()
+                .debug_selector(|| "download-new-form-grid".into())
                 .flex_1()
                 .px(px(16.0))
                 .py(px(10.0))
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
-                .child(download_input_field(theme, "下载地址", &self.url))
+                .child(labeled_field(
+                    theme,
+                    "下载地址",
+                    None,
+                    &self.url,
+                    "download-new-url-field",
+                ))
                 .child(
                     div()
                         .flex()
@@ -9474,47 +9483,60 @@ impl Render for NewDownloadView {
                                 .flex_1()
                                 .flex()
                                 .flex_col()
-                                .gap(px(7.0))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_end()
-                                        .gap(px(6.0))
-                                        .child(div().min_w_0().flex_1().child(
-                                            download_input_field(
-                                                theme,
-                                                "保存目录",
-                                                &self.directory,
-                                            ),
-                                        ))
-                                        .child(
-                                            Button::new("download-pick-directory")
-                                                .icon(Icon::new(MaterialIcon::Folder))
-                                                .small()
-                                                .outline()
-                                                .w(px(30.0))
-                                                .h(px(30.0))
-                                                .px(px(0.0))
-                                                .rounded(px(4.0))
-                                                .on_click(move |_, _, cx| {
-                                                    let application = application.clone();
-                                                    let current_directory =
-                                                        current_directory.clone();
-                                                    cx.defer(move |cx| {
-                                                        application.update(
-                                                            cx,
-                                                            |application, cx| {
-                                                                application
-                                                                    .request_new_download_directory(
-                                                                        current_directory,
-                                                                        cx,
-                                                                    );
-                                                            },
-                                                        );
-                                                    });
-                                                }),
+                                .gap(px(SPACING_8))
+                                .child(labeled_control(
+                                    theme,
+                                    "保存目录",
+                                    None,
+                                    path_picker_shell(
+                                        "download-new-directory-control",
+                                        field_shell(
+                                            theme,
+                                            "download-new-directory-input",
+                                            Input::new(&self.directory)
+                                                .appearance(false)
+                                                .bordered(false)
+                                                .focus_bordered(false),
                                         ),
-                                )
+                                        div()
+                                            .id("download-new-directory-picker-wrapper")
+                                            .debug_selector(|| {
+                                                "download-new-directory-picker".into()
+                                            })
+                                            .size(px(CONTROL_HEIGHT_ACTION))
+                                            .tooltip(|window, cx| {
+                                                Tooltip::new("选择下载目录").build(window, cx)
+                                            })
+                                            .child(
+                                                Button::new("download-pick-directory")
+                                                    .icon(Icon::new(MaterialIcon::Folder))
+                                                    .small()
+                                                    .outline()
+                                                    .size(px(CONTROL_HEIGHT_ACTION))
+                                                    .px(px(0.0))
+                                                    .rounded(px(RADIUS_CONTROL))
+                                                    .on_click(move |_, _, cx| {
+                                                        let application = application.clone();
+                                                        let current_directory =
+                                                            current_directory.clone();
+                                                        cx.defer(move |cx| {
+                                                            application.update(
+                                                                cx,
+                                                                |application, cx| {
+                                                                    application
+                                                                        .request_new_download_directory(
+                                                                            current_directory,
+                                                                            cx,
+                                                                        );
+                                                                },
+                                                            );
+                                                        });
+                                                    }),
+                                            )
+                                            .into_any_element(),
+                                    ),
+                                    "download-new-directory-field",
+                                ))
                                 .child(
                                     div()
                                         .flex()
@@ -9527,10 +9549,12 @@ impl Render for NewDownloadView {
                                                 })
                                                 .min_w_0()
                                                 .flex_1()
-                                                .child(download_input_field(
+                                                .child(labeled_field(
                                                     theme,
                                                     "文件名",
+                                                    None,
                                                     &self.file_name,
+                                                    "download-new-file-name-control",
                                                 )),
                                         )
                                         .child(
@@ -9540,16 +9564,13 @@ impl Render for NewDownloadView {
                                                 })
                                                 .min_w_0()
                                                 .flex_1()
-                                                .flex()
-                                                .flex_col()
-                                                .gap(px(3.0))
-                                                .child(
-                                                    div()
-                                                        .text_size(px(9.5))
-                                                        .text_color(theme.text_muted)
-                                                        .child("分类"),
-                                                )
-                                                .child(category_control),
+                                                .child(labeled_control(
+                                                    theme,
+                                                    "分类",
+                                                    None,
+                                                    category_control,
+                                                    "download-new-category-control",
+                                                )),
                                         ),
                                 ),
                         )
@@ -9645,7 +9666,13 @@ impl Render for NewDownloadView {
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
-                .child(download_input_field(theme, "下载地址", &self.url))
+                .child(labeled_field(
+                    theme,
+                    "下载地址",
+                    None,
+                    &self.url,
+                    "download-new-url-field",
+                ))
                 .child(
                     div()
                         .h(px(18.0))
@@ -11321,41 +11348,6 @@ fn taskbar_overlay_placement_command(
     }
 }
 
-fn download_input_field(
-    theme: Theme,
-    label: &'static str,
-    input: &Entity<InputState>,
-) -> impl IntoElement {
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .gap(px(3.0))
-        .child(
-            div()
-                .text_size(px(9.5))
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .h(px(30.0))
-                .rounded(px(5.0))
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.surface_raised)
-                .px(px(7.0))
-                .flex()
-                .items_center()
-                .child(
-                    Input::new(input)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(false),
-                ),
-        )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -11774,9 +11766,81 @@ mod tests {
                     <= 2.0,
             "production file-name and category fields must share one equal-width form row"
         );
+        let url_label = window
+            .debug_bounds("download-new-url-field-label")
+            .expect("production URL label");
+        let url_control = window
+            .debug_bounds("download-new-url-field")
+            .expect("production URL control");
+        let form_grid = window
+            .debug_bounds("download-new-form-grid")
+            .expect("production new-download form grid");
+        let directory_label = window
+            .debug_bounds("download-new-directory-field-label")
+            .expect("production directory label");
+        let directory_row = window
+            .debug_bounds("download-new-directory-control")
+            .expect("production directory path row");
+        let directory_control = window
+            .debug_bounds("download-new-directory-input")
+            .expect("production directory control");
+        let directory_picker = window
+            .debug_bounds("download-new-directory-picker")
+            .expect("production directory picker");
+        let file_name_label = window
+            .debug_bounds("download-new-file-name-control-label")
+            .expect("production file-name label");
+        let file_name_control = window
+            .debug_bounds("download-new-file-name-control")
+            .expect("production file-name control");
+        let category_label = window
+            .debug_bounds("download-new-category-control-label")
+            .expect("production category label");
         let category_trigger = window
             .debug_bounds("download-new-category-trigger")
             .expect("production category trigger");
+        for (name, label) in [
+            ("URL", url_label),
+            ("directory", directory_label),
+            ("file name", file_name_label),
+            ("category", category_label),
+        ] {
+            assert_eq!(
+                label.size.height,
+                px(LINE_HEIGHT_LABEL),
+                "{name} label must use the shared Label line height"
+            );
+        }
+        for (name, control) in [
+            ("URL", url_control),
+            ("directory", directory_control),
+            ("file name", file_name_control),
+            ("category", category_trigger),
+        ] {
+            assert_eq!(
+                control.size.height,
+                px(CONTROL_HEIGHT_INPUT),
+                "{name} control must use the shared 32 px input tier"
+            );
+        }
+        assert_eq!(directory_picker.size, gpui::size(px(28.0), px(28.0)));
+        assert!(
+            (url_control.left().as_f32() - (form_grid.left().as_f32() + 16.0)).abs() <= 1.0
+                && (url_control.right().as_f32() - (form_grid.right().as_f32() - 16.0)).abs()
+                    <= 1.0,
+            "URL control must fill the padded form width"
+        );
+        assert!(
+            (directory_row.left().as_f32() - file_name_field.left().as_f32()).abs() <= 1.0
+                && (directory_row.right().as_f32() - category_field.right().as_f32()).abs() <= 1.0,
+            "directory path row must fill the file/category form column"
+        );
+        assert!(
+            (file_name_label.top().as_f32() - category_label.top().as_f32()).abs() <= 1.0
+                && (file_name_control.top().as_f32() - category_trigger.top().as_f32()).abs()
+                    <= 1.0,
+            "file-name and category visible labels and controls must share baselines"
+        );
         window.simulate_click(category_trigger.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render production category menu");

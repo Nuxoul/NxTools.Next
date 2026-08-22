@@ -679,6 +679,24 @@ rust/apps/nxtools-desktop/src/ui/
   PlatformHost.Tests 已打印通过所有直接相关的协议、Shell、Clipboard、Paste 和诊断测试，但
   在后段集成用例超过四分钟未终止，已只清理本轮测试子进程并记录为非绿色全套结果。
 
+第二十一个 P0 新建下载表单网格切片（2026-08-22）：
+
+- DL-19 将确认态的四个核心字段收敛到共享 Field 语法：下载地址保持全宽主行，保存目录保持
+  全宽路径行并内含 28 px picker，文件名与分类组成等宽双列。四项统一使用 Label 11/16 与
+  32 px 控件层级、4 px 控件圆角和共享边界，不再保留私有 9.5 px 标签、30 px 输入壳或分类
+  单独手写的标签节奏。
+- 两阶段探测、浏览器预填确认高度、目录 picker 请求、分类 Popover 搜索/滚动/键盘选择、关闭后
+  焦点返回、QueueOnly/StartNow 和固定 footer 均保持原 application/view owner 与 deferred
+  GPUI 生命周期；本切片没有改变下载请求、协议、持久化或诊断载荷。
+- 红—绿生产窗口门禁先在旧实现缺少共享 URL 标签边界处失败，修复后从真实
+  `DownloadApplication -> NewDownloadView` 断言 URL 与目录行的全宽边界、四项 Label 行高、四个
+  32 px 真实控件、28 px picker，以及文件名/分类可见标签和控件同基线；同一用例继续通过 32
+  分类 Popover、键盘选中、焦点返回与 Cancel 原生关闭。`new_download` 4 项、desktop
+  `cargo check -p nxtools-desktop
+  --tests`、`download-ui-lifecycle.ps1`、rustfmt 与 `git diff --check` 均通过。
+- DL-20 探测摘要是下一切片；在右侧窄 inspector/字段尾部状态、探测前后有界几何和无独立大卡片
+  的生产门禁完成前不提前勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

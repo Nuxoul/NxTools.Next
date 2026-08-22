@@ -2128,6 +2128,30 @@ Reverified on 2026-08-20 before the DL-18 diagnostics-path migration:
   request to a terminal success, failure or timeout, while diagnostics record only fixed path kind,
   action kind, elapsed time and bounded native/error metadata—never the path or clipboard payload.
 
+Reverified on 2026-08-22 before the DL-19 new-download form-grid migration:
+
+- ABDM was checked first at
+  `desktop/app/.../pages/addDownload/single/AddDownloadPage.kt` and
+  `shared/app/.../pages/adddownload/single/BaseAddSingleDownloadComponent.kt`. Its URL remains the
+  full-width dominant field, while category, location and name are one continuous form hierarchy;
+  category selection may update the location, but the component remains the single value owner.
+- Old NxTools `Views/AddDownloadWindow.axaml` keeps the confirmed destination, category and file-name
+  controls in one compact sequence and binds them to the same `AddDownloadDialogViewModel`. Its
+  placeholder-only labels, 34 px local control dialect and separate checkbox are not migrated.
+- NxTools.Next `NewDownloadView::render` still used a private `download_input_field` with 9.5 px
+  labels and 30 px shells, while category rebuilt the same label/control shape independently. The
+  existing production category test compared only the two outer containers, so it could pass when
+  the visible labels or actual controls no longer shared a baseline.
+- DL-19 keeps the two-stage probe, browser-prefilled confirmed height, directory picker, category
+  Popover/focus return, submit modes and fixed footer unchanged. URL is one full-width shared Field;
+  directory is one full-width shared labeled path row; file name and category form an equal-width
+  two-column row. All four use Label 11/16 and 32 px control shells, with file-name/category labels
+  and controls sharing their y coordinate and height in the production confirmed window.
+- The red-capable gate opens the real browser-prefilled `DownloadApplication -> NewDownloadView`
+  window and asserts the full-width URL/directory boundaries plus visible label and control bounds,
+  not just wrapper equality. It continues through the real category Popover and Cancel lifecycle so
+  the grid migration cannot replace the existing interaction owner.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
