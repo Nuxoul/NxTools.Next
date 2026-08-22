@@ -836,6 +836,27 @@ rust/apps/nxtools-desktop/src/ui/
   网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全相同。DL-28
   任务栏覆盖条是下一切片，在正常/编辑态信息位置和数字清晰度获得生产窗口门禁前不提前完成。
 
+第二十九个 P0 任务栏覆盖条切片（2026-08-22）：
+
+- DL-28 将可选速度、ETA、任务/连接数和传输字节从私有 9/10 px 比例行迁移到共享 Label 11/16；
+  数字 value 使用 `UI_MONO_FONT_FAMILY` 形成稳定节奏，中文标签继续使用 UI 字体和 Label regular。
+  进度 lane 独占 accent，普通态仍为透明、无卡片和无 pill 的任务栏内 telemetry rail。
+- 正常态与编辑态现在共用同一 content frame、metric row、progress stack 和 lane 容量。编辑态不再
+  扣除 10 px lane 宽度、不再预留 2 px 容量或添加 5/1 px 内边距，也不再切换 raised 背景；它只在
+  内容之上增加 absolute accent border 和既有右下 resize handle，因此切换时信息坐标完全不变。
+- Rust 聚合、GPUI 渲染、C# taskbar-DPI placement，以及 no-activate/topmost/click-through 普通态和
+  typed move/resize 编辑态边界保持不变。顺带将 move/resize 结果登记和 native close registration
+  清理延后到下一 application turn；原生关闭同时校验当前 window identity 与 edit correlation，防止
+  陈旧窗口或旧编辑手势的回调取消新窗口编辑。
+- 红—绿门禁先命中旧编辑态把 3 条 lane 压到 2 条以及缺失稳定 content role；修复后 320 x 32
+  生产 GPUI 窗口精确断言 normal/edit 的 content、metrics、progress bounds 相等、metric row 为
+  16 px，且 border/handle 只在编辑态出现。19 条 taskbar-overlay 回归（含真实陈旧窗口/关联 ID
+  生命周期回归）、升级后的生命周期架构门禁、
+  `cargo check -p nxtools-desktop --tests`、仅放行既有 build-script lint 的严格 Clippy、rustfmt 与
+  `git diff --check` 均通过。desktop 全套为 305/309；分类按钮 selector、网络尾距、剪贴板空态宽度
+  和下载详情 progress selector 四项失败与前序基线完全相同。下载 DL-01 至 DL-28 至此完成，下一
+  批次从 QL-01 主弹窗开始。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
@@ -844,9 +865,9 @@ rust/apps/nxtools-desktop/src/ui/
 
 ### 批次 3：下载全套界面
 
-- [ ] 完成 DL-01 至 DL-28；
-- [ ] 先主任务页，再设置，再新建/媒体弹窗，最后辅助窗口和覆盖条；
-- [ ] 每个子切片保持原有下载生命周期和协议行为。
+- [x] 完成 DL-01 至 DL-28；
+- [x] 先主任务页，再设置，再新建/媒体弹窗，最后辅助窗口和覆盖条；
+- [x] 每个子切片保持原有下载生命周期和协议行为。
 
 ### 批次 4：速启
 

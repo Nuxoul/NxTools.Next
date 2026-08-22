@@ -2331,6 +2331,27 @@ Reverified on 2026-08-22 before the DL-27 auxiliary-dialog shell migration:
   keyed registrations are cleared on every accepted close path. All cross-entity action callbacks
   remain deferred outside the leased GPUI view.
 
+Reverified on 2026-08-22 before the DL-28 taskbar-overlay legibility migration:
+
+- AB Download Manager's `ShowDownloadDialogs.kt::UpdateTaskBar` confirms that taskbar progress is a
+  passive glance surface driven by current percent and lifecycle state. It does not provide an
+  Explorer-internal aggregate layout or an editor, so it supplies state honesty rather than visual
+  geometry for this Next-only surface.
+- Old NxTools has no taskbar-internal aggregate overlay. `DownloadProgressWindow.axaml` does retain
+  the useful hierarchy invariant that transfer numbers remain readable secondary information and
+  progress owns the accent, while `WindowAnimationService.Attach` remains the motion reference.
+  Ordinary progress/completion windows do not supply placement or edit-mode behavior to copy.
+- NxTools.Next's current overlay is the behavioral source for the new surface: Rust aggregates the
+  lanes and telemetry, GPUI renders one passive window, and C# owns taskbar-DPI placement plus
+  passive/editable Win32 styles. Normal mode stays no-activate, topmost and click-through; edit mode
+  alone accepts the existing typed move/resize gestures and keeps the same correlation lifecycle.
+- Before DL-28, edit mode subtracts 10 px from lane width, reserves different vertical capacity and
+  adds 5/1 px content padding, so entering the editor moves every information boundary and may drop
+  a lane. Its telemetry also uses an arbitrary 9 px proportional row with a 10 px box, below the
+  product typography scale. DL-28 must use the shared readable numeric role and keep one identical
+  content frame and lane capacity in both modes; editing may add only an overlay border and resize
+  handle, without changing telemetry/progress coordinates or transfer semantics.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

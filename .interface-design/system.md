@@ -114,6 +114,17 @@
 - Empty/error/loading states preserve the same content boundary instead of introducing centered cards.
 - Numeric transfer columns use Mono; user-facing Chinese remains in the UI font.
 
+### Taskbar transfer overlay
+
+- The passive taskbar overlay is a transparent telemetry rail: progress lanes own the accent, while
+  optional speed, ETA, task/connection counts and transferred bytes use Label 11/16 with Mono
+  numeric rhythm. It does not introduce cards, pills or a competing filled surface.
+- Normal and edit modes share the exact content frame, lane capacity and information coordinates.
+  Edit mode adds only an absolute accent boundary and the existing resize handle; borders, handles
+  and pointer affordances never add padding, change typography or displace progress.
+- Transfer ticks repaint GPUI only. Move/resize and native-close mutations retain the typed Windows
+  boundary, correlation identity and deferred cross-entity lifecycle.
+
 ### Work states
 
 - Empty, progress and recoverable error states share one 72 px minimum row, 12 px inset, 18 px icon

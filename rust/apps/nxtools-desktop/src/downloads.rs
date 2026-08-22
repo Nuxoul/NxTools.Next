@@ -472,6 +472,14 @@ struct DownloadShutdownWindow {
     correlation_id: uuid::Uuid,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TaskbarOverlayNativeCloseIntent {
+    FinishEdit {
+        edit_correlation_id: Option<uuid::Uuid>,
+    },
+    ClosePassive,
+}
+
 pub(crate) struct DownloadApplication {
     engine: DownloadEngine,
     platform: Rc<PlatformBridge>,
@@ -2522,26 +2530,27 @@ impl DownloadApplication {
             },
             move |window, cx| {
                 let close_application = application.clone();
+                let closing_window = window.window_handle();
                 window.on_window_should_close(cx, move |_, cx| {
-                    let editing = close_application
+                    let intent = close_application
                         .read(cx)
-                        .taskbar_overlay_edit_draft
-                        .is_some();
-                    if editing {
-                        close_application.update(cx, |application, cx| {
-                            application.finish_taskbar_overlay_edit(
-                                false,
-                                uuid::Uuid::new_v4(),
-                                cx,
-                            );
+                        .taskbar_overlay_native_close_intent(closing_window);
+                    if let Some(intent) = intent {
+                        let application = close_application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.handle_native_taskbar_overlay_close(
+                                    closing_window,
+                                    intent,
+                                    cx,
+                                );
+                            });
                         });
-                        return false;
                     }
-                    close_application.update(cx, |application, _| {
-                        application.taskbar_overlay_window = None;
-                        application.taskbar_overlay_native_window_handle = 0;
-                    });
-                    true
+                    !matches!(
+                        intent,
+                        Some(TaskbarOverlayNativeCloseIntent::FinishEdit { .. })
+                    )
                 });
                 let window_handle = if cfg!(test) {
                     0
@@ -2597,6 +2606,53 @@ impl DownloadApplication {
                 %error,
                 "could not open the taskbar progress overlay"
             ),
+        }
+    }
+
+    fn taskbar_overlay_native_close_intent(
+        &self,
+        closing_window: AnyWindowHandle,
+    ) -> Option<TaskbarOverlayNativeCloseIntent> {
+        if self.taskbar_overlay_window != Some(closing_window) {
+            return None;
+        }
+        Some(if self.taskbar_overlay_edit_draft.is_some() {
+            TaskbarOverlayNativeCloseIntent::FinishEdit {
+                edit_correlation_id: self.taskbar_overlay_edit_correlation_id,
+            }
+        } else {
+            TaskbarOverlayNativeCloseIntent::ClosePassive
+        })
+    }
+
+    fn handle_native_taskbar_overlay_close(
+        &mut self,
+        closing_window: AnyWindowHandle,
+        intent: TaskbarOverlayNativeCloseIntent,
+        cx: &mut Context<Self>,
+    ) {
+        if self.taskbar_overlay_window != Some(closing_window) {
+            return;
+        }
+        match intent {
+            TaskbarOverlayNativeCloseIntent::FinishEdit {
+                edit_correlation_id,
+            } if self.taskbar_overlay_edit_draft.is_some()
+                && self.taskbar_overlay_edit_correlation_id == edit_correlation_id =>
+            {
+                self.finish_taskbar_overlay_edit(
+                    false,
+                    edit_correlation_id.unwrap_or(self.taskbar_overlay_correlation_id),
+                    cx,
+                );
+            }
+            TaskbarOverlayNativeCloseIntent::ClosePassive
+                if self.taskbar_overlay_edit_draft.is_none() =>
+            {
+                self.taskbar_overlay_window = None;
+                self.taskbar_overlay_native_window_handle = 0;
+            }
+            _ => {}
         }
     }
 
@@ -11906,6 +11962,182 @@ mod tests {
                 .as_ref()
                 .is_some()
         }));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn stale_native_taskbar_overlay_close_cannot_cancel_the_current_edit(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "taskbar-overlay-stale-close");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_taskbar_overlay(cx);
+                application.open_schedule_window(cx);
+            });
+        });
+        cx.run_until_parked();
+        let (overlay_window, stale_window) = cx.read(|cx| {
+            let application = application.read(cx);
+            (
+                application
+                    .taskbar_overlay_window
+                    .expect("current taskbar overlay window"),
+                application
+                    .schedule_window
+                    .expect("stale comparison window"),
+            )
+        });
+        let original_correlation_id = uuid::Uuid::new_v4();
+        let replacement_correlation_id = uuid::Uuid::new_v4();
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.taskbar_overlay_edit_draft =
+                    Some(DownloadTaskbarProgressOverlaySettings::default());
+                application.taskbar_overlay_edit_correlation_id = Some(original_correlation_id);
+                assert_eq!(
+                    application.taskbar_overlay_native_close_intent(stale_window),
+                    None
+                );
+                let stale_intent = application
+                    .taskbar_overlay_native_close_intent(overlay_window)
+                    .expect("current edit close intent");
+                application.handle_native_taskbar_overlay_close(stale_window, stale_intent, cx);
+                assert!(application.taskbar_overlay_edit_draft.is_some());
+
+                application.taskbar_overlay_edit_correlation_id = Some(replacement_correlation_id);
+                application.handle_native_taskbar_overlay_close(overlay_window, stale_intent, cx);
+                assert!(application.taskbar_overlay_edit_draft.is_some());
+                assert_eq!(
+                    application.taskbar_overlay_edit_correlation_id,
+                    Some(replacement_correlation_id)
+                );
+
+                let current_intent = application
+                    .taskbar_overlay_native_close_intent(overlay_window)
+                    .expect("replacement edit close intent");
+                application.handle_native_taskbar_overlay_close(overlay_window, current_intent, cx);
+                assert!(application.taskbar_overlay_edit_draft.is_none());
+                assert!(application.taskbar_overlay_edit_correlation_id.is_none());
+                assert!(application.taskbar_overlay_window == Some(overlay_window));
+                application.close_schedule_window(cx);
+            });
+        });
+        let _ = overlay_window.update(cx, |_, window, _| window.remove_window());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn production_taskbar_overlay_keeps_information_geometry_stable_in_edit_mode(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "taskbar-overlay-geometry");
+        let settings = DownloadTaskbarProgressOverlaySettings {
+            width: 320,
+            height: 32,
+            progress_mode: DownloadTaskbarProgressMode::Aggregate,
+            show_speed: true,
+            show_remaining_time: true,
+            show_active_tasks: true,
+            show_active_connections: true,
+            show_transferred_bytes: true,
+            ..Default::default()
+        };
+        let preview_samples = [
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 314 * 1024 * 1024,
+                total_bytes: Some(1024 * 1024 * 1024),
+                bytes_per_second: 10 * 1024 * 1024,
+                active_connections: 4,
+                segments: Vec::new(),
+            },
+            DownloadTaskbarOverlaySample {
+                status: DownloadStatus::Downloading,
+                downloaded_bytes: 420 * 1024 * 1024,
+                total_bytes: Some(1024 * 1024 * 1024),
+                bytes_per_second: 14 * 1024 * 1024,
+                active_connections: 4,
+                segments: Vec::new(),
+            },
+        ];
+        let normal_model = aggregate_taskbar_progress(&settings, false, preview_samples);
+        let platform = cx.read(|cx| Rc::clone(&application.read(cx).platform));
+        let application_for_window = application.clone();
+        let (_overlay, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(320.0), px(32.0)));
+            DownloadTaskbarOverlayView::new(
+                application_for_window,
+                platform,
+                0,
+                normal_model,
+                window,
+                cx,
+            )
+        });
+        window.refresh().expect("render normal taskbar overlay");
+        window.run_until_parked();
+        let normal_content = window
+            .debug_bounds("download-taskbar-overlay-content")
+            .expect("normal overlay content frame");
+        let normal_metrics = window
+            .debug_bounds("download-taskbar-overlay-metrics")
+            .expect("normal overlay metric row");
+        let normal_progress = window
+            .debug_bounds("download-taskbar-overlay-progress")
+            .expect("normal overlay progress lanes");
+        let normal_transferred = window
+            .debug_bounds("download-taskbar-overlay-transferred")
+            .expect("normal overlay transferred-byte metric");
+        assert_eq!(normal_metrics.size.height, px(LINE_HEIGHT_LABEL));
+        assert!(normal_transferred.right() <= normal_metrics.right());
+        assert!(
+            window
+                .debug_bounds("download-taskbar-overlay-edit-border")
+                .is_none()
+        );
+        assert!(
+            window
+                .debug_bounds("download-taskbar-overlay-resize-handle")
+                .is_none()
+        );
+
+        window.update(|_, cx| {
+            application.update(cx, |application, cx| {
+                application.taskbar_overlay_edit_draft = Some(settings);
+                cx.notify();
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render editable taskbar overlay");
+        let edit_content = window
+            .debug_bounds("download-taskbar-overlay-content")
+            .expect("editable overlay content frame");
+        let edit_metrics = window
+            .debug_bounds("download-taskbar-overlay-metrics")
+            .expect("editable overlay metric row");
+        let edit_progress = window
+            .debug_bounds("download-taskbar-overlay-progress")
+            .expect("editable overlay progress lanes");
+        let edit_transferred = window
+            .debug_bounds("download-taskbar-overlay-transferred")
+            .expect("editable overlay transferred-byte metric");
+        assert_eq!(edit_content, normal_content);
+        assert_eq!(edit_metrics, normal_metrics);
+        assert_eq!(edit_progress, normal_progress);
+        assert_eq!(edit_transferred, normal_transferred);
+        assert!(
+            window
+                .debug_bounds("download-taskbar-overlay-edit-border")
+                .is_some()
+        );
+        assert!(
+            window
+                .debug_bounds("download-taskbar-overlay-resize-handle")
+                .is_some()
+        );
         let _ = std::fs::remove_dir_all(directory);
     }
 

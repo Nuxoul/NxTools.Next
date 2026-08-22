@@ -15,9 +15,12 @@ use tracing::{info, warn};
 
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
+use crate::ui::metrics::{RADIUS_CONTROL, SPACING_2, SPACING_8};
+use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
 const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
+const TASKBAR_OVERLAY_LANE_GAP: f32 = 1.0;
 const TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(90);
 const TASKBAR_OVERLAY_EXIT_DURATION: Duration = Duration::from_millis(120);
 
@@ -160,27 +163,29 @@ fn taskbar_segment_progress_lane<'a>(
     }
 }
 
-fn taskbar_overlay_max_lanes(
-    settings: &DownloadTaskbarProgressOverlaySettings,
-    editing: bool,
-) -> usize {
+fn taskbar_overlay_max_lanes(settings: &DownloadTaskbarProgressOverlaySettings) -> usize {
     let show_text = settings.show_speed
         || settings.show_remaining_time
         || settings.show_active_tasks
         || settings.show_active_connections
         || settings.show_transferred_bytes;
-    let editing_padding = if editing { 2 } else { 0 };
     let text_space = if show_text {
-        10 + if settings.show_progress { 2 } else { 0 }
+        LINE_HEIGHT_LABEL as u32
+            + if settings.show_progress {
+                SPACING_2 as u32
+            } else {
+                0
+            }
     } else {
         0
     };
-    let available = settings
-        .height
-        .saturating_sub(editing_padding)
-        .saturating_sub(text_space);
-    usize::try_from((available.saturating_add(1) / 3).clamp(1, 8))
-        .unwrap_or(TASKBAR_OVERLAY_MAX_LANES)
+    let available = settings.height.saturating_sub(text_space);
+    let lane_stride = (TASKBAR_OVERLAY_LANE_HEIGHT + TASKBAR_OVERLAY_LANE_GAP) as u32;
+    let available_with_trailing_gap = available.saturating_add(TASKBAR_OVERLAY_LANE_GAP as u32);
+    usize::try_from(
+        (available_with_trailing_gap / lane_stride).clamp(1, TASKBAR_OVERLAY_MAX_LANES as u32),
+    )
+    .unwrap_or(TASKBAR_OVERLAY_MAX_LANES)
 }
 
 fn taskbar_overlay_edit_samples() -> Vec<DownloadTaskbarOverlaySample> {
@@ -265,7 +270,7 @@ pub(crate) fn aggregate_taskbar_progress(
         total_bytes,
         bytes_per_second,
     };
-    let max_lanes = taskbar_overlay_max_lanes(settings, editing);
+    let max_lanes = taskbar_overlay_max_lanes(settings);
     let lanes = match settings.progress_mode {
         DownloadTaskbarProgressMode::Aggregate => vec![taskbar_progress_lane(active.iter())],
         DownloadTaskbarProgressMode::PerTask => {
@@ -575,6 +580,7 @@ impl Render for DownloadTaskbarOverlayView {
         let visibility_generation = self.visibility.generation;
         let visibility_exiting = self.visibility.exiting;
         let mut root = div()
+            .debug_selector(|| "download-taskbar-overlay-root".into())
             .size_full()
             .relative()
             .bg(transparent_black())
@@ -587,7 +593,7 @@ impl Render for DownloadTaskbarOverlayView {
                 settings,
                 editing,
             } => {
-                let width = settings.width.saturating_sub(if *editing { 10 } else { 0 }) as f32;
+                let width = settings.width as f32;
                 let show_text = settings.show_speed
                     || settings.show_remaining_time
                     || settings.show_active_tasks
@@ -597,12 +603,9 @@ impl Render for DownloadTaskbarOverlayView {
                 let move_handle = self.native_window_handle;
                 root = root
                     .when(*editing, |root| {
-                        root.bg(theme.surface_raised)
-                            .border_1()
-                            .border_color(theme.accent)
-                            .rounded(px(3.0))
-                            .cursor_move()
-                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _event, window, cx| {
+                        root.cursor_move().on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(move |this, _event, window, cx| {
                                 cx.stop_propagation();
                                 if move_handle == 0 {
                                     return;
@@ -612,9 +615,6 @@ impl Render for DownloadTaskbarOverlayView {
                                     .read(cx)
                                     .taskbar_overlay_diagnostic_correlation_id();
                                 this.begin_edit_gesture(window, correlation_id);
-                                this.application.update(cx, |application, _| {
-                                    application.set_taskbar_overlay_edit_gesture_active(true);
-                                });
                                 match move_platform.send_command_correlated(
                                     PlatformCommand::BeginWindowMove(BeginWindowMoveCommand {
                                         window_handle: move_handle,
@@ -622,10 +622,15 @@ impl Render for DownloadTaskbarOverlayView {
                                     correlation_id,
                                 ) {
                                     Ok(command_id) => {
-                                        this.application.update(cx, |application, _| {
-                                            application.register_taskbar_overlay_edit_gesture(
-                                                command_id,
-                                            );
+                                        let application = this.application.clone();
+                                        cx.defer(move |cx| {
+                                            application.update(cx, |application, _| {
+                                                application
+                                                    .set_taskbar_overlay_edit_gesture_active(true);
+                                                application.register_taskbar_overlay_edit_gesture(
+                                                    command_id,
+                                                );
+                                            });
                                         });
                                         info!(
                                             event = "download.taskbar_overlay.move_accepted",
@@ -636,9 +641,12 @@ impl Render for DownloadTaskbarOverlayView {
                                     }
                                     Err(error) => {
                                         this.finish_edit_gesture();
-                                        this.application.update(cx, |application, _| {
-                                            application
-                                                .set_taskbar_overlay_edit_gesture_active(false);
+                                        let application = this.application.clone();
+                                        cx.defer(move |cx| {
+                                            application.update(cx, |application, _| {
+                                                application
+                                                    .set_taskbar_overlay_edit_gesture_active(false);
+                                            });
                                         });
                                         warn!(
                                             event = "download.taskbar_overlay.move_accept_failed",
@@ -648,18 +656,18 @@ impl Render for DownloadTaskbarOverlayView {
                                         );
                                     }
                                 }
-                            }))
+                            }),
+                        )
                     })
                     .child(
                         div()
+                            .debug_selector(|| "download-taskbar-overlay-content".into())
                             .size_full()
-                            .px(px(if *editing { 5.0 } else { 0.0 }))
-                            .py(px(if *editing { 1.0 } else { 0.0 }))
                             .flex()
                             .flex_col()
                             .justify_center()
                             .gap(px(if show_text && settings.show_progress {
-                                2.0
+                                SPACING_2
                             } else {
                                 0.0
                             }))
@@ -668,84 +676,108 @@ impl Render for DownloadTaskbarOverlayView {
                             })
                             .when(settings.show_progress, |content| {
                                 content.child(
-                                    div().w_full().flex().flex_col().gap(px(1.0)).children(
-                                        lanes.iter().copied().enumerate().map(|(index, lane)| {
-                                            taskbar_progress_lane_element(theme, width, index, lane)
-                                        }),
-                                    ),
+                                    div()
+                                        .debug_selector(|| {
+                                            "download-taskbar-overlay-progress".into()
+                                        })
+                                        .w_full()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(TASKBAR_OVERLAY_LANE_GAP))
+                                        .children(lanes.iter().copied().enumerate().map(
+                                            |(index, lane)| {
+                                                taskbar_progress_lane_element(
+                                                    theme, width, index, lane,
+                                                )
+                                            },
+                                        )),
                                 )
                             }),
                     );
                 if *editing {
                     let resize_platform = Rc::clone(&self.platform);
                     let resize_handle = self.native_window_handle;
-                    root = root.child(
-                        div()
-                            .absolute()
-                            .right_0()
-                            .bottom_0()
-                            .w(px(12.0))
-                            .h(px(12.0))
-                            .cursor_e_resize()
-                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _event, window, cx| {
-                                cx.stop_propagation();
-                                if resize_handle == 0 {
-                                    return;
-                                }
-                                let correlation_id = this
-                                    .application
-                                    .read(cx)
-                                    .taskbar_overlay_diagnostic_correlation_id();
-                                this.begin_edit_gesture(window, correlation_id);
-                                this.application.update(cx, |application, _| {
-                                    application.set_taskbar_overlay_edit_gesture_active(true);
+                    let resize_listener = cx.listener(move |this, _event, window, cx| {
+                        cx.stop_propagation();
+                        if resize_handle == 0 {
+                            return;
+                        }
+                        let correlation_id = this
+                            .application
+                            .read(cx)
+                            .taskbar_overlay_diagnostic_correlation_id();
+                        this.begin_edit_gesture(window, correlation_id);
+                        match resize_platform.send_command_correlated(
+                            PlatformCommand::BeginWindowResize(BeginWindowResizeCommand {
+                                window_handle: resize_handle,
+                            }),
+                            correlation_id,
+                        ) {
+                            Ok(command_id) => {
+                                let application = this.application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, _| {
+                                        application.set_taskbar_overlay_edit_gesture_active(true);
+                                        application
+                                            .register_taskbar_overlay_edit_gesture(command_id);
+                                    });
                                 });
-                                match resize_platform.send_command_correlated(
-                                    PlatformCommand::BeginWindowResize(BeginWindowResizeCommand {
-                                        window_handle: resize_handle,
-                                    }),
-                                    correlation_id,
-                                ) {
-                                    Ok(command_id) => {
-                                        this.application.update(cx, |application, _| {
-                                            application.register_taskbar_overlay_edit_gesture(
-                                                command_id,
-                                            );
-                                        });
-                                        info!(
-                                            event = "download.taskbar_overlay.resize_accepted",
-                                            %correlation_id,
-                                            %command_id,
-                                            "taskbar overlay resize gesture accepted"
-                                        );
-                                    }
-                                    Err(error) => {
-                                        this.finish_edit_gesture();
-                                        this.application.update(cx, |application, _| {
-                                            application
-                                                .set_taskbar_overlay_edit_gesture_active(false);
-                                        });
-                                        warn!(
-                                            event = "download.taskbar_overlay.resize_accept_failed",
-                                            %correlation_id,
-                                            %error,
-                                            "taskbar overlay resize gesture could not be queued"
-                                        );
-                                    }
-                                }
-                            }))
-                            .child(
-                                div()
-                                    .absolute()
-                                    .right(px(2.0))
-                                    .bottom(px(2.0))
-                                    .w(px(5.0))
-                                    .h(px(5.0))
-                                    .border_r_1()
-                                    .border_b_1()
-                                    .border_color(theme.text_muted),
-                            ),
-                    );
+                                info!(
+                                    event = "download.taskbar_overlay.resize_accepted",
+                                    %correlation_id,
+                                    %command_id,
+                                    "taskbar overlay resize gesture accepted"
+                                );
+                            }
+                            Err(error) => {
+                                this.finish_edit_gesture();
+                                let application = this.application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, _| {
+                                        application.set_taskbar_overlay_edit_gesture_active(false);
+                                    });
+                                });
+                                warn!(
+                                    event = "download.taskbar_overlay.resize_accept_failed",
+                                    %correlation_id,
+                                    %error,
+                                    "taskbar overlay resize gesture could not be queued"
+                                );
+                            }
+                        }
+                    });
+                    root = root
+                        .child(
+                            div()
+                                .debug_selector(|| "download-taskbar-overlay-edit-border".into())
+                                .absolute()
+                                .size_full()
+                                .border_1()
+                                .border_color(theme.accent)
+                                .rounded(px(RADIUS_CONTROL)),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "download-taskbar-overlay-resize-handle".into())
+                                .absolute()
+                                .right_0()
+                                .bottom_0()
+                                .w(px(12.0))
+                                .h(px(12.0))
+                                .cursor_e_resize()
+                                .on_mouse_down(gpui::MouseButton::Left, resize_listener)
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .right(px(2.0))
+                                        .bottom(px(2.0))
+                                        .w(px(5.0))
+                                        .h(px(5.0))
+                                        .border_r_1()
+                                        .border_b_1()
+                                        .border_color(theme.text_muted),
+                                ),
+                        );
                 }
                 root.with_animation(
                     gpui::SharedString::from(format!(
@@ -828,39 +860,84 @@ fn taskbar_metrics_element(
         })
         .unwrap_or_else(|| "—".to_owned());
     div()
+        .debug_selector(|| "download-taskbar-overlay-metrics".into())
         .w_full()
         .min_w_0()
-        .h(px(10.0))
+        .h(px(LINE_HEIGHT_LABEL))
         .flex()
         .items_center()
-        .gap(px(7.0))
-        .text_size(px(9.0))
+        .gap(px(SPACING_8))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .font_family(UI_FONT_FAMILY)
+        .text_size(px(TEXT_LABEL))
+        .line_height(px(LINE_HEIGHT_LABEL))
         .text_color(theme.text_secondary)
         .when(settings.show_speed, |row| {
-            row.child(format!(
-                "{}/s",
-                format_compact_bytes(metrics.bytes_per_second)
+            row.child(taskbar_metric_item(
+                "download-taskbar-overlay-speed",
+                None,
+                format!("{}/s", format_compact_bytes(metrics.bytes_per_second)),
+                None,
             ))
         })
         .when(settings.show_remaining_time, |row| {
-            row.child(format!("剩 {eta}"))
+            row.child(taskbar_metric_item(
+                "download-taskbar-overlay-remaining",
+                Some("剩"),
+                eta,
+                None,
+            ))
         })
         .when(settings.show_active_tasks, |row| {
-            row.child(format!("{} 任务", metrics.active_tasks))
+            row.child(taskbar_metric_item(
+                "download-taskbar-overlay-active-tasks",
+                None,
+                metrics.active_tasks.to_string(),
+                Some("任务"),
+            ))
         })
         .when(settings.show_active_connections, |row| {
-            row.child(format!("{} 连接", metrics.active_connections))
+            row.child(taskbar_metric_item(
+                "download-taskbar-overlay-active-connections",
+                None,
+                metrics.active_connections.to_string(),
+                Some("连接"),
+            ))
         })
         .when(settings.show_transferred_bytes, |row| {
-            row.child(match metrics.total_bytes {
-                Some(total) => format!(
-                    "{} / {}",
-                    format_compact_bytes(metrics.downloaded_bytes),
-                    format_compact_bytes(total)
-                ),
-                None => format_compact_bytes(metrics.downloaded_bytes),
-            })
+            row.child(taskbar_metric_item(
+                "download-taskbar-overlay-transferred",
+                None,
+                match metrics.total_bytes {
+                    Some(total) => format!(
+                        "{} / {}",
+                        format_compact_bytes(metrics.downloaded_bytes),
+                        format_compact_bytes(total)
+                    ),
+                    None => format_compact_bytes(metrics.downloaded_bytes),
+                },
+                None,
+            ))
         })
+        .into_any_element()
+}
+
+fn taskbar_metric_item(
+    selector: &'static str,
+    leading_label: Option<&'static str>,
+    value: String,
+    trailing_label: Option<&'static str>,
+) -> gpui::AnyElement {
+    div()
+        .debug_selector(move || selector.into())
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(SPACING_2))
+        .when_some(leading_label, |item, label| item.child(label))
+        .child(div().font_family(UI_MONO_FONT_FAMILY).child(value))
+        .when_some(trailing_label, |item, label| item.child(label))
         .into_any_element()
 }
 
@@ -1053,7 +1130,7 @@ mod tests {
 
         assert_eq!(aggregate.visible_lane_count(), 1);
         assert_eq!(per_task.visible_lane_count(), 2);
-        assert_eq!(per_segment.visible_lane_count(), 2);
+        assert_eq!(per_segment.visible_lane_count(), 3);
         assert_ne!(lanes(&per_task), lanes(&per_segment));
     }
 
@@ -1152,13 +1229,12 @@ mod tests {
     }
 
     #[test]
-    fn text_and_edit_chrome_reduce_lane_capacity_before_rendering() {
+    fn readable_metrics_keep_a_stable_lane_budget_before_rendering() {
         let mut settings = settings();
-        settings.height = 20;
+        settings.height = 32;
         settings.show_speed = true;
 
-        assert_eq!(taskbar_overlay_max_lanes(&settings, false), 3);
-        assert_eq!(taskbar_overlay_max_lanes(&settings, true), 2);
+        assert_eq!(taskbar_overlay_max_lanes(&settings), 5);
     }
 
     #[test]
