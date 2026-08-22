@@ -25,22 +25,15 @@ if ($null -eq $associated) {
 }
 
 $actual = $null
-$expectedSource = $null
 $expected = $null
 try {
     $actual = $associated.ToBitmap()
-    $expectedSource = [System.Drawing.Image]::FromFile($brandPath)
+    $expected = [System.Drawing.Bitmap]::FromFile($brandPath)
     if ($actual.Width -ne 32 -or $actual.Height -ne 32) {
         throw "NxTools.exe associated icon is $($actual.Width)x$($actual.Height), expected 32x32."
     }
-    $expected = [System.Drawing.Bitmap]::new(32, 32, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $graphics = [System.Drawing.Graphics]::FromImage($expected)
-    try {
-        $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
-        $graphics.DrawImage($expectedSource, 0, 0, 32, 32)
-    }
-    finally {
-        $graphics.Dispose()
+    if ($expected.Width -ne 32 -or $expected.Height -ne 32) {
+        throw "Formal brand asset is $($expected.Width)x$($expected.Height), expected 32x32."
     }
 
     for ($y = 0; $y -lt 32; $y++) {
@@ -53,7 +46,6 @@ try {
 }
 finally {
     if ($null -ne $expected) { $expected.Dispose() }
-    if ($null -ne $expectedSource) { $expectedSource.Dispose() }
     if ($null -ne $actual) { $actual.Dispose() }
     $associated.Dispose()
 }
