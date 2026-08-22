@@ -2247,6 +2247,32 @@ Reverified on 2026-08-22 before the DL-24 new-download footer migration:
   click owners do not move, opening the schedule Popover does not resize the window, and submit/close
   lifecycle behavior remains unchanged.
 
+Reverified on 2026-08-22 before the DL-25 task-window skeleton migration:
+
+- Old NxTools keeps one `DownloadProgressWindow` per task in `Views/MainWindow.axaml.cs`. Its
+  `DownloadProgressWindow.axaml.cs::ShowCompletionState` hides the progress layout, reveals the
+  completion layout, resizes around the existing center and keeps the same registered native window;
+  `DownloadCompletedWindow` is only the passive fallback when that keyed progress window was closed.
+- AB Download Manager follows the same owner chain:
+  `AppComponent.kt -> ShowDownloadDialogs.kt -> BaseSingleDownloadComponent.kt ->
+  ProgressDownloadPage.kt/CompletedDownloadPage.kt`. One task-keyed dialog changes from progress to
+  failed/completed presentation; repeated opens focus the existing dialog and failure remains an
+  in-window state when that dialog is alive.
+- NxTools.Next already preserves this lifecycle in
+  `DownloadWindowLifecycle::task_changed -> DownloadApplication::apply_task_window_directive ->
+  update_task_window -> DownloadTaskWindowView::replace_snapshot`. A transform updates the existing
+  view entity, calculates a center-preserving native `SetWindowBounds`, refreshes that same window and
+  never opens a second keyed entry. Terminal fallback remains separately gated by completion settings.
+- Before DL-25, `DownloadTaskWindowView::render` rebuilt the entire root, titlebar, content and footer
+  independently for Completed, Failed and Progress. Progress used a 42 px footer while both terminal
+  states used 44 px, and no production selector proved that all three phases shared one skeleton.
+  Consequently visual drift could coexist with a correct lifecycle state machine.
+- DL-25 must introduce one shared task-window root/titlebar/body/footer skeleton with a 34 px titlebar
+  and 44 px footer, while leaving phase-specific content and actions in their current owners. A real
+  production keyed window must expose Progress, Failed and Completed through the same skeleton and
+  view generation. Center-preserving resize math and the one-entry registry remain explicit gates;
+  completion action hierarchy and drag behavior belong to DL-26 and are not redesigned here.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when

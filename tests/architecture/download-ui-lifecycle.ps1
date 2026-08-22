@@ -51,8 +51,20 @@ Assert-SourceContains `
     -Pattern 'new_download_window_options(window_bounds)' `
     -Message "The add window must pass the tested compact minimum through the production GPUI window-open boundary."
 Assert-SourceContains `
-    -Pattern 'DownloadWindowPhase::Progress => size(px(440.0), px(176.0))' `
+    -Pattern 'size: size(px(440.0), px(176.0))' `
     -Message "The progress window must remain compact and content-driven."
+Assert-SourceContains `
+    -Pattern 'size: size(px(440.0), px(196.0))' `
+    -Message "The failed window must remain compact and content-driven."
+Assert-SourceContains `
+    -Pattern 'size: size(px(440.0), px(180.0))' `
+    -Message "The completed window must remain compact and content-driven."
+Assert-SourceContains `
+    -Pattern 'fn download_task_window_phase_layout(' `
+    -Message "Task-window phase size and selector metadata must stay centralized."
+Assert-SourceContains `
+    -Pattern 'fn download_task_window_shell(' `
+    -Message "Progress, failed and completed task windows must share one production skeleton."
 Assert-SourceContains `
     -Pattern 'raise_terminal_window_without_activation' `
     -Message "A terminal download transition must return the window to the visible Z-order without stealing focus."

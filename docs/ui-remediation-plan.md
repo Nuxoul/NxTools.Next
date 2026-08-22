@@ -774,6 +774,25 @@ rust/apps/nxtools-desktop/src/ui/
   相同。DL-25 任务窗是下一切片，在 Progress/Failed/Completed 共享骨架及原位状态转换获得真实
   窗口门禁前不提前完成。
 
+第二十六个 P0 任务窗共享骨架切片（2026-08-22）：
+
+- DL-25 将 Progress、Failed、Completed 三态迁入同一个 `download_task_window_shell`。任务窗现在
+  固定复用 `shell -> 34 px titlebar -> flex body -> 44 px footer` 骨架，各状态只提供正文和动作；
+  Progress 原先独立的 42 px footer 已收敛到共享 44 px 轨道，三态不再分别手写根背景、边界和尺寸。
+- 生命周期仍由 `DownloadWindowLifecycle` 和每任务一个 `task_windows` keyed entry 管理。状态转换继续
+  通过 `DownloadTaskWindowView::replace_snapshot` 更新同一 view；既有 resize 换算提取为纯函数，
+  Progress→Failed/Completed 在 150% DPI 下的物理中心保持门禁已覆盖，原生窗口 handle 和 generation
+  不发生替换。Completed 的打开/目录/拖拽层级属于 DL-26，本切片未提前调整。
+- 红—绿真实 GPUI 门禁先在旧实现缺少共享 shell selector 处失败；修复后在一个生产任务窗内依次
+  渲染 Progress、Failed、Completed，断言三态共享相同 titlebar/body/footer 几何、注册表始终只有
+  一个窗口且 generation 不变；失败态转换穿过生产 lifecycle/application 链，并在有界平台传输端
+  精确收到同一 handle 的中心保持 `SetWindowBounds`。8 条生命周期状态机测试、
+  `cargo check -p nxtools-desktop --tests`、
+  仅放行既有 build-script lint 的严格 Clippy、`download-ui-lifecycle.ps1`、rustfmt 与
+  `git diff --check` 均通过。desktop 全套为 301/305；分类按钮 selector、网络尾距、剪贴板空态宽度
+  和下载详情 progress selector 四项失败与前序基线完全相同。DL-26 完成窗是下一切片，在主/次动作
+  层级和拖放行为获得生产窗口门禁前不提前完成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

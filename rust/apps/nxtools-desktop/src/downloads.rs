@@ -3203,19 +3203,14 @@ impl DownloadApplication {
                     let new_size = download_task_window_size(phase);
                     let bounds = window.bounds();
                     let scale = window.scale_factor();
-                    let centered_x = bounds.origin.x.as_f32()
-                        + (bounds.size.width.as_f32() - new_size.width.as_f32()) / 2.0;
-                    let centered_y = bounds.origin.y.as_f32()
-                        + (bounds.size.height.as_f32() - new_size.height.as_f32()) / 2.0;
                     if native_window_handle != 0 {
                         let _ = platform.send_command(PlatformCommand::SetWindowBounds(
-                            SetWindowBoundsCommand {
-                                window_handle: native_window_handle,
-                                x: (centered_x * scale).round() as i32,
-                                y: (centered_y * scale).round() as i32,
-                                width: (new_size.width.as_f32() * scale).round() as i32,
-                                height: (new_size.height.as_f32() * scale).round() as i32,
-                            },
+                            centered_task_window_bounds_command(
+                                native_window_handle,
+                                bounds,
+                                new_size,
+                                scale,
+                            ),
                         ));
                     } else {
                         window.resize(new_size);
@@ -10493,12 +10488,96 @@ fn new_download_window_options(window_bounds: WindowBounds) -> WindowOptions {
     }
 }
 
-fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Size<gpui::Pixels> {
+struct DownloadTaskWindowPhaseLayout {
+    size: gpui::Size<gpui::Pixels>,
+    selector: &'static str,
+}
+
+fn download_task_window_phase_layout(phase: DownloadWindowPhase) -> DownloadTaskWindowPhaseLayout {
     match phase {
-        DownloadWindowPhase::Progress => size(px(440.0), px(176.0)),
-        DownloadWindowPhase::Failed => size(px(440.0), px(196.0)),
-        DownloadWindowPhase::Completed => size(px(440.0), px(180.0)),
+        DownloadWindowPhase::Progress => DownloadTaskWindowPhaseLayout {
+            size: size(px(440.0), px(176.0)),
+            selector: "download-task-window-phase-progress",
+        },
+        DownloadWindowPhase::Failed => DownloadTaskWindowPhaseLayout {
+            size: size(px(440.0), px(196.0)),
+            selector: "download-task-window-phase-failed",
+        },
+        DownloadWindowPhase::Completed => DownloadTaskWindowPhaseLayout {
+            size: size(px(440.0), px(180.0)),
+            selector: "download-task-window-phase-completed",
+        },
     }
+}
+
+fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Size<gpui::Pixels> {
+    download_task_window_phase_layout(phase).size
+}
+
+fn centered_task_window_bounds_command(
+    window_handle: i64,
+    current_bounds: gpui::Bounds<gpui::Pixels>,
+    new_size: gpui::Size<gpui::Pixels>,
+    scale_factor: f32,
+) -> SetWindowBoundsCommand {
+    let centered_x = current_bounds.origin.x.as_f32()
+        + (current_bounds.size.width.as_f32() - new_size.width.as_f32()) / 2.0;
+    let centered_y = current_bounds.origin.y.as_f32()
+        + (current_bounds.size.height.as_f32() - new_size.height.as_f32()) / 2.0;
+    SetWindowBoundsCommand {
+        window_handle,
+        x: (centered_x * scale_factor).round() as i32,
+        y: (centered_y * scale_factor).round() as i32,
+        width: (new_size.width.as_f32() * scale_factor).round() as i32,
+        height: (new_size.height.as_f32() * scale_factor).round() as i32,
+    }
+}
+
+fn download_task_window_shell(
+    theme: Theme,
+    phase: DownloadWindowPhase,
+    title: &'static str,
+    body: impl IntoElement,
+    footer: impl IntoElement,
+) -> impl IntoElement {
+    let phase_selector = download_task_window_phase_layout(phase).selector;
+    div()
+        .debug_selector(|| "download-task-window-shell".into())
+        .size_full()
+        .bg(theme.canvas)
+        .text_color(theme.text)
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .debug_selector(|| "download-task-window-titlebar".into())
+                .h(px(34.0))
+                .flex_none()
+                .child(download_window_titlebar(theme, title)),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-task-window-body".into())
+                .flex_1()
+                .min_h_0()
+                .child(
+                    div()
+                        .debug_selector(move || phase_selector.into())
+                        .size_full()
+                        .child(body),
+                ),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-task-window-footer".into())
+                .h(px(44.0))
+                .flex_none()
+                .px(px(14.0))
+                .border_t_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.surface)
+                .child(footer),
+        )
 }
 
 #[allow(
@@ -10677,157 +10756,145 @@ impl Render for DownloadTaskWindowView {
             let open_application = application.clone();
             let reveal_application = application.clone();
             let drag_application = application.clone();
-            return div()
-                .size_full()
-                .bg(theme.canvas)
-                .text_color(theme.text)
-                .flex()
-                .flex_col()
-                .child(download_window_titlebar(theme, "下载完成"))
-                .child(
-                    div()
-                        .flex_1()
-                        .px(px(16.0))
-                        .py(px(10.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(10.0))
-                        .child(
-                            div()
-                                .size(px(38.0))
-                                .rounded(px(6.0))
-                                .bg(theme.accent_soft)
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    Icon::new(MaterialIcon::Check)
-                                        .size(px(19.0))
-                                        .text_color(theme.success),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .gap(px(3.0))
-                                .child(
-                                    div()
-                                        .text_size(px(13.0))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .truncate()
-                                        .child(name),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(10.0))
-                                        .text_color(theme.text_muted)
-                                        .child(
-                                            task.total_bytes
-                                                .map(format_download_size)
-                                                .unwrap_or_else(|| {
-                                                    format_download_size(task.downloaded_bytes)
-                                                }),
+            return download_task_window_shell(
+                theme,
+                DownloadWindowPhase::Completed,
+                "下载完成",
+                div()
+                    .size_full()
+                    .px(px(16.0))
+                    .py(px(10.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .size(px(38.0))
+                            .rounded(px(6.0))
+                            .bg(theme.accent_soft)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Icon::new(MaterialIcon::Check)
+                                    .size(px(19.0))
+                                    .text_color(theme.success),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .gap(px(3.0))
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .truncate()
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(theme.text_muted)
+                                    .child(
+                                        task.total_bytes.map(format_download_size).unwrap_or_else(
+                                            || format_download_size(task.downloaded_bytes),
                                         ),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(9.5))
-                                        .text_color(theme.text_muted)
-                                        .truncate()
-                                        .child(final_path),
-                                ),
-                        ),
-                )
-                .child(
-                    div()
-                        .h(px(44.0))
-                        .px(px(14.0))
-                        .border_t_1()
-                        .border_color(theme.border_subtle)
-                        .bg(theme.surface)
-                        .flex()
-                        .items_center()
-                        .justify_end()
-                        .gap(px(6.0))
-                        .child(
-                            div()
-                                .id("download-complete-drag")
-                                .h(px(28.0))
-                                .px(px(8.0))
-                                .rounded(px(4.0))
-                                .border_1()
-                                .border_color(theme.border_subtle)
-                                .bg(theme.surface_raised)
-                                .cursor_pointer()
-                                .flex()
-                                .items_center()
-                                .gap(px(5.0))
-                                .text_size(px(10.0))
-                                .hover(move |style| {
-                                    style.bg(theme.surface_hover).border_color(theme.border)
-                                })
-                                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                                    let source_window_handle =
-                                        native_window_handle(window).unwrap_or_default();
-                                    drag_application.update(cx, |application, cx| {
-                                        application.begin_task_file_drag(
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(9.5))
+                                    .text_color(theme.text_muted)
+                                    .truncate()
+                                    .child(final_path),
+                            ),
+                    ),
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .id("download-complete-drag")
+                            .h(px(28.0))
+                            .px(px(8.0))
+                            .rounded(px(4.0))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.surface_raised)
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .gap(px(5.0))
+                            .text_size(px(10.0))
+                            .hover(move |style| {
+                                style.bg(theme.surface_hover).border_color(theme.border)
+                            })
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                let source_window_handle =
+                                    native_window_handle(window).unwrap_or_default();
+                                drag_application.update(cx, |application, cx| {
+                                    application.begin_task_file_drag(
+                                        task_id,
+                                        source_window_handle,
+                                        cx,
+                                    );
+                                });
+                                cx.stop_propagation();
+                            })
+                            .child(
+                                Icon::new(MaterialIcon::OpenInFull)
+                                    .size(px(14.0))
+                                    .text_color(theme.icon_muted),
+                            )
+                            .child("拖拽文件"),
+                    )
+                    .child(
+                        Button::new("download-complete-reveal")
+                            .icon(Icon::new(MaterialIcon::Folder))
+                            .label("打开所在目录")
+                            .small()
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = reveal_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.open_task_artifact(
                                             task_id,
-                                            source_window_handle,
+                                            ShellOpenAction::SelectInExplorer,
                                             cx,
                                         );
                                     });
-                                    cx.stop_propagation();
-                                })
-                                .child(
-                                    Icon::new(MaterialIcon::OpenInFull)
-                                        .size(px(14.0))
-                                        .text_color(theme.icon_muted),
-                                )
-                                .child("拖拽文件"),
-                        )
-                        .child(
-                            Button::new("download-complete-reveal")
-                                .icon(Icon::new(MaterialIcon::Folder))
-                                .label("打开所在目录")
-                                .small()
-                                .ghost()
-                                .on_click(move |_, _, cx| {
-                                    let application = reveal_application.clone();
-                                    cx.defer(move |cx| {
-                                        application.update(cx, |application, cx| {
-                                            application.open_task_artifact(
-                                                task_id,
-                                                ShellOpenAction::SelectInExplorer,
-                                                cx,
-                                            );
-                                        });
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("download-complete-open")
+                            .icon(Icon::new(MaterialIcon::OpenInNew))
+                            .label("打开文件")
+                            .small()
+                            .custom(download_primary_button_variant(theme, cx))
+                            .on_click(move |_, _, cx| {
+                                let application = open_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        application.open_task_artifact(
+                                            task_id,
+                                            ShellOpenAction::Open,
+                                            cx,
+                                        );
                                     });
-                                }),
-                        )
-                        .child(
-                            Button::new("download-complete-open")
-                                .icon(Icon::new(MaterialIcon::OpenInNew))
-                                .label("打开文件")
-                                .small()
-                                .custom(download_primary_button_variant(theme, cx))
-                                .on_click(move |_, _, cx| {
-                                    let application = open_application.clone();
-                                    cx.defer(move |cx| {
-                                        application.update(cx, |application, cx| {
-                                            application.open_task_artifact(
-                                                task_id,
-                                                ShellOpenAction::Open,
-                                                cx,
-                                            );
-                                        });
-                                    });
-                                }),
-                        ),
-                )
-                .into_any_element();
+                                });
+                            }),
+                    ),
+            )
+            .into_any_element();
         }
 
         if status == DownloadStatus::Failed {
@@ -10837,103 +10904,93 @@ impl Render for DownloadTaskWindowView {
                 || "下载任务失败，未返回更多信息。".into(),
                 |error| error.message.clone(),
             );
-            return div()
-                .size_full()
-                .bg(theme.canvas)
-                .text_color(theme.text)
-                .flex()
-                .flex_col()
-                .child(download_window_titlebar(theme, "下载失败"))
-                .child(
-                    div()
-                        .flex_1()
-                        .px(px(16.0))
-                        .py(px(10.0))
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.0))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.0))
-                                .child(
-                                    Icon::new(MaterialIcon::Download)
-                                        .size(px(17.0))
-                                        .text_color(theme.danger),
-                                )
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .flex_1()
-                                        .text_size(px(11.5))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .truncate()
-                                        .child(name),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .w_full()
-                                .px(px(9.0))
-                                .py(px(7.0))
-                                .rounded(px(5.0))
-                                .bg(theme.danger_soft)
-                                .text_size(px(9.5))
-                                .text_color(theme.danger)
-                                .truncate()
-                                .child(error),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(9.0))
-                                .text_color(theme.text_muted)
-                                .truncate()
-                                .child(final_path),
-                        ),
-                )
-                .child(
-                    div()
-                        .h(px(44.0))
-                        .px(px(14.0))
-                        .border_t_1()
-                        .border_color(theme.border_subtle)
-                        .bg(theme.surface)
-                        .flex()
-                        .items_center()
-                        .justify_end()
-                        .gap(px(6.0))
-                        .child(
-                            Button::new("download-window-failed-cancel")
-                                .label("取消任务")
-                                .small()
-                                .ghost()
-                                .on_click(move |_, _, cx| {
-                                    let application = cancel_application.clone();
-                                    cx.defer(move |cx| {
-                                        application.update(cx, |application, cx| {
-                                            let _ = application.cancel(task_id, cx);
-                                        });
+            return download_task_window_shell(
+                theme,
+                DownloadWindowPhase::Failed,
+                "下载失败",
+                div()
+                    .size_full()
+                    .px(px(16.0))
+                    .py(px(10.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                Icon::new(MaterialIcon::Download)
+                                    .size(px(17.0))
+                                    .text_color(theme.danger),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .flex_1()
+                                    .text_size(px(11.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate()
+                                    .child(name),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .px(px(9.0))
+                            .py(px(7.0))
+                            .rounded(px(5.0))
+                            .bg(theme.danger_soft)
+                            .text_size(px(9.5))
+                            .text_color(theme.danger)
+                            .truncate()
+                            .child(error),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            .truncate()
+                            .child(final_path),
+                    ),
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(6.0))
+                    .child(
+                        Button::new("download-window-failed-cancel")
+                            .label("取消任务")
+                            .small()
+                            .ghost()
+                            .on_click(move |_, _, cx| {
+                                let application = cancel_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        let _ = application.cancel(task_id, cx);
                                     });
-                                }),
-                        )
-                        .child(
-                            Button::new("download-window-failed-retry")
-                                .icon(Icon::new(MaterialIcon::Download))
-                                .label("重试")
-                                .small()
-                                .custom(download_primary_button_variant(theme, cx))
-                                .on_click(move |_, _, cx| {
-                                    let application = retry_application.clone();
-                                    cx.defer(move |cx| {
-                                        application.update(cx, |application, cx| {
-                                            let _ = application.resume(task_id, cx);
-                                        });
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("download-window-failed-retry")
+                            .icon(Icon::new(MaterialIcon::Download))
+                            .label("重试")
+                            .small()
+                            .custom(download_primary_button_variant(theme, cx))
+                            .on_click(move |_, _, cx| {
+                                let application = retry_application.clone();
+                                cx.defer(move |cx| {
+                                    application.update(cx, |application, cx| {
+                                        let _ = application.resume(task_id, cx);
                                     });
-                                }),
-                        ),
-                )
-                .into_any_element();
+                                });
+                            }),
+                    ),
+            )
+            .into_any_element();
         }
 
         let total = task
@@ -11050,144 +11107,132 @@ impl Render for DownloadTaskWindowView {
             _ => div().into_any_element(),
         };
 
-        div()
-            .size_full()
-            .bg(theme.canvas)
-            .text_color(theme.text)
-            .flex()
-            .flex_col()
-            .child(download_window_titlebar(theme, status_label))
-            .child(
-                div()
-                    .flex_1()
-                    .px(px(16.0))
-                    .py(px(8.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(9.0))
-                            .child(
-                                Icon::new(MaterialIcon::Download)
-                                    .size(px(16.0))
-                                    .text_color(status_color),
-                            )
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .flex_1()
-                                    .text_size(px(11.5))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate()
-                                    .child(name),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(9.5))
-                                    .text_color(status_color)
-                                    .child(progress_badge),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .h(px(5.0))
-                            .rounded(px(4.0))
-                            .bg(theme.surface_raised)
-                            .when_some(ratio, |track, ratio| {
-                                track.child(
-                                    div()
-                                        .h_full()
-                                        .w(px(408.0 * ratio))
-                                        .rounded(px(4.0))
-                                        .bg(status_color),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .flex()
-                            .items_start()
-                            .gap(px(12.0))
-                            .child(download_window_metric(theme, "已下载", progress_text))
-                            .child(download_window_metric(
-                                theme,
-                                "速度",
-                                format!("{} /s", format_download_size(speed)),
-                            ))
-                            .child(download_window_metric(theme, "剩余", eta))
-                            .child(download_window_metric(
-                                theme,
-                                "连接",
-                                connections.to_string(),
-                            )),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(8.5))
-                            .text_color(theme.text_muted)
-                            .truncate()
-                            .child(final_path),
-                    ),
-            )
-            .child(
-                div()
-                    .h(px(42.0))
-                    .px(px(14.0))
-                    .border_t_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .when(
-                        !matches!(
-                            status,
-                            DownloadStatus::Completed
-                                | DownloadStatus::Failed
-                                | DownloadStatus::Cancelled
+        download_task_window_shell(
+            theme,
+            DownloadWindowPhase::Progress,
+            status_label,
+            div()
+                .size_full()
+                .px(px(16.0))
+                .py(px(8.0))
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(9.0))
+                        .child(
+                            Icon::new(MaterialIcon::Download)
+                                .size(px(16.0))
+                                .text_color(status_color),
+                        )
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .text_size(px(11.5))
+                                .font_weight(FontWeight::MEDIUM)
+                                .truncate()
+                                .child(name),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(9.5))
+                                .text_color(status_color)
+                                .child(progress_badge),
                         ),
-                        |footer| {
-                            footer.child(
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h(px(5.0))
+                        .rounded(px(4.0))
+                        .bg(theme.surface_raised)
+                        .when_some(ratio, |track, ratio| {
+                            track.child(
                                 div()
-                                    .debug_selector(|| "download-window-shutdown-arm".into())
-                                    .child(
-                                        Button::new("download-window-shutdown-arm-button")
-                                            .label(if shutdown_armed {
-                                                "已计划关机"
-                                            } else {
-                                                "完成后关机"
-                                            })
-                                            .small()
-                                            .h(px(28.0))
-                                            .px(px(10.0))
-                                            .rounded(px(4.0))
-                                            .when(shutdown_armed, |button| {
-                                                button.custom(download_primary_button_variant(
-                                                    theme, cx,
-                                                ))
-                                            })
-                                            .when(!shutdown_armed, |button| button.outline())
-                                            .on_click(move |_, _, cx| {
-                                                let application = shutdown_application.clone();
-                                                cx.defer(move |cx| {
-                                                    application.update(cx, |application, cx| {
-                                                        application
-                                                            .toggle_shutdown_armed(task_id, cx);
-                                                    });
-                                                });
-                                            }),
-                                    ),
+                                    .h_full()
+                                    .w(px(408.0 * ratio))
+                                    .rounded(px(4.0))
+                                    .bg(status_color),
                             )
-                        },
-                    )
-                    .child(actions),
-            )
-            .into_any_element()
+                        }),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .items_start()
+                        .gap(px(12.0))
+                        .child(download_window_metric(theme, "已下载", progress_text))
+                        .child(download_window_metric(
+                            theme,
+                            "速度",
+                            format!("{} /s", format_download_size(speed)),
+                        ))
+                        .child(download_window_metric(theme, "剩余", eta))
+                        .child(download_window_metric(
+                            theme,
+                            "连接",
+                            connections.to_string(),
+                        )),
+                )
+                .child(
+                    div()
+                        .text_size(px(8.5))
+                        .text_color(theme.text_muted)
+                        .truncate()
+                        .child(final_path),
+                ),
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_between()
+                .when(
+                    !matches!(
+                        status,
+                        DownloadStatus::Completed
+                            | DownloadStatus::Failed
+                            | DownloadStatus::Cancelled
+                    ),
+                    |footer| {
+                        footer.child(
+                            div()
+                                .debug_selector(|| "download-window-shutdown-arm".into())
+                                .child(
+                                    Button::new("download-window-shutdown-arm-button")
+                                        .label(if shutdown_armed {
+                                            "已计划关机"
+                                        } else {
+                                            "完成后关机"
+                                        })
+                                        .small()
+                                        .h(px(28.0))
+                                        .px(px(10.0))
+                                        .rounded(px(4.0))
+                                        .when(shutdown_armed, |button| {
+                                            button
+                                                .custom(download_primary_button_variant(theme, cx))
+                                        })
+                                        .when(!shutdown_armed, |button| button.outline())
+                                        .on_click(move |_, _, cx| {
+                                            let application = shutdown_application.clone();
+                                            cx.defer(move |cx| {
+                                                application.update(cx, |application, cx| {
+                                                    application.toggle_shutdown_armed(task_id, cx);
+                                                });
+                                            });
+                                        }),
+                                ),
+                        )
+                    },
+                )
+                .child(actions),
+        )
+        .into_any_element()
     }
 }
 
@@ -13717,6 +13762,206 @@ mod tests {
                 assert!(application.completion_feedback_commands.is_empty());
             });
         });
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory, platform_endpoint) =
+            download_application_for_window_test_with_platform(cx, "task-window-shared-skeleton");
+        platform_endpoint.set_connected_for_contract_test(true);
+        let task_id = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .enqueue(
+                    DownloadRequest {
+                        source_url: "https://example.test/shared-skeleton.bin".into(),
+                        save_directory: directory.clone(),
+                        save_directory_explicit: false,
+                        file_name: Some("shared-skeleton.bin".into()),
+                        headers: Vec::new(),
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: Some(4096),
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                    },
+                    RequestOrigin::Internal,
+                )
+                .expect("enqueue shared task-window fixture")
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.refresh(cx);
+                let _ = application.configure_task_window_activation_test(42);
+                application.request_task_window(task_id, cx);
+            });
+        });
+        cx.run_until_parked();
+
+        let (task_window_handle, generation, base_snapshot) = cx.read(|cx| {
+            let application = application.read(cx);
+            let entry = application
+                .task_windows
+                .get(&task_id)
+                .expect("production keyed task window");
+            assert_eq!(entry.native_window_handle, 42);
+            (
+                entry.window,
+                entry.generation,
+                application.task(task_id).cloned().expect("task snapshot"),
+            )
+        });
+        let (progress_bounds, progress_scale) = task_window_handle
+            .update(cx, |_, window, _| (window.bounds(), window.scale_factor()))
+            .expect("read progress window geometry");
+        let mut window = VisualTestContext::from_window(task_window_handle, cx);
+        window.refresh().expect("render progress task skeleton");
+
+        let shell = window
+            .debug_bounds("download-task-window-shell")
+            .expect("shared task-window shell");
+        let titlebar = window
+            .debug_bounds("download-task-window-titlebar")
+            .expect("shared task-window titlebar");
+        let body = window
+            .debug_bounds("download-task-window-body")
+            .expect("shared task-window body");
+        let footer = window
+            .debug_bounds("download-task-window-footer")
+            .expect("shared task-window footer");
+        let progress_phase = window
+            .debug_bounds("download-task-window-phase-progress")
+            .expect("progress phase body");
+        assert_eq!(titlebar.size.height, px(34.0));
+        assert_eq!(footer.size.height, px(44.0));
+        assert_eq!(progress_phase, body);
+        assert_eq!(titlebar.bottom(), body.top());
+        assert_eq!(body.bottom(), footer.top());
+        assert_eq!(footer.bottom(), shell.bottom());
+        while platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+
+        let mut failed_snapshot = base_snapshot.clone();
+        failed_snapshot
+            .task
+            .transition_to(DownloadStatus::Probing, 2)
+            .expect("fixture enters probing");
+        failed_snapshot
+            .task
+            .transition_to(DownloadStatus::Failed, 3)
+            .expect("fixture enters failed");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.replace_tasks_for_test(vec![failed_snapshot]);
+                let directive = application
+                    .task_window_lifecycle
+                    .task_changed(task_id, DownloadStatus::Failed);
+                assert_eq!(
+                    directive,
+                    DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Failed)
+                );
+                application.apply_task_window_directive(task_id, directive, cx);
+            });
+        });
+        cx.run_until_parked();
+        window.refresh().expect("render failed task skeleton");
+        let failed_resize = std::iter::from_fn(|| {
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .ok()
+        })
+        .find_map(|envelope| match envelope.message {
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowBounds(
+                command,
+            )) => Some(command),
+            _ => None,
+        })
+        .expect("failed phase crosses the native resize boundary");
+        assert_eq!(
+            failed_resize,
+            centered_task_window_bounds_command(
+                42,
+                progress_bounds,
+                download_task_window_size(DownloadWindowPhase::Failed),
+                progress_scale,
+            )
+        );
+        assert_eq!(
+            window
+                .debug_bounds("download-task-window-phase-failed")
+                .expect("failed phase body"),
+            window
+                .debug_bounds("download-task-window-body")
+                .expect("failed shared body")
+        );
+
+        let mut completed_snapshot = base_snapshot;
+        for (status, timestamp) in [
+            (DownloadStatus::Probing, 2),
+            (DownloadStatus::Waiting, 3),
+            (DownloadStatus::Downloading, 4),
+            (DownloadStatus::Finalizing, 5),
+            (DownloadStatus::Completed, 6),
+        ] {
+            completed_snapshot
+                .task
+                .transition_to(status, timestamp)
+                .expect("fixture advances to completion");
+        }
+        completed_snapshot.total_bytes = Some(4096);
+        completed_snapshot.downloaded_bytes = 4096;
+        completed_snapshot.final_path = Some(directory.join("shared-skeleton.bin"));
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.replace_tasks_for_test(vec![completed_snapshot]);
+                let directive = application
+                    .task_window_lifecycle
+                    .task_changed(task_id, DownloadStatus::Completed);
+                assert_eq!(
+                    directive,
+                    DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Completed)
+                );
+                application.apply_task_window_directive(task_id, directive, cx);
+            });
+        });
+        cx.run_until_parked();
+        window.refresh().expect("render completed task skeleton");
+        assert_eq!(
+            window
+                .debug_bounds("download-task-window-phase-completed")
+                .expect("completed phase body"),
+            window
+                .debug_bounds("download-task-window-body")
+                .expect("completed shared body")
+        );
+        cx.read(|cx| {
+            let application = application.read(cx);
+            assert_eq!(application.task_windows.len(), 1);
+            assert_eq!(
+                application
+                    .task_windows
+                    .get(&task_id)
+                    .expect("same keyed task window")
+                    .generation,
+                generation
+            );
+        });
+
+        let _ = task_window_handle.update(cx, |_, window, _| window.remove_window());
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -16534,6 +16779,31 @@ mod tests {
             (completed.width.as_f32(), completed.height.as_f32()),
             (440.0, 180.0)
         );
+    }
+
+    #[test]
+    fn task_window_phase_resize_preserves_the_physical_window_center() {
+        let scale_factor = 1.5;
+        let progress_size = download_task_window_size(DownloadWindowPhase::Progress);
+        let progress_bounds = gpui::Bounds::new(gpui::point(px(100.0), px(200.0)), progress_size);
+        let expected_physical_center = (480.0, 432.0);
+
+        for phase in [DownloadWindowPhase::Failed, DownloadWindowPhase::Completed] {
+            let command = centered_task_window_bounds_command(
+                42,
+                progress_bounds,
+                download_task_window_size(phase),
+                scale_factor,
+            );
+            assert_eq!(command.window_handle, 42);
+            assert_eq!(
+                (
+                    f64::from(command.x) + f64::from(command.width) / 2.0,
+                    f64::from(command.y) + f64::from(command.height) / 2.0,
+                ),
+                expected_physical_center
+            );
+        }
     }
 
     #[test]
