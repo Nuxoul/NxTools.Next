@@ -90,6 +90,7 @@ const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = DOWNLOAD_TRANSFERRED_COLUMN_WIDTH
     + DOWNLOAD_SPEED_COLUMN_WIDTH
     + DOWNLOAD_REMAINING_COLUMN_WIDTH;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
+const DOWNLOAD_CREATED_COLUMN_WIDTH: f32 = 68.0;
 
 fn quick_find_scroll_target(current: f32, previous_target: f32, maximum: f32, delta: f32) -> f32 {
     if maximum <= 0.0 {
@@ -2505,11 +2506,7 @@ impl MainWindow {
                     .when_some(batch_toolbar, |workspace, toolbar| {
                         workspace.child(toolbar)
                     })
-                    .child(download_table_header(
-                        theme,
-                        self.download_sort,
-                        main_window,
-                    ))
+                    .child(download_table_header(theme, self.download_sort, main_window))
                     .child(if visible_count == 0 {
                         if total_count == 0 {
                             empty_state(
@@ -4303,6 +4300,7 @@ fn download_task_row(
     let task_id = task.task.id();
     let element_id = task_id.as_uuid().as_u64_pair().0;
     let status = task.task.status();
+    let created_at_unix_ms = task.task.created_at_unix_ms();
     let name = task.task.request().category_name.as_ref().map_or_else(
         || download_task_name(&task).to_owned(),
         |category| format!("{}  ·  {category}", download_task_name(&task)),
@@ -4632,6 +4630,26 @@ fn download_task_row(
                         .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(status_color)
                         .child(status_label),
+                )
+                .child(
+                    div()
+                        .id(("download-task-created", element_id))
+                        .when(selected, |column| {
+                            column.debug_selector(|| "download-task-created-selected".into())
+                        })
+                        .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
+                        .flex_none()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .font_family(UI_MONO_FONT_FAMILY)
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_secondary)
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(format_download_timestamp(created_at_unix_ms))
+                                .build(window, cx)
+                        })
+                        .child(format_download_created_compact(created_at_unix_ms)),
                 ),
         )
         .into_any_element()
@@ -5881,6 +5899,20 @@ fn format_download_timestamp(timestamp: i64) -> String {
     )
 }
 
+fn format_download_created_compact(timestamp: i64) -> String {
+    DateTime::from_timestamp_millis(timestamp).map_or_else(
+        || "--".into(),
+        |timestamp| {
+            let timestamp = timestamp.with_timezone(&Local);
+            if timestamp.date_naive() == Local::now().date_naive() {
+                timestamp.format("%H:%M").to_string()
+            } else {
+                timestamp.format("%m-%d").to_string()
+            }
+        },
+    )
+}
+
 fn format_download_log_time(timestamp: i64) -> String {
     DateTime::from_timestamp_millis(timestamp).map_or_else(
         || "--:--:--".into(),
@@ -6049,10 +6081,15 @@ fn download_table_header(
                 .flex_none()
                 .child("剩余"),
         );
-    let status_header =
-        download_sort_header_cell(theme, "状态", DownloadSortKey::Status, sort, main_window)
-            .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
-            .flex_none();
+    let status_header = download_sort_header_cell(
+        theme,
+        "状态",
+        DownloadSortKey::Status,
+        sort,
+        main_window.clone(),
+    )
+    .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
+    .flex_none();
     div()
         .id("download-table-header")
         .debug_selector(|| "download-table-header".into())
@@ -6069,6 +6106,17 @@ fn download_table_header(
         .child(name_header)
         .child(progress_header)
         .child(status_header)
+        .child(
+            download_sort_header_cell(
+                theme,
+                "添加时间",
+                DownloadSortKey::Created,
+                sort,
+                main_window,
+            )
+            .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
+            .flex_none(),
+        )
         .into_any_element()
 }
 
@@ -7763,16 +7811,35 @@ mod tests {
             main_window.shell.activate(MainModule::Downloads);
             main_window
         });
+        window.simulate_resize(size(px(920.0), px(480.0)));
+        window
+            .refresh()
+            .expect("render minimum-width download table");
         let name_header = window
             .debug_bounds("download-sort-header-name")
             .expect("rendered sortable name header");
+        let created_header = window
+            .debug_bounds("download-sort-header-created")
+            .expect("minimum-width download table exposes the sortable created header");
+        assert_eq!(
+            created_header.size.width,
+            px(super::DOWNLOAD_CREATED_COLUMN_WIDTH)
+        );
 
         window.simulate_click(name_header.center(), Modifiers::default());
         window.simulate_click(name_header.center(), Modifiers::default());
         assert_eq!(
-            cx.read(|cx| main_window.read(cx).download_sort),
+            window.read(|cx| main_window.read(cx).download_sort),
             DownloadSortState {
                 key: DownloadSortKey::Name,
+                descending: true,
+            }
+        );
+        window.simulate_click(created_header.center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).download_sort),
+            DownloadSortState {
+                key: DownloadSortKey::Created,
                 descending: true,
             }
         );
@@ -7857,6 +7924,8 @@ mod tests {
             main_window.shell.activate(MainModule::Downloads);
             main_window
         });
+        window.simulate_resize(size(px(1060.0), px(500.0)));
+        window.refresh().expect("render wide download icon row");
         let row_selector: &'static str = Box::leak(
             format!("download-task-row-{}", task_id.as_uuid().as_u64_pair().0).into_boxed_str(),
         );
@@ -7869,6 +7938,18 @@ mod tests {
             .debug_bounds("download-task-shell-icon-selected")
             .expect("selected download row must render its resolved Shell icon");
         assert_eq!(shell_icon.size, size(px(20.0), px(20.0)));
+        let created_header = window
+            .debug_bounds("download-sort-header-created")
+            .expect("wide task list created header");
+        let created_value = window
+            .debug_bounds("download-task-created-selected")
+            .expect("selected task created value");
+        assert_eq!(
+            created_value.size.width,
+            px(super::DOWNLOAD_CREATED_COLUMN_WIDTH)
+        );
+        assert_eq!(created_header.left(), created_value.left());
+        assert_eq!(created_header.right(), created_value.right());
         assert!(
             window
                 .debug_bounds("download-task-icon-fallback-selected")
@@ -8003,7 +8084,7 @@ mod tests {
             main_window.shell.activate(MainModule::Downloads);
             main_window
         });
-        window.simulate_resize(size(px(720.0), px(500.0)));
+        window.simulate_resize(size(px(920.0), px(480.0)));
 
         let authoritative_task_ids = window.read(|cx| {
             downloads

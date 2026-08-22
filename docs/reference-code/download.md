@@ -983,6 +983,11 @@ Reverified on 2026-08-22 after the packaged main-list review:
   diagnostics are preserved without letting correlation IDs or raw transport prose dominate the
   task table. Icon completion and failure notify the observed `DownloadApplication` only; they do
   not mutate task state, queue order, selection or download lifecycle.
+- Old NxTools also exposed `CreatedAtCompactText` as the final fixed table column. NxTools.Next keeps
+  that useful scan field as a directly sortable 68 px `添加时间` column at all supported window widths:
+  today's tasks use `HH:mm`, older tasks use `MM-dd`, and the full local timestamp remains in the
+  tooltip. The 920 px native minimum and 1060 px default both keep this column visible; the existing
+  compact sort menu retains the same Created sort as an alternative input path.
 
 ### Phase 1A new-download presentation invariants
 

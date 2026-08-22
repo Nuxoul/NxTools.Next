@@ -869,6 +869,12 @@ rust/apps/nxtools-desktop/src/ui/
 - 失败辅助行根据完整 `DownloadFaultCode` 映射短中文摘要，并对资源变化、服务器忽略 Range/返回 200
   两个高频协议场景给出可执行提示。完整原始信息仍保留在有界 Tooltip 和底部详情 dock。名称恢复 Body
   regular，路径与数字提升至 secondary contrast，行、进度与固定列几何保持不变。
+- 包级复核后补回旧版已有但整改时误删的“添加时间”：原生最小 920 px 与默认 1060 px 窗口都显示
+  68 px 固定列，表头可直接切换 Created 排序；当天显示 `HH:mm`，更早任务显示 `MM-dd`，完整本地时间
+  进入 Tooltip。已有紧凑排序菜单仍保留同一排序入口。两条生产 GPUI 门禁分别锁定 920 px 表头可见与
+  排序行为，以及 1060 px 表头/行值的同宽同坐标；全套仍为 314/318，四项失败与既有基线相同。
+  [100% DPI 添加时间实机截图](audits/download-main-remediation-2026-08-22/02-download-list-created-column-100pct.png)
+  已确认默认 Release 窗口中的表头、降序指示、当天 `HH:mm` 与历史 `MM-dd` 行值均实际可见。
 - 2 条失败摘要单测、typed Shell 请求/同扩展名合并/任务回填回归、真实 GPUI Shell 图标透明槽回归和
   共享 PNG 校验共 5 条定向测试通过；`cargo check -p nxtools-desktop --tests`、下载/UI state/桌面 shell
   三项架构门禁、package memory policy、rustfmt 与 diff check 通过；desktop 全套为 314/318，分类按钮
