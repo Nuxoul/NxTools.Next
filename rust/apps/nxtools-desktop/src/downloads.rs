@@ -67,7 +67,7 @@ use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::components::action::{
     SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,
-    icon_action_tooltip_surface, segmented_control,
+    icon_action_tooltip_surface, primary_button_variant, segmented_control,
 };
 use crate::ui::components::field::{
     field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
@@ -8858,6 +8858,80 @@ impl NewDownloadView {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NewDownloadFooterAction {
+    Schedule,
+    QueueOnly,
+    StartNow,
+    Cancel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NewDownloadFooterEmphasis {
+    Primary,
+    Outline,
+    Ghost,
+}
+
+impl NewDownloadFooterAction {
+    fn button_id(self) -> &'static str {
+        match self {
+            Self::Schedule => "download-new-schedule-trigger",
+            Self::QueueOnly => "download-add-to-queue-button",
+            Self::StartNow => "download-start-now-button",
+            Self::Cancel => "download-new-cancel",
+        }
+    }
+
+    fn icon(self) -> Option<MaterialIcon> {
+        match self {
+            Self::Schedule => Some(MaterialIcon::CalendarMonth),
+            Self::StartNow => Some(MaterialIcon::Download),
+            Self::QueueOnly | Self::Cancel => None,
+        }
+    }
+
+    fn role_selector(self) -> &'static str {
+        match self {
+            Self::Schedule => "download-new-footer-secondary-schedule-action",
+            Self::QueueOnly => "download-new-footer-secondary-queue-action",
+            Self::StartNow => "download-new-footer-primary-action",
+            Self::Cancel => "download-new-footer-secondary-cancel-action",
+        }
+    }
+
+    fn emphasis(self) -> NewDownloadFooterEmphasis {
+        match self {
+            Self::StartNow => NewDownloadFooterEmphasis::Primary,
+            Self::Schedule | Self::QueueOnly => NewDownloadFooterEmphasis::Outline,
+            Self::Cancel => NewDownloadFooterEmphasis::Ghost,
+        }
+    }
+}
+
+fn new_download_footer_action(
+    action: NewDownloadFooterAction,
+    theme: Theme,
+    cx: &App,
+    label: impl Into<gpui::SharedString>,
+    disabled: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> Button {
+    let button = action_button(action.button_id(), label);
+    let button = if let Some(icon) = action.icon() {
+        button.icon(Icon::new(icon))
+    } else {
+        button
+    };
+    let button = button.disabled(disabled).on_click(on_click);
+    let button = match action.emphasis() {
+        NewDownloadFooterEmphasis::Primary => button.custom(primary_button_variant(theme, cx)),
+        NewDownloadFooterEmphasis::Outline => button.outline(),
+        NewDownloadFooterEmphasis::Ghost => button.ghost(),
+    };
+    button.debug_selector(move || action.role_selector().into())
+}
+
 impl Render for NewDownloadView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
@@ -8913,16 +8987,14 @@ impl Render for NewDownloadView {
                             });
                         });
                     })
-                    .trigger(
-                        Button::new("download-new-schedule-trigger")
-                            .icon(Icon::new(MaterialIcon::CalendarMonth))
-                            .label(schedule_label)
-                            .small()
-                            .outline()
-                            .h(px(28.0))
-                            .px(px(10.0))
-                            .rounded(px(4.0)),
-                    )
+                    .trigger(new_download_footer_action(
+                        NewDownloadFooterAction::Schedule,
+                        theme,
+                        cx,
+                        schedule_label,
+                        submitting,
+                        |_, _, _| {},
+                    ))
                     .content(move |_, _, _| {
                         let schedule_clear_view = schedule_clear_view.clone();
                         let schedule_confirm_view = schedule_confirm_view.clone();
@@ -9072,14 +9144,8 @@ impl Render for NewDownloadView {
             div()
                 .debug_selector(|| "download-new-refresh-action".into())
                 .child(
-                    Button::new("download-refresh-probe")
-                        .icon(Icon::new(MaterialIcon::ManageSearch))
-                        .small()
+                    icon_action_button("download-refresh-probe", MaterialIcon::ManageSearch)
                         .outline()
-                        .w(px(28.0))
-                        .h(px(28.0))
-                        .px(px(0.0))
-                        .rounded(px(4.0))
                         .disabled(submitting)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.begin_probe(window, cx);
@@ -9090,18 +9156,13 @@ impl Render for NewDownloadView {
             div()
                 .debug_selector(|| "download-new-probe-action".into())
                 .child(
-                    Button::new("download-probe")
+                    action_button("download-probe", if probing { "正在探测…" } else { "继续" })
                         .icon(Icon::new(if probing {
                             MaterialIcon::ProgressActivity
                         } else {
                             MaterialIcon::ManageSearch
                         }))
-                        .label(if probing { "正在探测…" } else { "继续" })
-                        .small()
-                        .h(px(28.0))
-                        .px(px(11.0))
-                        .rounded(px(4.0))
-                        .custom(download_primary_button_variant(theme, cx))
+                        .custom(primary_button_variant(theme, cx))
                         .disabled(probing || submitting)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.begin_probe(window, cx);
@@ -9405,44 +9466,37 @@ impl Render for NewDownloadView {
                 .child(
                     div()
                         .debug_selector(|| "download-add-to-queue".into())
-                        .child(
-                            Button::new("download-add-to-queue-button")
-                                .label(if submitting {
-                                    "正在添加…"
-                                } else {
-                                    "添加"
-                                })
-                                .small()
-                                .outline()
-                                .h(px(28.0))
-                                .px(px(10.0))
-                                .rounded(px(4.0))
-                                .disabled(submitting)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.submit(DownloadSubmitMode::QueueOnly, window, cx);
-                                })),
-                        ),
-                )
-                .child(
-                    div().debug_selector(|| "download-start-now".into()).child(
-                        Button::new("download-start-now-button")
-                            .icon(Icon::new(MaterialIcon::Download))
-                            .label(if submitting {
+                        .child(new_download_footer_action(
+                            NewDownloadFooterAction::QueueOnly,
+                            theme,
+                            cx,
+                            if submitting {
                                 "正在添加…"
                             } else {
-                                "下载"
-                            })
-                            .small()
-                            .h(px(28.0))
-                            .px(px(11.0))
-                            .rounded(px(4.0))
-                            .custom(download_primary_button_variant(theme, cx))
-                            .disabled(submitting)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.submit(DownloadSubmitMode::StartNow, window, cx);
-                            })),
-                    ),
+                                "添加"
+                            },
+                            submitting,
+                            cx.listener(|this, _, window, cx| {
+                                this.submit(DownloadSubmitMode::QueueOnly, window, cx);
+                            }),
+                        )),
                 )
+                .child(div().debug_selector(|| "download-start-now".into()).child(
+                    new_download_footer_action(
+                        NewDownloadFooterAction::StartNow,
+                        theme,
+                        cx,
+                        if submitting {
+                            "正在添加…"
+                        } else {
+                            "下载"
+                        },
+                        submitting,
+                        cx.listener(|this, _, window, cx| {
+                            this.submit(DownloadSubmitMode::StartNow, window, cx);
+                        }),
+                    ),
+                ))
                 .into_any_element()
         });
         let body = if let Some(probe) = probe {
@@ -9720,17 +9774,14 @@ impl Render for NewDownloadView {
                     .child(
                         div()
                             .debug_selector(|| "download-new-cancel-action".into())
-                            .child(
-                                Button::new("download-new-cancel")
-                                    .label("取消")
-                                    .small()
-                                    .ghost()
-                                    .h(px(28.0))
-                                    .px(px(10.0))
-                                    .rounded(px(4.0))
-                                    .disabled(submitting)
-                                    .on_click(|_, window, _| window.remove_window()),
-                            ),
+                            .child(new_download_footer_action(
+                                NewDownloadFooterAction::Cancel,
+                                theme,
+                                cx,
+                                "取消",
+                                submitting,
+                                |_, window, _| window.remove_window(),
+                            )),
                     ),
             )
     }
@@ -12485,6 +12536,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
+    #[test]
+    fn new_download_footer_maps_exactly_one_action_to_primary_emphasis() {
+        let actions = [
+            NewDownloadFooterAction::Schedule,
+            NewDownloadFooterAction::QueueOnly,
+            NewDownloadFooterAction::StartNow,
+            NewDownloadFooterAction::Cancel,
+        ];
+        let primary = actions
+            .iter()
+            .copied()
+            .filter(|action| action.emphasis() == NewDownloadFooterEmphasis::Primary)
+            .collect::<Vec<_>>();
+
+        assert_eq!(primary, vec![NewDownloadFooterAction::StartNow]);
+        for action in actions {
+            let selector = action.role_selector();
+            assert_eq!(
+                selector.contains("primary"),
+                action.emphasis() == NewDownloadFooterEmphasis::Primary,
+                "the observable footer role must be derived from the actual emphasis mapping"
+            );
+        }
+    }
+
     #[gpui::test]
     fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
@@ -12672,22 +12748,49 @@ mod tests {
                 && submission_actions.right() <= footer.right(),
             "secondary controls must stay left while submit controls form one right-side group"
         );
-        for (name, selector) in [
-            ("schedule", "download-new-schedule-control"),
-            ("refresh", "download-new-refresh-action"),
-            ("queue", "download-add-to-queue"),
-            ("download", "download-start-now"),
-            ("cancel", "download-new-cancel-action"),
+        for (name, selector, role_selector) in [
+            (
+                "schedule",
+                "download-new-schedule-control",
+                "download-new-footer-secondary-schedule-action",
+            ),
+            (
+                "queue",
+                "download-add-to-queue",
+                "download-new-footer-secondary-queue-action",
+            ),
+            (
+                "download",
+                "download-start-now",
+                "download-new-footer-primary-action",
+            ),
+            (
+                "cancel",
+                "download-new-cancel-action",
+                "download-new-footer-secondary-cancel-action",
+            ),
         ] {
             let action = window
                 .debug_bounds(selector)
                 .unwrap_or_else(|| panic!("missing {name} footer action"));
-            assert!(
-                (28.0..=30.0).contains(&action.size.height.as_f32()),
-                "{name} footer action breaks the shared 28px rhythm at {}px",
-                action.size.height.as_f32()
+            let role = window
+                .debug_bounds(role_selector)
+                .unwrap_or_else(|| panic!("missing {name} footer action role"));
+            assert_eq!(
+                action.size.height,
+                px(CONTROL_HEIGHT_ACTION),
+                "{name} footer action must use the exact shared action tier"
             );
+            assert_eq!(role, action, "{name} role must identify the visible action");
         }
+        let refresh = window
+            .debug_bounds("download-new-refresh-action")
+            .expect("refresh footer utility");
+        assert_eq!(
+            refresh.size,
+            size(px(CONTROL_HEIGHT_ACTION), px(CONTROL_HEIGHT_ACTION)),
+            "refresh must remain a square shared action"
+        );
         window.simulate_click(schedule.center(), Modifiers::default());
         window.run_until_parked();
         window.refresh().expect("render opened schedule popover");

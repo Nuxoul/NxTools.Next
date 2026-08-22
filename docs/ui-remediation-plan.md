@@ -753,6 +753,27 @@ rust/apps/nxtools-desktop/src/ui/
   已记录基线完全相同。DL-24 Footer 是下一切片，在四项 28 px 操作层级和唯一主操作获得真实窗口
   门禁前不提前完成。
 
+第二十五个 P0 新建下载 Footer 切片（2026-08-22）：
+
+- DL-24 将确认态的稍后下载、添加、下载与取消全部迁移到共享 `action_button`；刷新迁移到共享
+  `icon_action_button`。五项都由 `CONTROL_HEIGHT_ACTION` 固定为 28 px，圆角和水平内距不再由
+  `NewDownloadView::render` 分别手写，Footer 继续保持 44 px 固定高度和原有左右分组。
+- “下载”是确认态唯一使用共享 `primary_button_variant` 的 accent-filled 主操作；“稍后下载”和
+  “添加”保持 outline secondary，“取消”保持 ghost secondary，刷新保持 28 x 28 px outline utility。
+  未确认态“继续”仍是该阶段唯一主操作。QueueOnly/StartNow、计划 Popover 草稿、重新探测、原生
+  Cancel 关闭和延迟任务窗口调度均保留原 view/application owner，本切片不改请求、协议或引擎。
+- 红—绿真实 GPUI 门禁先在旧实现缺少 footer 角色 selector 处失败；修复后精确断言四项可见操作
+  均为 28 px、刷新为 28 x 28 px，并要求每项 primary/secondary 角色边界与实际 hit target 完全
+  重合；动作枚举同时拥有 Button ID、图标、角色 selector 和 emphasis，纯映射门禁要求 StartNow 是
+  唯一 Primary，避免角色标签与实际 variant 分离。同一真实窗口门禁继续验证 schedule Popover 不
+  改变窗口/footer 几何、确认/外部关闭的草稿语义；既有 4 条 `new_download`、HLS QueueOnly 与
+  DASH QueueOnly 提交回归均通过。
+- `cargo check -p nxtools-desktop --tests`、仅放行既有 build-script lint 的严格 Clippy、
+  `download-ui-lifecycle.ps1`、rustfmt 与 `git diff --check` 均通过。desktop 全套为 299/303；分类
+  按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress selector 四项失败与前序基线完全
+  相同。DL-25 任务窗是下一切片，在 Progress/Failed/Completed 共享骨架及原位状态转换获得真实
+  窗口门禁前不提前完成。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

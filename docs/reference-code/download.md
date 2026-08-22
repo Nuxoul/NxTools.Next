@@ -2224,6 +2224,29 @@ Reverified on 2026-08-22 before the DL-23 HLS/DASH track-list migration:
   DASH choices, assert row/radio/title/detail geometry and both radio states, then exercise selection,
   optional-audio cancellation and typed-media submission through the existing view boundary.
 
+Reverified on 2026-08-22 before the DL-24 new-download footer migration:
+
+- AB Download Manager `desktop/app/.../pages/addDownload/single/AddDownloadPage.kt` anchors Add,
+  Download and Cancel at the bottom of the single-download window and keeps Download as the primary
+  completion path. Old NxTools `Views/AddDownloadWindow.axaml` preserves the same confirmed ordering:
+  `AddOnlyCommand`, primary `DownloadNowCommand`, then `CloseCommand`; its initial stage exposes only
+  primary Continue and secondary Cancel. Neither reference promotes queue-only or cancel alongside
+  the immediate download action.
+- NxTools.Next's current chain is `NewDownloadView::render -> footer_leading_actions /
+  footer_submission_actions -> NewDownloadView::submit`. The confirmed footer adds the product's
+  existing delayed-start trigger and refresh utility without changing the two typed submission modes:
+  QueueOnly closes after durable queue admission, while StartNow closes before scheduling the keyed
+  task window. Cancel remains a native window close and schedule remains a Popover-owned draft.
+- Before DL-24, schedule, queue-only, start-now and cancel each rebuilt `Button::small` with private
+  28 px height, 10/11 px padding and 4 px radius; the production gate accepted 28–30 px and therefore
+  could not enforce the shared action tier. The immediate Download button was visually primary, but
+  no real-window boundary identified it as the sole primary action or kept the other three secondary.
+- DL-24 must reuse the shared 28 px action constructors. Delayed download and queue-only are outlined
+  secondary actions, Cancel is ghost secondary, and Download is the only accent-filled primary action.
+  Refresh stays a square 28 px utility. The footer remains fixed, the left/right grouping and existing
+  click owners do not move, opening the schedule Popover does not resize the window, and submit/close
+  lifecycle behavior remains unchanged.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
