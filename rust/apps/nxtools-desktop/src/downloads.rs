@@ -85,7 +85,8 @@ use crate::ui::metrics::{
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META, UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, TEXT_BODY, TEXT_LABEL, TEXT_META,
+    UI_MONO_FONT_FAMILY,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9574,84 +9575,7 @@ impl Render for NewDownloadView {
                                         ),
                                 ),
                         )
-                        .child(
-                            div()
-                                .w(px(118.0))
-                                .h(px(82.0))
-                                .pl(px(12.0))
-                                .border_l_1()
-                                .border_color(theme.border_subtle)
-                                .flex()
-                                .flex_col()
-                                .justify_center()
-                                .gap(px(5.0))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
-                                            Icon::new(MaterialIcon::Check)
-                                                .size(px(14.0))
-                                                .text_color(theme.success),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(px(9.5))
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_color(theme.success)
-                                                .child(if is_blob {
-                                                    "Blob 已接收"
-                                                } else if probe.media.is_some() {
-                                                    match probe.media.as_ref() {
-                                                        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "DASH 已解析",
-                                                        _ => "HLS 已解析",
-                                                    }
-                                                } else {
-                                                    "链接可用"
-                                                }),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(11.0))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(size),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(9.0))
-                                        .text_color(if is_blob || probe.supports_ranges {
-                                            theme.success
-                                        } else {
-                                            theme.text_muted
-                                        })
-                                        .child(if is_blob {
-                                            probe
-                                                .content_type
-                                                .clone()
-                                                .unwrap_or_else(|| "类型未知".into())
-                                        } else if let Some(
-                                            nxtools_download::DownloadMediaProbe::Hls(hls),
-                                        ) = probe.media.as_ref()
-                                        {
-                                            if hls.is_master {
-                                                "请选择清晰度".into()
-                                            } else {
-                                                "媒体播放列表".into()
-                                            }
-                                        } else if matches!(
-                                            probe.media.as_ref(),
-                                            Some(nxtools_download::DownloadMediaProbe::Dash(_))
-                                        ) {
-                                            "请选择视频与音频轨".into()
-                                        } else if probe.supports_ranges {
-                                            "支持断点续传".into()
-                                        } else {
-                                            "单连接传输".into()
-                                        }),
-                                ),
-                        ),
+                        .child(new_download_probe_inspector(theme, &probe, is_blob, size)),
                 )
                 .when_some(media_options_panel, |body, panel| body.child(panel))
                 .when_some(self.error.clone(), |body, error| {
@@ -9675,10 +9599,12 @@ impl Render for NewDownloadView {
                 ))
                 .child(
                     div()
-                        .h(px(18.0))
+                        .debug_selector(|| "download-new-probe-guidance".into())
+                        .h(px(LINE_HEIGHT_BODY))
+                        .min_w_0()
                         .flex()
                         .items_center()
-                        .gap(px(6.0))
+                        .gap(px(SPACING_6))
                         .child(
                             Icon::new(if probing {
                                 MaterialIcon::ProgressActivity
@@ -9694,7 +9620,11 @@ impl Render for NewDownloadView {
                         )
                         .child(
                             div()
-                                .text_size(px(9.5))
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
                                 .text_color(if probing {
                                     theme.text_secondary
                                 } else {
@@ -9782,6 +9712,116 @@ impl Render for NewDownloadView {
                     ),
             )
     }
+}
+
+const NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH: f32 = 120.0;
+const NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT: f32 = 112.0;
+
+fn new_download_probe_inspector(
+    theme: Theme,
+    probe: &DownloadProbe,
+    is_blob: bool,
+    size_label: String,
+) -> AnyElement {
+    let status = if is_blob {
+        "Blob 已接收"
+    } else if probe.media.is_some() {
+        match probe.media.as_ref() {
+            Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "DASH 已解析",
+            _ => "HLS 已解析",
+        }
+    } else {
+        "链接可用"
+    };
+    let capability = if is_blob {
+        probe
+            .content_type
+            .clone()
+            .unwrap_or_else(|| "类型未知".into())
+    } else if let Some(nxtools_download::DownloadMediaProbe::Hls(hls)) = probe.media.as_ref() {
+        if hls.is_master {
+            "请选择清晰度".into()
+        } else {
+            "媒体播放列表".into()
+        }
+    } else if matches!(
+        probe.media.as_ref(),
+        Some(nxtools_download::DownloadMediaProbe::Dash(_))
+    ) {
+        "请选择视频与音频轨".into()
+    } else if probe.supports_ranges {
+        "支持断点续传".into()
+    } else {
+        "单连接传输".into()
+    };
+
+    div()
+        .debug_selector(|| "download-new-probe-inspector".into())
+        .w(px(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
+        .h(px(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))
+        .flex_none()
+        .min_w_0()
+        .overflow_hidden()
+        .pl(px(SPACING_12))
+        .border_l_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .flex_col()
+        .justify_center()
+        .gap(px(SPACING_4))
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-status".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_LABEL))
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_6))
+                .child(
+                    Icon::new(MaterialIcon::Check)
+                        .size(px(14.0))
+                        .text_color(theme.success),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .truncate()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.success)
+                        .child(status),
+                ),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-size".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_BODY))
+                .truncate()
+                .text_size(px(TEXT_BODY))
+                .line_height(px(LINE_HEIGHT_BODY))
+                .font_weight(FontWeight::MEDIUM)
+                .child(size_label),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-capability".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_META))
+                .truncate()
+                .text_size(px(TEXT_META))
+                .line_height(px(LINE_HEIGHT_META))
+                .text_color(if is_blob || probe.supports_ranges {
+                    theme.success
+                } else {
+                    theme.text_muted
+                })
+                .child(capability),
+        )
+        .into_any_element()
 }
 
 fn hls_quality_options(
@@ -12332,6 +12372,141 @@ mod tests {
             new_download_window_size(false).height.as_f32(),
             "an unconfirmed browser probe must not retain the full confirmed-form height"
         );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-probe-summary");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_new_download_window(cx);
+            });
+        });
+        cx.run_until_parked();
+
+        let new_download_window = cx
+            .read(|cx| application.read(cx).new_download_window)
+            .expect("production new-download window");
+        let compact_size = new_download_window
+            .update(cx, |_, window, _| window.bounds().size)
+            .expect("read compact new-download bounds");
+        assert_eq!(compact_size, new_download_window_size(false));
+
+        let mut window = VisualTestContext::from_window(new_download_window, cx);
+        window
+            .refresh()
+            .expect("render compact new-download probe stage");
+        let guidance = window
+            .debug_bounds("download-new-probe-guidance")
+            .expect("compact inline probe guidance");
+        let footer = window
+            .debug_bounds("download-new-footer")
+            .expect("compact new-download footer");
+        assert_eq!(guidance.size.height, px(LINE_HEIGHT_BODY));
+        assert!(guidance.bottom() <= footer.top());
+        assert!(
+            window
+                .debug_bounds("download-new-probe-inspector")
+                .is_none(),
+            "the narrow probe inspector must not reserve space before confirmation"
+        );
+
+        let view = cx
+            .read(|cx| application.read(cx).new_download_view.clone())
+            .expect("production new-download view");
+        let probe = DownloadProbe {
+            final_url: "https://example.test/archive.bin".into(),
+            file_name: Some("archive.bin".into()),
+            total_bytes: Some(64 * 1024 * 1024),
+            supports_ranges: true,
+            content_type: Some("application/octet-stream".into()),
+            validator: nxtools_download::ResourceValidator::default(),
+            media: None,
+        };
+        let confirmed_probe_size = new_download_window_size_for_probe(&probe);
+        new_download_window
+            .update(cx, move |_, native_window, cx| {
+                view.update(cx, |view, cx| {
+                    view.probe = Some(probe);
+                    cx.notify();
+                });
+                native_window.resize(confirmed_probe_size);
+            })
+            .expect("confirm production probe stage");
+        window.run_until_parked();
+        window.refresh().expect("render confirmed probe inspector");
+
+        let confirmed_size = new_download_window
+            .update(cx, |_, native_window, _| native_window.bounds().size)
+            .expect("read confirmed new-download bounds");
+        assert_eq!(confirmed_size, new_download_window_size(true));
+        assert_eq!(
+            confirmed_size.width.as_f32(),
+            compact_size.width.as_f32(),
+            "probe confirmation must not change the dialog width"
+        );
+        assert_eq!(
+            confirmed_size.height.as_f32() - compact_size.height.as_f32(),
+            102.0,
+            "probe confirmation must add only the destination form height"
+        );
+
+        let form_grid = window
+            .debug_bounds("download-new-form-grid")
+            .expect("confirmed new-download form grid");
+        let directory_label = window
+            .debug_bounds("download-new-directory-field-label")
+            .expect("confirmed directory label");
+        let directory_row = window
+            .debug_bounds("download-new-directory-control")
+            .expect("confirmed directory path row");
+        let file_name_field = window
+            .debug_bounds("download-new-file-name-field")
+            .expect("confirmed file-name field");
+        let inspector = window
+            .debug_bounds("download-new-probe-inspector")
+            .expect("confirmed narrow probe inspector");
+        assert!(
+            inspector.size.width.as_f32() <= 120.0
+                && inspector.size.width.as_f32() < form_grid.size.width.as_f32() * 0.25,
+            "probe summary must remain a narrow inspector, got {}px inside {}px",
+            inspector.size.width.as_f32(),
+            form_grid.size.width.as_f32()
+        );
+        assert!(
+            inspector.left() > directory_row.right()
+                && inspector.top() <= directory_label.top()
+                && inspector.bottom() >= file_name_field.bottom(),
+            "probe inspector must occupy the right rail beside the destination fields"
+        );
+        for (selector, expected_height) in [
+            ("download-new-probe-status", LINE_HEIGHT_LABEL),
+            ("download-new-probe-size", LINE_HEIGHT_BODY),
+            ("download-new-probe-capability", LINE_HEIGHT_META),
+        ] {
+            let row = window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing probe inspector row {selector}"));
+            assert_eq!(row.size.height, px(expected_height));
+            assert!(
+                row.left() >= inspector.left()
+                    && row.right() <= inspector.right()
+                    && row.top() >= inspector.top()
+                    && row.bottom() <= inspector.bottom(),
+                "{selector} must stay inside the narrow inspector"
+            );
+        }
+        let confirmed_footer = window
+            .debug_bounds("download-new-footer")
+            .expect("confirmed new-download footer");
+        assert!(inspector.bottom() <= confirmed_footer.top());
 
         let _ = std::fs::remove_dir_all(directory);
     }

@@ -697,6 +697,25 @@ rust/apps/nxtools-desktop/src/ui/
 - DL-20 探测摘要是下一切片；在右侧窄 inspector/字段尾部状态、探测前后有界几何和无独立大卡片
   的生产门禁完成前不提前勾选。
 
+第二十二个 P0 探测摘要切片（2026-08-22）：
+
+- DL-20 将未确认态提示收敛为 URL 下方的共享 Label 字段尾部状态；确认态摘要收敛为右侧固定
+  `120 x 112 px` inspector，以左侧 hairline 与目录/文件名字段分隔，不增加背景、圆角或独立
+  全宽卡片。状态、大小、能力分别使用 Label、Body、Meta 字体层级，长 MIME/状态受 inspector
+  裁切，不再依赖私有 9/9.5/11 px 字号。
+- 探测、浏览器交接、文件名回填、目录与分类编辑、普通/HLS/DASH 提交流程均保持原 owner；
+  HLS/DASH 仍由 `new_download_window_size_for_probe` 按真实选择行扩展，本切片不改协议、引擎、
+  请求或诊断载荷。
+- 红—绿生产门禁先在真实 560 x 176 未确认窗口缺少 guidance 边界处失败，修复后证明确认前不
+  预留 inspector；注入普通探测结果并走同一尺寸 helper 后，窗口仅增至 560 x 278、宽度不变，
+  inspector 小于表单宽度四分之一并跨越目标字段行，状态/大小/能力三行全部位于其内且不侵入
+  固定 footer。精确门禁、既有 `new_download` 4 项、真实 DL-19 分类/Cancel 门禁、desktop
+  `cargo check --tests`、仅放行既有 build-script lint 的严格 Clippy、生命周期架构门禁、rustfmt
+  与 `git diff --check` 均通过。desktop 全套为 298/302，DL-20 门禁在整包中通过；其余分类按钮
+  selector、网络尾距、剪贴板空态宽度和下载详情 selector 四项为已记录的切片外既有基线。
+- DL-21 分类弹层是下一切片；在有界可滚动 ListBox、键盘搜索和 32 类全可达的独立验收边界完成
+  前不提前勾选。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

@@ -2152,6 +2152,28 @@ Reverified on 2026-08-22 before the DL-19 new-download form-grid migration:
   not just wrapper equality. It continues through the real category Popover and Cancel lifecycle so
   the grid migration cannot replace the existing interaction owner.
 
+Reverified on 2026-08-22 before the DL-20 probe-summary migration:
+
+- ABDM `AddDownloadPage.kt::{RenderFileTypeAndSize,RenderResumeSupport}` keeps file type/size and
+  resume capability in an intrinsic-width right rail beside the category/location/name column. It
+  uses a 24 dp gap and does not introduce a second full-width metadata card below the URL.
+- Old NxTools `Views/AddDownloadWindow.axaml` keeps its confirmed size/resume text at the trailing
+  edge of the resolved URL row. Its read-only URL and separate resource panels are legacy workflow
+  choices, not a reason to duplicate probe metadata in NxTools.Next.
+- Before DL-20, NxTools.Next already placed three probe strings in a 118 x 82 px bordered-left
+  fragment, but it used private 9/9.5/11 px typography, did not bound long MIME/status text, and had
+  no production boundary proving that the fragment stayed a narrow inspector or disappeared before
+  confirmation.
+- DL-20 keeps the compact two-stage geometry: the initial window is 560 x 176 and confirmation adds
+  only the destination-form height, producing 560 x 278 without changing width. The initial hint is
+  a shared Label field-tail status; the confirmed summary is a clipped 120 x 112 px right inspector
+  spanning the destination rows, with shared Label, Body and Meta typography. HLS/DASH row-driven
+  expansion remains owned by `new_download_window_size_for_probe`.
+- The red-capable production gate opens the real compact `DownloadApplication -> NewDownloadView`
+  window, verifies that no inspector space exists before confirmation, injects a bounded probe at
+  the view seam, resizes through the same confirmed size helper, and asserts the right rail plus all
+  three visible rows remain inside the form and above the fixed footer.
+
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
