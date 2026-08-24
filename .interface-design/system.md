@@ -56,6 +56,16 @@
   Input content never grows the settings page or moves the fixed footer.
 - The settings view owns one local draft. Navigation changes presentation only; native close and
   Cancel discard the draft, while Apply keeps the existing validated persistence lifecycle.
+- Quick Launch settings inside the main workspace use a stable two-rail layout rather than one long
+  page: a 160 px local navigation rail and one flexible page viewport. The five pages are General,
+  Index, Context, Commands and Diagnostics (常规、索引、上下文、命令、诊断); only the selected page
+  is mounted in the content viewport, and changing pages resets that viewport to its top without
+  mutating any setting.
+- The Quick Launch local rail uses 40 px rows, a neutral selected fill and a 2 px accent edge. Its
+  page header is one 48 px border-separated strip with Title 14/20 and Label 11/16 copy. The rail,
+  header and module header remain fixed while only the selected page scrolls. This information-
+  architecture slice preserves the existing immediate setting actions; it does not invent a draft
+  footer or pre-empt the later Hotkey, volume, exclusion, command-editor and diagnostics redesigns.
 
 ### Auxiliary dialogs
 

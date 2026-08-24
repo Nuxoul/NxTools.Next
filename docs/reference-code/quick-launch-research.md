@@ -1073,6 +1073,27 @@ Reverified on 2026-08-24 before the QL-06 file-dialog-search migration:
   search header stays immediately below its bottom edge; native placement, owner, Topmost, focus,
   debounce, generation and activation behavior do not change.
 
+Reverified on 2026-08-24 before the QL-07 main-workspace settings split:
+
+- The old `D:/RiderProject/NxTools` tree has no Quick Launch settings surface, so it contributes no
+  legacy all-in-one layout or page lifecycle that NxTools.Next must preserve.
+- Listary `OptionsWindowViewModel` owns one stable `Pages` collection plus one `SelectedPage` and its
+  `Navigate` method changes the selected page before forwarding a nested target. Its separate Apply,
+  OK and Cancel commands remain owned by the window rather than by each navigation row.
+  `FeaturesOptionsViewModel` repeats that pattern for nested feature pages. This is the primary
+  reference for stable navigation and page-only replacement; the decompiled tree does not expose a
+  trustworthy visual template, so NxTools.Next does not copy its styling.
+- SwiftList `SettingsWindow.xaml` independently keeps a fixed titlebar, sidebar and footer while a
+  single content grid swaps named settings pages. `SettingsSearchIndex` can activate a page and its
+  nested tab before revealing a setting, confirming that navigation is presentation state rather
+  than a setting mutation. Its rounded WPF shell and larger page catalogue are not visual sources.
+- NxTools.Next QL-07 therefore replaces only the main module's long settings scroll with a stable
+  160 px local rail and five mutually exclusive pages: 常规、索引、上下文、命令、诊断. The module
+  header, existing setting actions and application lifecycles stay intact; each page owns the same
+  bounded scroll viewport, which returns to the top on page change. QL-08 through QL-12 retain
+  ownership of the hotkey field, index-volume list, exclusion editor, command master-detail and
+  diagnostics-detail redesigns.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

@@ -5,6 +5,10 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
+$metricsSource = Get-Content -Raw -LiteralPath $metricsPath
+$mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
+$mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -48,6 +52,33 @@ if (-not $quickLaunchSource.Contains(
     )) {
     throw 'Quick Launch popup geometry requires a real production-window regression test.'
 }
+$settingsPageStart = $mainWindowSource.IndexOf('    fn select_quick_launch_settings_page(')
+$settingsPageEnd = $mainWindowSource.IndexOf('    fn render_notifications(', $settingsPageStart)
+if ($settingsPageStart -lt 0 -or $settingsPageEnd -le $settingsPageStart) {
+    throw 'Could not isolate the Quick Launch settings page lifecycle.'
+}
+$settingsPageLifecycle = $mainWindowSource.Substring(
+    $settingsPageStart,
+    $settingsPageEnd - $settingsPageStart
+)
+foreach ($requiredSettingsPageContract in @(
+    'self.quick_launch_settings_page = page',
+    'self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1)',
+    'self.quick_find_scroll_target = 0.0',
+    '.set_offset(point(px(0.0), px(0.0)))'
+)) {
+    if (-not $settingsPageLifecycle.Contains($requiredSettingsPageContract)) {
+        throw 'Quick Launch settings navigation must cancel stale scroll work and reset the selected page viewport.'
+    }
+}
+foreach ($requiredSettingsPageRegression in @(
+    'fn quick_launch_settings_navigation_mounts_only_the_selected_page(',
+    'fn every_quick_launch_settings_frame_mounts_exactly_one_page('
+)) {
+    if (-not $mainWindowSource.Contains($requiredSettingsPageRegression)) {
+        throw 'Quick Launch QL-07 requires real production-window navigation and exclusive-mount regressions.'
+    }
+}
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)
 if ($searchInputStart -lt 0 -or $searchInputEnd -le $searchInputStart) {
@@ -78,11 +109,11 @@ if ($rowShellStart -lt 0 -or $rowShellEnd -le $rowShellStart) {
 }
 $rowShell = $quickLaunchSource.Substring($rowShellStart, $rowShellEnd - $rowShellStart)
 foreach ($requiredResultConstant in @(
-    'const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0',
-    'const QUICK_LAUNCH_RESULT_ICON_WIDTH: f32 = 26.0',
-    'const QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH: f32 = 48.0'
+    'const COMPACT_RESULT_ROW_HEIGHT: f32 = 40.0',
+    'const COMPACT_RESULT_ICON_RAIL_WIDTH: f32 = 26.0',
+    'const COMPACT_RESULT_TRAILING_RAIL_WIDTH: f32 = 48.0'
 )) {
-    if (-not $quickLaunchSource.Contains($requiredResultConstant)) {
+    if (-not $metricsSource.Contains($requiredResultConstant)) {
         throw 'Quick Launch result rows must preserve the fixed three-rail geometry.'
     }
 }
@@ -97,8 +128,8 @@ foreach ($requiredResultRenderContract in @(
     '.line_height(px(LINE_HEIGHT_BODY))',
     '.text_size(px(TEXT_LABEL))',
     '.line_height(px(LINE_HEIGHT_LABEL))',
-    '.size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))',
-    '.w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))'
+    '.size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))',
+    '.w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))'
 )) {
     if (-not $resultRender.Contains($requiredResultRenderContract)) {
         throw 'Quick Launch heterogeneous results must share one tokenized three-rail row.'
@@ -120,7 +151,7 @@ foreach ($requiredSelectionContract in @(
     }
 }
 if (-not $rowShell.Contains('theme.element_selected') -or
-    -not $rowShell.Contains('.h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))') -or
+    -not $rowShell.Contains('.h(px(COMPACT_RESULT_ROW_HEIGHT))') -or
     -not $rowShell.Contains('.gap(px(SPACING_8))') -or
     $rowShell.Contains('theme.accent_soft') -or
     -not $quickLaunchSource.Contains(
@@ -148,8 +179,8 @@ foreach ($requiredActionRowContract in @(
     'quick-launch-action-copy-',
     'quick-launch-action-title-',
     'quick-launch-action-trailing-',
-    '.size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))',
-    '.w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))',
+    '.size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))',
+    '.w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))',
     '.text_size(px(TEXT_BODY))',
     '.line_height(px(LINE_HEIGHT_BODY))'
 )) {

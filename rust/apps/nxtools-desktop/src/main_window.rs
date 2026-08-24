@@ -56,11 +56,11 @@ use crate::ui::components::state::{empty_state, inline_error_state, progress_sta
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::metrics::{
     CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_2, SPACING_4,
-    SPACING_6, SPACING_8, SPACING_12, SPACING_24, TITLEBAR_HEIGHT,
+    SPACING_6, SPACING_8, SPACING_12, SPACING_16, SPACING_24, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, TEXT_BODY, TEXT_LABEL, TEXT_META,
-    UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
+    TEXT_LABEL, TEXT_META, TEXT_TITLE, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 
 const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
@@ -70,6 +70,9 @@ const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
 const QUICK_FIND_SCROLL_LINE_HEIGHT: f32 = 38.0;
 const QUICK_FIND_SCROLL_EASING: f32 = 0.42;
 const QUICK_FIND_SCROLL_TARGET_SNAP_DISTANCE: f32 = 128.0;
+const QUICK_LAUNCH_SETTINGS_NAV_WIDTH: f32 = 160.0;
+const QUICK_LAUNCH_SETTINGS_NAV_ROW_HEIGHT: f32 = 40.0;
+const QUICK_LAUNCH_SETTINGS_PAGE_HEADER_HEIGHT: f32 = 48.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
@@ -132,6 +135,7 @@ pub(crate) struct MainWindow {
     custom_command_program: gpui::Entity<InputState>,
     custom_command_arguments: gpui::Entity<InputState>,
     custom_command_working_directory: gpui::Entity<InputState>,
+    quick_launch_settings_page: QuickLaunchSettingsPage,
     quick_find_scroll: ScrollHandle,
     quick_find_scroll_target: f32,
     quick_find_scroll_animation: u64,
@@ -163,6 +167,69 @@ pub(crate) struct MainWindowShellContext {
 enum HotkeyRecordingTarget {
     Clipboard,
     QuickLaunch,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum QuickLaunchSettingsPage {
+    #[default]
+    General,
+    Index,
+    Context,
+    Commands,
+    Diagnostics,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuickLaunchSettingsPageMetadata {
+    label: &'static str,
+    description: &'static str,
+    navigation_id: &'static str,
+    content_id: &'static str,
+}
+
+impl QuickLaunchSettingsPage {
+    const ALL: [Self; 5] = [
+        Self::General,
+        Self::Index,
+        Self::Context,
+        Self::Commands,
+        Self::Diagnostics,
+    ];
+
+    const fn metadata(self) -> QuickLaunchSettingsPageMetadata {
+        match self {
+            Self::General => QuickLaunchSettingsPageMetadata {
+                label: "常规",
+                description: "呼出方式与固定键盘操作",
+                navigation_id: "quick-launch-settings-nav-general",
+                content_id: "quick-launch-settings-page-general",
+            },
+            Self::Index => QuickLaunchSettingsPageMetadata {
+                label: "索引",
+                description: "应用目录、文件索引与排除范围",
+                navigation_id: "quick-launch-settings-nav-index",
+                content_id: "quick-launch-settings-page-index",
+            },
+            Self::Context => QuickLaunchSettingsPageMetadata {
+                label: "上下文",
+                description: "资源管理器与文件对话框联动",
+                navigation_id: "quick-launch-settings-nav-context",
+                content_id: "quick-launch-settings-page-context",
+            },
+            Self::Commands => QuickLaunchSettingsPageMetadata {
+                label: "命令",
+                description: "维护关键词驱动的自定义动作",
+                navigation_id: "quick-launch-settings-nav-commands",
+                content_id: "quick-launch-settings-page-commands",
+            },
+            Self::Diagnostics => QuickLaunchSettingsPageMetadata {
+                label: "诊断",
+                description: "历史学习、查询性能与运行日志",
+                navigation_id: "quick-launch-settings-nav-diagnostics",
+                content_id: "quick-launch-settings-page-diagnostics",
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1193,6 +1260,7 @@ impl MainWindow {
             custom_command_program,
             custom_command_arguments,
             custom_command_working_directory,
+            quick_launch_settings_page: QuickLaunchSettingsPage::default(),
             quick_find_scroll: ScrollHandle::new(),
             quick_find_scroll_target: 0.0,
             quick_find_scroll_animation: 0,
@@ -1321,6 +1389,11 @@ impl MainWindow {
         let current = self.quick_find_scroll.offset().y.as_f32();
         let target =
             quick_find_scroll_target(current, self.quick_find_scroll_target, maximum, delta);
+        self.animate_quick_find_scroll_to(target, cx);
+        true
+    }
+
+    fn animate_quick_find_scroll_to(&mut self, target: f32, cx: &mut Context<Self>) {
         self.quick_find_scroll_target = target;
         self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1);
         let generation = self.quick_find_scroll_animation;
@@ -1354,7 +1427,21 @@ impl MainWindow {
             });
         })
         .detach();
-        true
+    }
+
+    fn select_quick_launch_settings_page(
+        &mut self,
+        page: QuickLaunchSettingsPage,
+        cx: &mut Context<Self>,
+    ) {
+        if self.quick_launch_settings_page == page {
+            return;
+        }
+        self.quick_launch_settings_page = page;
+        self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1);
+        self.quick_find_scroll_target = 0.0;
+        self.quick_find_scroll.set_offset(point(px(0.0), px(0.0)));
+        cx.notify();
     }
 
     fn render_notifications(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -3389,6 +3476,208 @@ impl MainWindow {
             "UPDATING" => theme.accent_text,
             _ => theme.accent_text,
         };
+        let general_page = quick_launch_settings_group_page(
+            theme,
+            QuickLaunchSettingsPage::General.metadata().content_id,
+            compact_group(
+                theme,
+                "呼出与执行",
+                vec![
+                    compact_setting_row(
+                        theme,
+                        "全局呼出热键",
+                        format!("Windows 注册状态 · {configuration_status}"),
+                        hotkey_control,
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "键盘动作",
+                        "↑↓ 选择；Enter 打开；Ctrl+Enter 定位；Esc 清空或隐藏",
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(theme.text_muted)
+                            .child("FIXED")
+                            .into_any_element(),
+                    ),
+                ],
+            ),
+        );
+        let context_page = quick_launch_settings_group_page(
+            theme,
+            QuickLaunchSettingsPage::Context.metadata().content_id,
+            compact_group(
+                theme,
+                "上下文联动",
+                vec![
+                    compact_setting_row(
+                        theme,
+                        "自动快速切换",
+                        "从资源管理器返回已出现的打开/保存对话框时同步目录",
+                        auto_quick_switch_control,
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "文件对话框搜索栏",
+                        "在受支持的打开/保存窗口底部显示当前目录搜索",
+                        file_dialog_search_control,
+                    ),
+                ],
+            ),
+        );
+        let index_page = quick_launch_settings_group_page(
+            theme,
+            QuickLaunchSettingsPage::Index.metadata().content_id,
+            compact_group(
+                theme,
+                "应用目录",
+                vec![
+                    compact_setting_row(
+                        theme,
+                        "扫描状态",
+                        scan_state,
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(if status.errors.is_empty() {
+                                theme.success
+                            } else {
+                                theme.danger
+                            })
+                            .child(if status.errors.is_empty() {
+                                "READY"
+                            } else {
+                                "PARTIAL"
+                            })
+                            .into_any_element(),
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "当前范围",
+                        "开始菜单、桌面、系统工具与 NTFS 文件索引",
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(theme.text_muted)
+                            .child(format!("{} ITEMS", status.indexed_items))
+                            .into_any_element(),
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "本地文件索引",
+                        file_index_state,
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(SPACING_6))
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(file_index_badge_color)
+                                    .child(file_index_badge),
+                            )
+                            .child(refresh_volumes_control)
+                            .into_any_element(),
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "索引卷",
+                        "勾选要索引的磁盘；全部会自动包含新 NTFS 卷",
+                        index_volumes_control,
+                    ),
+                    compact_setting_row(
+                        theme,
+                        "排除目录",
+                        "通过选择器添加；目录及其所有子项不进入结果",
+                        index_exclusions_control,
+                    ),
+                ],
+            ),
+        );
+        let commands_page = div()
+            .id(QuickLaunchSettingsPage::Commands.metadata().content_id)
+            .debug_selector(|| {
+                QuickLaunchSettingsPage::Commands
+                    .metadata()
+                    .content_id
+                    .into()
+            })
+            .w_full()
+            .child(custom_commands_control)
+            .into_any_element();
+        let diagnostics_page = div()
+            .id(QuickLaunchSettingsPage::Diagnostics.metadata().content_id)
+            .debug_selector(|| {
+                QuickLaunchSettingsPage::Diagnostics
+                    .metadata()
+                    .content_id
+                    .into()
+            })
+            .w_full()
+            .child(history_diagnostics_control)
+            .into_any_element();
+        let selected_page = self.quick_launch_settings_page;
+        let selected_page_content = match selected_page {
+            QuickLaunchSettingsPage::General => general_page,
+            QuickLaunchSettingsPage::Index => index_page,
+            QuickLaunchSettingsPage::Context => context_page,
+            QuickLaunchSettingsPage::Commands => commands_page,
+            QuickLaunchSettingsPage::Diagnostics => diagnostics_page,
+        };
+        let mut settings_navigation = div()
+            .id("quick-launch-settings-navigation")
+            .debug_selector(|| "quick-launch-settings-navigation".into())
+            .w(px(QUICK_LAUNCH_SETTINGS_NAV_WIDTH))
+            .flex_none()
+            .border_r_1()
+            .border_color(theme.border_subtle)
+            .bg(theme.canvas)
+            .pt(px(SPACING_8))
+            .flex()
+            .flex_col();
+        for page in QuickLaunchSettingsPage::ALL {
+            let page_metadata = page.metadata();
+            let selected = page == selected_page;
+            settings_navigation = settings_navigation.child(
+                div()
+                    .id(page_metadata.navigation_id)
+                    .debug_selector(move || page_metadata.navigation_id.into())
+                    .relative()
+                    .h(px(QUICK_LAUNCH_SETTINGS_NAV_ROW_HEIGHT))
+                    .px(px(SPACING_12))
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .bg(if selected {
+                        theme.element_selected
+                    } else {
+                        theme.canvas
+                    })
+                    .hover(move |style| style.bg(theme.surface_hover))
+                    .when(selected, |row| {
+                        row.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .top(px(SPACING_8))
+                                .bottom(px(SPACING_8))
+                                .w(px(SPACING_2))
+                                .bg(theme.accent),
+                        )
+                    })
+                    .child(
+                        div()
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
+                            .text_color(if selected {
+                                theme.text
+                            } else {
+                                theme.text_secondary
+                            })
+                            .child(page_metadata.label),
+                    )
+                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                        this.select_quick_launch_settings_page(page, cx);
+                    })),
+            );
+        }
         div()
             .size_full()
             .flex()
@@ -3407,145 +3696,86 @@ impl MainWindow {
                 div()
                     .flex_1()
                     .min_h_0()
-                    .relative()
+                    .flex()
+                    .child(settings_navigation)
                     .child(
                         div()
-                            .id("quick-launch-settings-scroll")
-                            .size_full()
-                            .track_scroll(&self.quick_find_scroll)
-                            .overflow_y_scroll()
-                            .on_scroll_wheel(cx.listener(
-                                |this, event: &ScrollWheelEvent, _window, cx| {
-                                    let delta =
-                                        event.delta.pixel_delta(px(QUICK_FIND_SCROLL_LINE_HEIGHT));
-                                    let delta = if delta.y.as_f32() != 0.0 {
-                                        delta.y.as_f32()
-                                    } else {
-                                        delta.x.as_f32()
-                                    };
-                                    if this.smooth_scroll_quick_find(delta, cx) {
-                                        cx.stop_propagation();
-                                    }
-                                },
-                            ))
-                            .p(px(12.0))
+                            .min_w_0()
+                            .flex_1()
                             .flex()
                             .flex_col()
-                            .gap(px(8.0))
                             .child(
                                 div()
-                                    .rounded(px(5.0))
-                                    .border_1()
+                                    .id("quick-launch-settings-page-header")
+                                    .debug_selector(|| "quick-launch-settings-page-header".into())
+                                    .h(px(QUICK_LAUNCH_SETTINGS_PAGE_HEADER_HEIGHT))
+                                    .flex_none()
+                                    .px(px(SPACING_16))
+                                    .border_b_1()
                                     .border_color(theme.border_subtle)
-                                    .bg(theme.surface)
                                     .flex()
-                                    .child(div().flex_1().min_w_0().px(px(12.0)).child(
-                                        compact_group(
-                                            theme,
-                                            "呼出与执行",
-                                            vec![
-                                        compact_setting_row(
-                                            theme,
-                                            "全局呼出热键",
-                                            format!("Windows 注册状态 · {configuration_status}"),
-                                            hotkey_control,
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "键盘动作",
-                                            "↑↓ 选择；Enter 打开；Ctrl+Enter 定位；Esc 清空或隐藏",
-                                            div()
-                                                .text_size(px(10.0))
-                                                .text_color(theme.text_muted)
-                                                .child("FIXED")
-                                                .into_any_element(),
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "自动快速切换",
-                                            "从资源管理器返回已出现的打开/保存对话框时同步目录",
-                                            auto_quick_switch_control,
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "文件对话框搜索栏",
-                                            "在受支持的打开/保存窗口底部显示当前目录搜索",
-                                            file_dialog_search_control,
-                                        ),
-                                    ],
-                                        ),
-                                    ))
-                                    .child(div().w(px(1.0)).bg(theme.border_subtle))
-                                    .child(div().w(px(410.0)).px(px(12.0)).child(compact_group(
-                                        theme,
-                                        "应用目录",
-                                        vec![
-                                        compact_setting_row(
-                                            theme,
-                                            "扫描状态",
-                                            scan_state,
-                                            div()
-                                                .text_size(px(10.0))
-                                                .text_color(if status.errors.is_empty() {
-                                                    theme.success
-                                                } else {
-                                                    theme.danger
-                                                })
-                                                .child(if status.errors.is_empty() {
-                                                    "READY"
-                                                } else {
-                                                    "PARTIAL"
-                                                })
-                                                .into_any_element(),
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "当前范围",
-                                            "开始菜单、桌面、系统工具与 NTFS 文件索引",
-                                            div()
-                                                .text_size(px(10.0))
-                                                .text_color(theme.text_muted)
-                                                .child(format!("{} ITEMS", status.indexed_items))
-                                                .into_any_element(),
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "本地文件索引",
-                                            file_index_state,
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap(px(7.0))
-                                                .child(
-                                                    div()
-                                                        .text_size(px(10.0))
-                                                        .text_color(file_index_badge_color)
-                                                        .child(file_index_badge),
-                                                )
-                                                .child(refresh_volumes_control)
-                                                .into_any_element(),
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "索引卷",
-                                            "勾选要索引的磁盘；全部会自动包含新 NTFS 卷",
-                                            index_volumes_control,
-                                        ),
-                                        compact_setting_row(
-                                            theme,
-                                            "排除目录",
-                                            "通过选择器添加；目录及其所有子项不进入结果",
-                                            index_exclusions_control,
-                                        ),
-                                    ],
-                                    ))),
+                                    .items_center()
+                                    .gap(px(SPACING_12))
+                                    .child(
+                                        div()
+                                            .debug_selector(|| {
+                                                "quick-launch-settings-page-title".into()
+                                            })
+                                            .text_size(px(TEXT_TITLE))
+                                            .line_height(px(LINE_HEIGHT_TITLE))
+                                            .text_color(theme.text)
+                                            .child(selected_page.metadata().label),
+                                    )
+                                    .child(
+                                        div()
+                                            .debug_selector(|| {
+                                                "quick-launch-settings-page-description".into()
+                                            })
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(px(TEXT_LABEL))
+                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_color(theme.text_muted)
+                                            .child(selected_page.metadata().description),
+                                    ),
                             )
-                            .child(history_diagnostics_control)
-                            .child(custom_commands_control),
-                    )
-                    .child(
-                        Scrollbar::vertical(&self.quick_find_scroll)
-                            .id("quick-launch-settings-scrollbar"),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .relative()
+                                    .child(
+                                        div()
+                                            .id("quick-launch-settings-scroll")
+                                            .debug_selector(|| {
+                                                "quick-launch-settings-scroll".into()
+                                            })
+                                            .size_full()
+                                            .track_scroll(&self.quick_find_scroll)
+                                            .overflow_y_scroll()
+                                            .on_scroll_wheel(cx.listener(
+                                                |this, event: &ScrollWheelEvent, _window, cx| {
+                                                    let delta = event.delta.pixel_delta(px(
+                                                        QUICK_FIND_SCROLL_LINE_HEIGHT,
+                                                    ));
+                                                    let delta = if delta.y.as_f32() != 0.0 {
+                                                        delta.y.as_f32()
+                                                    } else {
+                                                        delta.x.as_f32()
+                                                    };
+                                                    if this.smooth_scroll_quick_find(delta, cx) {
+                                                        cx.stop_propagation();
+                                                    }
+                                                },
+                                            ))
+                                            .p(px(SPACING_16))
+                                            .child(selected_page_content),
+                                    )
+                                    .child(
+                                        Scrollbar::vertical(&self.quick_find_scroll)
+                                            .id("quick-launch-settings-scrollbar"),
+                                    ),
+                            ),
                     ),
             )
             .into_any_element()
@@ -4171,6 +4401,23 @@ fn compact_toggle(
         })
         .child(if enabled { "开启" } else { "关闭" })
         .on_click(on_click)
+        .into_any_element()
+}
+
+fn quick_launch_settings_group_page(
+    theme: Theme,
+    selector: &'static str,
+    group: AnyElement,
+) -> AnyElement {
+    div()
+        .id(selector)
+        .debug_selector(move || selector.into())
+        .w_full()
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .px(px(SPACING_12))
+        .child(group)
         .into_any_element()
 }
 
@@ -6176,6 +6423,7 @@ mod tests {
         DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
         DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskId, RequestOrigin,
     };
+    use nxtools_finder::FinderCatalog;
     use nxtools_network::NetworkPolicy;
 
     use nxtools_ipc::platform_bridge;
@@ -6508,6 +6756,253 @@ mod tests {
                 .height,
             px(LINE_HEIGHT_LABEL)
         );
+    }
+
+    #[gpui::test]
+    fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let executor = cx.executor();
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary Quick Launch settings fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open Quick Launch settings catalog");
+        let config_path = temp.path().join("config.json");
+        let log_directory = temp.path().join("logs");
+        let mut application_config = AppConfig::default();
+        application_config.quick_launch.excluded_paths = (0..20)
+            .map(|index| format!(r"C:\Build\Generated\{index}"))
+            .collect();
+        let quick_launch = cx.update(|cx| {
+            let (platform, _platform_endpoint) = platform_bridge(8);
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    application_config,
+                    config_path,
+                    log_directory,
+                    notifications.clone(),
+                )
+            })
+        });
+        let settings_before_navigation = cx.read(|cx| quick_launch.read(cx).settings());
+        assert_eq!(settings_before_navigation.excluded_paths.len(), 20);
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui::size(px(1060.0), px(500.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window
+        });
+
+        window.refresh().expect("render Quick Launch settings");
+        let navigation = window
+            .debug_bounds("quick-launch-settings-navigation")
+            .expect("stable Quick Launch settings navigation");
+        assert_eq!(navigation.size.width, px(160.0));
+        for selector in [
+            "quick-launch-settings-nav-general",
+            "quick-launch-settings-nav-index",
+            "quick-launch-settings-nav-context",
+            "quick-launch-settings-nav-commands",
+            "quick-launch-settings-nav-diagnostics",
+        ] {
+            assert_eq!(
+                window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("missing {selector}"))
+                    .size
+                    .height,
+                px(40.0)
+            );
+        }
+        assert!(
+            window
+                .debug_bounds("quick-launch-settings-page-general")
+                .is_some()
+        );
+        assert!(
+            window
+                .debug_bounds("quick-launch-settings-page-index")
+                .is_none()
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-settings-page-header")
+                .expect("fixed Quick Launch settings page header")
+                .size
+                .height,
+            px(48.0)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-settings-page-title")
+                .expect("Quick Launch settings page title")
+                .size
+                .height,
+            px(LINE_HEIGHT_TITLE)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-settings-page-description")
+                .expect("Quick Launch settings page description")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+
+        let index_navigation = window
+            .debug_bounds("quick-launch-settings-nav-index")
+            .expect("Index navigation row");
+        window.simulate_click(index_navigation.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).quick_launch_settings_page),
+            QuickLaunchSettingsPage::Index
+        );
+        window.refresh().expect("render Index settings page");
+        assert!(
+            window
+                .debug_bounds("quick-launch-settings-page-index")
+                .is_some()
+        );
+
+        window.update(|_, cx| {
+            main_window.update(cx, |main_window, cx| {
+                main_window.animate_quick_find_scroll_to(-38.0, cx);
+            });
+        });
+        let scrolling_generation = window.read(|cx| {
+            let main_window = main_window.read(cx);
+            assert!(main_window.quick_find_scroll_target < 0.0);
+            main_window.quick_find_scroll_animation
+        });
+
+        let context_navigation = window
+            .debug_bounds("quick-launch-settings-nav-context")
+            .expect("Context navigation row");
+        window.simulate_click(context_navigation.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).quick_launch_settings_page),
+            QuickLaunchSettingsPage::Context
+        );
+        assert!(
+            window.read(|cx| main_window.read(cx).quick_find_scroll_animation)
+                > scrolling_generation
+        );
+        executor.advance_clock(Duration::from_millis(250));
+        executor.run_until_parked();
+        window.read(|cx| {
+            let main_window = main_window.read(cx);
+            assert_eq!(main_window.quick_find_scroll_target, 0.0);
+            assert_eq!(main_window.quick_find_scroll.offset().y, px(0.0));
+        });
+        window.refresh().expect("render Context settings page");
+        assert!(
+            window
+                .debug_bounds("quick-launch-settings-page-context")
+                .is_some()
+        );
+
+        for (navigation_selector, page, content_selector) in [
+            (
+                "quick-launch-settings-nav-commands",
+                QuickLaunchSettingsPage::Commands,
+                "quick-launch-settings-page-commands",
+            ),
+            (
+                "quick-launch-settings-nav-diagnostics",
+                QuickLaunchSettingsPage::Diagnostics,
+                "quick-launch-settings-page-diagnostics",
+            ),
+            (
+                "quick-launch-settings-nav-general",
+                QuickLaunchSettingsPage::General,
+                "quick-launch-settings-page-general",
+            ),
+            (
+                "quick-launch-settings-nav-index",
+                QuickLaunchSettingsPage::Index,
+                "quick-launch-settings-page-index",
+            ),
+        ] {
+            let navigation = window
+                .debug_bounds(navigation_selector)
+                .unwrap_or_else(|| panic!("missing {navigation_selector}"));
+            window.simulate_click(navigation.center(), Modifiers::default());
+            window.run_until_parked();
+            assert_eq!(
+                window.read(|cx| main_window.read(cx).quick_launch_settings_page),
+                page
+            );
+            window.refresh().expect("render selected settings page");
+            assert!(
+                window.debug_bounds(content_selector).is_some(),
+                "missing {content_selector}"
+            );
+        }
+        assert_eq!(
+            cx.read(|cx| quick_launch.read(cx).settings()),
+            settings_before_navigation,
+            "settings navigation must not mutate Quick Launch settings"
+        );
+    }
+
+    #[gpui::test]
+    fn every_quick_launch_settings_frame_mounts_exactly_one_page(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+
+        for selected_page in QuickLaunchSettingsPage::ALL {
+            let notifications_for_window = notifications.clone();
+            let (_main_window, window) = cx.add_window_view(move |window, cx| {
+                window.resize(gpui::size(px(1060.0), px(500.0)));
+                let mut main_window = MainWindow::new(
+                    gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                    gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                    gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                    MainWindowShellContext {
+                        settings: None,
+                        platform: None,
+                        system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                    },
+                    notifications_for_window,
+                    window,
+                    cx,
+                );
+                main_window.shell.activate(MainModule::QuickFind);
+                main_window.quick_launch_settings_page = selected_page;
+                main_window
+            });
+
+            window.refresh().expect("render selected Quick Launch page");
+            for candidate_page in QuickLaunchSettingsPage::ALL {
+                assert_eq!(
+                    window
+                        .debug_bounds(candidate_page.metadata().content_id)
+                        .is_some(),
+                    candidate_page == selected_page,
+                    "only {} may mount in the selected-page viewport",
+                    selected_page.metadata().label
+                );
+            }
+        }
     }
 
     #[gpui::test]
@@ -6915,19 +7410,19 @@ mod tests {
         DOWNLOAD_TABLE_HEADER_HEIGHT, DOWNLOAD_TASK_ROW_HEIGHT, DownloadContextCapabilities,
         DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
         DownloadTaskFilter, MainWindow, MainWindowControl, MainWindowShellContext,
-        download_context_capabilities, download_context_menu_plan, download_filter_counts,
-        download_queue_placement_capabilities, download_segment_strip_cells,
-        download_tasks_for_view, file_index_summary, format_query_elapsed, hotkey_from_key_down,
-        masked_request_header_value, maximize_control, notification_transition,
-        prepare_download_context_selection, quick_find_scroll_step, quick_find_scroll_target,
-        reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
-        update_download_selection,
+        QuickLaunchSettingsPage, download_context_capabilities, download_context_menu_plan,
+        download_filter_counts, download_queue_placement_capabilities,
+        download_segment_strip_cells, download_tasks_for_view, file_index_summary,
+        format_query_elapsed, hotkey_from_key_down, masked_request_header_value, maximize_control,
+        notification_transition, prepare_download_context_selection, quick_find_scroll_step,
+        quick_find_scroll_target, reconcile_download_selection, set_download_sort,
+        toggle_indexed_volume_selection, update_download_selection,
     };
     use crate::ui::metrics::{
         MODULE_HEADER_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4, SPACING_12,
         TITLEBAR_HEIGHT,
     };
-    use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL};
+    use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_TITLE};
 
     #[test]
     fn maximize_state_selects_a_distinct_restore_caption_asset() {
@@ -8861,7 +9356,7 @@ mod tests {
     }
 
     #[test]
-    fn quick_launch_settings_scroll_as_one_viewport() {
+    fn quick_launch_settings_scrolls_only_the_selected_page_viewport() {
         let source = include_str!("main_window.rs");
         let quick_find = source
             .split("fn render_quick_find")
@@ -8870,6 +9365,17 @@ mod tests {
             .expect("quick-launch settings source");
 
         assert!(quick_find.contains("quick-launch-settings-scroll"));
+        assert!(quick_find.contains("quick-launch-settings-navigation"));
+        assert!(quick_find.contains("QuickLaunchSettingsPage::ALL"));
+        for selector in [
+            "quick-launch-settings-page-general",
+            "quick-launch-settings-page-index",
+            "quick-launch-settings-page-context",
+            "quick-launch-settings-page-commands",
+            "quick-launch-settings-page-diagnostics",
+        ] {
+            assert!(source.contains(selector), "missing {selector}");
+        }
         assert!(quick_find.contains(".overflow_y_scroll()"));
         assert!(quick_find.contains(".on_scroll_wheel(cx.listener("));
         assert!(quick_find.contains("Scrollbar::vertical(&self.quick_find_scroll)"));
