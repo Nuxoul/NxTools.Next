@@ -4,7 +4,6 @@ pub(crate) use crate::ui::typography::{UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 pub(crate) const SEARCH_TEXT_SIZE: f32 = 13.5;
 pub(crate) const RESULT_TITLE_SIZE: f32 = 13.0;
 pub(crate) const RESULT_DETAIL_SIZE: f32 = 10.5;
-pub(crate) const ACTION_TEXT_SIZE: f32 = 12.0;
 pub(crate) const META_TEXT_SIZE: f32 = 10.0;
 pub(crate) const COMPACT_RADIUS: f32 = 4.0;
 pub(crate) const SURFACE_INSET: f32 = 6.0;
@@ -112,7 +111,6 @@ mod tests {
         assert_eq!(SEARCH_TEXT_SIZE, 13.5);
         assert_eq!(RESULT_TITLE_SIZE, 13.0);
         assert_eq!(RESULT_DETAIL_SIZE, 10.5);
-        assert_eq!(ACTION_TEXT_SIZE, 12.0);
         assert_eq!(META_TEXT_SIZE, 10.0);
         assert_eq!(COMPACT_RADIUS, 4.0);
         assert_eq!(SURFACE_INSET, 6.0);

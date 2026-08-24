@@ -3,6 +3,7 @@ param(
     [int]$StartupMilliseconds = 2200,
     [int]$ResultTimeoutMilliseconds = 2500,
     [switch]$UseRealPlatformHost,
+    [switch]$EnterActionsMode,
     [string]$ScreenshotPath
 )
 
@@ -69,6 +70,15 @@ public static class NxToolsQuickLaunchSmokeInput
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr SendMessageW(IntPtr window, uint message, UIntPtr word, IntPtr data);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr deviceContext);
+
+    [DllImport("gdi32.dll")]
+    private static extern uint GetPixel(IntPtr deviceContext, int x, int y);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr FindWindowExW(
         IntPtr parent,
@@ -81,6 +91,9 @@ public static class NxToolsQuickLaunchSmokeInput
 
     private const uint LeftDown = 0x0002;
     private const uint LeftUp = 0x0004;
+    private const uint WindowKeyDown = 0x0100;
+    private const uint VirtualKeyRight = 0x27;
+    private const uint InvalidPixel = 0xffffffff;
 
     private static void Tap(byte virtualKey)
     {
@@ -120,6 +133,42 @@ public static class NxToolsQuickLaunchSmokeInput
     {
         var target = focusedPanel != IntPtr.Zero ? focusedPanel : GetForegroundWindow();
         SendMessageW(target, 0x0102, new UIntPtr('q'), IntPtr.Zero);
+    }
+
+    public static void EnterActionsMode()
+    {
+        var target = focusedPanel != IntPtr.Zero ? focusedPanel : GetForegroundWindow();
+        SendMessageW(target, WindowKeyDown, new UIntPtr(VirtualKeyRight), IntPtr.Zero);
+    }
+
+    public static bool IsActionModeSurface()
+    {
+        if (focusedPanel == IntPtr.Zero || !GetWindowRect(focusedPanel, out var rect))
+            return false;
+        var deviceContext = GetDC(IntPtr.Zero);
+        if (deviceContext == IntPtr.Zero)
+            return false;
+        try
+        {
+            // In action mode the first selected 40 px row occupies this upper sample, while the
+            // lower sample is the following canvas row. The ordinary result sweep selects a lower
+            // row, so both samples remain canvas-colored if Right never reached the panel.
+            var selectedRow = GetPixel(deviceContext, rect.Left + 300, rect.Top + 80);
+            var followingRow = GetPixel(deviceContext, rect.Left + 300, rect.Top + 120);
+            return selectedRow != InvalidPixel &&
+                followingRow != InvalidPixel &&
+                selectedRow != followingRow;
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, deviceContext);
+        }
+    }
+
+    public static void PointAtFirstAction()
+    {
+        if (focusedPanel != IntPtr.Zero && GetWindowRect(focusedPanel, out var rect))
+            SetCursorPos(rect.Left + 100, rect.Top + 80);
     }
 
     public static bool TryFocusCollapsedPanel(uint processId)
@@ -452,6 +501,19 @@ try {
     }
     if (-not $sweptResults) {
         throw 'Quick-launch did not publish a populated result window before the timeout.'
+    }
+    if ($EnterActionsMode) {
+        [NxToolsQuickLaunchSmokeInput]::EnterActionsMode()
+        $actionModeDeadline = [DateTime]::UtcNow.AddSeconds(3)
+        $actionModeVisible = $false
+        while (-not $actionModeVisible -and [DateTime]::UtcNow -lt $actionModeDeadline) {
+            Start-Sleep -Milliseconds 25
+            $actionModeVisible = [NxToolsQuickLaunchSmokeInput]::IsActionModeSurface()
+        }
+        if (-not $actionModeVisible) {
+            throw 'Quick-launch did not render the selected first action row before capture.'
+        }
+        [NxToolsQuickLaunchSmokeInput]::PointAtFirstAction()
     }
     $visualSettleMilliseconds = if ($UseRealPlatformHost) { 5000 } else { 900 }
     Start-Sleep -Milliseconds $visualSettleMilliseconds

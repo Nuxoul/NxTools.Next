@@ -1006,6 +1006,21 @@ Reverified on 2026-08-24 before the QL-03 selection-state migration:
   existing click activation is scheduled; the movement gate and shared virtual-list scroll handle
   remain unchanged. Real Shell images stay unboxed and are never recolored by the selection surface.
 
+Reverified on 2026-08-24 before the QL-04 action-mode migration:
+
+- Listary `SearchBarViewModel::method_9` pushes the child `SearchMode`, while `method_10` disposes only
+  that child and reactivates the same parent mode object. The parent therefore retains its committed
+  results, selected item and query rather than rebuilding a visually new list before restoration.
+- SwiftList `App/Services/ShellMenu/ShellMenuPresenter.cs::EnterActionsMode` hides the existing result
+  grid without replacing it. `ExitActionsMode` makes that same grid visible, restores the saved query
+  while action-mode filtering is still active (so result search cannot restart), and only then calls
+  `ScrollIntoView` for the already-selected result. Its source comment explicitly protects the exact
+  result and scroll position from being wiped by query restoration.
+- NxTools.Next QL-04 must likewise treat the parent result viewport as frozen action-mode context.
+  Escape, empty-filter Backspace and root-level Left must reveal the retained result list at its
+  previous offset on the first returned frame. Resetting the result scroll to zero and centering the
+  selected row in a later query/result callback is a visible top-to-context jump and is not equivalent.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

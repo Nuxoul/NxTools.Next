@@ -963,6 +963,34 @@ rust/apps/nxtools-desktop/src/ui/
   `artifacts/win-x64`。受保护运行副本与新包的 desktop / PlatformHost SHA-256 均逐一相等后捕获上图。
   QL-03 行为、生产窗口、包级 96 DPI 与 Standards/Spec 双轴验收完成；下一切片为 QL-04 动作模式。
 
+第三十三个 P1 速启动作模式切片（2026-08-24）：
+
+- 修复“下滚结果、进入二级动作、返回时先闪到顶部再跳回原位置”的可用性缺陷。红测试在真实
+  620×410 GPUI 窗口中把第 25 项滚到视口内，记录父列表实际偏移 `-474 px`，经 Right 进入动作模式、
+  Escape 返回后旧实现首帧偏移为 `0 px`；修复后查询、选择身份与同一个 `ScrollHandle` 均冻结，返回
+  首帧直接保持原偏移。恢复查询发生在 action mode 仍拥有 input-change 处理权时，因此不会启动一轮
+  替换搜索再异步居中。Escape、根级 Left 与空过滤 Backspace 共用这一退出路径；后台应用目录刷新
+  也会在 action mode 期间只提交 catalog snapshot，不替换或居中被冻结的父列表。
+- 参考复核确认 Listary 只弹出并销毁子 `SearchMode`，重新激活同一个父 mode；SwiftList 也先在动作
+  模式内恢复保存查询，再显示原 result grid 并滚回已选项。NxTools.Next 删除了退出时清零结果滚动、
+  重挂 presented results 和延后 selection 恢复的旧链路，遵守“返回哪儿就是哪儿”的首帧契约。
+- QL-04 将普通结果与动作项收敛到同一个生产 row shell：40 px 行高、透明 26 px 图标轨、灵活
+  Body 12/18 文本轨与固定 48 px 尾轨；动作模式只增加一条 24 px、Label 11/16 的目标上下文，不增加
+  卡片填充、描边、阴影或第二套入场动效。真实 GPUI 几何测试逐一比较普通行与动作行的 row、icon、
+  copy、title 和 trailing bounds；三种退出键均在 `window.refresh()` 后确认第 25 项仍出现在第一棵
+  返回渲染树，生命周期架构门禁同时禁止 36 px 私有动作行、Medium 字重、catalog refresh 越过冻结
+  边界与返回时触碰父列表 base scroll handle。
+- Quick Launch 定向回归为 108/108；严格 desktop Clippy、rustfmt、`git diff --check` 和升级后的
+  生命周期架构门禁均通过。Desktop 全套为 318/322，分类按钮 selector、网络尾距、剪贴板空态宽度
+  和下载详情 progress selector 四项失败与前序基线完全相同。完整验证单独留证后，官方包装脚本以
+  `-SkipVerification` 避免重复运行同一失败基线，并在 6.81 GiB headroom 下完成 Release、可信二进制
+  清单、PlatformHost publish、PE subsystem 与产品图标门禁。包与受保护运行副本的 desktop /
+  PlatformHost SHA-256 逐一相等后，通过真实 PlatformHost 捕获 96 DPI、652×434（含原生阴影）的
+  [动作模式实机图](audits/quick-launch-ql04-2026-08-24/01-action-mode-100pct.png)；烟测先以屏幕像素
+  判据确认首个选中动作行已经呈现才允许捕获，图中轻量上下文、共用动作行轨道和原生 Windows 动作
+  连续面均已人工确认。125%/150% 继续由 Release 截图矩阵统一
+  收口。QL-04 行为、生产窗口和包级 96 DPI 验收完成；下一切片为 QL-05 预览。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

@@ -5,6 +5,8 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
+$quickLaunchSmokeSource = Get-Content -Raw -LiteralPath $quickLaunchSmokePath
 $iconsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\icons.rs'
 $iconsSource = Get-Content -Raw -LiteralPath $iconsPath
 $panelRenderStart = $quickLaunchSource.IndexOf('impl Render for QuickLaunchPanel')
@@ -67,6 +69,12 @@ $resultRender = $quickLaunchSource.Substring(
     $resultRenderStart,
     $resultRenderEnd - $resultRenderStart
 )
+$rowShellStart = $quickLaunchSource.IndexOf('fn quick_launch_row_shell(')
+$rowShellEnd = $quickLaunchSource.IndexOf('impl QuickLaunchPanel', $rowShellStart)
+if ($rowShellStart -lt 0 -or $rowShellEnd -le $rowShellStart) {
+    throw 'Could not isolate the shared Quick Launch result/action row shell.'
+}
+$rowShell = $quickLaunchSource.Substring($rowShellStart, $rowShellEnd - $rowShellStart)
 foreach ($requiredResultConstant in @(
     'const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0',
     'const QUICK_LAUNCH_RESULT_ICON_WIDTH: f32 = 26.0',
@@ -101,7 +109,6 @@ if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
     throw 'Quick Launch result rows must not restore private type, spacing or decorative icon tiles.'
 }
 foreach ($requiredSelectionContract in @(
-    'theme.element_selected',
     '.on_mouse_move(',
     '.on_mouse_down(gpui::MouseButton::Left',
     'panel.select_result(index, cx)'
@@ -110,12 +117,136 @@ foreach ($requiredSelectionContract in @(
         throw 'Quick Launch keyboard and pointer selection must share one neutral production row state.'
     }
 }
-if ($resultRender.Contains('theme.accent_soft') -or
+if (-not $rowShell.Contains('theme.element_selected') -or
+    -not $rowShell.Contains('.h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))') -or
+    -not $rowShell.Contains('.gap(px(SPACING_8))') -or
+    $rowShell.Contains('theme.accent_soft') -or
     -not $quickLaunchSource.Contains(
         'fn production_keyboard_pointer_movement_and_press_share_one_selection('
     ) -or
     -not $quickLaunchSource.Contains('fn stationary_pointer_does_not_steal_keyboard_selection(')) {
     throw 'Quick Launch QL-03 requires neutral selection plus real pointer and stationary-pointer regressions.'
+}
+$actionRenderStart = $quickLaunchSource.IndexOf('    fn render_action(')
+$actionRenderEnd = $quickLaunchSource.IndexOf(
+    'impl Render for QuickLaunchPanel',
+    $actionRenderStart
+)
+if ($actionRenderStart -lt 0 -or $actionRenderEnd -le $actionRenderStart) {
+    throw 'Could not isolate the production Quick Launch action renderer.'
+}
+$actionRender = $quickLaunchSource.Substring(
+    $actionRenderStart,
+    $actionRenderEnd - $actionRenderStart
+)
+foreach ($requiredActionRowContract in @(
+    'quick_launch_row_shell(theme, selected)',
+    'quick-launch-action-row-',
+    'quick-launch-action-icon-',
+    'quick-launch-action-copy-',
+    'quick-launch-action-title-',
+    'quick-launch-action-trailing-',
+    '.size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))',
+    '.w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))',
+    '.text_size(px(TEXT_BODY))',
+    '.line_height(px(LINE_HEIGHT_BODY))'
+)) {
+    if (-not $actionRender.Contains($requiredActionRowContract)) {
+        throw 'Quick Launch action rows must reuse the tokenized ordinary-result row rails.'
+    }
+}
+if ($actionRender.Contains('ACTION_TEXT_SIZE') -or
+    $actionRender.Contains('.h(px(36.0))') -or
+    $actionRender.Contains('FontWeight::MEDIUM')) {
+    throw 'Quick Launch action rows must not retain their private 36 px/medium presentation.'
+}
+if (-not $quickLaunchSource.Contains('const QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT: f32 = 24.0')) {
+    throw 'Quick Launch action context height must have one named production constant.'
+}
+foreach ($requiredActionContextContract in @(
+    'quick-launch-action-context',
+    '.h(px(QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT))',
+    '.text_size(px(TEXT_LABEL))',
+    '.line_height(px(LINE_HEIGHT_LABEL))'
+)) {
+    if (-not $panelRender.Contains($requiredActionContextContract)) {
+        throw 'Quick Launch action mode must use one lightweight Label context line.'
+    }
+}
+if ($panelRender.Contains('.bg(theme.element)') -or
+    -not $quickLaunchSource.Contains(
+        'fn action_mode_reuses_the_result_row_rails_and_only_adds_a_lightweight_context('
+    )) {
+    throw 'Quick Launch QL-04 must remain the same work surface rather than a second styled popup.'
+}
+$exitActionModeStart = $quickLaunchSource.IndexOf('    fn exit_action_mode(')
+$exitActionModeEnd = $quickLaunchSource.IndexOf(
+    '    fn replace_results(',
+    $exitActionModeStart
+)
+if ($exitActionModeStart -lt 0 -or $exitActionModeEnd -le $exitActionModeStart) {
+    throw 'Could not isolate the Quick Launch action-mode return boundary.'
+}
+$exitActionMode = $quickLaunchSource.Substring(
+    $exitActionModeStart,
+    $exitActionModeEnd - $exitActionModeStart
+)
+if ($exitActionMode.Contains('base_handle') -or
+    -not $exitActionMode.Contains('.action_mode') -or
+    -not $exitActionMode.Contains('.take()') -or
+    -not $quickLaunchSource.Contains(
+        'fn action_mode_returns_to_the_parent_viewport_on_its_first_frame('
+    )) {
+    throw 'Quick Launch action-mode return must preserve the parent viewport on its first frame.'
+}
+$firstFrameTestStart = $quickLaunchSource.IndexOf(
+    '    fn action_mode_returns_to_the_parent_viewport_on_its_first_frame('
+)
+$firstFrameTestEnd = $quickLaunchSource.IndexOf(
+    '    #[gpui::test]',
+    $firstFrameTestStart + 20
+)
+if ($firstFrameTestStart -lt 0 -or $firstFrameTestEnd -le $firstFrameTestStart) {
+    throw 'Could not isolate the Quick Launch action-mode first-frame regression.'
+}
+$firstFrameTest = $quickLaunchSource.Substring(
+    $firstFrameTestStart,
+    $firstFrameTestEnd - $firstFrameTestStart
+)
+foreach ($requiredFirstFrameContract in @(
+    'for exit_key in ["escape", "left", "backspace"]',
+    '.expect("render the first returned parent frame")',
+    'quick-launch-result-title-24',
+    'parent_scroll_offset'
+)) {
+    if (-not $firstFrameTest.Contains($requiredFirstFrameContract)) {
+        throw 'Every root action-mode exit must render the preserved lower viewport on its first frame.'
+    }
+}
+$catalogRefreshStart = $quickLaunchSource.IndexOf('    fn finish_catalog_refresh(')
+$catalogRefreshEnd = $quickLaunchSource.IndexOf(
+    '    fn schedule_quick_launch_preview(',
+    $catalogRefreshStart
+)
+if ($catalogRefreshStart -lt 0 -or $catalogRefreshEnd -le $catalogRefreshStart) {
+    throw 'Could not isolate the Quick Launch catalog-refresh publication boundary.'
+}
+$catalogRefresh = $quickLaunchSource.Substring(
+    $catalogRefreshStart,
+    $catalogRefreshEnd - $catalogRefreshStart
+)
+if (-not $catalogRefresh.Contains('quick_launch_catalog_refresh_query(') -or
+    -not $catalogRefresh.Contains('panel.action_mode.is_some()') -or
+    -not $quickLaunchSource.Contains(
+        'fn catalog_refresh_never_replaces_the_frozen_action_mode_parent('
+    )) {
+    throw 'Catalog refresh must not replace or recenter the frozen parent while actions are open.'
+}
+if (-not $quickLaunchSmokeSource.Contains('IsActionModeSurface()') -or
+    -not $quickLaunchSmokeSource.Contains(
+        "throw 'Quick-launch did not render the selected first action row before capture.'"
+    )) {
+    throw 'The Release smoke must prove action-mode chrome rendered before accepting its screenshot.'
 }
 if (-not $quickLaunchSource.Contains('fn quick_launch_shortcut_target(') -or
     -not $quickLaunchSource.Contains('visible_result_range: Range<usize>') -or

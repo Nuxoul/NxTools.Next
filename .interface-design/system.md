@@ -147,6 +147,14 @@
   steals keyboard selection, and a direct click never executes beneath a different visible row.
   Selection changes only semantic text/icon emphasis around a real Shell image; it never adds an
   icon tile, accent card, border or independent motion.
+- Action mode is the same work surface and reuses the ordinary 40 px row shell: a transparent fixed
+  26 px icon rail, flexible Body 12/18 title rail and fixed 48 px trailing rail. The only mode chrome
+  is one 24 px Label 11/16 context line; it has no card fill, border, shadow or separate entrance
+  motion. Shell submenu chevrons stay inside the shared trailing rail.
+- Entering action mode freezes the parent result list, selected identity and scroll handle. Escape,
+  root-level Left and empty-filter Backspace restore the saved query while action mode still owns
+  input-change handling, then reveal that retained list at the exact prior offset on the first frame.
+  Returning never clears the viewport to zero or launches a replacement search that later recenters it.
 
 ### Work states
 
