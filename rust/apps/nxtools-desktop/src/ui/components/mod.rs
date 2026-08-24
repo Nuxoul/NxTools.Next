@@ -1,4 +1,5 @@
 pub(crate) mod action;
+pub(crate) mod custom_command_editor;
 pub(crate) mod dialog;
 pub(crate) mod field;
 pub(crate) mod hotkey;

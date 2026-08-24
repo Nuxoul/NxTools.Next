@@ -15,6 +15,8 @@ $volumeScopePath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\
 $volumeScopeSource = Get-Content -Raw -LiteralPath $volumeScopePath
 $pathListPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\path_list.rs'
 $pathListSource = Get-Content -Raw -LiteralPath $pathListPath
+$customCommandEditorPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\custom_command_editor.rs'
+$customCommandEditorSource = Get-Content -Raw -LiteralPath $customCommandEditorPath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -238,7 +240,7 @@ if (-not $pathListSource.Contains(
 }
 $exclusionRenderStart = $quickLaunchSettings.IndexOf('        let main_window = cx.entity();')
 $exclusionRenderEnd = $quickLaunchSettings.IndexOf(
-    '        let mut command_list = div()',
+    '        let selected_command = self',
     $exclusionRenderStart
 )
 if ($exclusionRenderStart -lt 0 -or $exclusionRenderEnd -le $exclusionRenderStart) {
@@ -338,6 +340,194 @@ if ($pickerRequest.Contains('current_directory = %') -or
     $pickerResult.Contains('data = %') -or
     $pickerResult.Contains('data = ?')) {
     throw 'Exclusion picker diagnostics must never log selected or current paths.'
+}
+$programPickerRequestStart = $quickLaunchSource.IndexOf(
+    '    pub(crate) fn request_custom_command_program('
+)
+$programPickerRequestEnd = $quickLaunchSource.IndexOf(
+    '    fn persist_and_sync_index_settings(',
+    $programPickerRequestStart
+)
+if ($programPickerRequestStart -lt 0 -or
+    $programPickerRequestEnd -le $programPickerRequestStart) {
+    throw 'Could not isolate the custom-command program picker request.'
+}
+$programPickerRequest = $quickLaunchSource.Substring(
+    $programPickerRequestStart,
+    $programPickerRequestEnd - $programPickerRequestStart
+)
+foreach ($requiredProgramPickerDiagnostic in @(
+    'quick_launch.custom_command_program_picker.started',
+    'correlation_id = %command_id',
+    'correlation_id = %attempt_correlation_id',
+    'started_at',
+    'elapsed_ms',
+    'native_error_code',
+    'outcome = "rejected"'
+)) {
+    if (-not $programPickerRequest.Contains($requiredProgramPickerDiagnostic)) {
+        throw 'The custom-command program picker must preserve correlated start/rejection diagnostics.'
+    }
+}
+$programPickerResultStart = $quickLaunchSource.LastIndexOf(
+    '        if self',
+    $programPickerAnchor
+)
+$programPickerResultEnd = $quickLaunchSource.IndexOf(
+    '        if let Some(automatic)',
+    $programPickerAnchor
+)
+if ($programPickerResultStart -lt 0 -or
+    $programPickerResultEnd -le $programPickerResultStart) {
+    throw 'Could not isolate the custom-command program picker result lifecycle.'
+}
+$programPickerResult = $quickLaunchSource.Substring(
+    $programPickerResultStart,
+    $programPickerResultEnd - $programPickerResultStart
+)
+foreach ($requiredProgramPickerResult in @(
+    'pending.correlation_id == correlation_id',
+    'quick_launch.custom_command_program_picker.completed',
+    'correlation_id = %pending.correlation_id',
+    'elapsed_ms',
+    'native_error_code',
+    '"selected"',
+    '"cancelled"',
+    'outcome = "failure"'
+)) {
+    if (-not $programPickerResult.Contains($requiredProgramPickerResult)) {
+        throw 'The custom-command program picker result must preserve identity and terminal diagnostics.'
+    }
+}
+if ($programPickerRequest.Contains('current_path = %') -or
+    $programPickerResult.Contains('path = %') -or
+    $programPickerResult.Contains('data = %') -or
+    $programPickerResult.Contains('data = ?')) {
+    throw 'Custom-command picker diagnostics must never log current or selected program paths.'
+}
+foreach ($requiredCustomCommandEditorContract in @(
+    'quick-launch-custom-command-master-detail',
+    'quick-launch-custom-command-master',
+    'quick-launch-custom-command-detail',
+    'const COMMAND_MASTER_ROW_HEIGHT: f32 = 42.0',
+    'CONTROL_HEIGHT_INPUT',
+    'CONTROL_HEIGHT_ACTION',
+    'Checkbox::new(',
+    'danger_ghost_button_variant',
+    'primary_button_variant'
+)) {
+    if (-not $customCommandEditorSource.Contains($requiredCustomCommandEditorContract)) {
+        throw 'QL-11 custom commands must use the shared tokenized master-detail editor contract.'
+    }
+}
+$commandMasterRowStart = $customCommandEditorSource.IndexOf('fn command_master_row(')
+$commandMasterRowEnd = $customCommandEditorSource.IndexOf('fn command_detail(', $commandMasterRowStart)
+if ($commandMasterRowStart -lt 0 -or $commandMasterRowEnd -le $commandMasterRowStart) {
+    throw 'Could not isolate the QL-11 custom-command master row.'
+}
+$commandMasterRow = $customCommandEditorSource.Substring(
+    $commandMasterRowStart,
+    $commandMasterRowEnd - $commandMasterRowStart
+)
+if ($commandMasterRow.Contains('quick-launch-command-enabled-') -or
+    $commandMasterRow.Contains('quick-launch-command-delete-')) {
+    throw 'QL-11 master rows must remain identity-only; enabled and delete belong to the detail editor.'
+}
+if (-not $mainWindowSource.Contains(
+    'fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_actions('
+)) {
+    throw 'QL-11 requires a real production MainWindow interaction and geometry regression.'
+}
+$customCommandCallbacksStart = $quickLaunchSettings.IndexOf('        let selected_command = self')
+$customCommandCallbacksEnd = $quickLaunchSettings.IndexOf(
+    '        let history_is_empty =',
+    $customCommandCallbacksStart
+)
+if ($customCommandCallbacksStart -lt 0 -or
+    $customCommandCallbacksEnd -le $customCommandCallbacksStart) {
+    throw 'Could not isolate the QL-11 custom-command callback boundary.'
+}
+$customCommandCallbacks = $quickLaunchSettings.Substring(
+    $customCommandCallbacksStart,
+    $customCommandCallbacksEnd - $customCommandCallbacksStart
+)
+foreach ($requiredCustomCommandCallback in @(
+    'custom_command_editor(',
+    'application.add_custom_command(cx)',
+    'application.update_custom_command(index, command, cx)',
+    'application.remove_custom_command(index, cx)',
+    'application.request_custom_command_program(index, current_path, cx)'
+)) {
+    if (-not $customCommandCallbacks.Contains($requiredCustomCommandCallback)) {
+        throw 'QL-11 explicit custom-command actions must retain their production behavior.'
+    }
+}
+if (($customCommandCallbacks.Split('cx.defer(move |cx|').Count - 1) -lt 4 -or
+    -not $mainWindowSource.Contains('pending_custom_command_program_picker') -or
+    -not $mainWindowSource.Contains('custom_command_draft_generation')) {
+    throw 'QL-11 cross-entity actions must defer and program-picker results must match the current draft identity.'
+}
+$customCommandDraftStart = $mainWindowSource.IndexOf('    fn select_custom_command_draft(')
+$customCommandSaveStart = $mainWindowSource.IndexOf('    fn save_selected_custom_command(')
+if ($customCommandDraftStart -lt 0 -or $customCommandSaveStart -le $customCommandDraftStart) {
+    throw 'Could not isolate the QL-11 custom-command draft selection boundary.'
+}
+$customCommandDraft = $mainWindowSource.Substring(
+    $customCommandDraftStart,
+    $customCommandSaveStart - $customCommandDraftStart
+)
+if (-not $customCommandDraft.Contains('cx.defer(move |cx|') -or
+    -not $customCommandDraft.Contains('source_window.update(cx') -or
+    -not $customCommandDraft.Contains('state.set_value(value, window, cx)')) {
+    throw 'QL-11 master selection must defer every InputState mutation to a later application turn.'
+}
+$customCommandSaveEnd = $mainWindowSource.IndexOf(
+    '    fn smooth_scroll_quick_find(',
+    $customCommandSaveStart
+)
+if ($customCommandSaveStart -lt 0 -or $customCommandSaveEnd -le $customCommandSaveStart) {
+    throw 'Could not isolate the QL-11 custom-command save boundary.'
+}
+$customCommandSave = $mainWindowSource.Substring(
+    $customCommandSaveStart,
+    $customCommandSaveEnd - $customCommandSaveStart
+)
+if (-not $customCommandSave.Contains('cx.defer(move |cx|') -or
+    -not $customCommandSave.Contains('application.update_custom_command(index, command, cx)')) {
+    throw 'QL-11 Save must defer its cross-entity persistence boundary.'
+}
+$customCommandPickerEventStart = $mainWindowSource.IndexOf(
+    '        let quick_launch_event_subscription = quick_launch.upgrade()'
+)
+$customCommandPickerEventEnd = $mainWindowSource.IndexOf(
+    '        let notification_subscription =',
+    $customCommandPickerEventStart
+)
+if ($customCommandPickerEventStart -lt 0 -or
+    $customCommandPickerEventEnd -le $customCommandPickerEventStart) {
+    throw 'Could not isolate the QL-11 program-picker event callback.'
+}
+$customCommandPickerEvent = $mainWindowSource.Substring(
+    $customCommandPickerEventStart,
+    $customCommandPickerEventEnd - $customCommandPickerEventStart
+)
+foreach ($requiredProgramPickerEventContract in @(
+    'pending.correlation_id == *correlation_id',
+    'pending.command_index == *index',
+    'pending.draft_generation == this.custom_command_draft_generation',
+    'source_window.update(cx',
+    'input.set_value(path, window, cx)'
+)) {
+    if (-not $customCommandPickerEvent.Contains($requiredProgramPickerEventContract)) {
+        throw 'QL-11 picker results must match the exact current draft before mutating InputState.'
+    }
+}
+if (($customCommandPickerEvent.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
+    -not $mainWindowSource.Contains(
+        'leaving and returning to the same index must still reject the stale picker identity'
+    ) -or
+    -not $mainWindowSource.Contains('picker cancellation must not modify the current draft')) {
+    throw 'QL-11 requires separately gated deferred picker apply plus stale-same-index and cancellation regressions.'
 }
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)

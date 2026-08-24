@@ -1147,6 +1147,34 @@ rust/apps/nxtools-desktop/src/ui/
 - 按用户要求，本切片未执行 Release 打包、未启动 NxTools，也未制作或接受 Release OS 截图。
   QL-10 的结构、行为与自动验收完成，下一切片为 QL-11 自定义命令。
 
+第四十个 P1 速启自定义命令切片（2026-08-24）：
+
+- QL-11 将命令页原先 190 px 高的私有紧凑卡片替换为一个 360 px 连续 master-detail。左侧固定
+  224 px master rail：标题栏承载标准 28 px“新增”，每条命令固定 42 px，只显示 Body 12/18 名称和
+  Mono Label 11/16 关键词/停用上下文；选中使用 neutral fill 与独立的非位移 2 px accent edge。
+  逐行 18 px 启用框和 20 px 删除动作已移除，列表行只承担身份与选择。
+- 右侧只有一个详情编辑器：48 px 标题栏承载标准 `Checkbox` 启用与静止态中性的 28 px 删除；关键词/
+  显示名称、参数模板/工作目录各自形成等宽双列并保持 8 px gutter，程序行使用同一 32 px 输入与
+  28 px picker，管理员运行和静默运行改用标准 `Checkbox`。保存是唯一 primary action，输入字段只在
+  显式保存时校验并提交；新增、启用、删除继续保持既有显式即时持久化语义。
+- 所有命令列表跨实体动作均延迟到下一 application turn。程序选择器继续使用 typed `PickProgram`，
+  新增 start/terminal 诊断保留 correlation、selected/cancelled/failure outcome、elapsed 与 native
+  error code，不记录当前或选中路径。MainWindow 同时使用 correlation、命令索引和 draft generation
+  保护未保存编辑器；切换、删除或重新创建选择后，旧 picker 回执不能写进新草稿。
+- 参考复核确认旧 NxTools 无自定义命令界面；Listary 的集合/当前选择/新增后选中/删除当前项只作为
+  行为证据，SwiftList 对象数组的左列表右字段编辑器只作为 master-detail 布局证据；没有复制其 WPF
+  视觉，且明确拒绝 SwiftList 的逐行尾部删除布局。
+- 红—绿真实生产 `MainWindow` GPUI 回归在 1060×720 命令页注入两条真实命令，锁定连续 shell、
+  224 px master/detail 邻接、42 px 行、Body/Label 行高、2 px 选中边、32 px 字段以及五个 28 px
+  动作；真实点击依次验证选择不持久化、详情启用、新旧 picker correlation、匹配结果只改未保存草稿、
+  离开并回到同一索引仍拒绝 stale result、取消 no-op、保存、新增与删除。内存 Platform 端点验证每次
+  picker gesture 只发送一条 typed `PickProgram`。
+  Quick Launch 定向为 120/120；严格 desktop Clippy、rustfmt、生命周期架构门禁与
+  `git diff --check` 通过。Desktop 全套为 330/334，仍仅有分类上移 selector、下载详情 progress
+  selector、网络尾距与剪贴板空态宽度四项既有失败。
+- 按用户要求，本切片未执行 Release 打包、未启动 NxTools，也未制作或接受 Release OS 截图。
+  QL-11 的结构、行为与自动验收完成，下一切片为 QL-12 诊断页收尾。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

@@ -830,6 +830,9 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   字符串已被混淆，不能据此臆测语法。
 - Listary `.diagnostics/listary-managed/Listary/Core/OptionsWindow/CommandOptionsViewModel.cs` 使用一组
   可新增、删除、启用和编辑的命令配置，不为每条命令创建独立插件进程。
+- Listary 同一 `CommandOptionsViewModel.cs` 还把可观察命令集合、当前选中命令、新增后选中新项、删除
+  当前项和最终 Apply 持久化放在同一主从状态模型中；本轮只把它作为选择与动作归属证据，不复制其
+  托管视图结构。
 - SwiftList `Plugins/CustomCommands/CustomCommandsInstantProvider.cs`、`ArgQuoting.cs` 与
   `CustomCommandsPlugin.cs` 提供可审计的具体模板规则：第一个空格前是大小写不敏感的精确关键词；
   `%s`/`{}` 引用全部后续输入，`%s1`/`{1}` 引用按单双引号分词后的第 N 个参数，越界替换为空；
@@ -837,6 +840,10 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 - NxTools.Next 的程序路径选择沿用现有类型化选择器边界：
   `PlatformCommand::PickProgram` → `PlatformCommandParser.ParsePickProgram` →
   `Windows/ProgramPicker.cs`。Rust 保留未保存编辑状态，C# 只打开系统 `OpenFileDialog` 并返回路径。
+- SwiftList `App/Views/Settings/Plugins/Templates.xaml`、`FieldRowTemplate.xaml` 与
+  `PluginConfigArrayItemViewModel.cs` 的对象数组设置使用真实 master-detail：左侧连续选择列表、下方
+  新增入口、右侧由分隔线隔开的纵向字段编辑器。其列表尾部逐行删除仅作反例；QL-11 明确将启用和
+  删除归属到当前详情，避免选择、状态和破坏性动作挤在同一行。
 
 #### 本纵向切片必须保持的不变量
 
@@ -852,9 +859,13 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 4. **执行**：Rust 在执行时展开程序、参数和工作目录中的 Windows 环境变量，生成独立的 executable、
    arguments、working directory、UAC 和隐藏标记；C# 只把该类型化请求映射为 `ProcessStartInfo`。
    工作目录未配置时使用程序父目录；Shell 执行、UAC 取消、路径无效或启动失败都返回相关错误。
-5. **布局与交互**：主界面使用紧凑命令列表和编辑区完成新增、编辑、启用、删除；程序输入右侧通过
-   类型化命令调用系统文件选择器，选择结果只写回当前未保存编辑器。速启结果显示命令标题和将执行的
-   摘要。Enter/单击执行并在成功回执后隐藏；右键只提供“运行命令”和“复制命令”，不请求 Windows
+5. **布局与交互**：主界面使用一个连续 master-detail：左侧 42 px 身份列表只承载 Body 标题与
+   Label 关键词/状态，新增归属 master 标题；右侧唯一详情编辑器承载启用、删除和保存。字段使用
+   32 px shell，相关字段等宽并保持 8 px gutter，标准 Checkbox 取代手绘小控件。切换选择只替换
+   当前草稿，不触发隐式保存；新增、启用、删除保持既有显式即时持久化，字段编辑只在保存时提交。
+   程序输入右侧通过类型化命令调用系统文件选择器，选择结果只写回当前未保存编辑器；取消或 stale
+   结果不修改草稿，诊断保留 correlation/outcome/elapsed/native code 且不记录路径。速启结果显示
+   命令标题和将执行的摘要。Enter/单击执行并在成功回执后隐藏；右键只提供“运行命令”和“复制命令”，不请求 Windows
    文件 Shell 菜单。图标优先请求程序 Shell 图标，失败使用 Material Symbols 命令图标。
 6. **生命周期**：平台启动成功后才记录历史并隐藏面板；失败时面板保持可见并显示错误。命令执行
    不重新读取当前前台窗口，也不把 GPUI 自己的 HWND 当工作目录上下文。

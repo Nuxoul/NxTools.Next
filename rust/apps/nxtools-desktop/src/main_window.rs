@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Local};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Context, Corner, Entity, FocusHandle, IntoElement,
-    KeyDownEvent, MouseButton, ObjectFit, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
-    Subscription, UniformListScrollHandle, Window, div, ease_in_out, img, point, prelude::*, px,
-    uniform_list,
+    Animation, AnimationExt, AnyElement, AnyWindowHandle, App, Context, Corner, Entity,
+    FocusHandle, IntoElement, KeyDownEvent, MouseButton, ObjectFit, Render, ScrollHandle,
+    ScrollStrategy, ScrollWheelEvent, Subscription, UniformListScrollHandle, Window, div,
+    ease_in_out, img, point, prelude::*, px, uniform_list,
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -51,6 +51,10 @@ use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
 use crate::ui::components::action::{
     SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
+};
+use crate::ui::components::custom_command_editor::{
+    CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState,
+    custom_command_editor,
 };
 use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setting_row};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
@@ -127,6 +131,20 @@ fn exclusion_selection_after_removal(item_count: usize, removed_index: usize) ->
     (item_count > 1).then(|| removed_index.min(item_count - 2))
 }
 
+fn custom_command_selection_after_removal(
+    remaining_item_count: usize,
+    removed_index: usize,
+) -> Option<usize> {
+    (remaining_item_count > 0).then(|| removed_index.min(remaining_item_count - 1))
+}
+
+#[derive(Clone, Copy)]
+struct PendingCustomCommandProgramPicker {
+    correlation_id: uuid::Uuid,
+    command_index: usize,
+    draft_generation: u64,
+}
+
 pub(crate) struct MainWindow {
     theme: Theme,
     shell: ShellState,
@@ -151,6 +169,8 @@ pub(crate) struct MainWindow {
     quick_find_scroll_animation: u64,
     selected_index_exclusion: Option<usize>,
     selected_custom_command: Option<usize>,
+    custom_command_draft_generation: u64,
+    pending_custom_command_program_picker: Option<PendingCustomCommandProgramPicker>,
     selected_download_task: Option<DownloadTaskId>,
     selected_download_tasks: HashSet<DownloadTaskId>,
     download_selection_anchor: Option<DownloadTaskId>,
@@ -1252,13 +1272,45 @@ impl MainWindow {
                 &application,
                 window,
                 |this, _application, event: &QuickLaunchApplicationEvent, window, cx| {
-                    let QuickLaunchApplicationEvent::CustomCommandProgramPicked { index, path } =
-                        event;
-                    if this.selected_custom_command == Some(*index) {
-                        this.custom_command_program.update(cx, |input, cx| {
-                            input.set_value(path.clone(), window, cx);
+                    let QuickLaunchApplicationEvent::CustomCommandProgramPicked {
+                        correlation_id,
+                        index,
+                        path,
+                    } = event;
+                    let matches_current_draft = this
+                        .pending_custom_command_program_picker
+                        .is_some_and(|pending| {
+                            pending.correlation_id == *correlation_id
+                                && pending.command_index == *index
+                                && pending.draft_generation == this.custom_command_draft_generation
+                        })
+                        && this.selected_custom_command == Some(*index);
+                    if matches_current_draft {
+                        let generation = this.custom_command_draft_generation;
+                        this.pending_custom_command_program_picker = None;
+                        let index = *index;
+                        let path = path.clone();
+                        let input = this.custom_command_program.clone();
+                        let view = cx.entity().downgrade();
+                        let source_window = window.window_handle();
+                        cx.defer(move |cx| {
+                            let still_selected = view
+                                .update(cx, |this, _| {
+                                    this.selected_custom_command == Some(index)
+                                        && this.custom_command_draft_generation == generation
+                                })
+                                .unwrap_or(false);
+                            if !still_selected {
+                                return;
+                            }
+                            cx.defer(move |cx| {
+                                let _ = source_window.update(cx, |_, window, cx| {
+                                    input.update(cx, |input, cx| {
+                                        input.set_value(path, window, cx);
+                                    });
+                                });
+                            });
                         });
-                        cx.notify();
                     }
                 },
             )
@@ -1303,6 +1355,8 @@ impl MainWindow {
             quick_find_scroll_animation: 0,
             selected_index_exclusion: None,
             selected_custom_command: initial_custom_command.as_ref().map(|_| 0),
+            custom_command_draft_generation: 0,
+            pending_custom_command_program_picker: None,
             selected_download_task: None,
             selected_download_tasks: HashSet::new(),
             download_selection_anchor: None,
@@ -1353,22 +1407,19 @@ impl MainWindow {
             .unwrap_or_default()
     }
 
-    fn select_custom_command(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let command = self.quick_launch.upgrade().and_then(|application| {
-            application
-                .read(cx)
-                .settings()
-                .custom_commands
-                .get(index)
-                .cloned()
-        });
-        let Some(command) = command else {
-            return;
-        };
+    fn select_custom_command_draft(
+        &mut self,
+        index: usize,
+        command: CustomCommandSettings,
+        source_window: AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
         self.selected_custom_command = Some(index);
+        self.custom_command_draft_generation = self.custom_command_draft_generation.wrapping_add(1);
+        self.pending_custom_command_program_picker = None;
         self.custom_command_run_as_admin = command.run_as_admin;
         self.custom_command_run_silently = command.run_silently;
-        for (input, value) in [
+        let fields = [
             (&self.custom_command_keyword, command.keyword),
             (&self.custom_command_title, command.title),
             (&self.custom_command_program, command.program),
@@ -1377,9 +1428,15 @@ impl MainWindow {
                 &self.custom_command_working_directory,
                 command.working_directory,
             ),
-        ] {
-            input.update(cx, |state, cx| state.set_value(value, window, cx));
-        }
+        ]
+        .map(|(input, value)| (input.clone(), value));
+        cx.defer(move |cx| {
+            let _ = source_window.update(cx, |_, window, cx| {
+                for (input, value) in fields {
+                    input.update(cx, |state, cx| state.set_value(value, window, cx));
+                }
+            });
+        });
         cx.notify();
     }
 
@@ -1413,8 +1470,11 @@ impl MainWindow {
             run_as_admin: self.custom_command_run_as_admin,
             run_silently: self.custom_command_run_silently,
         };
-        let _ = self.quick_launch.update(cx, |application, cx| {
-            application.update_custom_command(index, command, cx);
+        let quick_launch = self.quick_launch.clone();
+        cx.defer(move |cx| {
+            let _ = quick_launch.update(cx, |application, cx| {
+                application.update_custom_command(index, command, cx);
+            });
         });
         cx.notify();
     }
@@ -3040,345 +3100,170 @@ impl MainWindow {
             .is_some_and(|index| index >= settings.custom_commands.len())
         {
             self.selected_custom_command = None;
+            self.custom_command_draft_generation =
+                self.custom_command_draft_generation.wrapping_add(1);
+            self.pending_custom_command_program_picker = None;
         }
-        let mut command_list = div()
-            .id("quick-launch-custom-command-list")
-            .min_h_0()
-            .flex_1()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(3.0));
-        for (index, command) in settings.custom_commands.iter().cloned().enumerate() {
-            let selected = self.selected_custom_command == Some(index);
-            let select_index = index;
-            let toggle_command = command.clone();
-            let toggle_quick_launch = self.quick_launch.clone();
-            let delete_quick_launch = self.quick_launch.clone();
-            command_list = command_list.child(
-                div()
-                    .id(gpui::SharedString::from(format!(
-                        "quick-launch-command-{index}"
-                    )))
-                    .h(px(34.0))
-                    .px(px(6.0))
-                    .rounded(px(4.0))
-                    .bg(if selected {
-                        theme.element_selected
-                    } else {
-                        theme.canvas
-                    })
-                    .cursor_pointer()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .child(
-                        div()
-                            .id(gpui::SharedString::from(format!(
-                                "quick-launch-command-enabled-{index}"
-                            )))
-                            .size(px(18.0))
-                            .rounded(px(3.0))
-                            .border_1()
-                            .border_color(if command.enabled {
-                                theme.accent
-                            } else {
-                                theme.border
+        let selected_command = self
+            .selected_custom_command
+            .and_then(|index| settings.custom_commands.get(index).cloned());
+        let custom_commands_control = custom_command_editor(
+            theme,
+            CustomCommandEditorState {
+                commands: &settings.custom_commands,
+                selected_index: self.selected_custom_command,
+                inputs: CustomCommandEditorInputs {
+                    keyword: self.custom_command_keyword.clone(),
+                    title: self.custom_command_title.clone(),
+                    program: self.custom_command_program.clone(),
+                    arguments: self.custom_command_arguments.clone(),
+                    working_directory: self.custom_command_working_directory.clone(),
+                },
+                run_as_admin: self.custom_command_run_as_admin,
+                run_silently: self.custom_command_run_silently,
+            },
+            CustomCommandEditorActions {
+                select: Rc::new(cx.listener(
+                    move |this, event: &(usize, CustomCommandSettings), window, cx| {
+                        let (index, command) = event;
+                        this.select_custom_command_draft(
+                            *index,
+                            command.clone(),
+                            window.window_handle(),
+                            cx,
+                        );
+                    },
+                )),
+                add: Rc::new(cx.listener(move |this, _, window, cx| {
+                    let quick_launch = this.quick_launch.clone();
+                    let view = cx.entity().downgrade();
+                    let source_window = window.window_handle();
+                    cx.defer(move |cx| {
+                        let added = quick_launch
+                            .update(cx, |application, cx| {
+                                let index = application.add_custom_command(cx);
+                                let command =
+                                    application.settings().custom_commands.get(index).cloned();
+                                command.map(|command| (index, command))
                             })
-                            .bg(if command.enabled {
-                                theme.accent_soft
-                            } else {
-                                theme.surface
-                            })
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .when(command.enabled, |control| {
-                                control.child(Icon::new(MaterialIcon::Check).size(px(11.0)))
-                            })
-                            .on_click(move |_event, _window, cx| {
-                                let mut updated = toggle_command.clone();
-                                updated.enabled = !updated.enabled;
-                                let _ = toggle_quick_launch.update(cx, |application, cx| {
-                                    application.update_custom_command(index, updated, cx);
-                                });
-                                cx.stop_propagation();
-                            }),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .flex()
-                            .flex_col()
-                            .gap(px(1.0))
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_size(px(10.5))
-                                    .text_color(theme.text)
-                                    .child(if command.title.is_empty() {
-                                        "未命名命令".to_owned()
-                                    } else {
-                                        command.title.clone()
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .truncate()
-                                    .font_family(UI_MONO_FONT_FAMILY)
-                                    .text_size(px(9.0))
-                                    .text_color(theme.text_muted)
-                                    .child(if command.keyword.is_empty() {
-                                        "未设置关键词".to_owned()
-                                    } else {
-                                        command.keyword.clone()
-                                    }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id(gpui::SharedString::from(format!(
-                                "quick-launch-command-delete-{index}"
-                            )))
-                            .size(px(20.0))
-                            .rounded(px(3.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .hover(move |style| style.bg(theme.surface_hover))
-                            .child(
-                                Icon::new(MaterialIcon::Delete)
-                                    .size(px(12.0))
-                                    .text_color(theme.icon_muted),
-                            )
-                            .on_click(cx.listener(move |this, _event, _window, cx| {
-                                let removed = delete_quick_launch
-                                    .update(cx, |application, cx| {
-                                        application.remove_custom_command(index, cx)
-                                    })
-                                    .unwrap_or(false);
-                                if removed {
-                                    this.selected_custom_command = None;
-                                }
-                                cx.stop_propagation();
-                                cx.notify();
-                            })),
-                    )
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.select_custom_command(select_index, window, cx);
-                    })),
-            );
-        }
-        if settings.custom_commands.is_empty() {
-            command_list = command_list.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(10.0))
-                    .text_color(theme.text_muted)
-                    .child("还没有自定义命令"),
-            );
-        }
-        let add_command = Button::new("quick-launch-add-custom-command")
-            .ghost()
-            .compact()
-            .xsmall()
-            .h(px(24.0))
-            .px(px(7.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface_raised)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .child(Icon::new(MaterialIcon::Add).size(px(12.0)))
-                    .child(div().text_size(px(10.0)).child("新增")),
-            )
-            .on_click(cx.listener(move |this, _event, window, cx| {
-                if let Ok(index) = this
-                    .quick_launch
-                    .update(cx, |application, cx| application.add_custom_command(cx))
-                {
-                    this.select_custom_command(index, window, cx);
-                }
-            }));
-        let command_editor = if self.selected_custom_command.is_some() {
-            let admin_enabled = self.custom_command_run_as_admin;
-            let silent_enabled = self.custom_command_run_silently;
-            let selected_command = self.selected_custom_command;
-            let pick_program = Button::new("quick-launch-pick-command-program")
-                .ghost()
-                .compact()
-                .xsmall()
-                .h(px(26.0))
-                .w(px(28.0))
-                .p_0()
-                .rounded(px(4.0))
-                .border_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.surface_raised)
-                .tooltip("选择程序")
-                .child(Icon::new(MaterialIcon::Folder).size(px(13.0)))
-                .on_click(cx.listener(move |this, _event, _window, cx| {
-                    let Some(index) = selected_command else {
+                            .ok()
+                            .flatten();
+                        if let Some((index, command)) = added {
+                            let _ = view.update(cx, |this, cx| {
+                                this.select_custom_command_draft(index, command, source_window, cx);
+                            });
+                        }
+                    });
+                })),
+                set_enabled: Rc::new(cx.listener({
+                    let selected_command = selected_command.clone();
+                    move |this, enabled, _window, cx| {
+                        let Some(index) = this.selected_custom_command else {
+                            return;
+                        };
+                        let Some(mut command) = selected_command.clone() else {
+                            return;
+                        };
+                        command.enabled = *enabled;
+                        let quick_launch = this.quick_launch.clone();
+                        cx.defer(move |cx| {
+                            let _ = quick_launch.update(cx, |application, cx| {
+                                application.update_custom_command(index, command, cx);
+                            });
+                        });
+                    }
+                })),
+                delete: Rc::new(cx.listener(move |this, _, window, cx| {
+                    let Some(index) = this.selected_custom_command else {
                         return;
                     };
-                    let current_path = this.custom_command_program.read(cx).value().to_string();
-                    let _ = this.quick_launch.update(cx, |application, cx| {
-                        application.request_custom_command_program(index, current_path, cx);
+                    let quick_launch = this.quick_launch.clone();
+                    let view = cx.entity().downgrade();
+                    let source_window = window.window_handle();
+                    cx.defer(move |cx| {
+                        let removal = quick_launch
+                            .update(cx, |application, cx| {
+                                if !application.remove_custom_command(index, cx) {
+                                    return (false, None);
+                                }
+                                let commands = application.settings().custom_commands;
+                                let next_index =
+                                    custom_command_selection_after_removal(commands.len(), index);
+                                let next = next_index.and_then(|next_index| {
+                                    commands
+                                        .get(next_index)
+                                        .cloned()
+                                        .map(|command| (next_index, command))
+                                });
+                                (true, next)
+                            })
+                            .ok();
+                        let Some((true, next)) = removal else {
+                            return;
+                        };
+                        let _ = view.update(cx, |this, cx| {
+                            if let Some((next_index, command)) = next {
+                                this.select_custom_command_draft(
+                                    next_index,
+                                    command,
+                                    source_window,
+                                    cx,
+                                );
+                            } else {
+                                this.selected_custom_command = None;
+                                this.custom_command_draft_generation =
+                                    this.custom_command_draft_generation.wrapping_add(1);
+                                this.pending_custom_command_program_picker = None;
+                                cx.notify();
+                            }
+                        });
                     });
-                }));
-            div()
-                .min_w_0()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap(px(6.0))
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(6.0))
-                        .child(command_input_field(
-                            theme,
-                            "关键词",
-                            &self.custom_command_keyword,
-                            px(150.0),
-                        ))
-                        .child(command_input_field(
-                            theme,
-                            "显示名称",
-                            &self.custom_command_title,
-                            px(220.0),
-                        )),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_end()
-                        .gap(px(6.0))
-                        .child(command_input_field(
-                            theme,
-                            "程序",
-                            &self.custom_command_program,
-                            px(342.0),
-                        ))
-                        .child(pick_program),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(6.0))
-                        .child(command_input_field(
-                            theme,
-                            "参数模板",
-                            &self.custom_command_arguments,
-                            px(240.0),
-                        ))
-                        .child(command_input_field(
-                            theme,
-                            "工作目录",
-                            &self.custom_command_working_directory,
-                            px(240.0),
-                        )),
-                )
-                .child(
-                    div()
-                        .h(px(26.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .child(command_flag(
-                            theme,
-                            "quick-launch-command-admin",
-                            "管理员",
-                            admin_enabled,
-                            cx.listener(move |this, _, _, cx| {
-                                this.custom_command_run_as_admin = !admin_enabled;
-                                cx.notify();
-                            }),
-                        ))
-                        .child(command_flag(
-                            theme,
-                            "quick-launch-command-silent",
-                            "静默",
-                            silent_enabled,
-                            cx.listener(move |this, _, _, cx| {
-                                this.custom_command_run_silently = !silent_enabled;
-                                cx.notify();
-                            }),
-                        ))
-                        .child(div().flex_1())
-                        .child(
-                            Button::new("quick-launch-save-custom-command")
-                                .ghost()
-                                .compact()
-                                .xsmall()
-                                .h(px(24.0))
-                                .px(px(10.0))
-                                .rounded(px(4.0))
-                                .border_1()
-                                .border_color(theme.accent)
-                                .bg(theme.accent_soft)
-                                .child(div().text_size(px(10.0)).child("保存"))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.save_selected_custom_command(cx);
-                                })),
-                        ),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .min_w_0()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(10.5))
-                .text_color(theme.text_muted)
-                .child("选择左侧命令后编辑")
-                .into_any_element()
-        };
-        let custom_commands_control = div()
-            .h(px(190.0))
-            .rounded(px(5.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface)
-            .flex()
-            .child(
-                div()
-                    .w(px(238.0))
-                    .min_h_0()
-                    .p(px(8.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.0))
-                    .child(
-                        div()
-                            .h(px(24.0))
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(theme.text_secondary)
-                                    .child("自定义命令"),
-                            )
-                            .child(add_command),
-                    )
-                    .child(command_list),
-            )
-            .child(div().w(px(1.0)).bg(theme.border_subtle))
-            .child(div().min_w_0().flex_1().p(px(9.0)).child(command_editor))
-            .into_any_element();
+                })),
+                pick_program: Rc::new(cx.listener(move |this, _, _window, cx| {
+                    let Some(index) = this.selected_custom_command else {
+                        return;
+                    };
+                    let generation = this.custom_command_draft_generation;
+                    let current_path = this.custom_command_program.read(cx).value().to_string();
+                    let quick_launch = this.quick_launch.clone();
+                    let view = cx.entity().downgrade();
+                    cx.defer(move |cx| {
+                        let correlation_id = quick_launch
+                            .update(cx, |application, cx| {
+                                application.request_custom_command_program(index, current_path, cx)
+                            })
+                            .ok()
+                            .flatten();
+                        if let Some(correlation_id) = correlation_id {
+                            let _ = view.update(cx, |this, _| {
+                                if this.selected_custom_command == Some(index)
+                                    && this.custom_command_draft_generation == generation
+                                {
+                                    this.pending_custom_command_program_picker =
+                                        Some(PendingCustomCommandProgramPicker {
+                                            correlation_id,
+                                            command_index: index,
+                                            draft_generation: generation,
+                                        });
+                                }
+                            });
+                        }
+                    });
+                })),
+                set_run_as_admin: Rc::new(cx.listener(move |this, enabled, _window, cx| {
+                    this.custom_command_run_as_admin = *enabled;
+                    cx.notify();
+                })),
+                set_run_silently: Rc::new(cx.listener(move |this, enabled, _window, cx| {
+                    this.custom_command_run_silently = *enabled;
+                    cx.notify();
+                })),
+                save: Rc::new(cx.listener(move |this, _, _window, cx| {
+                    this.save_selected_custom_command(cx);
+                })),
+            },
+            cx,
+        );
         let history_is_empty =
             history_summary.total_activations == 0 && history_summary.recent_directories == 0;
         let history_description = format!(
@@ -4293,85 +4178,6 @@ fn compact_setting_row(
                 ),
         )
         .child(control)
-        .into_any_element()
-}
-
-fn command_input_field(
-    theme: Theme,
-    label: &'static str,
-    input: &Entity<InputState>,
-    width: gpui::Pixels,
-) -> AnyElement {
-    div()
-        .w(width)
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap(px(2.0))
-        .child(
-            div()
-                .text_size(px(9.0))
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .h(px(25.0))
-                .rounded(px(4.0))
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.canvas)
-                .px(px(6.0))
-                .flex()
-                .items_center()
-                .child(
-                    Input::new(input)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(false),
-                ),
-        )
-        .into_any_element()
-}
-
-fn command_flag(
-    theme: Theme,
-    id: &'static str,
-    label: &'static str,
-    enabled: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> AnyElement {
-    div()
-        .id(id)
-        .h(px(23.0))
-        .px(px(7.0))
-        .rounded(px(4.0))
-        .border_1()
-        .border_color(if enabled {
-            theme.accent
-        } else {
-            theme.border_subtle
-        })
-        .bg(if enabled {
-            theme.accent_soft
-        } else {
-            theme.canvas
-        })
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .when(enabled, |control| {
-            control.child(Icon::new(MaterialIcon::Check).size(px(10.0)))
-        })
-        .text_size(px(9.5))
-        .text_color(if enabled {
-            theme.accent_text
-        } else {
-            theme.text_muted
-        })
-        .child(label)
-        .on_click(on_click)
         .into_any_element()
 }
 
@@ -6431,7 +6237,7 @@ mod tests {
         TestAppContext, px, size,
     };
     use gpui_component::PixelsExt;
-    use nxtools_core::{AppConfig, ClipboardHotKeyModifier, SystemSettings};
+    use nxtools_core::{AppConfig, ClipboardHotKeyModifier, CustomCommandSettings, SystemSettings};
     use nxtools_download::{
         DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
         DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskId, RequestOrigin,
@@ -7607,6 +7413,447 @@ mod tests {
                 .size
                 .height,
             px(40.0)
+        );
+    }
+
+    #[gpui::test]
+    fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_actions(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary custom-command fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open custom-command catalog");
+        let (platform, platform_endpoint) = platform_bridge(8);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+        let mut config = AppConfig::default();
+        config.quick_launch.custom_commands = vec![
+            CustomCommandSettings {
+                enabled: true,
+                keyword: "docs".into(),
+                title: "Documentation".into(),
+                program: r"C:\Tools\docs.exe".into(),
+                argument_template: "%s".into(),
+                working_directory: r"C:\Docs".into(),
+                run_as_admin: false,
+                run_silently: false,
+            },
+            CustomCommandSettings {
+                enabled: false,
+                keyword: "build".into(),
+                title: "Build workspace".into(),
+                program: r"D:\Tools\build.exe".into(),
+                argument_template: "--target %s1".into(),
+                working_directory: r"D:\Workspace".into(),
+                run_as_admin: true,
+                run_silently: true,
+            },
+        ];
+        let quick_launch = cx.update(|cx| {
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    config,
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications.clone(),
+                )
+            })
+        });
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(1060.0), px(720.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window.quick_launch_settings_page = QuickLaunchSettingsPage::Commands;
+            main_window
+        });
+
+        window
+            .refresh()
+            .expect("render custom-command master-detail");
+        let shell = window
+            .debug_bounds("quick-launch-custom-command-master-detail")
+            .expect("one continuous custom-command shell");
+        let master = window
+            .debug_bounds("quick-launch-custom-command-master")
+            .expect("stable master rail");
+        let detail = window
+            .debug_bounds("quick-launch-custom-command-detail")
+            .expect("one detail editor");
+        assert_eq!(master.right(), detail.left());
+        assert_eq!(master.top(), shell.top() + px(1.0));
+        assert_eq!(detail.bottom(), shell.bottom() - px(1.0));
+
+        for index in 0..2 {
+            let row_selector: &'static str =
+                Box::leak(format!("quick-launch-command-{index}").into_boxed_str());
+            let title_selector: &'static str =
+                Box::leak(format!("quick-launch-command-title-{index}").into_boxed_str());
+            let context_selector: &'static str =
+                Box::leak(format!("quick-launch-command-context-{index}").into_boxed_str());
+            assert_eq!(
+                window
+                    .debug_bounds(row_selector)
+                    .expect("master row")
+                    .size
+                    .height,
+                px(42.0)
+            );
+            assert_eq!(
+                window
+                    .debug_bounds(title_selector)
+                    .expect("Body row title")
+                    .size
+                    .height,
+                px(LINE_HEIGHT_BODY)
+            );
+            assert_eq!(
+                window
+                    .debug_bounds(context_selector)
+                    .expect("Label row context")
+                    .size
+                    .height,
+                px(LINE_HEIGHT_LABEL)
+            );
+            assert!(
+                window
+                    .debug_bounds(Box::leak(
+                        format!("quick-launch-command-enabled-{index}").into_boxed_str()
+                    ))
+                    .is_none(),
+                "enable must belong to the detail heading, not each master row"
+            );
+            assert!(
+                window
+                    .debug_bounds(Box::leak(
+                        format!("quick-launch-command-delete-{index}").into_boxed_str()
+                    ))
+                    .is_none(),
+                "delete must not crowd every master row"
+            );
+        }
+        let selected_marker = window
+            .debug_bounds("quick-launch-command-selection-0")
+            .expect("non-shifting selected-command marker");
+        assert_eq!(selected_marker.size.width, px(2.0));
+        assert_eq!(
+            selected_marker.size.height,
+            window
+                .debug_bounds("quick-launch-command-0")
+                .expect("selected master row")
+                .size
+                .height
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-command-title-0")
+                .expect("selected command title")
+                .left(),
+            window
+                .debug_bounds("quick-launch-command-title-1")
+                .expect("unselected command title")
+                .left(),
+            "the selected edge must not shift the command copy rail"
+        );
+
+        for selector in [
+            "quick-launch-add-custom-command",
+            "quick-launch-command-enabled",
+            "quick-launch-delete-custom-command",
+            "quick-launch-pick-command-program",
+            "quick-launch-save-custom-command",
+        ] {
+            assert_eq!(
+                window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("missing bounded action {selector}"))
+                    .size
+                    .height,
+                px(28.0)
+            );
+        }
+        for selector in [
+            "quick-launch-command-field-keyword",
+            "quick-launch-command-field-title",
+            "quick-launch-command-field-program",
+            "quick-launch-command-field-arguments",
+            "quick-launch-command-field-working-directory",
+        ] {
+            assert_eq!(
+                window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("missing shared field shell {selector}"))
+                    .size
+                    .height,
+                px(32.0)
+            );
+        }
+
+        window.update(|window, cx| {
+            main_window.update(cx, |main_window, cx| {
+                main_window
+                    .custom_command_keyword
+                    .update(cx, |input, cx| input.set_value("unsaved-docs", window, cx));
+            });
+        });
+        let second_row = window
+            .debug_bounds("quick-launch-command-1")
+            .expect("second command row");
+        window.simulate_click(second_row.center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).custom_command_keyword.read(cx).value()),
+            "build"
+        );
+        assert_eq!(
+            window.update(|_, cx| {
+                quick_launch.read(cx).settings().custom_commands[0]
+                    .keyword
+                    .clone()
+            }),
+            "docs",
+            "changing master selection must not implicitly save the previous draft"
+        );
+
+        window.refresh().expect("render selected command editor");
+        let enabled = window
+            .debug_bounds("quick-launch-command-enabled")
+            .expect("detail enabled checkbox");
+        window.simulate_click(enabled.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(
+            window.update(|_, cx| quick_launch.read(cx).settings().custom_commands[1].enabled),
+            "the detail checkbox must preserve explicit immediate persistence"
+        );
+
+        window.refresh().expect("render enabled command editor");
+        let picker = window
+            .debug_bounds("quick-launch-pick-command-program")
+            .expect("program picker action");
+        window.simulate_click(picker.center(), Modifiers::default());
+        window.run_until_parked();
+        let picker_command = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one typed program picker command");
+        assert!(matches!(
+            picker_command.message,
+            Message::PlatformCommand(PlatformCommand::PickProgram(_))
+        ));
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "one picker gesture must emit one typed command"
+        );
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"E:\Picked\wrong-correlation.exe".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).custom_command_program.read(cx).value()),
+            r"D:\Tools\build.exe",
+            "a non-matching platform correlation must not reach the editor draft"
+        );
+        let first_row = window
+            .debug_bounds("quick-launch-command-0")
+            .expect("first command row");
+        window.simulate_click(first_row.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render first command draft");
+        let second_row = window
+            .debug_bounds("quick-launch-command-1")
+            .expect("second command row after leaving it");
+        window.simulate_click(second_row.center(), Modifiers::default());
+        window.run_until_parked();
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: picker_command.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"E:\Picked\replacement.exe".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).custom_command_program.read(cx).value()),
+            r"D:\Tools\build.exe",
+            "leaving and returning to the same index must still reject the stale picker identity"
+        );
+
+        window.refresh().expect("render cancellation picker");
+        let picker = window
+            .debug_bounds("quick-launch-pick-command-program")
+            .expect("cancellation picker action");
+        window.simulate_click(picker.center(), Modifiers::default());
+        window.run_until_parked();
+        let cancelled_picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one picker to cancel");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: cancelled_picker.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).custom_command_program.read(cx).value()),
+            r"D:\Tools\build.exe",
+            "picker cancellation must not modify the current draft"
+        );
+
+        window.refresh().expect("render first command selection");
+        let first_row = window
+            .debug_bounds("quick-launch-command-0")
+            .expect("first command row after picker cancellation");
+        window.simulate_click(first_row.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render current command picker");
+        let picker = window
+            .debug_bounds("quick-launch-pick-command-program")
+            .expect("current command picker action");
+        window.simulate_click(picker.center(), Modifiers::default());
+        window.run_until_parked();
+        let current_picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one picker for the current draft");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: current_picker.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"E:\Picked\docs.exe".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).custom_command_program.read(cx).value()),
+            r"E:\Picked\docs.exe"
+        );
+        assert_eq!(
+            window.update(|_, cx| {
+                quick_launch.read(cx).settings().custom_commands[0]
+                    .program
+                    .clone()
+            }),
+            r"C:\Tools\docs.exe",
+            "a matching picker result must remain an unsaved editor draft"
+        );
+
+        window.update(|window, cx| {
+            main_window.update(cx, |main_window, cx| {
+                main_window
+                    .custom_command_title
+                    .update(cx, |input, cx| input.set_value("Docs search", window, cx));
+            });
+        });
+        window.refresh().expect("render edited draft");
+        let save = window
+            .debug_bounds("quick-launch-save-custom-command")
+            .expect("save command action");
+        window.simulate_click(save.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| {
+                quick_launch.read(cx).settings().custom_commands[0]
+                    .title
+                    .clone()
+            }),
+            "Docs search"
+        );
+        assert_eq!(
+            window.update(|_, cx| {
+                quick_launch.read(cx).settings().custom_commands[0]
+                    .program
+                    .clone()
+            }),
+            r"E:\Picked\docs.exe"
+        );
+
+        window.refresh().expect("render command before delete");
+        let delete = window
+            .debug_bounds("quick-launch-delete-custom-command")
+            .expect("detail delete action");
+        window.simulate_click(delete.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().custom_commands.len()),
+            1
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_custom_command),
+            Some(0)
+        );
+
+        window.refresh().expect("render add command action");
+        let add = window
+            .debug_bounds("quick-launch-add-custom-command")
+            .expect("master add action");
+        window.simulate_click(add.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().custom_commands.len()),
+            2
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_custom_command),
+            Some(1)
         );
     }
 
@@ -10353,13 +10600,14 @@ mod tests {
     #[test]
     fn custom_command_program_uses_the_windows_picker() {
         let source = include_str!("main_window.rs");
+        let editor = include_str!("ui/components/custom_command_editor.rs");
         let quick_find = source
             .split("fn render_quick_find")
             .nth(1)
             .and_then(|source| source.split("fn render_clipboard").next())
             .expect("quick-launch settings source");
 
-        assert!(quick_find.contains("quick-launch-pick-command-program"));
+        assert!(editor.contains("quick-launch-pick-command-program"));
         assert!(quick_find.contains("request_custom_command_program"));
     }
 

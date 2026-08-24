@@ -142,6 +142,22 @@
 - Changing the master selection only changes the visible draft entity. It never persists, validates
   or starts native work before the settings shell's existing Apply boundary.
 
+### Custom command editor
+
+- Quick Launch custom commands specialize the master-detail pattern: the left row is identity only
+  (Body title plus Label keyword/status), while Add belongs to the master header and Enabled/Delete
+  belong to the detail heading. Save is the editor's sole primary action; row-local toggle/delete
+  controls are forbidden because they crowd navigation and action ownership into the same target.
+- Selecting a command only replaces the visible input draft. Field edits and a program-picker result
+  stay local until Save; selection never implicitly validates or persists another command. Existing
+  explicit Add, Enabled and Delete actions keep their immediate persistence semantics.
+- The program picker remains a typed, correlated Windows boundary. Cross-entity callbacks defer to
+  the next application turn; cancellation and stale results are no-ops. Diagnostics retain
+  correlation, outcome, elapsed time and native code without recording current or selected paths.
+- The editor uses standard 32 px input shells and Checkbox controls. Keyword/title and
+  arguments/working-directory form equal flexible pairs with an 8 px gutter; Add, picker, Delete and
+  Save use the shared 28 px action height. Destructive styling appears only on Delete hover/press.
+
 ### Settings matrix
 
 - Dense numeric and boolean policies may share one two-column matrix inside a single section. The

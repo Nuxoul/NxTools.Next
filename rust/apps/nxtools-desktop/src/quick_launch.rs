@@ -1274,7 +1274,11 @@ impl Render for QuickLaunchPreview {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum QuickLaunchApplicationEvent {
-    CustomCommandProgramPicked { index: usize, path: String },
+    CustomCommandProgramPicked {
+        correlation_id: uuid::Uuid,
+        index: usize,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1330,7 +1334,7 @@ pub(crate) struct QuickLaunchApplication {
     failed_icon_resources: HashMap<String, Instant>,
     indexer_service_bootstrap: IndexerServiceBootstrap,
     pending_exclusion_picker: Option<PendingIndexExclusionPicker>,
-    pending_program_picker: Option<(uuid::Uuid, usize)>,
+    pending_program_picker: Option<PendingProgramPicker>,
     elevated_helper_request: Option<ElevatedDirectoryHelperRequest>,
     pending_elevated_helper: Option<uuid::Uuid>,
     acknowledged_elevated_helper_pipe: Option<String>,
@@ -1355,6 +1359,13 @@ struct IndexSearchSession {
 #[derive(Clone, Copy)]
 struct PendingIndexExclusionPicker {
     correlation_id: uuid::Uuid,
+    started_at: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct PendingProgramPicker {
+    correlation_id: uuid::Uuid,
+    command_index: usize,
     started_at: Instant,
 }
 
@@ -2748,19 +2759,43 @@ impl QuickLaunchApplication {
         index: usize,
         current_path: String,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<uuid::Uuid> {
         if self.pending_program_picker.is_some()
             || index >= self.config.quick_launch.custom_commands.len()
         {
-            return;
+            return None;
         }
+        let attempt_correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
         match self
             .platform
             .send_command(PlatformCommand::PickProgram(PickProgramCommand {
                 current_path,
             })) {
-            Ok(command_id) => self.pending_program_picker = Some((command_id, index)),
+            Ok(command_id) => {
+                info!(
+                    event = "quick_launch.custom_command_program_picker.started",
+                    correlation_id = %command_id,
+                    "quick-launch custom-command program picker started"
+                );
+                self.pending_program_picker = Some(PendingProgramPicker {
+                    correlation_id: command_id,
+                    command_index: index,
+                    started_at,
+                });
+                cx.notify();
+                return Some(command_id);
+            }
             Err(error) => {
+                warn!(
+                    event = "quick_launch.custom_command_program_picker.completed",
+                    correlation_id = %attempt_correlation_id,
+                    outcome = "rejected",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    native_error_code = ?Option::<i32>::None,
+                    error_reported = true,
+                    "quick-launch custom-command program picker could not start"
+                );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         "quick-launch-command-program-picker",
@@ -2772,6 +2807,7 @@ impl QuickLaunchApplication {
             }
         }
         cx.notify();
+        None
     }
 
     fn persist_and_sync_index_settings(&mut self, cx: &mut Context<Self>) {
@@ -3366,20 +3402,50 @@ impl QuickLaunchApplication {
         if self
             .pending_program_picker
             .as_ref()
-            .is_some_and(|(command_id, _)| *command_id == correlation_id)
+            .is_some_and(|pending| pending.correlation_id == correlation_id)
         {
-            let (_, index) = self
+            let pending = self
                 .pending_program_picker
                 .take()
                 .expect("matching program picker must exist");
+            let elapsed_ms =
+                u64::try_from(pending.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
             if result.success {
+                let outcome = if result
+                    .data
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|path| !path.is_empty())
+                {
+                    "selected"
+                } else {
+                    "cancelled"
+                };
+                info!(
+                    event = "quick_launch.custom_command_program_picker.completed",
+                    correlation_id = %pending.correlation_id,
+                    outcome,
+                    elapsed_ms,
+                    native_error_code = ?result.native_error_code,
+                    "quick-launch custom-command program picker completed"
+                );
                 if let Some(path) = result.data.filter(|path| !path.trim().is_empty()) {
                     cx.emit(QuickLaunchApplicationEvent::CustomCommandProgramPicked {
-                        index,
+                        correlation_id: pending.correlation_id,
+                        index: pending.command_index,
                         path,
                     });
                 }
             } else {
+                error!(
+                    event = "quick_launch.custom_command_program_picker.completed",
+                    correlation_id = %pending.correlation_id,
+                    outcome = "failure",
+                    elapsed_ms,
+                    native_error_code = ?result.native_error_code,
+                    error_reported = result.error.is_some(),
+                    "quick-launch custom-command program picker failed"
+                );
                 let reason = result
                     .error
                     .unwrap_or_else(|| "Windows 未返回错误详情".into());
