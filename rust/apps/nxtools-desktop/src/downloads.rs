@@ -81,9 +81,8 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT,
-    SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
-    TITLEBAR_HEIGHT,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT,
+    SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
@@ -6085,12 +6084,12 @@ impl DownloadSettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Subscription {
-        cx.subscribe_in(input, window, |this, _, event: &InputEvent, _, cx| {
+        cx.subscribe_in(input, window, |_this, _, event: &InputEvent, _, cx| {
             if matches!(event, InputEvent::Change) {
                 #[cfg(test)]
                 {
-                    this.category_presentation_revision =
-                        this.category_presentation_revision.wrapping_add(1);
+                    _this.category_presentation_revision =
+                        _this.category_presentation_revision.wrapping_add(1);
                 }
                 cx.notify();
             }
@@ -10949,6 +10948,7 @@ struct CompletedTaskWindowActionSpec {
 }
 
 impl CompletedTaskWindowAction {
+    #[cfg(test)]
     const ALL: [Self; 3] = [Self::Drag, Self::Reveal, Self::Open];
 
     fn spec(self) -> CompletedTaskWindowActionSpec {
@@ -14317,8 +14317,14 @@ mod tests {
         let footer = window
             .debug_bounds(footer_selector)
             .expect("shared dialog footer");
-        assert_eq!(titlebar.size.height, px(TITLEBAR_HEIGHT));
-        assert_eq!(footer.size.height, px(SETTINGS_FOOTER_HEIGHT));
+        assert_eq!(
+            titlebar.size.height,
+            px(crate::ui::metrics::TITLEBAR_HEIGHT)
+        );
+        assert_eq!(
+            footer.size.height,
+            px(crate::ui::metrics::SETTINGS_FOOTER_HEIGHT)
+        );
         assert_eq!(titlebar.bottom(), body.top());
         assert_eq!(body.bottom(), footer.top());
         assert_eq!(footer.bottom(), shell.bottom());

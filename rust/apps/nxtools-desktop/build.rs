@@ -56,7 +56,7 @@ fn main() {
     fs::write(&resource_path, format!("1 ICON \"{resource_icon_path}\"\n"))
         .expect("write generated desktop icon resource");
 
-    embed_resource::compile_for(&resource_path, &["nxtools-desktop"], embed_resource::NONE)
+    embed_resource::compile_for(&resource_path, ["nxtools-desktop"], embed_resource::NONE)
         .manifest_optional()
         .expect("compile desktop icon resource");
 }
