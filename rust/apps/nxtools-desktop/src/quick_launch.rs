@@ -47,13 +47,15 @@ use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
 use crate::theme::{
-    COMPACT_RADIUS, META_TEXT_SIZE, RESULT_DETAIL_SIZE, RESULT_TITLE_SIZE, ROW_HORIZONTAL_PADDING,
-    SURFACE_INSET, Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
+    COMPACT_RADIUS, META_TEXT_SIZE, ROW_HORIZONTAL_PADDING, SURFACE_INSET, Theme, UI_FONT_FAMILY,
+    UI_MONO_FONT_FAMILY,
 };
 use crate::ui::components::state::{empty_state, progress_state};
-use crate::ui::metrics::{SPACING_2, SPACING_8};
-use crate::ui::native_window_handle;
+use crate::ui::metrics::{SPACING_2, SPACING_8, SPACING_12};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
+use crate::ui::{
+    PREVIEW_APPEAR_DURATION, native_window_handle, preview_media_surface, preview_shell,
+};
 
 mod file_dialog_search;
 use file_dialog_search::FileDialogSearchSession;
@@ -79,7 +81,6 @@ const SEARCH_INPUT_DEBOUNCE: Duration = Duration::from_millis(65);
 const QUICK_LAUNCH_PREVIEW_HOVER_DELAY: Duration = Duration::from_millis(420);
 const QUICK_LAUNCH_PREVIEW_SWITCH_DELAY: Duration = Duration::from_millis(110);
 const QUICK_LAUNCH_PREVIEW_LEAVE_DELAY: Duration = Duration::from_millis(140);
-const QUICK_LAUNCH_PREVIEW_APPEAR_DURATION: Duration = Duration::from_millis(120);
 const QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION: Duration = Duration::from_millis(90);
 const QUICK_LAUNCH_EMPTY_RESULTS_LABEL: &str = "没有匹配项";
 const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0;
@@ -91,10 +92,9 @@ const QUICK_LAUNCH_RESULT_SHORTCUT_HINTS: [&str; 9] = [
 ];
 const QUICK_LAUNCH_PREVIEW_WIDTH: f32 = 400.0;
 const QUICK_LAUNCH_PREVIEW_HEIGHT: f32 = 410.0;
+const QUICK_LAUNCH_PREVIEW_HEADER_HEIGHT: f32 = 72.0;
+const QUICK_LAUNCH_PREVIEW_FOOTER_HEIGHT: f32 = 30.0;
 const QUICK_LAUNCH_PREVIEW_GAP: f32 = 10.0;
-const QUICK_LAUNCH_PREVIEW_TITLE_SIZE: f32 = RESULT_TITLE_SIZE;
-const QUICK_LAUNCH_PREVIEW_DETAIL_SIZE: f32 = RESULT_DETAIL_SIZE;
-const QUICK_LAUNCH_PREVIEW_TIMESTAMP_SIZE: f32 = META_TEXT_SIZE;
 const QUICK_LAUNCH_TEXT_PREVIEW_LIMIT: usize = 96 * 1024;
 const QUICK_LAUNCH_IMAGE_FILE_LIMIT: u64 = 24 * 1024 * 1024;
 const QUICK_LAUNCH_IMAGE_PIXEL_LIMIT: u64 = 16_000_000;
@@ -528,7 +528,7 @@ fn quick_launch_preview_open_action(
     }
 }
 
-fn quick_launch_preview_should_hide_while_loading(
+fn quick_launch_preview_target_changed(
     visible: bool,
     displayed_entry_id: Option<&str>,
     requested_entry_id: &str,
@@ -946,7 +946,6 @@ struct QuickLaunchWindow {
 #[derive(Default)]
 struct QuickLaunchPreviewSession {
     window: Option<QuickLaunchPreviewWindow>,
-    native_window_handle: i64,
     visible: bool,
     displayed_entry_id: Option<String>,
     generation: u64,
@@ -966,8 +965,14 @@ struct QuickLaunchPreviewCandidate {
 
 #[derive(Clone)]
 struct QuickLaunchPreviewWindow {
-    window: AnyWindowHandle,
+    identity: QuickLaunchPreviewWindowIdentity,
     view: WeakEntity<QuickLaunchPreview>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct QuickLaunchPreviewWindowIdentity {
+    gpui: AnyWindowHandle,
+    native: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -980,6 +985,7 @@ enum QuickLaunchPreviewStagePhase {
 struct QuickLaunchPreviewPendingStage {
     command_id: uuid::Uuid,
     phase: QuickLaunchPreviewStagePhase,
+    window_identity: QuickLaunchPreviewWindowIdentity,
     generation: u64,
     entry_id: String,
     payload: Option<QuickLaunchPreviewPayload>,
@@ -994,6 +1000,7 @@ struct QuickLaunchPreview {
     text_scroll: ScrollHandle,
     appearance_generation: u64,
     is_exiting: bool,
+    motion_suppressed: bool,
 }
 
 impl QuickLaunchPreview {
@@ -1007,6 +1014,7 @@ impl QuickLaunchPreview {
             text_scroll: ScrollHandle::new(),
             appearance_generation: 1,
             is_exiting: false,
+            motion_suppressed: false,
         }
     }
 
@@ -1019,19 +1027,23 @@ impl QuickLaunchPreview {
 
     fn begin_enter(&mut self, cx: &mut Context<Self>) {
         self.is_exiting = false;
+        self.motion_suppressed = false;
         self.appearance_generation = self.appearance_generation.wrapping_add(1).max(1);
         cx.notify();
     }
 
-    fn resume_enter(&mut self, cx: &mut Context<Self>) {
+    fn cancel_exit(&mut self, cx: &mut Context<Self>) {
         if self.is_exiting {
-            self.begin_enter(cx);
+            self.is_exiting = false;
+            self.motion_suppressed = true;
+            cx.notify();
         }
     }
 
     fn begin_exit(&mut self, cx: &mut Context<Self>) {
         if !self.is_exiting {
             self.is_exiting = true;
+            self.motion_suppressed = false;
             self.appearance_generation = self.appearance_generation.wrapping_add(1).max(1);
             cx.notify();
         }
@@ -1060,13 +1072,12 @@ impl Render for QuickLaunchPreview {
         let application = self.application.clone();
         let appearance_generation = self.appearance_generation;
         let is_exiting = self.is_exiting;
+        let motion_suppressed = self.motion_suppressed;
         let has_timestamps =
             self.payload.created_at.is_some() || self.payload.modified_at.is_some();
         let body = match &self.payload.body {
-            QuickLaunchPreviewBody::Image(image) => div()
+            QuickLaunchPreviewBody::Image(image) => preview_media_surface(theme)
                 .size_full()
-                .overflow_hidden()
-                .bg(theme.surface)
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1076,85 +1087,61 @@ impl Render for QuickLaunchPreview {
                         .object_fit(ObjectFit::Contain),
                 )
                 .into_any_element(),
-            QuickLaunchPreviewBody::Text { text, truncated } => div()
+            QuickLaunchPreviewBody::Text { text, truncated } => preview_media_surface(theme)
                 .id("quick-launch-preview-text")
                 .size_full()
                 .track_scroll(&self.text_scroll)
                 .overflow_y_scroll()
                 .vertical_scrollbar(&self.text_scroll)
-                .p(px(12.0))
-                .text_size(px(12.0))
-                .line_height(px(19.0))
+                .p(px(SPACING_12))
+                .text_size(px(TEXT_BODY))
+                .line_height(px(LINE_HEIGHT_BODY))
                 .text_color(theme.text_secondary)
                 .font_family(UI_MONO_FONT_FAMILY)
                 .whitespace_normal()
-                .child(text.clone())
+                .flex()
+                .flex_col()
+                .items_start()
+                .justify_start()
+                .child(
+                    div()
+                        .debug_selector(|| "quick-launch-preview-text-copy".into())
+                        .w_full()
+                        .child(text.clone()),
+                )
                 .when(*truncated, |content| {
                     content.child(
                         div()
-                            .mt(px(10.0))
-                            .pt(px(8.0))
+                            .mt(px(SPACING_8))
+                            .pt(px(SPACING_8))
                             .border_t_1()
                             .border_color(theme.border_subtle)
-                            .text_size(px(10.0))
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_muted)
                             .child("仅显示文件开头的 96 KB"),
                     )
                 })
                 .into_any_element(),
-            QuickLaunchPreviewBody::Metadata { icon } => div()
+            QuickLaunchPreviewBody::Metadata { icon } => preview_media_surface(theme)
                 .size_full()
-                .p(px(12.0))
                 .flex()
                 .items_center()
-                .child(
-                    div()
-                        .w_full()
-                        .h(px(54.0))
-                        .px(px(10.0))
-                        .rounded(px(COMPACT_RADIUS))
-                        .bg(theme.surface)
-                        .flex()
-                        .items_center()
-                        .gap(px(10.0))
-                        .text_color(theme.icon_muted)
-                        .child(gpui_component::Icon::new(*icon).size(px(22.0)))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .gap(px(2.0))
-                                .child(
-                                    div()
-                                        .text_size(px(RESULT_DETAIL_SIZE))
-                                        .font_weight(gpui::FontWeight::MEDIUM)
-                                        .text_color(theme.text_secondary)
-                                        .child("没有轻量预览"),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(META_TEXT_SIZE))
-                                        .text_color(theme.text_muted)
-                                        .child("仍可直接打开、定位或执行操作"),
-                                ),
-                        ),
-                )
+                .justify_center()
+                .child(empty_state(
+                    theme,
+                    "quick-launch-preview-unavailable",
+                    *icon,
+                    "没有轻量预览",
+                    "仍可直接打开、定位或执行操作。",
+                ))
                 .into_any_element(),
         };
 
-        div()
+        let preview = preview_shell(theme)
             .id("quick-launch-preview-root")
-            .size_full()
-            .overflow_hidden()
-            .border_1()
-            .border_color(theme.window_border)
-            .bg(theme.canvas)
-            .font_family(UI_FONT_FAMILY)
-            .text_color(theme.text)
-            .flex()
-            .flex_col()
+            .w(px(QUICK_LAUNCH_PREVIEW_WIDTH))
+            .h(px(QUICK_LAUNCH_PREVIEW_HEIGHT))
             .on_hover(move |hovered, _window, cx| {
                 let inside = *hovered;
                 schedule_application_update(
@@ -1167,26 +1154,31 @@ impl Render for QuickLaunchPreview {
             })
             .child(
                 div()
-                    .h(px(if has_timestamps { 72.0 } else { 52.0 }))
+                    .debug_selector(|| "quick-launch-preview-header".into())
+                    .h(px(QUICK_LAUNCH_PREVIEW_HEADER_HEIGHT))
                     .flex_none()
-                    .px(px(12.0))
+                    .px(px(SPACING_12))
                     .border_b_1()
                     .border_color(theme.border_subtle)
                     .flex()
                     .flex_col()
                     .justify_center()
-                    .gap(px(2.0))
+                    .gap(px(SPACING_2))
                     .child(
                         div()
-                            .text_size(px(QUICK_LAUNCH_PREVIEW_TITLE_SIZE))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .h(px(LINE_HEIGHT_BODY))
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
                             .truncate()
                             .child(self.payload.name.clone()),
                     )
                     .child(
                         div()
-                            .text_size(px(QUICK_LAUNCH_PREVIEW_DETAIL_SIZE))
+                            .h(px(LINE_HEIGHT_LABEL))
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_secondary)
+                            .truncate()
                             .child(self.payload.detail.clone()),
                     )
                     .when(has_timestamps, |header| {
@@ -1195,8 +1187,9 @@ impl Render for QuickLaunchPreview {
                                 .w_full()
                                 .flex()
                                 .items_center()
-                                .gap(px(14.0))
-                                .text_size(px(QUICK_LAUNCH_PREVIEW_TIMESTAMP_SIZE))
+                                .gap(px(SPACING_12))
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
                                 .text_color(theme.text_muted)
                                 .when_some(self.payload.created_at.clone(), |timestamps, value| {
                                     timestamps.child(
@@ -1222,43 +1215,60 @@ impl Render for QuickLaunchPreview {
                         )
                     }),
             )
-            .child(div().min_h_0().flex_1().overflow_hidden().child(body))
             .child(
                 div()
-                    .h(px(30.0))
+                    .debug_selector(|| "quick-launch-preview-content".into())
+                    .min_h_0()
+                    .flex_1()
+                    .overflow_hidden()
+                    .p(px(SPACING_8))
+                    .child(body),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "quick-launch-preview-footer".into())
+                    .h(px(QUICK_LAUNCH_PREVIEW_FOOTER_HEIGHT))
                     .flex_none()
-                    .px(px(12.0))
+                    .px(px(SPACING_12))
                     .border_t_1()
                     .border_color(theme.border_subtle)
                     .flex()
                     .items_center()
-                    .text_size(px(META_TEXT_SIZE))
+                    .font_family(UI_MONO_FONT_FAMILY)
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
                     .text_color(theme.text_muted)
                     .truncate()
                     .child(self.payload.target.clone()),
-            )
-            .with_animation(
-                ("quick-launch-preview-motion", appearance_generation),
-                Animation::new(if is_exiting {
-                    QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION
-                } else {
-                    QUICK_LAUNCH_PREVIEW_APPEAR_DURATION
-                })
-                .with_easing(ease_out_quint()),
-                move |preview, delta| {
-                    if is_exiting {
-                        preview
-                            .relative()
-                            .top(px(-2.0 * delta))
-                            .opacity(1.0 - 0.1 * delta)
+            );
+        if motion_suppressed {
+            preview.into_any_element()
+        } else {
+            preview
+                .with_animation(
+                    ("quick-launch-preview-motion", appearance_generation),
+                    Animation::new(if is_exiting {
+                        QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION
                     } else {
-                        preview
-                            .relative()
-                            .top(px(3.0 * (1.0 - delta)))
-                            .opacity(0.9 + 0.1 * delta)
-                    }
-                },
-            )
+                        PREVIEW_APPEAR_DURATION
+                    })
+                    .with_easing(ease_out_quint()),
+                    move |preview, delta| {
+                        if is_exiting {
+                            preview
+                                .relative()
+                                .top(px(-2.0 * delta))
+                                .opacity(1.0 - 0.1 * delta)
+                        } else {
+                            preview
+                                .relative()
+                                .top(px(3.0 * (1.0 - delta)))
+                                .opacity(0.9 + 0.1 * delta)
+                        }
+                    },
+                )
+                .into_any_element()
+        }
     }
 }
 
@@ -2987,7 +2997,11 @@ impl QuickLaunchApplication {
                 let Some(popup) = self.popup.clone() else {
                     return;
                 };
-                let preview_window_handle = self.preview.native_window_handle;
+                let preview_window_handle = self
+                    .preview
+                    .window
+                    .as_ref()
+                    .map_or(0, |preview| preview.identity.native);
                 let should_hide = popup
                     .window
                     .update(cx, |_, _window, app| {
@@ -3934,7 +3948,9 @@ impl QuickLaunchApplication {
         cx: &mut Context<Self>,
     ) {
         if !quick_launch_result_capabilities(&result).preview {
-            self.hide_quick_launch_preview_window(cx);
+            if entered {
+                self.dismiss_quick_launch_preview(cx);
+            }
             return;
         }
         let entry_id = result.entry.id.clone();
@@ -3952,17 +3968,13 @@ impl QuickLaunchApplication {
                 .pending_stage
                 .as_ref()
                 .is_some_and(|stage| stage.entry_id != entry_id)
-                || quick_launch_preview_should_hide_while_loading(
+                || quick_launch_preview_target_changed(
                     self.preview.visible,
                     self.preview.displayed_entry_id.as_deref(),
                     &entry_id,
                 );
-            if switching_target {
-                self.animate_quick_launch_preview_exit(cx);
-            } else if self.preview.visible
-                && self.preview.displayed_entry_id.as_deref() == Some(entry_id.as_str())
-            {
-                self.resume_quick_launch_preview_motion(cx);
+            if self.preview.visible {
+                self.cancel_quick_launch_preview_exit(cx);
             }
             if quick_launch_preview_open_action(
                 self.preview.window.is_some(),
@@ -4032,7 +4044,7 @@ impl QuickLaunchApplication {
         self.preview.pointer_inside = inside;
         self.preview.generation = self.preview.generation.wrapping_add(1).max(1);
         if inside {
-            self.resume_quick_launch_preview_motion(cx);
+            self.cancel_quick_launch_preview_exit(cx);
         } else if self.preview.hovered_entry_id.is_none() {
             self.schedule_quick_launch_preview_hide(QUICK_LAUNCH_PREVIEW_LEAVE_DELAY, cx);
         }
@@ -4055,12 +4067,12 @@ impl QuickLaunchApplication {
         .detach();
     }
 
-    fn resume_quick_launch_preview_motion(&mut self, cx: &mut Context<Self>) {
+    fn cancel_quick_launch_preview_exit(&mut self, cx: &mut Context<Self>) {
         self.preview.exit_generation = self.preview.exit_generation.wrapping_add(1).max(1);
         if let Some(preview) = self.preview.window.as_ref() {
             let _ = preview
                 .view
-                .update(cx, |preview, cx| preview.resume_enter(cx));
+                .update(cx, |preview, cx| preview.cancel_exit(cx));
         }
     }
 
@@ -4119,13 +4131,18 @@ impl QuickLaunchApplication {
                 .view
                 .update(cx, |preview, cx| preview.clear_image_asset(cx));
         }
+        let native_window_handle = self
+            .preview
+            .window
+            .as_ref()
+            .map_or(0, |preview| preview.identity.native);
         if self.preview.visible
-            && self.preview.native_window_handle != 0
+            && native_window_handle != 0
             && let Err(error) = self
                 .platform
                 .send_command(PlatformCommand::SetWindowVisibility(
                     SetWindowVisibilityCommand {
-                        window_handle: self.preview.native_window_handle,
+                        window_handle: native_window_handle,
                         visible: false,
                     },
                 ))
@@ -4164,7 +4181,7 @@ impl QuickLaunchApplication {
             &payload.entry_id,
         );
         if action == QuickLaunchPreviewOpenAction::Ignore {
-            self.resume_quick_launch_preview_motion(cx);
+            self.cancel_quick_launch_preview_exit(cx);
             return;
         }
         if action == QuickLaunchPreviewOpenAction::Reuse {
@@ -4257,9 +4274,11 @@ impl QuickLaunchApplication {
                     }
                     return;
                 };
-                self.preview.native_window_handle = *native_slot.borrow();
                 self.preview.window = Some(QuickLaunchPreviewWindow {
-                    window: window.into(),
+                    identity: QuickLaunchPreviewWindowIdentity {
+                        gpui: window.into(),
+                        native: *native_slot.borrow(),
+                    },
                     view,
                 });
                 self.preview.visible = true;
@@ -4268,7 +4287,6 @@ impl QuickLaunchApplication {
                 self.restore_quick_launch_panel_keyboard_focus(cx);
             }
             Err(error) => {
-                self.preview.native_window_handle = 0;
                 self.preview.visible = false;
                 self.preview.displayed_entry_id = None;
                 if let Some(image) = image_asset {
@@ -4307,10 +4325,11 @@ impl QuickLaunchApplication {
         candidate: QuickLaunchPreviewCandidate,
         cx: &mut Context<Self>,
     ) {
-        if self.preview.window.is_none() {
+        let Some(preview_window) = self.preview.window.as_ref() else {
             return;
-        }
-        let native_window_handle = self.preview.native_window_handle;
+        };
+        let window_identity = preview_window.identity;
+        let native_window_handle = window_identity.native;
         if native_window_handle == 0 {
             self.preview.window = None;
             self.show_quick_launch_preview(payload, candidate, cx);
@@ -4320,6 +4339,7 @@ impl QuickLaunchApplication {
         let mut stage = QuickLaunchPreviewPendingStage {
             command_id: uuid::Uuid::nil(),
             phase: QuickLaunchPreviewStagePhase::MoveOffscreen,
+            window_identity,
             generation: self.preview.generation,
             entry_id,
             payload: Some(payload),
@@ -4368,6 +4388,19 @@ impl QuickLaunchApplication {
             .pending_stage
             .take()
             .expect("matching quick-launch preview stage must exist");
+        if self
+            .preview
+            .window
+            .as_ref()
+            .is_none_or(|preview| preview.identity != stage.window_identity)
+        {
+            return true;
+        }
+        if self.preview.generation != stage.generation
+            || self.preview.hovered_entry_id.as_deref() != Some(stage.entry_id.as_str())
+        {
+            return true;
+        }
         if !success {
             warn!(
                 %correlation_id,
@@ -4378,19 +4411,13 @@ impl QuickLaunchApplication {
             self.hide_quick_launch_preview_window(cx);
             return true;
         }
-        if self.preview.generation != stage.generation
-            || self.preview.hovered_entry_id.as_deref() != Some(stage.entry_id.as_str())
-        {
-            self.hide_quick_launch_preview_window(cx);
-            return true;
-        }
         match stage.phase {
             QuickLaunchPreviewStagePhase::MoveOffscreen if !self.preview.visible => {
                 match self
                     .platform
                     .send_command(PlatformCommand::SetWindowVisibility(
                         SetWindowVisibilityCommand {
-                            window_handle: self.preview.native_window_handle,
+                            window_handle: stage.window_identity.native,
                             visible: true,
                         },
                     )) {
@@ -4415,7 +4442,7 @@ impl QuickLaunchApplication {
                 let _ = self
                     .platform
                     .send_command(PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
-                        window_handle: self.preview.native_window_handle,
+                        window_handle: stage.window_identity.native,
                         enabled: true,
                     }));
                 self.preview.visible = true;
@@ -4435,6 +4462,7 @@ impl QuickLaunchApplication {
             return;
         };
         let QuickLaunchPreviewPendingStage {
+            window_identity,
             generation,
             entry_id,
             payload,
@@ -4450,8 +4478,7 @@ impl QuickLaunchApplication {
         let image_asset = quick_launch_preview_image_asset(&payload);
         let view = preview.view.clone();
         let application = cx.entity().downgrade();
-        let native_window_handle = self.preview.native_window_handle;
-        let update = preview.window.update(cx, move |_, window, app| {
+        let update = preview.identity.gpui.update(cx, move |_, window, app| {
             if view
                 .update(app, |preview, cx| preview.set_payload(payload, cx))
                 .is_err()
@@ -4460,11 +4487,15 @@ impl QuickLaunchApplication {
             }
             window.on_next_frame(move |_, app| {
                 let _ = application.update(app, |application, cx| {
-                    if application.preview.generation != generation
+                    if application
+                        .preview
+                        .window
+                        .as_ref()
+                        .is_none_or(|preview| preview.identity != window_identity)
+                        || application.preview.generation != generation
                         || application.preview.hovered_entry_id.as_deref()
                             != Some(entry_id.as_str())
                     {
-                        application.hide_quick_launch_preview_window(cx);
                         return;
                     }
                     let x = (bounds.origin.x.as_f32() * panel_scale_factor).round() as i32;
@@ -4473,7 +4504,7 @@ impl QuickLaunchApplication {
                         .platform
                         .send_command(PlatformCommand::SetWindowPosition(
                             SetWindowPositionCommand {
-                                window_handle: native_window_handle,
+                                window_handle: window_identity.native,
                                 x,
                                 y,
                             },
@@ -4483,6 +4514,7 @@ impl QuickLaunchApplication {
                                 Some(QuickLaunchPreviewPendingStage {
                                     command_id,
                                     phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
+                                    window_identity,
                                     generation,
                                     entry_id,
                                     payload: None,
@@ -4502,7 +4534,6 @@ impl QuickLaunchApplication {
         });
         if update.is_err() {
             self.preview.window = None;
-            self.preview.native_window_handle = 0;
             self.preview.visible = false;
             self.preview.displayed_entry_id = None;
             if let Some(image) = image_asset {
@@ -8934,6 +8965,103 @@ mod tests {
     }
 
     #[gpui::test]
+    fn production_quick_launch_preview_uses_shared_fixed_shell_and_media_surface(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let payload = QuickLaunchPreviewPayload {
+            entry_id: "preview-image".into(),
+            name: "NxTools.png".into(),
+            detail: "PNG 图片 · 48 × 48".into(),
+            target: r"C:\fixtures\NxTools.png".into(),
+            created_at: Some("2026-08-24 12:00:00".into()),
+            modified_at: Some("2026-08-24 12:01:00".into()),
+            body: QuickLaunchPreviewBody::Image(Arc::new(Image::from_bytes(
+                ImageFormat::Png,
+                include_bytes!(
+                    "../../../../browser_extension/nxtools-interceptor/icons/icon-48.png"
+                )
+                .to_vec(),
+            ))),
+        };
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(
+                px(QUICK_LAUNCH_PREVIEW_WIDTH),
+                px(QUICK_LAUNCH_PREVIEW_HEIGHT),
+            ));
+            let preview = cx.new(|_| {
+                QuickLaunchPreview::new(
+                    payload,
+                    WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                )
+            });
+            Root::new(preview, window, cx)
+        });
+
+        window
+            .refresh()
+            .expect("render production Quick Launch preview");
+        let shell = window
+            .debug_bounds("preview-shell")
+            .expect("shared preview shell");
+        let header = window
+            .debug_bounds("quick-launch-preview-header")
+            .expect("stable preview identity header");
+        let media = window
+            .debug_bounds("preview-media-surface")
+            .expect("shared preview media surface");
+        let footer = window
+            .debug_bounds("quick-launch-preview-footer")
+            .expect("stable preview path footer");
+
+        assert_eq!(shell.size, size(px(400.0), px(410.0)));
+        assert_eq!(header.size.height, px(72.0));
+        assert_eq!(footer.size.height, px(30.0));
+        assert_eq!(media.size, size(px(382.0), px(290.0)));
+    }
+
+    #[gpui::test]
+    fn production_quick_launch_text_preview_starts_at_the_media_inset(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let payload = QuickLaunchPreviewPayload {
+            entry_id: "preview-text".into(),
+            name: "notes.txt".into(),
+            detail: "TXT 文件 · 24 B".into(),
+            target: r"C:\fixtures\notes.txt".into(),
+            created_at: None,
+            modified_at: None,
+            body: QuickLaunchPreviewBody::Text {
+                text: "first line\nsecond line".into(),
+                truncated: true,
+            },
+        };
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(
+                px(QUICK_LAUNCH_PREVIEW_WIDTH),
+                px(QUICK_LAUNCH_PREVIEW_HEIGHT),
+            ));
+            let preview = cx.new(|_| {
+                QuickLaunchPreview::new(
+                    payload,
+                    WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                )
+            });
+            Root::new(preview, window, cx)
+        });
+
+        window.refresh().expect("render text preview");
+        let media = window
+            .debug_bounds("preview-media-surface")
+            .expect("text preview media surface");
+        let copy = window
+            .debug_bounds("quick-launch-preview-text-copy")
+            .expect("top-aligned text preview copy");
+
+        assert_eq!(copy.left(), media.left() + px(SPACING_12));
+        assert_eq!(copy.top(), media.top() + px(SPACING_12));
+    }
+
+    #[gpui::test]
     fn keyboard_navigation_retains_focus_after_first_preview_frame(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let temp = tempfile::tempdir().expect("temporary keyboard preview test directory");
@@ -9030,7 +9158,8 @@ mod tests {
                 .window
                 .as_ref()
                 .expect("first keyboard preview window")
-                .window
+                .identity
+                .gpui
         });
         let preview_bounds = preview_window
             .update(cx, |_, window, _| window.bounds())
@@ -9091,6 +9220,7 @@ mod tests {
         };
         let first = make_result("first", &first_path);
         let second = make_result("second", &second_path);
+        let replacement = first.clone();
         let panel_bounds = Bounds::new(
             point(px(200.0), px(120.0)),
             size(px(PANEL_WIDTH), px(PANEL_HEIGHT)),
@@ -9110,6 +9240,44 @@ mod tests {
                 Some("second")
             );
             assert!(application.preview.window.is_some());
+        });
+
+        let visible_preview = application.read_with(cx, |application, _| {
+            application
+                .preview
+                .window
+                .as_ref()
+                .expect("visible reused preview window")
+                .view
+                .clone()
+        });
+        let interrupted_exit_generation = visible_preview
+            .update(cx, |preview, cx| {
+                preview.begin_exit(cx);
+                preview.appearance_generation
+            })
+            .expect("begin preview exit before target switch");
+        application.update(cx, |application, cx| {
+            application.schedule_quick_launch_preview(true, replacement, panel_bounds, 1.0, cx);
+        });
+        visible_preview
+            .read_with(cx, |preview, _| {
+                assert!(
+                    !preview.is_exiting,
+                    "a visible reused shell must not play an exit before replacement"
+                );
+                assert_eq!(
+                    preview.appearance_generation, interrupted_exit_generation,
+                    "cancelling an old exit must not animate the old payload back in"
+                );
+                assert!(
+                    preview.motion_suppressed,
+                    "the interrupted old payload must render without an animation wrapper"
+                );
+            })
+            .expect("visible reused preview view");
+        application.update(cx, |application, cx| {
+            application.schedule_quick_launch_preview(true, second.clone(), panel_bounds, 1.0, cx);
         });
 
         application.update(cx, |application, cx| {
@@ -9141,12 +9309,19 @@ mod tests {
 
         let failed_reveal = uuid::Uuid::new_v4();
         application.update(cx, |application, cx| {
+            let window_identity = application
+                .preview
+                .window
+                .as_ref()
+                .expect("failed reveal preview window")
+                .identity;
             application.preview.generation = 20;
             application.preview.hovered_entry_id = Some("second".into());
             application.preview.visible = true;
             application.preview.pending_stage = Some(QuickLaunchPreviewPendingStage {
                 command_id: failed_reveal,
                 phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
+                window_identity,
                 generation: 20,
                 entry_id: "second".into(),
                 payload: None,
@@ -9176,12 +9351,19 @@ mod tests {
 
         let successful_reveal = uuid::Uuid::new_v4();
         application.update(cx, |application, cx| {
+            let window_identity = application
+                .preview
+                .window
+                .as_ref()
+                .expect("successful reveal preview window")
+                .identity;
             application.preview.generation = 21;
             application.preview.hovered_entry_id = Some("second".into());
             application.preview.visible = true;
             application.preview.pending_stage = Some(QuickLaunchPreviewPendingStage {
                 command_id: successful_reveal,
                 phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
+                window_identity,
                 generation: 21,
                 entry_id: "second".into(),
                 payload: None,
@@ -9210,6 +9392,73 @@ mod tests {
                 Some("second")
             );
             assert!(application.preview.pending_stage.is_none());
+        });
+
+        let stale_window_stage = uuid::Uuid::new_v4();
+        application.update(cx, |application, cx| {
+            let preview_window = application
+                .preview
+                .window
+                .as_mut()
+                .expect("stale stage preview window");
+            preview_window.identity.native = 111;
+            let window_identity = preview_window.identity;
+            application.preview.generation = 22;
+            application.preview.hovered_entry_id = Some("second".into());
+            application.preview.visible = true;
+            application.preview.pending_stage = Some(QuickLaunchPreviewPendingStage {
+                command_id: stale_window_stage,
+                phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
+                window_identity,
+                generation: 22,
+                entry_id: "second".into(),
+                payload: None,
+                preview_size: size(
+                    px(QUICK_LAUNCH_PREVIEW_WIDTH),
+                    px(QUICK_LAUNCH_PREVIEW_HEIGHT),
+                ),
+                bounds: panel_bounds,
+                panel_scale_factor: 1.0,
+            });
+            application
+                .preview
+                .window
+                .as_mut()
+                .expect("replacement preview window")
+                .identity
+                .native = 222;
+            application.preview.displayed_entry_id = Some("current-window".into());
+            application.handle_command_result(
+                stale_window_stage,
+                PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+                cx,
+            );
+        });
+        application.read_with(cx, |application, _| {
+            assert_eq!(
+                application.preview.displayed_entry_id.as_deref(),
+                Some("current-window"),
+                "a stale stage must not publish into a replacement native window"
+            );
+            assert!(application.preview.pending_stage.is_none());
+        });
+
+        let generation_before_unsupported =
+            application.read_with(cx, |application, _| application.preview.generation);
+        let mut unsupported = search_result("website", ApplicationSource::WebUrl);
+        unsupported.entry.target = "https://example.com".into();
+        application.update(cx, |application, cx| {
+            application.schedule_quick_launch_preview(true, unsupported, panel_bounds, 1.0, cx);
+        });
+        application.read_with(cx, |application, _| {
+            assert!(application.preview.generation > generation_before_unsupported);
+            assert!(application.preview.hovered_entry_id.is_none());
+            assert!(!application.preview.visible);
         });
     }
 
@@ -9582,10 +9831,23 @@ mod tests {
     }
 
     #[test]
-    fn preview_header_has_a_clear_three_level_text_hierarchy() {
-        assert_eq!(QUICK_LAUNCH_PREVIEW_TITLE_SIZE, RESULT_TITLE_SIZE);
-        assert_eq!(QUICK_LAUNCH_PREVIEW_DETAIL_SIZE, RESULT_DETAIL_SIZE);
-        assert_eq!(QUICK_LAUNCH_PREVIEW_TIMESTAMP_SIZE, META_TEXT_SIZE);
+    fn preview_header_uses_shared_body_and_label_roles() {
+        let source = include_str!("quick_launch.rs");
+        let render = source
+            .split("impl Render for QuickLaunchPreview")
+            .nth(1)
+            .and_then(|source| {
+                source
+                    .split("pub(crate) enum QuickLaunchApplicationEvent")
+                    .next()
+            })
+            .expect("Quick Launch preview render");
+
+        assert!(render.contains(".text_size(px(TEXT_BODY))"));
+        assert!(render.contains(".line_height(px(LINE_HEIGHT_BODY))"));
+        assert!(render.contains(".text_size(px(TEXT_LABEL))"));
+        assert!(render.contains(".line_height(px(LINE_HEIGHT_LABEL))"));
+        assert!(!render.contains("QUICK_LAUNCH_PREVIEW_TITLE_SIZE"));
     }
 
     #[test]
@@ -9762,16 +10024,8 @@ mod tests {
             quick_launch_preview_open_action(true, true, Some("a"), "b"),
             QuickLaunchPreviewOpenAction::Reuse
         );
-        assert!(quick_launch_preview_should_hide_while_loading(
-            true,
-            Some("a"),
-            "b"
-        ));
-        assert!(!quick_launch_preview_should_hide_while_loading(
-            true,
-            Some("a"),
-            "a"
-        ));
+        assert!(quick_launch_preview_target_changed(true, Some("a"), "b"));
+        assert!(!quick_launch_preview_target_changed(true, Some("a"), "a"));
         assert!(QUICK_LAUNCH_PREVIEW_SWITCH_DELAY < QUICK_LAUNCH_PREVIEW_HOVER_DELAY);
     }
 
@@ -9847,7 +10101,7 @@ mod tests {
             .expect("quick-launch preview animated hide source");
         assert!(hide.contains("begin_exit(cx)"));
         assert!(hide.contains("timer(QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION)"));
-        assert!(QUICK_LAUNCH_PREVIEW_APPEAR_DURATION <= Duration::from_millis(140));
+        assert!(PREVIEW_APPEAR_DURATION <= Duration::from_millis(140));
     }
 
     #[test]

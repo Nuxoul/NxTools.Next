@@ -1021,6 +1021,27 @@ Reverified on 2026-08-24 before the QL-04 action-mode migration:
   previous offset on the first returned frame. Resetting the result scroll to zero and centering the
   selected row in a later query/result callback is a visible top-to-context jump and is not equivalent.
 
+Reverified on 2026-08-24 before the QL-05 preview migration:
+
+- The old `D:/RiderProject/NxTools` tree has no Quick Launch product surface, so it supplies no
+  launcher-preview behavior to preserve. Its clipboard preview remains relevant only as the product's
+  existing preview-content reference; QL-05 does not merge clipboard and launcher window lifecycles.
+- SwiftList `App/Services/QuickLookManager.cs::ShowOrUpdate` retains one `QuickLookWindow`, calls
+  `SetTarget` for selection changes and animates only the transition from hidden to visible. Reposition
+  and visible target updates do not replay the window entrance. `PositionWindow` also keeps a fixed
+  preview size independent of the owner's current result count and clamps it to the active monitor.
+- SwiftList `App/Views/QuickLook/QuickLookWindow.xaml(.cs)` keeps one stable header/content/footer
+  skeleton. A provider may reuse its content in place for a new target; replacement releases the old
+  preview before mounting the next. Media remains inside a dedicated content area rather than changing
+  outer-window chrome. Listary's managed `PreviewPopup`/`LauncherSearchWindow` confirms a separately
+  anchored preview popup, but its decompiled managed boundary does not expose enough template detail to
+  treat its visual internals as a source.
+- NxTools.Next QL-05 therefore retains the existing 400 x 410 non-activating, fixed-size auxiliary
+  window, generation/correlation guards, offscreen replacement staging, content limits and focus
+  restoration. The launcher and clipboard share only the opaque PreviewShell and neutral media carrier.
+  A reused visible launcher preview must keep its current shell until the replacement is ready and run
+  one 130 ms generation-scoped replacement entrance; it must not play an exit followed by another enter.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

@@ -991,6 +991,39 @@ rust/apps/nxtools-desktop/src/ui/
   连续面均已人工确认。125%/150% 继续由 Release 截图矩阵统一
   收口。QL-04 行为、生产窗口和包级 96 DPI 验收完成；下一切片为 QL-05 预览。
 
+第三十四个 P1 速启预览切片（2026-08-24）：
+
+- QL-05 抽出共享 `PreviewShell` 与媒体承托面：速启和剪贴板现在共用不透明石墨外壳、窗口边界、
+  中性媒体 surface 与 4 px 圆角，但仍各自拥有尺寸、窗口、指针和资源生命周期。速启预览保持
+  400×410 的不可激活独立窗口，并固定为 72 px 身份头部、8 px 内容内边距和 30 px 路径尾栏；
+  图片、文本和不可预览状态都进入同一连续内容面，内容类型不再改变外壳高度或生成内嵌卡片。
+- 预览文字迁移到共享 Body 12/18 与 Label 11/16，正文/路径只在扫描节奏需要时使用 Mono。真实
+  GPUI 生产窗口回归逐一锁定 400×410 外壳、72/30 px 头尾和 382×290 媒体区域；剪贴板生产渲染
+  同时由静态契约确认调用同一外壳与媒体 helper，防止两边重新分叉出私有边框和承托色。共享 helper
+  只提供 surface，不强加图片式 flex 居中；第二个真实 GPUI 回归确认文本从媒体面 12 px 左上内边距
+  开始，图片和空态才在各自分支中居中。
+- 修复复用预览时“先退场再入场”的双动效：已显示的旧内容会保留到 generation 匹配的新 payload
+  完成离屏 staging，然后只在 `set_payload` 播放一次共享 130 ms 入场；目标切换路径不再调用 exit。
+  明确离开仍保留 90 ms 退场，旧 load/stage/window 回调继续受 entry、generation 和 HWND 身份保护，
+  也不取得键盘焦点。真实生命周期测试直接读取复用中的生产 view，确认等待替换时 `is_exiting`
+  始终为 false；若旧 90 ms 退场被新目标打断，动画 generation 也保持不变，不会先让旧 payload
+  重新入场，旧 payload 会直接移除动画 wrapper，直到 replacement payload 发布。pending stage 通过
+  单一 window identity 同时冻结 GPUI window 与原生 HWND，不支持预览的目标先作废旧 generation，
+  next-frame 和原生结果只有双身份仍匹配时才可发布；Release 烟测还会拒绝没有同时保留 620×410
+  面板与 400×410 预览 HWND 的截图。
+- Quick Launch 定向回归为 110/110；严格 desktop Clippy、rustfmt、`git diff --check` 和升级后的
+  生命周期架构门禁均通过。Desktop 全套为 320/324，分类按钮 selector、网络尾距、剪贴板空态宽度
+  和下载详情 progress selector 四项失败与前序基线完全一致。完整验证留证后，官方包装脚本以
+  `-SkipVerification` 避免重复运行已知失败基线，并在 7.60 GiB headroom 下完成最终 Release、可信
+  二进制清单、PlatformHost publish、PE subsystem 与产品图标门禁；产物 desktop SHA-256 与本次
+  生成清单逐字匹配，配套 PlatformHost 也来自同一 publish。便携 Release 的受控服务初始化进入终态后，
+  烟测通过 `-ReuseExistingProcess` 复用同一 desktop / PlatformHost 进程，真实 PlatformHost 捕获的
+  95.9866 DPI
+  [联合实机图](audits/quick-launch-ql05-2026-08-24/01-preview-shell-100pct.png) 为 1070×434（含
+  两窗原生阴影），展示真实 Shell 应用图标、固定预览骨架和不可预览项目的共享中性承托面；同一
+  烟测完整通过。QL-05 行为、生产窗口与包级 96 DPI 检查点已经完成；125%/150% 尚未留证，
+  因此本切片不声明 Release 视觉批次验收完成，仍由截图矩阵统一收口，也未开始 QL-06 工作。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

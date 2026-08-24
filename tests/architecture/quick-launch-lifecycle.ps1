@@ -5,6 +5,8 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
+$previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
 $quickLaunchSmokeSource = Get-Content -Raw -LiteralPath $quickLaunchSmokePath
 $iconsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\icons.rs'
@@ -248,6 +250,20 @@ if (-not $quickLaunchSmokeSource.Contains('IsActionModeSurface()') -or
     )) {
     throw 'The Release smoke must prove action-mode chrome rendered before accepting its screenshot.'
 }
+if (-not $quickLaunchSmokeSource.Contains('[switch]$CapturePreview') -or
+    -not $quickLaunchSmokeSource.Contains('TryGetPanelAndPreviewBounds') -or
+    -not $quickLaunchSmokeSource.Contains(
+        'Quick-launch did not retain its fixed preview window before capture.'
+    )) {
+    throw 'The Release smoke must capture a real retained preview window together with the panel.'
+}
+if (-not $quickLaunchSmokeSource.Contains('[switch]$ReuseExistingProcess') -or
+    -not $quickLaunchSmokeSource.Contains('$ownsProcess = -not $ReuseExistingProcess') -or
+    -not $quickLaunchSmokeSource.Contains(
+        'if ($ownsProcess -and $process -and -not $process.HasExited)'
+    )) {
+    throw 'The Release smoke must never terminate a desktop process that it only borrowed.'
+}
 if (-not $quickLaunchSource.Contains('fn quick_launch_shortcut_target(') -or
     -not $quickLaunchSource.Contains('visible_result_range: Range<usize>') -or
     -not $quickLaunchSource.Contains(
@@ -258,6 +274,148 @@ if (-not $quickLaunchSource.Contains('fn quick_launch_shortcut_target(') -or
     )) {
     throw 'Quick Launch result shortcut rails require visible-range routing and production coverage.'
 }
+$previewRenderStart = $quickLaunchSource.IndexOf('impl Render for QuickLaunchPreview')
+$previewRenderEnd = $quickLaunchSource.IndexOf(
+    'pub(crate) enum QuickLaunchApplicationEvent',
+    $previewRenderStart
+)
+if ($previewRenderStart -lt 0 -or $previewRenderEnd -le $previewRenderStart) {
+    throw 'Could not isolate the production Quick Launch preview renderer.'
+}
+$previewRender = $quickLaunchSource.Substring(
+    $previewRenderStart,
+    $previewRenderEnd - $previewRenderStart
+)
+foreach ($requiredPreviewConstant in @(
+    'const QUICK_LAUNCH_PREVIEW_WIDTH: f32 = 400.0',
+    'const QUICK_LAUNCH_PREVIEW_HEIGHT: f32 = 410.0',
+    'const QUICK_LAUNCH_PREVIEW_HEADER_HEIGHT: f32 = 72.0',
+    'const QUICK_LAUNCH_PREVIEW_FOOTER_HEIGHT: f32 = 30.0'
+)) {
+    if (-not $quickLaunchSource.Contains($requiredPreviewConstant)) {
+        throw 'Quick Launch preview must preserve its fixed production skeleton.'
+    }
+}
+foreach ($requiredPreviewRenderContract in @(
+    'preview_shell(theme)',
+    'preview_media_surface(theme)',
+    'quick-launch-preview-header',
+    'quick-launch-preview-content',
+    'quick-launch-preview-footer',
+    'quick-launch-preview-text-copy',
+    '.p(px(SPACING_8))',
+    '.text_size(px(TEXT_BODY))',
+    '.line_height(px(LINE_HEIGHT_BODY))',
+    '.text_size(px(TEXT_LABEL))',
+    '.line_height(px(LINE_HEIGHT_LABEL))',
+    '.items_start()',
+    '.justify_start()',
+    'PREVIEW_APPEAR_DURATION'
+)) {
+    if (-not $previewRender.Contains($requiredPreviewRenderContract)) {
+        throw 'Quick Launch preview must reuse the shared tokenized shell and media surface.'
+    }
+}
+if ($previewRender.Contains('QUICK_LAUNCH_PREVIEW_TITLE_SIZE') -or
+    $previewRender.Contains('QUICK_LAUNCH_PREVIEW_DETAIL_SIZE') -or
+    $previewRender.Contains('QUICK_LAUNCH_PREVIEW_TIMESTAMP_SIZE') -or
+    $previewRender.Contains('FontWeight::MEDIUM') -or
+    $previewRender.Contains('if has_timestamps { 72.0 } else { 52.0 }')) {
+    throw 'Quick Launch preview must not restore private type roles, cards or dynamic shell geometry.'
+}
+foreach ($requiredSharedPreviewContract in @(
+    'pub(crate) const PREVIEW_APPEAR_DURATION: Duration = Duration::from_millis(130)',
+    'pub(crate) fn preview_shell(theme: Theme) -> Div',
+    '.border_color(theme.window_border)',
+    'pub(crate) fn preview_media_surface(theme: Theme) -> Div',
+    '.bg(theme.surface)',
+    '.rounded(px(COMPACT_RADIUS))'
+)) {
+    if (-not $previewSource.Contains($requiredSharedPreviewContract)) {
+        throw 'Clipboard and Quick Launch must keep the shared PreviewShell/media presentation seam.'
+    }
+}
+$mediaHelperStart = $previewSource.IndexOf('pub(crate) fn preview_media_surface(')
+$mediaHelperEnd = $previewSource.IndexOf(
+    'pub(crate) struct PreviewLayout',
+    $mediaHelperStart
+)
+if ($mediaHelperStart -lt 0 -or $mediaHelperEnd -le $mediaHelperStart) {
+    throw 'Could not isolate the shared preview media surface.'
+}
+$mediaHelper = $previewSource.Substring(
+    $mediaHelperStart,
+    $mediaHelperEnd - $mediaHelperStart
+)
+if ($mediaHelper.Contains('.flex()') -or
+    $mediaHelper.Contains('.items_center()') -or
+    $mediaHelper.Contains('.justify_center()')) {
+    throw 'The shared media surface must not impose image alignment on text preview content.'
+}
+$schedulePreviewStart = $quickLaunchSource.IndexOf('    fn schedule_quick_launch_preview(')
+$schedulePreviewEnd = $quickLaunchSource.IndexOf(
+    '    fn schedule_quick_launch_preview_candidate(',
+    $schedulePreviewStart
+)
+if ($schedulePreviewStart -lt 0 -or $schedulePreviewEnd -le $schedulePreviewStart) {
+    throw 'Could not isolate the Quick Launch preview target-switch boundary.'
+}
+$schedulePreview = $quickLaunchSource.Substring(
+    $schedulePreviewStart,
+    $schedulePreviewEnd - $schedulePreviewStart
+)
+if ($schedulePreview.Contains('animate_quick_launch_preview_exit') -or
+    -not $schedulePreview.Contains('cancel_quick_launch_preview_exit(cx)') -or
+    -not $quickLaunchSource.Contains(
+        'fn production_quick_launch_preview_uses_shared_fixed_shell_and_media_surface('
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'a visible reused shell must not play an exit before replacement'
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'cancelling an old exit must not animate the old payload back in'
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'the interrupted old payload must render without an animation wrapper'
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'a stale stage must not publish into a replacement native window'
+    ) -or
+    -not $quickLaunchSource.Contains(
+        'production_quick_launch_text_preview_starts_at_the_media_inset'
+    )) {
+    throw 'A visible Quick Launch preview switch must keep its shell and run one replacement entrance.'
+}
+$stagePreviewStart = $quickLaunchSource.IndexOf('    fn stage_reused_quick_launch_preview(')
+$stagePreviewEnd = $quickLaunchSource.IndexOf('    fn request_icons(', $stagePreviewStart)
+if ($stagePreviewStart -lt 0 -or $stagePreviewEnd -le $stagePreviewStart) {
+    throw 'Could not isolate the Quick Launch preview staging lifecycle.'
+}
+$stagePreview = $quickLaunchSource.Substring(
+    $stagePreviewStart,
+    $stagePreviewEnd - $stagePreviewStart
+)
+foreach ($requiredStageIdentityContract in @(
+    'preview.identity != stage.window_identity',
+    'preview.identity != window_identity',
+    'window_handle: stage.window_identity.native',
+    'window_handle: window_identity.native'
+)) {
+    if (-not $stagePreview.Contains($requiredStageIdentityContract)) {
+        throw 'Every Quick Launch stage and next-frame callback must freeze both GPUI and native window identity.'
+    }
+}
+if (-not $quickLaunchSource.Contains('struct QuickLaunchPreviewWindowIdentity') -or
+    -not $quickLaunchSource.Contains('gpui: AnyWindowHandle') -or
+    -not $quickLaunchSource.Contains('native: i64') -or
+    -not $quickLaunchSource.Contains('window_identity: QuickLaunchPreviewWindowIdentity')) {
+    throw 'Every Quick Launch pending stage must carry both GPUI and native window identity.'
+}
+if (-not $previewRender.Contains('if motion_suppressed') -or
+    -not $previewRender.Contains('preview.into_any_element()')) {
+    throw 'Cancelling an interrupted exit must render the old payload without any animation wrapper.'
+}
+Write-Host 'PASS quick-launch preview keeps one shared fixed shell and one replacement entrance'
 $desktopMainPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs'
 $desktopMainSource = Get-Content -Raw -LiteralPath $desktopMainPath
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'

@@ -4,7 +4,7 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt, Context, ObjectFit, Render, Rgba, WeakEntity, Window, div,
+    Animation, AnimationExt, Context, Div, ObjectFit, Render, WeakEntity, Window, div,
     ease_out_quint, img, prelude::*, px,
 };
 use gpui_component::scroll::ScrollableElement;
@@ -23,7 +23,29 @@ const WINDOW_VERTICAL_CHROME: f32 = 22.0;
 const CONTENT_META_GAP: f32 = 8.0;
 const IMAGE_MAX_CONTENT_WIDTH: f32 = 440.0;
 const IMAGE_MAX_CONTENT_HEIGHT: f32 = 340.0;
-const PREVIEW_APPEAR_DURATION: Duration = Duration::from_millis(130);
+pub(crate) const PREVIEW_APPEAR_DURATION: Duration = Duration::from_millis(130);
+
+pub(crate) fn preview_shell(theme: Theme) -> Div {
+    div()
+        .debug_selector(|| "preview-shell".into())
+        .size_full()
+        .overflow_hidden()
+        .border_1()
+        .border_color(theme.window_border)
+        .bg(theme.canvas)
+        .font_family(UI_FONT_FAMILY)
+        .text_color(theme.text)
+        .flex()
+        .flex_col()
+}
+
+pub(crate) fn preview_media_surface(theme: Theme) -> Div {
+    div()
+        .debug_selector(|| "preview-media-surface".into())
+        .overflow_hidden()
+        .rounded(px(COMPACT_RADIUS))
+        .bg(theme.surface)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PreviewLayout {
@@ -96,13 +118,10 @@ impl Render for ClipboardPreview {
             }
             ClipboardKind::Image => {
                 let source = existing_image_source(&self.item.image_path);
-                div()
+                preview_media_surface(theme)
                     .w_full()
                     .h(px(layout.body_height))
                     .flex_none()
-                    .rounded(px(COMPACT_RADIUS))
-                    .overflow_hidden()
-                    .bg(theme.surface)
                     .flex()
                     .items_center()
                     .justify_center()
@@ -144,18 +163,9 @@ impl Render for ClipboardPreview {
             }
         };
 
-        div()
+        preview_shell(theme)
             .id("clipboard-preview-root")
-            .size_full()
             .p(px(10.0))
-            .font_family(UI_FONT_FAMILY)
-            .overflow_hidden()
-            .border_1()
-            .border_color(clipboard_preview_border(theme))
-            .bg(theme.canvas)
-            .text_color(theme.text)
-            .flex()
-            .flex_col()
             .gap(px(CONTENT_META_GAP))
             .on_hover(move |hovered, _window, cx| {
                 let _ = application.update(cx, |application, cx| {
@@ -188,10 +198,6 @@ impl Render for ClipboardPreview {
 
 fn preview_appearance(delta: f32) -> (f32, f32) {
     (0.76 + 0.24 * delta, 4.0 * (1.0 - delta))
-}
-
-fn clipboard_preview_border(theme: Theme) -> Rgba {
-    theme.window_border
 }
 
 pub(crate) fn preview_layout(
@@ -446,8 +452,27 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_preview_uses_the_same_neutral_window_border_as_launcher() {
-        let theme = Theme::zed_dark();
-        assert_eq!(clipboard_preview_border(theme), theme.window_border);
+    fn clipboard_preview_uses_the_shared_neutral_shell_and_media_surface() {
+        let source = include_str!("preview.rs");
+        let shell = source
+            .split("pub(crate) fn preview_shell(")
+            .nth(1)
+            .and_then(|source| source.split("pub(crate) fn preview_media_surface(").next())
+            .expect("shared preview shell");
+        let media = source
+            .split("pub(crate) fn preview_media_surface(")
+            .nth(1)
+            .and_then(|source| source.split("pub(crate) struct PreviewLayout").next())
+            .expect("shared preview media surface");
+        let render = source
+            .split("impl Render for ClipboardPreview")
+            .nth(1)
+            .expect("clipboard preview renderer");
+
+        assert!(shell.contains(".border_color(theme.window_border)"));
+        assert!(!media.contains(".items_center()"));
+        assert!(!media.contains(".justify_center()"));
+        assert!(render.contains("preview_shell(theme)"));
+        assert!(render.contains("preview_media_surface(theme)"));
     }
 }

@@ -40,7 +40,10 @@ use crate::ui::components::state::empty_state;
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
 };
-pub(crate) use preview::{ClipboardPreview, PreviewLayout, preview_layout};
+pub(crate) use preview::{
+    ClipboardPreview, PREVIEW_APPEAR_DURATION, PreviewLayout, preview_layout,
+    preview_media_surface, preview_shell,
+};
 
 const CATEGORY_GAP: f32 = 4.0;
 const CATEGORY_ICON_WIDTH: f32 = 12.0;

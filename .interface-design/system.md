@@ -155,6 +155,18 @@
   root-level Left and empty-filter Backspace restore the saved query while action mode still owns
   input-change handling, then reveal that retained list at the exact prior offset on the first frame.
   Returning never clears the viewport to zero or launches a replacement search that later recenters it.
+- Quick Launch preview is one reused, opaque, non-activating 400 x 410 window. Its fixed skeleton is a
+  72 px identity header, an 8 px inset content rail and a 30 px path footer; content kind never resizes
+  the native window. The root reuses the shared `PreviewShell`, while image, text and unavailable states
+  reuse the shared neutral media surface rather than adding a card inside the preview.
+- Preview identity uses Body 12/18 and Label 11/16; content and the path footer use the Mono family only
+  where scan rhythm benefits. The media surface uses the shared graphite surface, subtle 4 px radius and
+  contain-fit imagery. Quick Launch and Clipboard share these presentation primitives only—their layout,
+  window ownership, sizing and pointer lifecycle remain independent.
+- Changing an already-visible preview keeps the current shell present until the generation-matched payload
+  is ready, then runs one 130 ms replacement entrance. It never plays an exit followed by another entrance
+  for a target switch. Explicit pointer leave/dismiss may retain the 90 ms exit; stale load, stage or native
+  callbacks remain guarded by the current entry/generation/window identity and never activate the preview.
 
 ### Work states
 

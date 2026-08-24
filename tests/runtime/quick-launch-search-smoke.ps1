@@ -3,7 +3,9 @@ param(
     [int]$StartupMilliseconds = 2200,
     [int]$ResultTimeoutMilliseconds = 2500,
     [switch]$UseRealPlatformHost,
+    [switch]$ReuseExistingProcess,
     [switch]$EnterActionsMode,
+    [switch]$CapturePreview,
     [string]$ScreenshotPath
 )
 
@@ -209,6 +211,63 @@ public static class NxToolsQuickLaunchSmokeInput
         if (focusedPanel == IntPtr.Zero || !GetWindowRect(focusedPanel, out var rect))
             throw new InvalidOperationException("The quick-launch result window is unavailable for capture.");
         return new[] { rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top };
+    }
+
+    public static int[] TryGetPanelAndPreviewBounds(uint processId)
+    {
+        if (focusedPanel == IntPtr.Zero || !GetWindowRect(focusedPanel, out var panel))
+            return null;
+
+        Rect? preview = null;
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var ownerProcessId);
+            if (window == focusedPanel || ownerProcessId != processId || !IsWindowVisible(window) ||
+                !GetWindowRect(window, out var rect))
+                return true;
+
+            var width = rect.Right - rect.Left;
+            var height = rect.Bottom - rect.Top;
+            // GPUI's 400 x 410 client is wrapped by the invisible native resize frame at 96 DPI.
+            if (width >= 408 && width <= 424 && height >= 408 && height <= 426)
+            {
+                preview = rect;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        if (!preview.HasValue)
+            return null;
+
+        var value = preview.Value;
+        var left = Math.Min(panel.Left, value.Left);
+        var top = Math.Min(panel.Top, value.Top);
+        var right = Math.Max(panel.Right, value.Right);
+        var bottom = Math.Max(panel.Bottom, value.Bottom);
+        return new[] { left, top, right - left, bottom - top };
+    }
+
+    public static string DescribeVisibleWindows(uint processId)
+    {
+        var descriptions = new List<string>();
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var ownerProcessId);
+            if (ownerProcessId == processId && IsWindowVisible(window) &&
+                GetWindowRect(window, out var rect))
+            {
+                descriptions.Add(string.Format(
+                    "0x{0:X}: {1}x{2} at {3},{4}",
+                    window.ToInt64(),
+                    rect.Right - rect.Left,
+                    rect.Bottom - rect.Top,
+                    rect.Left,
+                    rect.Top));
+            }
+            return true;
+        }, IntPtr.Zero);
+        return descriptions.Count == 0 ? "none" : string.Join("; ", descriptions);
     }
 
     public static bool TrySweepVisibleResults(uint processId)
@@ -419,13 +478,22 @@ public sealed class NxToolsQuickLaunchProtocolProbe : IDisposable
 }
 '@
 
+$ownsProcess = -not $ReuseExistingProcess
 $existing = Get-Process -Name NxTools -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $resolvedExecutable }
-if ($existing) {
-    $existing | Stop-Process -Force
+    Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $resolvedExecutable } |
+    Sort-Object StartTime -Descending
+if ($ReuseExistingProcess) {
+    $process = $existing | Select-Object -First 1
+    if (-not $process) {
+        throw 'No matching running NxTools process was available for reuse.'
+    }
 }
-
-$process = Start-Process -FilePath $resolvedExecutable -WorkingDirectory (Split-Path -Parent $resolvedExecutable) -PassThru
+else {
+    if ($existing) {
+        $existing | Stop-Process -Force
+    }
+    $process = Start-Process -FilePath $resolvedExecutable -WorkingDirectory (Split-Path -Parent $resolvedExecutable) -PassThru
+}
 $probe = $null
 try {
     Start-Sleep -Milliseconds $StartupMilliseconds
@@ -515,11 +583,42 @@ try {
         }
         [NxToolsQuickLaunchSmokeInput]::PointAtFirstAction()
     }
-    $visualSettleMilliseconds = if ($UseRealPlatformHost) { 5000 } else { 900 }
-    Start-Sleep -Milliseconds $visualSettleMilliseconds
+    $previewCaptureBounds = $null
+    if ($CapturePreview) {
+        $previewDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while (-not $previewCaptureBounds -and [DateTime]::UtcNow -lt $previewDeadline) {
+            $previewCaptureBounds =
+                [NxToolsQuickLaunchSmokeInput]::TryGetPanelAndPreviewBounds([uint32]$process.Id)
+            if (-not $previewCaptureBounds) {
+                Start-Sleep -Milliseconds 40
+            }
+        }
+        if (-not $previewCaptureBounds) {
+            $visibleWindows =
+                [NxToolsQuickLaunchSmokeInput]::DescribeVisibleWindows([uint32]$process.Id)
+            throw "Quick-launch did not retain its fixed preview window before capture. Visible windows: $visibleWindows"
+        }
+        Start-Sleep -Milliseconds 250
+        $previewCaptureBounds =
+            [NxToolsQuickLaunchSmokeInput]::TryGetPanelAndPreviewBounds([uint32]$process.Id)
+        if (-not $previewCaptureBounds) {
+            $visibleWindows =
+                [NxToolsQuickLaunchSmokeInput]::DescribeVisibleWindows([uint32]$process.Id)
+            throw "Quick-launch did not retain both windows through the preview entrance. Visible windows: $visibleWindows"
+        }
+    }
+    else {
+        $visualSettleMilliseconds = if ($UseRealPlatformHost) { 5000 } else { 900 }
+        Start-Sleep -Milliseconds $visualSettleMilliseconds
+    }
     if (-not [string]::IsNullOrWhiteSpace($ScreenshotPath)) {
         Add-Type -AssemblyName System.Drawing.Common
-        $captureBounds = [NxToolsQuickLaunchSmokeInput]::GetFocusedPanelBounds()
+        $captureBounds = if ($CapturePreview) {
+            $previewCaptureBounds
+        }
+        else {
+            [NxToolsQuickLaunchSmokeInput]::GetFocusedPanelBounds()
+        }
         $shadowPadding = 8
         $resolvedScreenshot = [IO.Path]::GetFullPath($ScreenshotPath)
         $screenshotDirectory = Split-Path -Parent $resolvedScreenshot
@@ -562,7 +661,7 @@ finally {
     if ($probe) {
         $probe.Dispose()
     }
-    if ($process -and -not $process.HasExited) {
+    if ($ownsProcess -and $process -and -not $process.HasExited) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     }
 }
