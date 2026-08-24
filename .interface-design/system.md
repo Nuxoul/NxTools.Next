@@ -167,6 +167,18 @@
   is ready, then runs one 130 ms replacement entrance. It never plays an exit followed by another entrance
   for a target switch. Explicit pointer leave/dismiss may retain the 90 ms exit; stale load, stage or native
   callbacks remain guarded by the current entry/generation/window identity and never activate the preview.
+- File-dialog search is a separate 500 px host-attached command rail, not a second launcher. Its 36 px
+  search header remains anchored at the dialog bottom, while a 264 px result surface expands toward the
+  host; the existing optional 36 px Quick Switch row remains available only for an empty query.
+- Attached search uses Body 12/18 for input and result titles, Label 11/16 for paths and shortcuts, an
+  8 px rail rhythm, transparent 26 px result icon slots and the same 40 px continuous result row used by
+  Quick Launch. It adds no icon tiles, cards or unimplemented utility buttons.
+- The attached surface owns one semantic window boundary; its client-decorated native HWND owns the
+  restrained exterior shadow, which must not be faked inside the exact-size opaque GPUI root. Its visible
+  width keeps a 16 px logical safety inset when the host is narrow, and its result overlap remains inside
+  the owner at 96/120/144 DPI. The search header stays immediately below the owner bottom as in the
+  reference. Host ownership, non-activation, first-show Topmost initialization and no-Z-order follow
+  behavior remain unchanged.
 
 ### Work states
 

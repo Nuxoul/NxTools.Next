@@ -23,17 +23,21 @@ use tracing::{info, warn};
 
 use super::{ImeEnterGate, QuickLaunchApplication, schedule_application_update};
 use crate::icons::MaterialIcon;
-use crate::theme::{
-    META_TEXT_SIZE, RESULT_DETAIL_SIZE, RESULT_TITLE_SIZE, ROW_HORIZONTAL_PADDING,
-    SEARCH_TEXT_SIZE, Theme, UI_FONT_FAMILY,
+use crate::theme::Theme;
+use crate::ui::components::state::{empty_state, progress_state};
+use crate::ui::metrics::{
+    COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
+    SPACING_2, SPACING_8, SPACING_12,
 };
 use crate::ui::native_window_handle;
+use crate::ui::typography::{
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY,
+};
 
 const SEARCH_WIDTH: f32 = 500.0;
 const SEARCH_BAR_HEIGHT: f32 = 36.0;
 const DEFAULT_SOURCE_HEIGHT: f32 = 36.0;
 const SEARCH_RESULTS_HEIGHT: f32 = 264.0;
-const SEARCH_ROW_HEIGHT: f32 = 40.0;
 const SEARCH_HORIZONTAL_MARGIN: f32 = 16.0;
 const SEARCH_RESULT_LIMIT: usize = 120;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(65);
@@ -78,6 +82,11 @@ fn file_dialog_default_source(
     })
 }
 
+fn file_dialog_search_result_height(host: &QuickLaunchFileDialogSearchHost) -> f32 {
+    let scale = host.monitor_dpi.max(96) as f32 / 96.0;
+    SEARCH_RESULTS_HEIGHT.min((host.height.max(0) as f32 / scale).floor())
+}
+
 pub(super) fn file_dialog_search_bounds(
     host: &QuickLaunchFileDialogSearchHost,
     expanded: bool,
@@ -89,7 +98,9 @@ pub(super) fn file_dialog_search_bounds(
     let width = desired_width.min(maximum_width);
     let bar_height = (SEARCH_BAR_HEIGHT * scale).round().max(1.0) as i32;
     let results_height = if expanded {
-        (SEARCH_RESULTS_HEIGHT * scale).round().max(1.0) as i32
+        (file_dialog_search_result_height(host) * scale)
+            .round()
+            .max(1.0) as i32
     } else {
         0
     };
@@ -159,6 +170,7 @@ pub(super) struct FileDialogSearchPanel {
     selected: usize,
     search_pending: bool,
     expanded: bool,
+    result_height: f32,
     dispatch_generation: u64,
     visible: bool,
     appearance_generation: u64,
@@ -256,6 +268,7 @@ impl FileDialogSearchPanel {
             selected: 0,
             search_pending: false,
             expanded: false,
+            result_height: file_dialog_search_result_height(host),
             dispatch_generation: 0,
             visible: host.visible,
             appearance_generation: u64::from(host.visible),
@@ -304,6 +317,7 @@ impl FileDialogSearchPanel {
         self.host_window_handle = host.window_handle;
         self.current_directory = host.current_directory.clone();
         self.default_source = file_dialog_default_source(host);
+        self.result_height = file_dialog_search_result_height(host);
         if host.visible && !self.visible {
             self.appearance_generation = self.appearance_generation.wrapping_add(1).max(1);
         }
@@ -419,15 +433,16 @@ impl FileDialogSearchPanel {
         Some(
             div()
                 .id("file-dialog-default-source")
+                .debug_selector(|| "file-dialog-default-source".into())
                 .h(px(DEFAULT_SOURCE_HEIGHT))
-                .px(px(12.0))
+                .px(px(SPACING_12))
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(9.0))
+                .gap(px(SPACING_8))
                 .border_t_1()
                 .border_color(theme.border_subtle)
-                .bg(theme.element_selected)
+                .bg(theme.canvas)
                 .hover(move |row| row.bg(theme.surface_hover))
                 .cursor_pointer()
                 .on_click(move |_event, _window, cx| {
@@ -436,33 +451,55 @@ impl FileDialogSearchPanel {
                     });
                 })
                 .child(
-                    gpui_component::Icon::new(MaterialIcon::Folder)
-                        .size(px(16.0))
-                        .text_color(theme.icon),
+                    div()
+                        .debug_selector(|| "file-dialog-default-source-icon".into())
+                        .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            gpui_component::Icon::new(MaterialIcon::Folder)
+                                .size(px(16.0))
+                                .text_color(theme.icon),
+                        ),
                 )
                 .child(
                     div()
-                        .flex_none()
+                        .debug_selector(|| "file-dialog-default-source-title".into())
+                        .min_w_0()
+                        .flex_1()
                         .max_w(px(190.0))
+                        .h(px(LINE_HEIGHT_BODY))
                         .truncate()
-                        .text_size(px(RESULT_TITLE_SIZE))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
                         .text_color(theme.text)
                         .child(source.name),
                 )
                 .child(
                     div()
+                        .debug_selector(|| "file-dialog-default-source-path".into())
                         .min_w_0()
                         .flex_1()
+                        .h(px(LINE_HEIGHT_LABEL))
                         .truncate()
-                        .text_size(px(RESULT_DETAIL_SIZE))
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child(source.path),
                 )
                 .child(
                     div()
+                        .debug_selector(|| "file-dialog-default-source-shortcut".into())
+                        .w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))
+                        .h(px(LINE_HEIGHT_LABEL))
                         .flex_none()
-                        .text_size(px(META_TEXT_SIZE))
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("Ctrl+G"),
                 )
@@ -478,12 +515,13 @@ impl FileDialogSearchPanel {
         let click_panel = panel.clone();
         div()
             .id(("file-dialog-search-row", index))
+            .debug_selector(move || format!("file-dialog-search-result-row-{index}"))
             .w_full()
-            .h(px(SEARCH_ROW_HEIGHT))
-            .px(px(ROW_HORIZONTAL_PADDING))
+            .h(px(COMPACT_RESULT_ROW_HEIGHT))
+            .px(px(SPACING_12))
             .flex()
             .items_center()
-            .gap(px(9.0))
+            .gap(px(SPACING_8))
             .cursor_pointer()
             .bg(if selected {
                 theme.element_selected
@@ -512,37 +550,56 @@ impl FileDialogSearchPanel {
                 });
             })
             .child(
-                gpui_component::Icon::new(if item.is_directory {
-                    MaterialIcon::Folder
-                } else {
-                    MaterialIcon::TextFields
-                })
-                .size(px(16.0))
-                .text_color(if selected {
-                    theme.icon
-                } else {
-                    theme.icon_muted
-                }),
+                div()
+                    .debug_selector(move || format!("file-dialog-search-result-icon-{index}"))
+                    .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        gpui_component::Icon::new(if item.is_directory {
+                            MaterialIcon::Folder
+                        } else {
+                            MaterialIcon::TextFields
+                        })
+                        .size(px(16.0))
+                        .text_color(if selected {
+                            theme.icon
+                        } else {
+                            theme.icon_muted
+                        }),
+                    ),
             )
             .child(
                 div()
+                    .debug_selector(move || format!("file-dialog-search-result-copy-{index}"))
                     .min_w_0()
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(1.0))
+                    .gap(px(SPACING_2))
                     .child(
                         div()
+                            .debug_selector(move || {
+                                format!("file-dialog-search-result-title-{index}")
+                            })
+                            .h(px(LINE_HEIGHT_BODY))
                             .truncate()
-                            .text_size(px(RESULT_TITLE_SIZE))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
                             .text_color(theme.text)
                             .child(item.name),
                     )
                     .child(
                         div()
+                            .debug_selector(move || {
+                                format!("file-dialog-search-result-path-{index}")
+                            })
+                            .h(px(LINE_HEIGHT_LABEL))
                             .truncate()
-                            .text_size(px(RESULT_DETAIL_SIZE))
+                            .text_size(px(TEXT_LABEL))
+                            .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_muted)
                             .child(item.path),
                     ),
@@ -556,6 +613,7 @@ impl Render for FileDialogSearchPanel {
         let theme = self.theme;
         let expanded = self.expanded;
         let appearance_generation = self.appearance_generation;
+        let result_height = self.result_height;
         let result_count = self.results.len();
         let default_source = if expanded {
             None
@@ -573,63 +631,82 @@ impl Render for FileDialogSearchPanel {
         .track_scroll(self.result_scroll.clone());
         div()
             .id("file-dialog-search-window")
+            .debug_selector(|| "file-dialog-search-window".into())
             .size_full()
             .overflow_hidden()
             .font_family(UI_FONT_FAMILY)
             .bg(theme.canvas)
             .border_1()
-            .border_color(theme.border)
+            .border_color(theme.window_border)
             .flex()
             .flex_col()
             .when(expanded, |root| {
                 root.child(
                     div()
-                        .h(px(SEARCH_RESULTS_HEIGHT))
+                        .h(px(result_height))
                         .flex_none()
                         .border_b_1()
                         .border_color(theme.border_subtle)
                         .bg(theme.canvas)
                         .when(result_count == 0, |surface| {
-                            surface.child(
-                                div()
-                                    .size_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(RESULT_DETAIL_SIZE))
-                                    .text_color(theme.text_muted)
-                                    .child(if self.search_pending {
-                                        "正在搜索…"
-                                    } else {
-                                        super::QUICK_LAUNCH_EMPTY_RESULTS_LABEL
-                                    }),
-                            )
+                            if self.search_pending {
+                                surface.child(progress_state(
+                                    theme,
+                                    "file-dialog-search-progress",
+                                    "正在搜索",
+                                    "正在合并本地文件与文件夹结果。",
+                                ))
+                            } else {
+                                surface.child(empty_state(
+                                    theme,
+                                    "file-dialog-search-empty",
+                                    MaterialIcon::Search,
+                                    super::QUICK_LAUNCH_EMPTY_RESULTS_LABEL,
+                                    "尝试缩短关键词，或输入文件与文件夹名称。",
+                                ))
+                            }
                         })
                         .when(result_count > 0, |surface| surface.child(list)),
                 )
             })
             .child(
                 div()
+                    .debug_selector(|| "file-dialog-search-header".into())
                     .h(px(SEARCH_BAR_HEIGHT))
-                    .px(px(11.0))
+                    .px(px(SPACING_12))
                     .flex_none()
-                    .bg(theme.surface)
+                    .bg(theme.canvas)
                     .flex()
                     .items_center()
-                    .gap(px(9.0))
+                    .gap(px(SPACING_8))
                     .child(
-                        gpui_component::Icon::new(MaterialIcon::Search)
-                            .size(px(14.0))
-                            .text_color(theme.icon_muted),
+                        div()
+                            .debug_selector(|| "file-dialog-search-icon".into())
+                            .size(px(18.0))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                gpui_component::Icon::new(MaterialIcon::Search)
+                                    .size(px(16.0))
+                                    .text_color(theme.icon_muted),
+                            ),
                     )
                     .child(
-                        div().min_w_0().flex_1().child(
-                            Input::new(&self.search_input)
-                                .appearance(false)
-                                .bordered(false)
-                                .focus_bordered(false)
-                                .text_size(px(SEARCH_TEXT_SIZE)),
-                        ),
+                        div()
+                            .debug_selector(|| "file-dialog-search-input".into())
+                            .h(px(LINE_HEIGHT_BODY))
+                            .min_w_0()
+                            .flex_1()
+                            .child(
+                                Input::new(&self.search_input)
+                                    .appearance(false)
+                                    .bordered(false)
+                                    .focus_bordered(false)
+                                    .text_size(px(TEXT_BODY))
+                                    .line_height(px(LINE_HEIGHT_BODY)),
+                            ),
                     )
                     .when(self.search_pending, |bar| {
                         bar.child(
@@ -821,7 +898,9 @@ impl QuickLaunchApplication {
         let bounds = file_dialog_search_bounds(&host, expanded);
         let scale = host.monitor_dpi.max(96) as f32 / 96.0;
         let results_height = if expanded {
-            (SEARCH_RESULTS_HEIGHT * scale).round().max(1.0) as i32
+            (file_dialog_search_result_height(&host) * scale)
+                .round()
+                .max(1.0) as i32
         } else {
             0
         };
@@ -1036,6 +1115,7 @@ impl QuickLaunchApplication {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL};
 
     fn host(dpi: u32) -> QuickLaunchFileDialogSearchHost {
         QuickLaunchFileDialogSearchHost {
@@ -1109,6 +1189,168 @@ mod tests {
                 height: 54,
             }
         );
+    }
+
+    #[test]
+    fn result_overlap_and_visible_width_stay_inside_the_host_at_release_dpis() {
+        for dpi in [96, 120, 144] {
+            let host = scaled_host(dpi);
+            let bounds = file_dialog_search_bounds(&host, true);
+            let scale = dpi as f32 / 96.0;
+            let result_overlap = (SEARCH_RESULTS_HEIGHT * scale).round() as i32;
+
+            assert!(bounds.x >= host.left);
+            assert!(bounds.x + bounds.width <= host.left + host.width);
+            assert!(bounds.y >= host.top);
+            assert_eq!(bounds.y + result_overlap, host.top + host.height);
+        }
+    }
+
+    #[test]
+    fn short_hosts_clamp_the_result_overlap_at_every_release_dpi() {
+        for dpi in [96, 120, 144] {
+            let scale = dpi as f32 / 96.0;
+            let mut host = scaled_host(dpi);
+            host.height = (160.0 * scale).round() as i32;
+            let bounds = file_dialog_search_bounds(&host, true);
+            let result_overlap = (file_dialog_search_result_height(&host) * scale).round() as i32;
+
+            assert_eq!(bounds.y, host.top);
+            assert_eq!(result_overlap, host.height);
+            assert_eq!(bounds.y + result_overlap, host.top + host.height);
+        }
+    }
+
+    #[gpui::test]
+    fn production_file_dialog_search_uses_shared_input_and_result_rails(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let test_host = host(96);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(
+                px(SEARCH_WIDTH),
+                px(SEARCH_RESULTS_HEIGHT + SEARCH_BAR_HEIGHT),
+            ));
+            let panel = cx.new(|cx| {
+                let mut panel = FileDialogSearchPanel::new(
+                    &test_host,
+                    WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                    window,
+                    cx,
+                );
+                panel.expanded = true;
+                panel.results = vec![IndexSearchItem {
+                    path: r"C:\Work\report.txt".into(),
+                    name: "report.txt".into(),
+                    is_directory: false,
+                    size_bytes: Some(42),
+                    modified_at_unix_ms: None,
+                    score: 1,
+                }];
+                panel
+            });
+            Root::new(panel, window, cx)
+        });
+
+        window
+            .refresh()
+            .expect("render production file-dialog search");
+        let search = window
+            .debug_bounds("file-dialog-search-header")
+            .expect("shared search header");
+        let search_icon = window
+            .debug_bounds("file-dialog-search-icon")
+            .expect("search icon rail");
+        let input = window
+            .debug_bounds("file-dialog-search-input")
+            .expect("search input rail");
+        let row = window
+            .debug_bounds("file-dialog-search-result-row-0")
+            .expect("shared result row");
+        let icon = window
+            .debug_bounds("file-dialog-search-result-icon-0")
+            .expect("result icon rail");
+        let title = window
+            .debug_bounds("file-dialog-search-result-title-0")
+            .expect("result title");
+        let path = window
+            .debug_bounds("file-dialog-search-result-path-0")
+            .expect("result path");
+
+        assert_eq!(search.size.height, px(SEARCH_BAR_HEIGHT));
+        assert_eq!(search_icon.size.width, px(18.0));
+        assert_eq!(input.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(row.size.height, px(COMPACT_RESULT_ROW_HEIGHT));
+        assert_eq!(icon.size, size(px(26.0), px(26.0)));
+        assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(path.size.height, px(LINE_HEIGHT_LABEL));
+        assert_eq!(title.left(), path.left());
+    }
+
+    #[gpui::test]
+    fn production_file_dialog_default_source_uses_the_same_compact_rails(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let test_host = QuickLaunchFileDialogSearchHost {
+            quick_switch_source: Some(nxtools_protocol::QuickLaunchDirectorySource {
+                context: nxtools_protocol::DirectoryNavigationContext {
+                    host: DirectoryNavigationHost::ThirdPartyFileManager,
+                    window_handle: 88,
+                    current_directory: Some(r"D:\Workspace".into()),
+                    host_context_id: Some("dopus:lister-88".into()),
+                },
+                display_name: "Workspace (Directory Opus)".into(),
+            }),
+            ..host(96)
+        };
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(
+                px(288.0),
+                px(SEARCH_BAR_HEIGHT + DEFAULT_SOURCE_HEIGHT),
+            ));
+            let panel = cx.new(|cx| {
+                FileDialogSearchPanel::new(
+                    &test_host,
+                    WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                    window,
+                    cx,
+                )
+            });
+            Root::new(panel, window, cx)
+        });
+
+        window
+            .refresh()
+            .expect("render default Quick Switch source");
+        let row = window
+            .debug_bounds("file-dialog-default-source")
+            .expect("default source row");
+        let icon = window
+            .debug_bounds("file-dialog-default-source-icon")
+            .expect("default source icon rail");
+        let title = window
+            .debug_bounds("file-dialog-default-source-title")
+            .expect("default source title");
+        let path = window
+            .debug_bounds("file-dialog-default-source-path")
+            .expect("default source path");
+        let shortcut = window
+            .debug_bounds("file-dialog-default-source-shortcut")
+            .expect("default source shortcut rail");
+
+        assert_eq!(row.size.height, px(DEFAULT_SOURCE_HEIGHT));
+        assert_eq!(icon.size, size(px(26.0), px(26.0)));
+        assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
+        assert!(title.size.width > px(0.0));
+        assert_eq!(path.size.height, px(LINE_HEIGHT_LABEL));
+        assert!(path.size.width > px(0.0));
+        assert!(title.right() <= path.left());
+        assert_eq!(shortcut.size.width, px(48.0));
+        assert_eq!(shortcut.size.height, px(LINE_HEIGHT_LABEL));
+        assert!(path.right() <= shortcut.left());
+        assert!(shortcut.right() <= row.right());
     }
 
     #[test]

@@ -51,7 +51,10 @@ use crate::theme::{
     UI_MONO_FONT_FAMILY,
 };
 use crate::ui::components::state::{empty_state, progress_state};
-use crate::ui::metrics::{SPACING_2, SPACING_8, SPACING_12};
+use crate::ui::metrics::{
+    COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
+    SPACING_2, SPACING_8, SPACING_12,
+};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 use crate::ui::{
     PREVIEW_APPEAR_DURATION, native_window_handle, preview_media_surface, preview_shell,
@@ -83,9 +86,6 @@ const QUICK_LAUNCH_PREVIEW_SWITCH_DELAY: Duration = Duration::from_millis(110);
 const QUICK_LAUNCH_PREVIEW_LEAVE_DELAY: Duration = Duration::from_millis(140);
 const QUICK_LAUNCH_PREVIEW_DISAPPEAR_DURATION: Duration = Duration::from_millis(90);
 const QUICK_LAUNCH_EMPTY_RESULTS_LABEL: &str = "没有匹配项";
-const QUICK_LAUNCH_RESULT_ROW_HEIGHT: f32 = 40.0;
-const QUICK_LAUNCH_RESULT_ICON_WIDTH: f32 = 26.0;
-const QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH: f32 = 48.0;
 const QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT: f32 = 24.0;
 const QUICK_LAUNCH_RESULT_SHORTCUT_HINTS: [&str; 9] = [
     "Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9",
@@ -5125,7 +5125,7 @@ pub(crate) struct QuickLaunchPanel {
 fn quick_launch_row_shell(theme: Theme, selected: bool) -> Div {
     div()
         .w_full()
-        .h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))
+        .h(px(COMPACT_RESULT_ROW_HEIGHT))
         .px(px(ROW_HORIZONTAL_PADDING))
         .rounded(px(COMPACT_RADIUS))
         .flex()
@@ -6042,7 +6042,7 @@ impl QuickLaunchPanel {
             .child(
                 div()
                     .debug_selector(move || format!("quick-launch-result-icon-{index}"))
-                    .size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))
+                    .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -6107,7 +6107,7 @@ impl QuickLaunchPanel {
             .child(
                 div()
                     .debug_selector(move || format!("quick-launch-result-shortcut-{index}"))
-                    .w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))
+                    .w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))
                     .h(px(LINE_HEIGHT_LABEL))
                     .flex_none()
                     .flex()
@@ -6159,7 +6159,7 @@ impl QuickLaunchPanel {
             .child(
                 div()
                     .debug_selector(move || format!("quick-launch-action-icon-{index}"))
-                    .size(px(QUICK_LAUNCH_RESULT_ICON_WIDTH))
+                    .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -6201,7 +6201,7 @@ impl QuickLaunchPanel {
             .child(
                 div()
                     .debug_selector(move || format!("quick-launch-action-trailing-{index}"))
-                    .w(px(QUICK_LAUNCH_RESULT_SHORTCUT_WIDTH))
+                    .w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))
                     .h(px(LINE_HEIGHT_LABEL))
                     .flex_none()
                     .flex()
@@ -10169,7 +10169,7 @@ mod tests {
         assert!(render_result.contains("quick_launch_row_shell(theme, selected)"));
         assert!(render_action.contains("quick_launch_row_shell(theme, selected)"));
         assert!(row_shell.contains(".w_full()"));
-        assert!(row_shell.contains(".h(px(QUICK_LAUNCH_RESULT_ROW_HEIGHT))"));
+        assert!(row_shell.contains(".h(px(COMPACT_RESULT_ROW_HEIGHT))"));
     }
 
     #[test]

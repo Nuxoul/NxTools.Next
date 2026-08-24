@@ -200,7 +200,7 @@ rust/apps/nxtools-desktop/src/ui/
 | QL-03 | 选择态 | 使用 neutral selected surface，不给真实 Shell 图标加装饰色块 | 键盘和鼠标选中完全一致 |
 | QL-04 | 动作模式 | 复用 ResultRow，只增加轻量模式提示 | 不表现成第二套弹窗 |
 | QL-05 | 预览 | 与剪贴板共享 PreviewShell 和媒体承托面 | 预览复用时只有一次 100–140 ms 动效 |
-| QL-06 | 文件对话框搜索 | 统一搜索输入、结果行、边界和阴影 | 100/125/150% DPI 均不越出宿主对话框 |
+| QL-06 | 文件对话框搜索 | 统一搜索输入、结果行、边界和阴影 | 100/125/150% DPI 结果面不越出宿主，搜索头按参考贴住宿主底边 |
 | QL-07 | 主窗口设置 | 拆成常规、索引、上下文、命令、诊断五页 | 不再在一个长页面堆叠所有设置 |
 | QL-08 | 热键设置 | 使用统一 HotkeyField 和录制态 | 录制、等待、失败和已应用状态清晰 |
 | QL-09 | 索引卷 | 用复选列表替代大量 chip | 全部/指定卷的语义明确 |
@@ -1023,6 +1023,30 @@ rust/apps/nxtools-desktop/src/ui/
   两窗原生阴影），展示真实 Shell 应用图标、固定预览骨架和不可预览项目的共享中性承托面；同一
   烟测完整通过。QL-05 行为、生产窗口与包级 96 DPI 检查点已经完成；125%/150% 尚未留证，
   因此本切片不声明 Release 视觉批次验收完成，仍由截图矩阵统一收口，也未开始 QL-06 工作。
+
+第三十五个 P1 速启文件对话框搜索切片（2026-08-24）：
+
+- QL-06 保留已经稳定的文件对话框识别、独立 GPUI 辅助 HWND、owner、首次非激活 Topmost、宿主
+  跟随、输入焦点、65 ms debounce、索引 generation 与目录/文件激活语义，只迁移固定栏的呈现。
+  参考复核确认 Listary 由 `DialogSearchWindowFactory` 创建独立 `DialogSearchWindow`，按最终
+  `ActualWidth` 居中贴住宿主底边并把结果向宿主展开；SwiftList 同样冻结文件对话框 HWND、使用
+  独立窗口并恢复原编辑框焦点。旧 NxTools 没有可迁移的速启或文件对话框搜索表面。
+- 搜索头继续为 500 logical px 宽、36 px 高；结果面保持 264 px 宿主内重叠和 40 px 行，空查询的
+  Quick Switch 来源行保持 36 px。输入与结果标题迁移到 Body 12/18，路径和 `Ctrl+G` 迁移到
+  Label 11/16；所有轨道使用 12 px 外边距、8 px 间距和 2 px 双行间距。结果现在固定一条透明
+  26 px 图标轨，去掉 13/10.5/10 px 私有字号、9/1 px 任意间距和 Medium/Semibold 私有字重；
+  搜索中与空结果复用共享 Work State，不添加卡片、徽章或无行为工具按钮。
+- 根面使用 `Theme::window_border`，外部浮动阴影继续由带 Client decorations 的原生 HWND 提供，
+  避免在精确尺寸不透明根节点内绘制会被裁掉的假阴影；默认来源不再伪装为永久选中项。红—绿生产
+  GPUI 回归直接渲染 `FileDialogSearchPanel` 并读取搜索头、输入、结果行、图标轨、标题和路径
+  bounds；另一个设备像素回归逐一验证 96/120/144 DPI 下可见宽度不越过宿主左右边界，结果重叠
+  精确收于宿主底边。窄宿主 16 px logical 安全边距和 C# 校准后的 visible-bounds 居中门禁继续通过。
+- QL-06 定向 Rust 为 12/12，Quick Launch 为 114/114；文件对话框视觉、首次显示生命周期、无
+  Z-order 跟随与完整 Quick Launch 生命周期架构门禁全部通过。相关 PlatformHost 过滤集 15/15
+  通过，覆盖真实结构识别、现代地址栏导航、文件提交、居中定位与校准跟随；严格 desktop Clippy
+  通过。Desktop 全套为 324/328，分类按钮 selector、下载详情 progress selector、网络尾距与
+  剪贴板空态宽度四项失败与前序基线完全一致。当前自动化已经锁定 96/120/144 DPI 设备像素边界，
+  但尚未分别留存 100%/125%/150% 的 Release OS 截图，因此不声明速启 Release 视觉批次验收完成。
 
 ### 批次 2：主壳层与全局设置
 

@@ -10,6 +10,10 @@ pub(crate) const CONTROL_HEIGHT_INPUT: f32 = 32.0;
 pub(crate) const SETTINGS_ROW_MIN_HEIGHT: f32 = 42.0;
 pub(crate) const SETTINGS_FOOTER_HEIGHT: f32 = 48.0;
 
+pub(crate) const COMPACT_RESULT_ROW_HEIGHT: f32 = 40.0;
+pub(crate) const COMPACT_RESULT_ICON_RAIL_WIDTH: f32 = 26.0;
+pub(crate) const COMPACT_RESULT_TRAILING_RAIL_WIDTH: f32 = 48.0;
+
 pub(crate) const RADIUS_CONTROL: f32 = 4.0;
 pub(crate) const RADIUS_FLOATING: f32 = 6.0;
 
@@ -35,6 +39,14 @@ mod tests {
             [36.0, 48.0, 42.0]
         );
         assert_eq!(SIDEBAR_WIDTH, 208.0);
+        assert_eq!(
+            [
+                COMPACT_RESULT_ROW_HEIGHT,
+                COMPACT_RESULT_ICON_RAIL_WIDTH,
+                COMPACT_RESULT_TRAILING_RAIL_WIDTH
+            ],
+            [40.0, 26.0, 48.0]
+        );
         assert_eq!(
             [
                 CONTROL_HEIGHT_COMPACT,

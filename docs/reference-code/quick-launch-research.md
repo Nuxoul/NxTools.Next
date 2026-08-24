@@ -1042,6 +1042,37 @@ Reverified on 2026-08-24 before the QL-05 preview migration:
   A reused visible launcher preview must keep its current shell until the replacement is ready and run
   one 130 ms generation-scoped replacement entrance; it must not play an exit followed by another enter.
 
+Reverified on 2026-08-24 before the QL-06 file-dialog-search migration:
+
+- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or attached file-dialog search
+  surface, so there is no older product rendering to preserve. The already-verified
+  `file_dialog_search.rs` host recognition, activation, navigation, cancellation and placement
+  lifecycle remains the behavioral baseline for this visual slice.
+- Listary `DialogSearchWindowFactory::CreateWindow` creates a dedicated `DialogSearchWindow` rather
+  than reusing its launcher. `DialogSearchWindow::ah` converts the host `PlacementBounds` from device
+  pixels, centers the final `ActualWidth` on the host and places the search header at the host bottom;
+  an open result popup is repositioned with it. `SearchWindowBase::ShowWindow` keeps the auxiliary
+  surface Topmost but non-activating. QL-06 must therefore retain one owner-bound auxiliary HWND and
+  may not turn the attached search into another global launcher or inject controls into the dialog.
+- Listary's generated connection table exposes one `PART_SearchBox`, one result popup and one compact
+  right-side logo region; it does not support inventing decorative action buttons. Its reference
+  screenshot measures approximately 500 px wide with a 36 px search rail and a 35–36 px default
+  Quick Switch row. The results expand toward the host while the search rail remains at the bottom.
+- SwiftList `InlineSearchManager::EnsureWindowCreated` likewise freezes the active dialog HWND,
+  creates one independent `InlineSearchWindow`, sets the current host path as search context and
+  restores the dialog's edit focus instead of stealing it. `InlineSearchWindowPositioner` separately
+  positions dialog mode against the host/working area and clamps the visible surface. This confirms
+  host-relative placement and focus continuity, but its alternate WPF card styling is not a product
+  visual source for NxTools.Next.
+- NxTools.Next QL-06 therefore keeps the existing 500 logical px width, 36 px search rail, 40 px
+  result rows, 264 px result overlap, 16 px host-side safety inset and 80 ms first-show motion. It
+  migrates only presentation: Body 12/18 search/title, Label 11/16 path and shortcut, an 8 px rail
+  rhythm, a transparent 26 px icon slot and one semantic window boundary. The client-decorated native
+  HWND, rather than a clipped shadow inside the exact-size opaque root, owns exterior elevation. At
+  96/120/144 DPI the visible width and the result overlap must remain within the bound host while the
+  search header stays immediately below its bottom edge; native placement, owner, Topmost, focus,
+  debounce, generation and activation behavior do not change.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。
@@ -1049,9 +1080,10 @@ Reverified on 2026-08-24 before the QL-05 preview migration:
   当前运行截图
   `docs/audits/launcher-clipboard-ui-2026-07-27/01-launcher-results-preview.png`
   证明八行结果、整行选中和相邻预览的基本密度已经成立，本轮不再次任意缩放。
-- QL-01 后主搜索使用共享 Body 12/18；动作菜单、预览与文件对话框附着搜索仍保留后续切片待迁移的
-  `13 / 10.5 / 10 px` 紧凑字号。各表面维持 4 px 圆角、语义选中态和 80 ms 轻动效；详情使用次要
-  文本色，时间使用弱化文本色；保持中性窗口边框和现有生命周期，不把速启改成高饱和强调色界面。
+- QL-01 至 QL-06 已将主搜索、普通/动作结果、预览和文件对话框附着搜索迁移到共享 Body 12/18
+  与 Label 11/16。各表面继续使用语义选中态、中性窗口边界和各自已验证的短动效；详情使用次要
+  文本色，时间使用弱化文本色，不把速启改成高饱和强调色界面。4 px 圆角只保留在规范明确要求的
+  控件或媒体承托面，连续结果面和精确尺寸附着根节点保持方正。
 - 预览窗口保持 400 × 410 px 固定尺寸。该窗口会跨条目复用，且为保护键盘焦点与避免闪烁，切换
   内容时不会调用 GPUI/Windows resize；因此元数据、文本和图片不能采用不同窗口高度，否则先出现
   的小窗口会裁剪后续文本/图片。元数据只在固定窗口内部使用紧凑内容块。主速启与附着搜索只共享
