@@ -1117,6 +1117,28 @@ Reverified on 2026-08-24 before the QL-08 HotkeyField migration:
   A rejected native result keeps the last applied setting; only a correlation-matched success may
   replace and persist it.
 
+Reverified on 2026-08-24 before the QL-09 index-volume migration:
+
+- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or local-file-index scope UI, so
+  it supplies no visual source for this slice. NxTools.Next retains its established typed settings
+  boundary: Rust persists selected mount points and synchronizes them to the indexer; the service
+  continues reporting every discovered NTFS volume even when that volume is outside the enabled
+  set, so a disabled row remains available to re-enable.
+- Listary discovers NTFS volumes as named mount roots and persists disabled roots. Its managed
+  options model keeps each discovered volume as a stable list item and toggles exclusion/restoration
+  without removing the item from discovery. This is behavioral evidence for persistent per-volume
+  rows; its proprietary template and delete/restore presentation are not copied.
+- SwiftList's first-party Index guide, `LocalTab.xaml`, `Templates.xaml` and
+  `LocalDriveSettingsViewModel.cs` independently expose one local-drive row per discovered drive with
+  an enable checkbox, drive name, file-system/state and indexed-item metadata. A missing or disabled
+  drive remains a row whose state changes rather than becoming a chip or disappearing.
+- NxTools.Next QL-09 therefore uses one standard-checkbox list. Its explicit automatic row makes the
+  existing empty-vector contract visible: all present and future NTFS volumes are included until the
+  user clears one; an explicit set is stored only while the scope is narrower than all discovered
+  volumes. The final currently selected volume cannot be cleared because the empty vector is reserved
+  for automatic-all; selecting all currently discovered volumes canonicalizes back to automatic even
+  when an old unavailable mount remains in persisted input.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

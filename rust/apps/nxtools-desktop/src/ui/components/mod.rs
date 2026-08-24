@@ -8,3 +8,4 @@ pub(crate) mod popover;
 pub(crate) mod settings;
 pub(crate) mod state;
 pub(crate) mod titlebar;
+pub(crate) mod volume_scope;

@@ -94,6 +94,25 @@
   result keeps the last applied chord and exposes the boundary error without mutating persisted
   settings.
 
+### Volume scope list
+
+- Local index scope uses one full-width, border-contained checkbox list instead of wrapping chips.
+  The first 48 px row is the mode owner: `自动包含全部 NTFS 卷`, with a Label explanation that newly
+  discovered volumes join the scope. Discovered volume rows are 40 px and keep one aligned checkbox,
+  Body 12/18 mount point and Label 11/16 file-system/item metadata rail.
+- An empty persisted volume vector means automatic-all. In that mode the automatic row and every
+  discovered volume are visibly checked. Clearing any volume materializes the remaining discovered
+  mounts as an explicit selection; selecting every discovered mount again canonicalizes back to the
+  empty automatic-all representation, even if persistence still contains a stale unavailable mount.
+  Selecting the automatic row also restores that representation. Because an empty vector is reserved
+  for automatic-all, the final currently selected volume cannot be cleared from the checkbox list.
+- Selection is communicated by the standard checkbox only. Volume rows remain neutral at rest and
+  may use the shared hover surface; they never become accent chips, badges or cards. An undiscovered
+  state stays inside the same 40 px list row so discovery never changes the surrounding page rails.
+- Volume mutations keep the existing Rust persistence/indexer synchronization boundary and defer
+  cross-entity application updates to the next application turn. One pointer gesture emits at most
+  one persistence/indexer update, whether it lands on the indicator or the remaining row content.
+
 ### Master-detail settings
 
 - Repeated editable identities use a continuous master list beside one detail editor. Master rows

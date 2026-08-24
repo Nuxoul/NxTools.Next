@@ -11,6 +11,8 @@ $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
 $mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
 $hotkeyFieldPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\hotkey.rs'
 $hotkeyFieldSource = Get-Content -Raw -LiteralPath $hotkeyFieldPath
+$volumeScopePath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\volume_scope.rs'
+$volumeScopeSource = Get-Content -Raw -LiteralPath $volumeScopePath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -148,6 +150,53 @@ if (($hotkeyLifecycle.Split('cx.defer(move |cx|').Count - 1) -lt 3 -or
     -not $hotkeyLifecycle.Contains('fn defer_recorded_hotkey(') -or
     -not $hotkeyLifecycle.Contains('fn defer_all_hotkey_recording(')) {
     throw 'Hotkey recording and apply mutations must defer every cross-entity update.'
+}
+foreach ($requiredVolumeScopeContract in @(
+    'Checkbox::new(',
+    'VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT: f32 = 48.0',
+    'VOLUME_SCOPE_ROW_HEIGHT: f32 = 40.0',
+    'RADIUS_CONTROL',
+    'TEXT_BODY',
+    'LINE_HEIGHT_BODY',
+    'TEXT_LABEL',
+    'LINE_HEIGHT_LABEL',
+    'quick-launch-volume-scope-automatic'
+)) {
+    if (-not $volumeScopeSource.Contains($requiredVolumeScopeContract)) {
+        throw 'QL-09 volume scope must use one tokenized standard-checkbox list.'
+    }
+}
+if ($volumeScopeSource.Contains('.flex_wrap()') -or
+    $volumeScopeSource.Contains('MaterialIcon::Check') -or
+    -not $quickLaunchSettings.Contains('volume_scope_setting(') -or
+    -not $quickLaunchSettings.Contains('automatic_volume_scope_row(') -or
+    -not $quickLaunchSettings.Contains('volume_scope_row(') -or
+    $quickLaunchSettings.Contains('quick-launch-index-all-volumes') -or
+    -not $mainWindowSource.Contains(
+        'fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_semantics('
+    ) -or
+    -not $mainWindowSource.Contains('fn assert_single_index_settings_command(') -or
+    -not $mainWindowSource.Contains(
+        'a rejected last-volume toggle must not persist or synchronize'
+    )) {
+    throw 'QL-09 must replace wrapping chips with the production VolumeScope regression.'
+}
+$volumeScopeRenderStart = $quickLaunchSettings.IndexOf('        let available_volumes =')
+$volumeScopeRenderEnd = $quickLaunchSettings.IndexOf(
+    '        let mut index_exclusions_control =',
+    $volumeScopeRenderStart
+)
+if ($volumeScopeRenderStart -lt 0 -or $volumeScopeRenderEnd -le $volumeScopeRenderStart) {
+    throw 'Could not isolate the Quick Launch volume-scope renderer.'
+}
+$volumeScopeRender = $quickLaunchSettings.Substring(
+    $volumeScopeRenderStart,
+    $volumeScopeRenderEnd - $volumeScopeRenderStart
+)
+if (($volumeScopeRender.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
+    -not $volumeScopeRender.Contains('toggle_indexed_volume_selection(') -or
+    -not $volumeScopeRender.Contains('application.set_indexed_volumes(')) {
+    throw 'Volume-scope mutations must preserve canonical selection and defer cross-entity updates.'
 }
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)

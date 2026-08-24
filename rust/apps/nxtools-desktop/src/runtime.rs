@@ -60,6 +60,17 @@ pub(crate) fn indexer_bridge(capacity: usize) -> (IndexerBridge, IndexerProcessE
     )
 }
 
+#[cfg(test)]
+impl IndexerProcessEndpoint {
+    pub(crate) fn connect_for_test(&self) {
+        self.connected.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn try_recv_command_for_test(&self) -> Option<Envelope> {
+        self.commands.try_recv().ok()
+    }
+}
+
 impl IndexerBridge {
     pub(crate) fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)

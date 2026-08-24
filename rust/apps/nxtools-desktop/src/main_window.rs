@@ -56,6 +56,9 @@ use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setti
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
+use crate::ui::components::volume_scope::{
+    automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,
+};
 use crate::ui::metrics::{
     CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_2, SPACING_4,
     SPACING_6, SPACING_8, SPACING_12, SPACING_16, SPACING_24, TITLEBAR_HEIGHT,
@@ -1041,6 +1044,21 @@ fn volume_is_selected(configured: &[String], mount_point: &str) -> bool {
             .any(|candidate| same_volume(candidate, mount_point))
 }
 
+fn volume_scope_selector_key(mount_point: &str) -> String {
+    let key = mount_point
+        .trim_end_matches(['\\', '/'])
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    key.trim_matches('-').to_owned()
+}
+
 fn toggle_indexed_volume_selection(
     configured: &[String],
     available: &[String],
@@ -1055,11 +1073,22 @@ fn toggle_indexed_volume_selection(
         .iter()
         .position(|candidate| same_volume(candidate, mount_point))
     {
+        let selected_available_count = available
+            .iter()
+            .filter(|available_mount| {
+                selected
+                    .iter()
+                    .any(|candidate| same_volume(candidate, available_mount))
+            })
+            .count();
+        if selected_available_count == 1 {
+            return configured.to_vec();
+        }
         selected.remove(index);
     } else {
         selected.push(mount_point.to_owned());
     }
-    let exactly_all_available = selected.len() == available.len()
+    let exactly_all_available = !available.is_empty()
         && available.iter().all(|mount| {
             selected
                 .iter()
@@ -2808,123 +2837,85 @@ impl MainWindow {
             .into_any_element();
         let available_volumes = index_status
             .as_ref()
-            .map(|status| {
-                status
-                    .drives
-                    .iter()
-                    .map(|drive| drive.mount_point.clone())
-                    .collect::<Vec<_>>()
-            })
+            .map(|status| status.drives.clone())
             .unwrap_or_default();
+        let available_mounts = available_volumes
+            .iter()
+            .map(|drive| drive.mount_point.clone())
+            .collect::<Vec<_>>();
         let configured_volumes = settings.indexed_volumes.clone();
         let set_all_volumes = self.quick_launch.clone();
-        let mut index_volumes_control = div()
-            .w(px(210.0))
-            .flex()
-            .flex_wrap()
-            .justify_end()
-            .gap(px(4.0))
-            .child(
-                div()
-                    .id("quick-launch-index-all-volumes")
-                    .h(px(24.0))
-                    .px(px(7.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(if configured_volumes.is_empty() {
-                        theme.accent
-                    } else {
-                        theme.border_subtle
-                    })
-                    .bg(if configured_volumes.is_empty() {
-                        theme.accent_soft
-                    } else {
-                        theme.canvas
-                    })
-                    .cursor_pointer()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(10.0))
-                    .text_color(if configured_volumes.is_empty() {
-                        theme.accent_text
-                    } else {
-                        theme.text_secondary
-                    })
-                    .when(configured_volumes.is_empty(), |chip| {
-                        chip.child(Icon::new(MaterialIcon::Check).size(px(12.0)))
-                    })
-                    .child("全部")
-                    .on_click(move |_event, _window, cx| {
-                        let _ = set_all_volumes.update(cx, |application, cx| {
-                            application.set_indexed_volumes(Vec::new(), cx);
-                        });
-                    }),
-            );
+        let mut volume_scope_rows = vec![automatic_volume_scope_row(
+            theme,
+            configured_volumes.is_empty(),
+            move |checked, _window, cx| {
+                if !checked {
+                    return;
+                }
+                let set_all_volumes = set_all_volumes.clone();
+                cx.defer(move |cx| {
+                    let _ = set_all_volumes.update(cx, |application, cx| {
+                        application.set_indexed_volumes(Vec::new(), cx);
+                    });
+                });
+            },
+        )];
         if available_volumes.is_empty() {
-            index_volumes_control = index_volumes_control.child(
-                div()
-                    .h(px(24.0))
-                    .px(px(6.0))
-                    .flex()
-                    .items_center()
-                    .text_size(px(9.5))
-                    .text_color(theme.text_muted)
-                    .child("等待发现磁盘"),
-            );
+            volume_scope_rows.push(empty_volume_scope_row(
+                theme,
+                "等待发现可建立索引的 NTFS 卷",
+            ));
         }
-        for mount_point in &available_volumes {
-            let selected = volume_is_selected(&configured_volumes, mount_point);
-            let label = mount_point.trim_end_matches('\\').to_owned();
-            let mount_for_click = mount_point.clone();
+        for (index, drive) in available_volumes.iter().enumerate() {
+            let selected = volume_is_selected(&configured_volumes, &drive.mount_point);
+            let label = drive.mount_point.trim_end_matches(['\\', '/']).to_owned();
+            let selector = format!(
+                "quick-launch-index-volume-{}",
+                volume_scope_selector_key(&drive.mount_point)
+            );
+            let metadata = if drive.indexed_items == 0 {
+                format!("{} · 尚未建立索引", drive.file_system)
+            } else {
+                format!(
+                    "{} · {} 项",
+                    drive.file_system,
+                    grouped_count(drive.indexed_items)
+                )
+            };
+            let mount_for_click = drive.mount_point.clone();
             let configured_for_click = configured_volumes.clone();
-            let available_for_click = available_volumes.clone();
+            let available_for_click = available_mounts.clone();
             let quick_launch = self.quick_launch.clone();
-            index_volumes_control = index_volumes_control.child(
-                div()
-                    .id(gpui::SharedString::from(format!(
-                        "quick-launch-index-volume-{label}"
-                    )))
-                    .h(px(24.0))
-                    .px(px(7.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(if selected {
-                        theme.accent
-                    } else {
-                        theme.border_subtle
-                    })
-                    .bg(if selected {
-                        theme.accent_soft
-                    } else {
-                        theme.canvas
-                    })
-                    .cursor_pointer()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(10.0))
-                    .text_color(if selected {
-                        theme.accent_text
-                    } else {
-                        theme.text_secondary
-                    })
-                    .when(selected, |chip| {
-                        chip.child(Icon::new(MaterialIcon::Check).size(px(12.0)))
-                    })
-                    .child(label)
-                    .on_click(move |_event, _window, cx| {
-                        let selected = toggle_indexed_volume_selection(
-                            &configured_for_click,
-                            &available_for_click,
-                            &mount_for_click,
-                        );
+            volume_scope_rows.push(volume_scope_row(
+                theme,
+                selector,
+                label,
+                metadata,
+                selected,
+                index + 1 < available_volumes.len(),
+                move |_checked, _window, cx| {
+                    let selected = toggle_indexed_volume_selection(
+                        &configured_for_click,
+                        &available_for_click,
+                        &mount_for_click,
+                    );
+                    if selected == configured_for_click {
+                        return;
+                    }
+                    let quick_launch = quick_launch.clone();
+                    cx.defer(move |cx| {
                         let _ = quick_launch.update(cx, |application, cx| {
                             application.set_indexed_volumes(selected, cx);
                         });
-                    }),
-            );
+                    });
+                },
+            ));
         }
+        let index_volumes_control = volume_scope_setting(
+            theme,
+            "自动模式会持续包含新卷；取消任一卷后改为仅索引勾选项",
+            volume_scope_rows,
+        );
         let mut index_exclusions_control = div()
             .w(px(210.0))
             .flex()
@@ -3026,7 +3017,6 @@ impl MainWindow {
                     });
                 }),
         );
-        let index_volumes_control = index_volumes_control.into_any_element();
         let index_exclusions_control = index_exclusions_control.into_any_element();
         if self
             .selected_custom_command
@@ -3588,12 +3578,7 @@ impl MainWindow {
                             .child(refresh_volumes_control)
                             .into_any_element(),
                     ),
-                    compact_setting_row(
-                        theme,
-                        "索引卷",
-                        "勾选要索引的磁盘；全部会自动包含新 NTFS 卷",
-                        index_volumes_control,
-                    ),
+                    index_volumes_control,
                     compact_setting_row(
                         theme,
                         "排除目录",
@@ -6440,8 +6425,8 @@ mod tests {
 
     use nxtools_ipc::{PlatformNotification, platform_bridge};
     use nxtools_protocol::{
-        ActivateWindowCommand, IndexPhase, IndexStatus, Message, PlatformCommand,
-        PlatformCommandResult,
+        ActivateWindowCommand, IndexDriveStatus, IndexPhase, IndexStatus, IndexerCommand,
+        IndexerEvent, Message, PlatformCommand, PlatformCommandResult,
     };
 
     use crate::clipboard::ClipboardApplication;
@@ -6449,7 +6434,32 @@ mod tests {
     use crate::network_settings::NetworkSettingsApplication;
     use crate::notifications::{NotificationAction, NotificationCenter, NotificationDetail};
     use crate::quick_launch::QuickLaunchApplication;
+    use crate::runtime::IndexerNotification;
     use crate::shell::MainModule;
+
+    fn assert_single_index_settings_command(
+        endpoint: &crate::runtime::IndexerProcessEndpoint,
+        expected_volumes: &[&str],
+    ) {
+        let envelope = endpoint
+            .try_recv_command_for_test()
+            .expect("one index settings command");
+        let Message::IndexerCommand(IndexerCommand::UpdateSettings(settings)) = envelope.message
+        else {
+            panic!("volume click must emit one typed index settings command");
+        };
+        assert_eq!(
+            settings.indexed_volumes,
+            expected_volumes
+                .iter()
+                .map(|mount| (*mount).to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            endpoint.try_recv_command_for_test().is_none(),
+            "one pointer gesture must not persist and synchronize twice"
+        );
+    }
 
     #[test]
     fn download_failure_summary_localizes_typed_errors_without_exposing_engine_ids() {
@@ -7016,6 +7026,221 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[gpui::test]
+    fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_semantics(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary Quick Launch volume fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open Quick Launch volume catalog");
+        let (platform, _platform_endpoint) = platform_bridge(8);
+        let (indexer, indexer_endpoint) = crate::runtime::indexer_bridge(8);
+        indexer_endpoint.connect_for_test();
+        let quick_launch = cx.update(|cx| {
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications.clone(),
+                )
+            })
+        });
+        quick_launch.update(cx, |application, cx| {
+            application.handle_indexer_notification(
+                IndexerNotification::Event(IndexerEvent::Status(IndexStatus {
+                    phase: IndexPhase::Ready,
+                    indexed_items: 3_750_000,
+                    drives: vec![
+                        IndexDriveStatus {
+                            mount_point: r"C:\".into(),
+                            file_system: "NTFS".into(),
+                            indexed_items: 2_500_000,
+                            journal_id: Some(1),
+                            next_usn: Some(10),
+                        },
+                        IndexDriveStatus {
+                            mount_point: r"D:\".into(),
+                            file_system: "NTFS".into(),
+                            indexed_items: 1_250_000,
+                            journal_id: Some(2),
+                            next_usn: Some(20),
+                        },
+                        IndexDriveStatus {
+                            mount_point: r"E:\".into(),
+                            file_system: "NTFS".into(),
+                            indexed_items: 0,
+                            journal_id: None,
+                            next_usn: None,
+                        },
+                    ],
+                    last_error: None,
+                })),
+                cx,
+            );
+        });
+        assert_single_index_settings_command(&indexer_endpoint, &[]);
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(1060.0), px(500.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window.quick_launch_settings_page = QuickLaunchSettingsPage::Index;
+            main_window
+        });
+
+        window.refresh().expect("render automatic volume scope");
+        let scope = window
+            .debug_bounds("quick-launch-volume-scope")
+            .expect("one volume checkbox list");
+        let automatic = window
+            .debug_bounds("quick-launch-volume-scope-automatic")
+            .expect("automatic volume mode row");
+        assert_eq!(automatic.size.height, px(48.0));
+        assert!(
+            window
+                .debug_bounds("quick-launch-volume-scope-automatic-checked")
+                .is_some()
+        );
+        for (drive, row_selector, checked_selector) in [
+            (
+                "C",
+                "quick-launch-index-volume-C",
+                "quick-launch-index-volume-C-checked",
+            ),
+            (
+                "D",
+                "quick-launch-index-volume-D",
+                "quick-launch-index-volume-D-checked",
+            ),
+            (
+                "E",
+                "quick-launch-index-volume-E",
+                "quick-launch-index-volume-E-checked",
+            ),
+        ] {
+            let row = window
+                .debug_bounds(row_selector)
+                .unwrap_or_else(|| panic!("missing {drive}: volume row"));
+            assert_eq!(row.size.height, px(40.0));
+            assert_eq!(row.left(), automatic.left());
+            assert_eq!(row.size.width, automatic.size.width);
+            assert!(
+                window.debug_bounds(checked_selector).is_some(),
+                "automatic mode must visibly include {drive}:"
+            );
+        }
+        assert_eq!(automatic.left() - scope.left(), px(1.0));
+        assert_eq!(scope.size.width - automatic.size.width, px(2.0));
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-index-volume-C-title")
+                .expect("volume title")
+                .size
+                .height,
+            px(LINE_HEIGHT_BODY)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-index-volume-C-metadata")
+                .expect("volume metadata")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+
+        let c_volume = window
+            .debug_bounds("quick-launch-index-volume-C")
+            .expect("C: volume row");
+        window.simulate_click(
+            gpui::point(c_volume.left() + px(19.0), c_volume.center().y),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().indexed_volumes),
+            vec![r"D:\".to_owned(), r"E:\".to_owned()],
+            "disabling one volume must materialize an explicit selected-volume set"
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[r"D:\", r"E:\"]);
+        window.refresh().expect("render specified volume scope");
+        assert!(
+            window
+                .debug_bounds("quick-launch-volume-scope-automatic-unchecked")
+                .is_some()
+        );
+        assert!(
+            window
+                .debug_bounds("quick-launch-index-volume-C-unchecked")
+                .is_some()
+        );
+
+        let d_volume = window
+            .debug_bounds("quick-launch-index-volume-D")
+            .expect("D: volume row");
+        window.simulate_click(
+            gpui::point(d_volume.right() - px(20.0), d_volume.center().y),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().indexed_volumes),
+            vec![r"E:\".to_owned()],
+            "the non-indicator row area must share the same single toggle path"
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[r"E:\"]);
+        window.refresh().expect("render final explicit volume");
+
+        let e_volume = window
+            .debug_bounds("quick-launch-index-volume-E")
+            .expect("E: volume row");
+        window.simulate_click(
+            gpui::point(e_volume.left() + px(19.0), e_volume.center().y),
+            Modifiers::default(),
+        );
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().indexed_volumes),
+            vec![r"E:\".to_owned()],
+            "the last available selected volume cannot encode an empty explicit scope"
+        );
+        assert!(
+            indexer_endpoint.try_recv_command_for_test().is_none(),
+            "a rejected last-volume toggle must not persist or synchronize"
+        );
+
+        let automatic = window
+            .debug_bounds("quick-launch-volume-scope-automatic")
+            .expect("automatic volume mode row");
+        window.simulate_click(automatic.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(
+            window
+                .update(|_, cx| quick_launch.read(cx).settings().indexed_volumes)
+                .is_empty(),
+            "automatic mode must retain the empty-vector persistence contract"
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[]);
     }
 
     #[gpui::test]
@@ -9679,10 +9904,23 @@ mod tests {
             all_again.is_empty(),
             "all selected is stored as automatic all"
         );
+
+        let last_selected = vec![r"D:\".to_owned()];
+        assert_eq!(
+            toggle_indexed_volume_selection(&last_selected, &available, r"D:\"),
+            last_selected,
+            "the empty vector is reserved for automatic all, not an explicit empty scope"
+        );
+
+        let stale_and_current = vec![r"Z:\".to_owned(), r"C:\".to_owned()];
+        assert!(
+            toggle_indexed_volume_selection(&stale_and_current, &available, r"D:\").is_empty(),
+            "all currently discovered volumes canonicalize to automatic all even with a stale mount"
+        );
     }
 
     #[test]
-    fn index_scope_settings_use_toggles_and_a_directory_picker_not_text_inputs() {
+    fn index_scope_settings_use_a_checkbox_list_and_a_directory_picker_not_text_inputs() {
         let source = include_str!("main_window.rs");
         let production = source
             .split("#[cfg(test)]")
@@ -9691,7 +9929,10 @@ mod tests {
 
         assert!(!production.contains("index_volumes_input"));
         assert!(!production.contains("index_exclusions_input"));
-        assert!(production.contains("quick-launch-index-all-volumes"));
+        assert!(production.contains("volume_scope_setting("));
+        assert!(production.contains("automatic_volume_scope_row("));
+        assert!(production.contains("volume_scope_row("));
+        assert!(!production.contains("quick-launch-index-all-volumes"));
         assert!(production.contains("quick-launch-add-index-exclusion"));
         assert!(production.contains("request_index_exclusion_directory"));
     }
