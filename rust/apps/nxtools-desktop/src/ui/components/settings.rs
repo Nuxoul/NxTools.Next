@@ -14,6 +14,57 @@ pub(crate) struct SettingsShellIds {
     pub footer: &'static str,
 }
 
+pub(crate) struct SettingsSplitSurfaceIds {
+    pub surface: &'static str,
+    pub primary: &'static str,
+    pub divider: &'static str,
+    pub secondary: &'static str,
+}
+
+pub(crate) fn settings_split_surface(
+    theme: Theme,
+    ids: SettingsSplitSurfaceIds,
+    secondary_width: f32,
+    primary: AnyElement,
+    secondary: AnyElement,
+) -> AnyElement {
+    div()
+        .id(ids.surface)
+        .debug_selector(move || ids.surface.into())
+        .w_full()
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .flex()
+        .child(
+            div()
+                .id(ids.primary)
+                .debug_selector(move || ids.primary.into())
+                .flex_1()
+                .min_w_0()
+                .px(px(SPACING_12))
+                .child(primary),
+        )
+        .child(
+            div()
+                .id(ids.divider)
+                .debug_selector(move || ids.divider.into())
+                .w(px(1.0))
+                .flex_none()
+                .bg(theme.border_subtle),
+        )
+        .child(
+            div()
+                .id(ids.secondary)
+                .debug_selector(move || ids.secondary.into())
+                .w(px(secondary_width))
+                .flex_none()
+                .px(px(SPACING_12))
+                .child(secondary),
+        )
+        .into_any_element()
+}
+
 pub(crate) fn settings_shell(
     theme: Theme,
     ids: SettingsShellIds,

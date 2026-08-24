@@ -106,6 +106,18 @@ Clean-room source inspection for this settings pass:
 NxTools.Next therefore uses a graphite background/surface ladder, blue focus/action accents,
 low-contrast separators, and one continuous settings surface rather than symmetric bordered cards.
 
+Reverified on 2026-08-24 before the CL-01 main-workspace settings migration:
+
+- Old NxTools `Views/MainWindow.axaml:1458-1564` keeps calling/hotkey and modifier-click actions
+  separate from storage and retention policy. It confirms ownership and behavior, but its stacked
+  card layout, Avalonia measurements and turquoise palette are not copied into NxTools.Next.
+- NxTools.Next already placed those responsibilities in one two-column surface: the flexible
+  `呼出与快捷操作` column owns the hotkey plus Ctrl/Alt/Shift actions, while the fixed
+  `保留与隐私` column owns item/day limits, exclusions, archives, database maintenance and storage.
+- CL-01 extracts only that outer grammar into the shared settings component: one square boundary,
+  12 px column insets, one 1 px seam and the existing 410 px secondary rail. It does not change row
+  density, labels, controls, persistence, picker flows, hotkey registration or clipboard lifecycle.
+
 ## GPUI settings and popup ownership invariant
 
 The main-window hotkey editor owns the persisted modifier-action settings. A clipboard popup receives

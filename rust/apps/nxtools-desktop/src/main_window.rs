@@ -62,6 +62,7 @@ use crate::ui::components::path_list::path_exclusion_setting;
 use crate::ui::components::quick_launch_diagnostics::{
     QuickLaunchDiagnosticsActions, QuickLaunchDiagnosticsData, quick_launch_diagnostics,
 };
+use crate::ui::components::settings::{SettingsSplitSurfaceIds, settings_split_surface};
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::components::volume_scope::{
@@ -86,6 +87,7 @@ const QUICK_FIND_SCROLL_TARGET_SNAP_DISTANCE: f32 = 128.0;
 const QUICK_LAUNCH_SETTINGS_NAV_WIDTH: f32 = 160.0;
 const QUICK_LAUNCH_SETTINGS_NAV_ROW_HEIGHT: f32 = 40.0;
 const QUICK_LAUNCH_SETTINGS_PAGE_HEADER_HEIGHT: f32 = 48.0;
+const CLIPBOARD_SETTINGS_SECONDARY_WIDTH: f32 = 410.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
 const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
@@ -3967,26 +3969,24 @@ impl MainWindow {
                 .render(theme),
             )
             .child(
-                div().flex_1().min_h_0().p(px(12.0)).child(
-                    div()
-                        .w_full()
-                        .rounded(px(5.0))
-                        .border_1()
-                        .border_color(theme.border_subtle)
-                        .bg(theme.surface)
-                        .flex()
-                        .child(div().flex_1().min_w_0().px(px(12.0)).child(compact_group(
-                            theme,
-                            "呼出与快捷操作",
-                            interaction_rows,
-                        )))
-                        .child(div().w(px(1.0)).bg(theme.border_subtle))
-                        .child(div().w(px(410.0)).px(px(12.0)).child(compact_group(
-                            theme,
-                            "保留与隐私",
-                            policy_rows,
-                        ))),
-                ),
+                div()
+                    .id("clipboard-settings-workspace")
+                    .debug_selector(|| "clipboard-settings-workspace".into())
+                    .flex_1()
+                    .min_h_0()
+                    .p(px(SPACING_12))
+                    .child(settings_split_surface(
+                        theme,
+                        SettingsSplitSurfaceIds {
+                            surface: "clipboard-settings-split-surface",
+                            primary: "clipboard-settings-primary-column",
+                            divider: "clipboard-settings-column-divider",
+                            secondary: "clipboard-settings-secondary-column",
+                        },
+                        CLIPBOARD_SETTINGS_SECONDARY_WIDTH,
+                        compact_group(theme, "呼出与快捷操作", interaction_rows),
+                        compact_group(theme, "保留与隐私", policy_rows),
+                    )),
             )
             .into_any_element()
     }
@@ -6564,6 +6564,62 @@ mod tests {
                 .height,
             px(LINE_HEIGHT_LABEL)
         );
+    }
+
+    #[gpui::test]
+    fn clipboard_settings_keep_one_continuous_primary_secondary_surface(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui::size(px(1060.0), px(500.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Clipboard);
+            main_window
+        });
+
+        window
+            .refresh()
+            .expect("render clipboard settings workspace");
+        let workspace = window
+            .debug_bounds("clipboard-settings-workspace")
+            .expect("clipboard settings workspace");
+        let surface = window
+            .debug_bounds("clipboard-settings-split-surface")
+            .expect("one continuous clipboard settings surface");
+        let primary = window
+            .debug_bounds("clipboard-settings-primary-column")
+            .expect("primary clipboard settings column");
+        let divider = window
+            .debug_bounds("clipboard-settings-column-divider")
+            .expect("single clipboard settings column divider");
+        let secondary = window
+            .debug_bounds("clipboard-settings-secondary-column")
+            .expect("secondary clipboard settings column");
+
+        assert_eq!(surface.left() - workspace.left(), px(12.0));
+        assert_eq!(workspace.right() - surface.right(), px(12.0));
+        assert_eq!(surface.top() - workspace.top(), px(12.0));
+        assert_eq!(primary.left() - surface.left(), px(1.0));
+        assert_eq!(primary.right(), divider.left());
+        assert_eq!(divider.size.width, px(1.0));
+        assert_eq!(divider.right(), secondary.left());
+        assert_eq!(surface.right() - secondary.right(), px(1.0));
+        assert_eq!(secondary.size.width, px(410.0));
+        assert!(primary.size.width > secondary.size.width);
+        assert_eq!(primary.top(), secondary.top());
+        assert_eq!(primary.bottom(), secondary.bottom());
     }
 
     #[gpui::test]

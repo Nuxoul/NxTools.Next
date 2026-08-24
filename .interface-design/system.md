@@ -67,6 +67,20 @@
   architecture slice preserves the existing immediate setting actions; it does not invent a draft
   footer or pre-empt the later Hotkey, volume, exclusion, command-editor and diagnostics redesigns.
 
+### Continuous split settings surface
+
+- A dense main-workspace settings view may use one square, border-contained surface split into a
+  flexible primary column and a fixed secondary column by one quiet 1 px seam. Both columns use the
+  same surface role and 12 px horizontal content inset; they never become independent cards or
+  compete through accent fills, radii or elevation.
+- The primary column owns the settings most closely tied to the module's frequent interaction;
+  the secondary column owns bounded policy and maintenance controls. Extracting this surface changes
+  presentation only: row density, control ownership, persistence and native lifecycle stay with the
+  existing module.
+- Clipboard is the reference use: calling and modifier-click actions remain in the flexible primary
+  column, while retention, exclusions, archives, database maintenance and storage remain in the
+  fixed 410 px secondary column. The complete surface keeps the main workspace's 12 px safe inset.
+
 ### Auxiliary dialogs
 
 - Schedule, confirmation and transient safety windows use one `DialogShell`: the shared 36 px
