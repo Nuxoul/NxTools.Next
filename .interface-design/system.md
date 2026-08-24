@@ -158,6 +158,25 @@
   arguments/working-directory form equal flexible pairs with an 8 px gutter; Add, picker, Delete and
   Save use the shared 28 px action height. Destructive styling appears only on Delete hover/press.
 
+### Quick Launch diagnostics
+
+- Quick Launch history, query timing and log access live only on the Diagnostics page. They use one
+  continuous border-contained surface made from five adjacent 48 px rows: history heading, history
+  metrics, performance heading, performance metrics and log directory. The surface never becomes a
+  dashboard of cards, colored status badges or animated telemetry.
+- History uses four equal cells for ranked items, activations, query associations and recent
+  directories. Performance uses two equal cells for the existing local-merge and MFT/USN snapshots.
+  Labels use UI Label 11/16; values use Mono Body 12/18. Missing timing data remains a textual empty
+  value in the same rail, so receiving a sample never changes geometry.
+- The page reads only existing in-memory performance snapshots. It must not add sampling threads,
+  idle polling, per-result timers or SQLite reads to the search hot path. Performance values never
+  appear on General, Index, Context or Commands pages.
+- The complete log directory stays available through an exact-value tooltip and opens through the
+  existing typed Windows Shell boundary. Open Logs and Clear History use standard 28 px actions and
+  defer cross-entity work to the next application turn. Clear remains neutral at rest, uses danger
+  only on hover/press and clears ranking, query associations and recent directories together without
+  removing the application/file index or user settings; success and failure remain global notices.
+
 ### Settings matrix
 
 - Dense numeric and boolean policies may share one two-column matrix inside a single section. The

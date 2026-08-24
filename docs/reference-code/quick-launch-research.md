@@ -1171,6 +1171,25 @@ Reverified on 2026-08-24 before the QL-10 excluded-directory migration:
   duplicate suppression, cancellation and failure notification remain unchanged; diagnostics record
   correlation/outcome/elapsed/native code but never the selected path.
 
+Reverified on 2026-08-24 before the QL-12 diagnostics-page closure:
+
+- The old `D:/RiderProject/NxTools` tree still has no Quick Launch settings, history-learning or
+  query-performance surface, so it provides no legacy diagnostic layout to preserve.
+- The previously verified Listary boundary keeps index metadata and commands in settings, while its
+  `FileSearchIndexDebugViewModel` opens a separate diagnostic text/copy flow through the typed index
+  service. This supports separating operational diagnostics from ordinary settings, but neither its
+  WPF dialog nor its opaque native timing implementation is a visual or sampling source.
+- NxTools.Next already owns the complete required state: `FinderCatalog::history_summary` exposes
+  ranking, activation, query-association and recent-directory counts; the local merge and
+  `IndexSearchBatch.elapsed_us` boundaries retain the latest timing in memory; `AppPaths.log_dir`
+  identifies the shared log directory. QL-12 only presents these snapshots and does not add polling,
+  database reads or per-result instrumentation.
+- QL-12 therefore uses one continuous diagnostic surface rather than metric cards: four equal
+  history cells, two equal timing cells and one exact-path log row. Clearing keeps the established
+  transactional SQLite plus in-memory reset and global notification; opening logs keeps the typed
+  `OpenShellTarget` boundary. Both UI callbacks defer cross-entity work, and the performance rails
+  remain absent from every ordinary settings page.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

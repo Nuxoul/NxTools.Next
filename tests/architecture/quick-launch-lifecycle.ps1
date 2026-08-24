@@ -17,6 +17,8 @@ $pathListPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\pat
 $pathListSource = Get-Content -Raw -LiteralPath $pathListPath
 $customCommandEditorPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\custom_command_editor.rs'
 $customCommandEditorSource = Get-Content -Raw -LiteralPath $customCommandEditorPath
+$diagnosticsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\quick_launch_diagnostics.rs'
+$diagnosticsSource = Get-Content -Raw -LiteralPath $diagnosticsPath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -440,7 +442,7 @@ if (-not $mainWindowSource.Contains(
 }
 $customCommandCallbacksStart = $quickLaunchSettings.IndexOf('        let selected_command = self')
 $customCommandCallbacksEnd = $quickLaunchSettings.IndexOf(
-    '        let history_is_empty =',
+    '        let selected_page = self.quick_launch_settings_page;',
     $customCommandCallbacksStart
 )
 if ($customCommandCallbacksStart -lt 0 -or
@@ -528,6 +530,102 @@ if (($customCommandPickerEvent.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
     ) -or
     -not $mainWindowSource.Contains('picker cancellation must not modify the current draft')) {
     throw 'QL-11 requires separately gated deferred picker apply plus stale-same-index and cancellation regressions.'
+}
+foreach ($requiredDiagnosticsContract in @(
+    'const DIAGNOSTICS_ROW_HEIGHT: f32 = 48.0',
+    'quick-launch-diagnostics-surface',
+    'quick-launch-diagnostics-history-metrics',
+    'quick-launch-diagnostics-performance-metrics',
+    'quick-launch-diagnostics-log-row',
+    'CONTROL_HEIGHT_ACTION',
+    'TEXT_BODY',
+    'LINE_HEIGHT_BODY',
+    'TEXT_LABEL',
+    'LINE_HEIGHT_LABEL',
+    'UI_MONO_FONT_FAMILY',
+    'exact_log_path_tooltip(data.log_path.as_ref())',
+    'danger_hover_button_variant',
+    'labelled_icon_action('
+)) {
+    if (-not $diagnosticsSource.Contains($requiredDiagnosticsContract)) {
+        throw 'QL-12 diagnostics must use one tokenized surface with equal metric rails and exact log-path access.'
+    }
+}
+if ($diagnosticsSource.Contains('.text_size(px(10.0))') -or
+    $diagnosticsSource.Contains('.h(px(24.0))') -or
+    $diagnosticsSource.Contains('"LIVE"') -or
+    $diagnosticsSource.Contains('"IDLE"') -or
+    -not $quickLaunchSettings.Contains('quick_launch_diagnostics(') -or
+    -not $mainWindowSource.Contains(
+        'fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface('
+    ) -or
+    -not $mainWindowSource.Contains(
+        'the diagnostics tooltip must preserve the exact log directory'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'one click must emit one shell command'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'the detached log action must not remain interactive on'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'the detached history action must not remain interactive on'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'diagnostics metrics must remount only after returning to Diagnostics'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'performance metrics may mount only on the Diagnostics page'
+    )) {
+    throw 'QL-12 must replace private status badges with its real production-window diagnostics regression.'
+}
+$diagnosticsCallbacksStart = $quickLaunchSettings.IndexOf(
+    '        let selected_page = self.quick_launch_settings_page;'
+)
+$diagnosticsCallbacksEnd = $quickLaunchSettings.IndexOf(
+    '        let scan_state =',
+    $diagnosticsCallbacksStart
+)
+if ($diagnosticsCallbacksStart -lt 0 -or
+    $diagnosticsCallbacksEnd -le $diagnosticsCallbacksStart) {
+    throw 'Could not isolate the QL-12 diagnostics callback boundary.'
+}
+$diagnosticsCallbacks = $quickLaunchSettings.Substring(
+    $diagnosticsCallbacksStart,
+    $diagnosticsCallbacksEnd - $diagnosticsCallbacksStart
+)
+if (-not $diagnosticsCallbacks.Contains(
+        '(selected_page == QuickLaunchSettingsPage::Diagnostics)'
+    ) -or
+    -not $diagnosticsCallbacks.Contains('.then(||')) {
+    throw 'QL-12 diagnostics must be constructed only for the selected Diagnostics page.'
+}
+$diagnosticsDeferredCount = [regex]::Matches(
+    $diagnosticsCallbacks,
+    [regex]::Escape('cx.defer(move |cx|')
+).Count
+if ($diagnosticsDeferredCount -ne 2) {
+    throw 'QL-12 Clear and Open Logs must each defer exactly one cross-entity action.'
+}
+foreach ($requiredDiagnosticsAction in @(
+    'application.clear_history(cx)',
+    'application.open_log_directory()'
+)) {
+    if (-not $diagnosticsCallbacks.Contains($requiredDiagnosticsAction)) {
+        throw 'QL-12 diagnostics callbacks must retain the existing Clear History and Open Logs behavior.'
+    }
+}
+$performanceTestSeamStart = $quickLaunchSource.IndexOf(
+    '    pub(crate) fn set_performance_snapshot_for_test('
+)
+$performanceTestSeamPrefixStart = [Math]::Max(0, $performanceTestSeamStart - 32)
+if ($performanceTestSeamStart -lt 0 -or
+    -not $quickLaunchSource.Substring(
+        $performanceTestSeamPrefixStart,
+        $performanceTestSeamStart - $performanceTestSeamPrefixStart
+    ).Contains('#[cfg(test)]') -or
+    -not $quickLaunchSource.Contains('pub(crate) fn performance_snapshot(&self)')) {
+    throw 'QL-12 performance evidence must use a test-only snapshot seam and the existing production memory snapshot.'
 }
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)

@@ -59,6 +59,9 @@ use crate::ui::components::custom_command_editor::{
 use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setting_row};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::path_list::path_exclusion_setting;
+use crate::ui::components::quick_launch_diagnostics::{
+    QuickLaunchDiagnosticsActions, QuickLaunchDiagnosticsData, quick_launch_diagnostics,
+};
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::components::volume_scope::{
@@ -3264,102 +3267,53 @@ impl MainWindow {
             },
             cx,
         );
-        let history_is_empty =
-            history_summary.total_activations == 0 && history_summary.recent_directories == 0;
-        let history_description = format!(
-            "{} 个排序项目 · {} 次启动 · {} 个关键词关联 · {} 个最近目录",
-            history_summary.ranked_items,
-            history_summary.total_activations,
-            history_summary.query_associations,
-            history_summary.recent_directories
-        );
-        let clear_history = self.quick_launch.clone();
-        let clear_history_control = Button::new("quick-launch-clear-history")
-            .ghost()
-            .compact()
-            .xsmall()
-            .h(px(24.0))
-            .px(px(8.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface_raised)
-            .disabled(history_is_empty)
-            .child(div().text_size(px(10.0)).child("清空"))
-            .on_click(move |_event, _window, cx| {
-                let _ = clear_history.update(cx, |application, cx| {
-                    application.clear_history(cx);
-                });
-            })
-            .into_any_element();
-        let performance_description = format!(
-            "本地合并 {} · MFT/USN {}",
-            format_query_elapsed(performance.last_local_search_us),
-            format_query_elapsed(performance.last_index_search_us)
-        );
-        let performance_control = div()
-            .text_size(px(10.0))
-            .text_color(theme.accent_text)
-            .child(
-                if performance.last_local_search_us.is_some()
-                    || performance.last_index_search_us.is_some()
-                {
-                    "LIVE"
+        let selected_page = self.quick_launch_settings_page;
+        let history_diagnostics_control = (selected_page == QuickLaunchSettingsPage::Diagnostics)
+            .then(|| {
+                let log_path = if log_directory.as_os_str().is_empty() {
+                    "日志目录不可用".to_owned()
                 } else {
-                    "IDLE"
-                },
-            )
-            .into_any_element();
-        let log_path = if log_directory.as_os_str().is_empty() {
-            "日志目录不可用".to_owned()
-        } else {
-            log_directory.display().to_string()
-        };
-        let open_logs = self.quick_launch.clone();
-        let open_logs_control = Button::new("quick-launch-open-logs")
-            .ghost()
-            .compact()
-            .xsmall()
-            .h(px(24.0))
-            .px(px(8.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface_raised)
-            .disabled(log_directory.as_os_str().is_empty())
-            .child(div().text_size(px(10.0)).child("打开日志"))
-            .on_click(move |_event, _window, cx| {
-                let _ = open_logs.update(cx, |application, _cx| {
-                    application.open_log_directory();
-                });
-            })
-            .into_any_element();
-        let history_diagnostics_control = div()
-            .rounded(px(5.0))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface)
-            .px(px(12.0))
-            .child(compact_group(
-                theme,
-                "历史与诊断",
-                vec![
-                    compact_setting_row(
-                        theme,
-                        "排序学习",
-                        history_description,
-                        clear_history_control,
-                    ),
-                    compact_setting_row(
-                        theme,
-                        "最近查询",
-                        performance_description,
-                        performance_control,
-                    ),
-                    compact_setting_row(theme, "运行日志", log_path, open_logs_control),
-                ],
-            ))
-            .into_any_element();
+                    log_directory.display().to_string()
+                };
+                quick_launch_diagnostics(
+                    theme,
+                    QuickLaunchDiagnosticsData {
+                        ranked_items: history_summary.ranked_items,
+                        total_activations: history_summary.total_activations,
+                        query_associations: history_summary.query_associations,
+                        recent_directories: history_summary.recent_directories,
+                        local_search_elapsed: format_query_elapsed(
+                            performance.last_local_search_us,
+                        )
+                        .into(),
+                        index_search_elapsed: format_query_elapsed(
+                            performance.last_index_search_us,
+                        )
+                        .into(),
+                        log_path: log_path.into(),
+                        log_available: !log_directory.as_os_str().is_empty(),
+                    },
+                    QuickLaunchDiagnosticsActions {
+                        clear_history: Rc::new(cx.listener(move |this, _, _window, cx| {
+                            let quick_launch = this.quick_launch.clone();
+                            cx.defer(move |cx| {
+                                let _ = quick_launch.update(cx, |application, cx| {
+                                    application.clear_history(cx);
+                                });
+                            });
+                        })),
+                        open_logs: Rc::new(cx.listener(move |this, _, _window, cx| {
+                            let quick_launch = this.quick_launch.clone();
+                            cx.defer(move |cx| {
+                                let _ = quick_launch.update(cx, |application, _| {
+                                    application.open_log_directory();
+                                });
+                            });
+                        })),
+                    },
+                    cx,
+                )
+            });
         let scan_state = if status.errors.is_empty() {
             format!(
                 "已索引 {} 个入口 · {} 个目录",
@@ -3496,25 +3450,26 @@ impl MainWindow {
             .w_full()
             .child(custom_commands_control)
             .into_any_element();
-        let diagnostics_page = div()
-            .id(QuickLaunchSettingsPage::Diagnostics.metadata().content_id)
-            .debug_selector(|| {
-                QuickLaunchSettingsPage::Diagnostics
-                    .metadata()
-                    .content_id
-                    .into()
-            })
-            .w_full()
-            .child(history_diagnostics_control)
-            .into_any_element();
-        let selected_page = self.quick_launch_settings_page;
-        let selected_page_content = match selected_page {
-            QuickLaunchSettingsPage::General => general_page,
-            QuickLaunchSettingsPage::Index => index_page,
-            QuickLaunchSettingsPage::Context => context_page,
-            QuickLaunchSettingsPage::Commands => commands_page,
-            QuickLaunchSettingsPage::Diagnostics => diagnostics_page,
-        };
+        let selected_page_content =
+            match selected_page {
+                QuickLaunchSettingsPage::General => general_page,
+                QuickLaunchSettingsPage::Index => index_page,
+                QuickLaunchSettingsPage::Context => context_page,
+                QuickLaunchSettingsPage::Commands => commands_page,
+                QuickLaunchSettingsPage::Diagnostics => div()
+                    .id(QuickLaunchSettingsPage::Diagnostics.metadata().content_id)
+                    .debug_selector(|| {
+                        QuickLaunchSettingsPage::Diagnostics
+                            .metadata()
+                            .content_id
+                            .into()
+                    })
+                    .w_full()
+                    .child(history_diagnostics_control.expect(
+                        "Diagnostics content exists only for the selected Diagnostics page",
+                    ))
+                    .into_any_element(),
+            };
         let mut settings_navigation = div()
             .id("quick-launch-settings-navigation")
             .debug_selector(|| "quick-launch-settings-navigation".into())
@@ -6855,6 +6810,20 @@ mod tests {
                     selected_page.metadata().label
                 );
             }
+            assert_eq!(
+                window
+                    .debug_bounds("quick-launch-diagnostics-surface")
+                    .is_some(),
+                selected_page == QuickLaunchSettingsPage::Diagnostics,
+                "the diagnostics surface may mount only on the Diagnostics page"
+            );
+            assert_eq!(
+                window
+                    .debug_bounds("quick-launch-diagnostics-performance-metrics")
+                    .is_some(),
+                selected_page == QuickLaunchSettingsPage::Diagnostics,
+                "performance metrics may mount only on the Diagnostics page"
+            );
         }
     }
 
@@ -7854,6 +7823,295 @@ mod tests {
         assert_eq!(
             window.read(|cx| main_window.read(cx).selected_custom_command),
             Some(1)
+        );
+    }
+
+    #[gpui::test]
+    fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let executor = cx.executor();
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary Quick Launch diagnostics fixture");
+        let history_path = temp.path().join("history.db");
+        let mut catalog =
+            FinderCatalog::open(&history_path, &[]).expect("open Quick Launch diagnostics catalog");
+        catalog
+            .record_activation("editor", "edit", 1_700_000_000_000)
+            .expect("record first ranking activation");
+        catalog
+            .record_activation("editor", "edit", 1_700_000_001_000)
+            .expect("record second ranking activation");
+        let log_directory = temp.path().join("logs");
+        let (platform, platform_endpoint) = platform_bridge(8);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let quick_launch = cx.update(|cx| {
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    temp.path().join("config.json"),
+                    log_directory.clone(),
+                    notifications.clone(),
+                )
+            })
+        });
+        cx.update(|cx| {
+            quick_launch.update(cx, |application, _| {
+                application.set_performance_snapshot_for_test(Some(240), Some(12_345));
+            });
+        });
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui::size(px(1060.0), px(720.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window.quick_launch_settings_page = QuickLaunchSettingsPage::Diagnostics;
+            main_window
+        });
+
+        window
+            .refresh()
+            .expect("render Quick Launch diagnostics page");
+        let surface = window
+            .debug_bounds("quick-launch-diagnostics-surface")
+            .expect("one continuous diagnostics surface");
+        let history_header = window
+            .debug_bounds("quick-launch-diagnostics-history-header")
+            .expect("history section header");
+        let history_metrics = window
+            .debug_bounds("quick-launch-diagnostics-history-metrics")
+            .expect("history metric strip");
+        let performance_header = window
+            .debug_bounds("quick-launch-diagnostics-performance-header")
+            .expect("performance section header");
+        let performance_metrics = window
+            .debug_bounds("quick-launch-diagnostics-performance-metrics")
+            .expect("performance metric strip");
+        let log_row = window
+            .debug_bounds("quick-launch-diagnostics-log-row")
+            .expect("log directory row");
+        assert_eq!(history_header.left() - surface.left(), px(1.0));
+        assert_eq!(surface.right() - history_header.right(), px(1.0));
+        assert_eq!(history_header.bottom(), history_metrics.top());
+        assert_eq!(history_metrics.bottom(), performance_header.top());
+        assert_eq!(performance_header.bottom(), performance_metrics.top());
+        assert_eq!(performance_metrics.bottom(), log_row.top());
+        assert_eq!(surface.bottom() - log_row.bottom(), px(1.0));
+        assert_eq!(history_header.size.height, px(48.0));
+        assert_eq!(history_metrics.size.height, px(48.0));
+        assert_eq!(performance_header.size.height, px(48.0));
+        assert_eq!(performance_metrics.size.height, px(48.0));
+        assert_eq!(log_row.size.height, px(48.0));
+
+        let history_cells = [
+            "quick-launch-diagnostics-ranked-items",
+            "quick-launch-diagnostics-activations",
+            "quick-launch-diagnostics-query-associations",
+            "quick-launch-diagnostics-recent-directories",
+        ]
+        .map(|selector| {
+            window
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing {selector}"))
+        });
+        for pair in history_cells.windows(2) {
+            assert_eq!(pair[0].right(), pair[1].left());
+            assert!((pair[0].size.width - pair[1].size.width).abs() <= px(1.0));
+        }
+        for selector in [
+            "quick-launch-diagnostics-ranked-items-value",
+            "quick-launch-diagnostics-activations-value",
+            "quick-launch-diagnostics-query-associations-value",
+            "quick-launch-diagnostics-recent-directories-value",
+            "quick-launch-diagnostics-local-search-value",
+            "quick-launch-diagnostics-index-search-value",
+        ] {
+            assert_eq!(
+                window
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("missing {selector}"))
+                    .size
+                    .height,
+                px(LINE_HEIGHT_BODY)
+            );
+        }
+        let local_search = window
+            .debug_bounds("quick-launch-diagnostics-local-search")
+            .expect("local merge metric");
+        let index_search = window
+            .debug_bounds("quick-launch-diagnostics-index-search")
+            .expect("index batch metric");
+        assert_eq!(local_search.right(), index_search.left());
+        assert!((local_search.size.width - index_search.size.width).abs() <= px(1.0));
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-clear-history")
+                .expect("clear history action")
+                .size
+                .height,
+            px(28.0)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-open-logs")
+                .expect("open logs action")
+                .size
+                .height,
+            px(28.0)
+        );
+        assert_eq!(
+            crate::ui::components::quick_launch_diagnostics::exact_log_path_tooltip(
+                &log_directory.to_string_lossy()
+            )
+            .to_string(),
+            log_directory.to_string_lossy(),
+            "the diagnostics tooltip must preserve the exact log directory"
+        );
+        let log_path = window
+            .debug_bounds("quick-launch-diagnostics-log-path")
+            .expect("truncated log path rail");
+        window.simulate_mouse_move(log_path.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(500));
+        window.run_until_parked();
+        assert!(
+            window
+                .debug_bounds("quick-launch-diagnostics-log-tooltip")
+                .is_some(),
+            "the exact log path must remain available through a tooltip"
+        );
+
+        let open_logs = window
+            .debug_bounds("quick-launch-open-logs")
+            .expect("open logs action");
+        window.simulate_click(open_logs.center(), Modifiers::default());
+        window.run_until_parked();
+        let open_command = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one typed log-directory command");
+        let Message::PlatformCommand(PlatformCommand::OpenShellTarget(command)) =
+            open_command.message
+        else {
+            panic!("opening logs must use the typed Windows shell boundary");
+        };
+        assert_eq!(command.target, log_directory.to_string_lossy());
+        assert_eq!(command.action, nxtools_protocol::ShellOpenAction::Open);
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "one click must emit one shell command"
+        );
+
+        let clear_history = window
+            .debug_bounds("quick-launch-clear-history")
+            .expect("clear history action");
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).history_summary().total_activations),
+            2
+        );
+
+        for (navigation_selector, content_selector, expected_page) in [
+            (
+                "quick-launch-settings-nav-general",
+                "quick-launch-settings-page-general",
+                QuickLaunchSettingsPage::General,
+            ),
+            (
+                "quick-launch-settings-nav-index",
+                "quick-launch-settings-page-index",
+                QuickLaunchSettingsPage::Index,
+            ),
+            (
+                "quick-launch-settings-nav-context",
+                "quick-launch-settings-page-context",
+                QuickLaunchSettingsPage::Context,
+            ),
+            (
+                "quick-launch-settings-nav-commands",
+                "quick-launch-settings-page-commands",
+                QuickLaunchSettingsPage::Commands,
+            ),
+        ] {
+            let navigation = window
+                .debug_bounds(navigation_selector)
+                .unwrap_or_else(|| panic!("missing {navigation_selector}"));
+            window.simulate_click(navigation.center(), Modifiers::default());
+            window.run_until_parked();
+            window.refresh().expect("render ordinary Quick Launch page");
+            window.run_until_parked();
+            assert_eq!(
+                window.read(|cx| main_window.read(cx).quick_launch_settings_page),
+                expected_page
+            );
+            assert!(
+                window.debug_bounds(content_selector).is_some(),
+                "the selected ordinary page must replace Diagnostics: {expected_page:?}"
+            );
+
+            window.simulate_click(open_logs.center(), Modifiers::default());
+            window.run_until_parked();
+            assert!(
+                platform_endpoint
+                    .try_receive_command_for_contract_test()
+                    .is_err(),
+                "the detached log action must not remain interactive on {expected_page:?}"
+            );
+            window.simulate_click(clear_history.center(), Modifiers::default());
+            window.run_until_parked();
+            assert_eq!(
+                window.update(|_, cx| quick_launch.read(cx).history_summary().total_activations),
+                2,
+                "the detached history action must not remain interactive on {expected_page:?}"
+            );
+        }
+        let diagnostics_navigation = window
+            .debug_bounds("quick-launch-settings-nav-diagnostics")
+            .expect("diagnostics navigation row");
+        window.simulate_click(diagnostics_navigation.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("return to Quick Launch diagnostics");
+        window.run_until_parked();
+        assert!(
+            window
+                .debug_bounds("quick-launch-diagnostics-surface")
+                .is_some()
+                && window
+                    .debug_bounds("quick-launch-diagnostics-performance-metrics")
+                    .is_some(),
+            "diagnostics metrics must remount only after returning to Diagnostics"
+        );
+        let clear_history = window
+            .debug_bounds("quick-launch-clear-history")
+            .expect("remounted clear history action");
+        window.simulate_click(clear_history.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).history_summary()),
+            nxtools_finder::QuickLaunchHistorySummary::default()
+        );
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).quick_launch_settings_page),
+            QuickLaunchSettingsPage::Diagnostics
         );
     }
 
@@ -10614,18 +10872,20 @@ mod tests {
     #[test]
     fn quick_launch_settings_expose_history_performance_and_diagnostics() {
         let source = include_str!("main_window.rs");
+        let diagnostics = include_str!("ui/components/quick_launch_diagnostics.rs");
         let quick_find = source
             .split("fn render_quick_find")
             .nth(1)
             .and_then(|source| source.split("fn render_clipboard").next())
             .expect("quick-launch settings source");
 
-        assert!(quick_find.contains("quick-launch-clear-history"));
+        assert!(quick_find.contains("quick_launch_diagnostics("));
         assert!(quick_find.contains("clear_history"));
-        assert!(quick_find.contains("quick-launch-open-logs"));
         assert!(quick_find.contains("open_log_directory"));
-        assert!(quick_find.contains("最近查询"));
-        assert!(quick_find.contains("历史与诊断"));
+        assert!(diagnostics.contains("quick-launch-clear-history"));
+        assert!(diagnostics.contains("quick-launch-open-logs"));
+        assert!(diagnostics.contains("最近查询性能"));
+        assert!(diagnostics.contains("排序学习"));
     }
 
     #[test]

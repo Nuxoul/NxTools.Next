@@ -2437,6 +2437,16 @@ impl QuickLaunchApplication {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_performance_snapshot_for_test(
+        &mut self,
+        last_local_search_us: Option<u64>,
+        last_index_search_us: Option<u64>,
+    ) {
+        self.last_local_search_us = last_local_search_us;
+        self.index_search.last_completed_elapsed_us = last_index_search_us;
+    }
+
     pub(crate) fn log_directory(&self) -> &Path {
         &self.log_dir
     }

@@ -7,6 +7,7 @@ pub(crate) mod list;
 pub(crate) mod menu;
 pub(crate) mod path_list;
 pub(crate) mod popover;
+pub(crate) mod quick_launch_diagnostics;
 pub(crate) mod settings;
 pub(crate) mod state;
 pub(crate) mod titlebar;
