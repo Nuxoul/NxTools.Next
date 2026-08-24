@@ -5,6 +5,8 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$iconsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\icons.rs'
+$iconsSource = Get-Content -Raw -LiteralPath $iconsPath
 $panelRenderStart = $quickLaunchSource.IndexOf('impl Render for QuickLaunchPanel')
 $panelRenderEnd = $quickLaunchSource.IndexOf('fn source_icon(', $panelRenderStart)
 if ($panelRenderStart -lt 0 -or $panelRenderEnd -le $panelRenderStart) {
@@ -97,6 +99,23 @@ if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
     $resultRender.Contains('.gap(px(1.0))') -or
     $resultRender.Contains('.bg(theme.surface_raised)')) {
     throw 'Quick Launch result rows must not restore private type, spacing or decorative icon tiles.'
+}
+foreach ($requiredSelectionContract in @(
+    'theme.element_selected',
+    '.on_mouse_move(',
+    '.on_mouse_down(gpui::MouseButton::Left',
+    'panel.select_result(index, cx)'
+)) {
+    if (-not $resultRender.Contains($requiredSelectionContract)) {
+        throw 'Quick Launch keyboard and pointer selection must share one neutral production row state.'
+    }
+}
+if ($resultRender.Contains('theme.accent_soft') -or
+    -not $quickLaunchSource.Contains(
+        'fn production_keyboard_pointer_movement_and_press_share_one_selection('
+    ) -or
+    -not $quickLaunchSource.Contains('fn stationary_pointer_does_not_steal_keyboard_selection(')) {
+    throw 'Quick Launch QL-03 requires neutral selection plus real pointer and stationary-pointer regressions.'
 }
 if (-not $quickLaunchSource.Contains('fn quick_launch_shortcut_target(') -or
     -not $quickLaunchSource.Contains('visible_result_range: Range<usize>') -or
@@ -1039,7 +1058,9 @@ virtual list's rendered range is the presentation boundary for all four paths.
 
 Write-Host 'PASS visible quick-launch rows request icons without pointer hover'
 
-if ($quickLaunchSource -notmatch 'fn shell_icon_path_is_renderable' -or
+if ($iconsSource -notmatch 'fn shell_icon_path_is_renderable' -or
+    $iconsSource -notmatch 'imagesize::size\(path\)' -or
+    $quickLaunchSource -notmatch 'use crate::icons::\{MaterialIcon, shell_icon_path_is_renderable\}' -or
     $quickLaunchSource -notmatch '\.filter\(\|path\| shell_icon_path_is_renderable\(path\)\)' -or
     $quickLaunchSource -notmatch '\.with_loading\(' -or
     $quickLaunchSource -notmatch '\.with_fallback\(' -or

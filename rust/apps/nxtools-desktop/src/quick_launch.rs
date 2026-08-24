@@ -5899,6 +5899,7 @@ impl QuickLaunchPanel {
         let preview_application = self.application.clone();
         let preview_result = result.clone();
         let pointer_panel = panel.clone();
+        let press_panel = panel.clone();
         let right_click_panel = panel;
         let icon_path = self.icons.get(&result.entry.id).cloned();
         let has_icon_path = icon_path.is_some();
@@ -5969,6 +5970,11 @@ impl QuickLaunchPanel {
                 let position = (event.position.x.as_f32(), event.position.y.as_f32());
                 let _ = pointer_panel.update(cx, |panel, cx| {
                     panel.pointer_moved_result(index, position, cx);
+                });
+            })
+            .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, cx| {
+                let _ = press_panel.update(cx, |panel, cx| {
+                    panel.select_result(index, cx);
                 });
             })
             .on_mouse_down(gpui::MouseButton::Right, move |_event, window, cx| {
@@ -6556,6 +6562,72 @@ mod tests {
             .debug_bounds("quick-launch-result-row")
             .expect("production quick-launch result row");
         assert_eq!(row.size.height, px(40.0));
+    }
+
+    #[gpui::test]
+    fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let panel_slot = Rc::new(RefCell::new(None));
+        let panel_slot_for_window = Rc::clone(&panel_slot);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
+            let panel = cx.new(|cx| {
+                let mut panel = QuickLaunchPanel::new(
+                    vec![
+                        search_result("first", ApplicationSource::StartMenu),
+                        search_result("second", ApplicationSource::IndexedFile),
+                        search_result("third", ApplicationSource::CustomCommand),
+                    ],
+                    nxtools_protocol::ForegroundContext {
+                        window_handle: 1,
+                        focus_window_handle: 1,
+                        process_id: 1,
+                        process_name: "editor".into(),
+                        window_title: "document".into(),
+                    },
+                    None,
+                    Vec::new(),
+                    WeakEntity::new_invalid(),
+                    window,
+                    cx,
+                );
+                panel.results_visible = true;
+                panel
+            });
+            *panel_slot_for_window.borrow_mut() = Some(panel.clone());
+            Root::new(panel, window, cx)
+        });
+        let panel = panel_slot
+            .borrow_mut()
+            .take()
+            .expect("production quick-launch panel");
+
+        window.refresh().expect("render quick-launch results");
+        panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
+        window.simulate_keystrokes("down");
+        panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 1));
+
+        let third_row = window
+            .debug_bounds("quick-launch-result-icon-2")
+            .expect("third production result row");
+        window.simulate_mouse_move(third_row.center(), None, gpui::Modifiers::default());
+        panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 1));
+        window.simulate_mouse_move(
+            gpui::point(third_row.origin.x + px(2.0), third_row.center().y),
+            None,
+            gpui::Modifiers::default(),
+        );
+        panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 2));
+
+        window.simulate_keystrokes("up");
+        panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 1));
+        window.simulate_mouse_down(
+            third_row.center(),
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
+
+        panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 2));
     }
 
     #[gpui::test]

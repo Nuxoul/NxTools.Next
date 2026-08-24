@@ -142,6 +142,11 @@
 - Result titles use Body 12/18; subtitles and shortcuts use Label 11/16. The two copy lines use the
   2 px spacing token, while rails use the 8 px rhythm. Visible ordinary rows expose working
   Ctrl+1 through Ctrl+9 hints; rows outside that range retain the shortcut rail without fake copy.
+- Ordinary results own one selected index and one neutral `element_selected` fill. Up/Down, guarded
+  pointer movement and left-button press all commit that same index; a stationary pointer never
+  steals keyboard selection, and a direct click never executes beneath a different visible row.
+  Selection changes only semantic text/icon emphasis around a real Shell image; it never adds an
+  icon tile, accent card, border or independent motion.
 
 ### Work states
 

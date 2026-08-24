@@ -936,6 +936,26 @@ rust/apps/nxtools-desktop/src/ui/
   视觉批次收口时验收。
   QL-02 完成，下一切片为 QL-03 选择态。
 
+第三十二个 P1 速启选择态切片（2026-08-24）：
+
+- QL-03 保留一个 Rust-owned `selected` 索引与一层中性 `Theme::element_selected` 整行填充；真实
+  Shell PNG 继续直接位于透明图标槽中，选择不增加 accent 卡片、装饰色块、描边或独立动效。既有
+  96 DPI QL-02 实机图已覆盖相同像素输出中的中性选中面与真实应用图标，本切片不拿旧图冒充新包。
+- 参考复核确认 Listary 的 guarded `MouseMove` 只防止静止指针抢走键盘选择，普通 WPF
+  `ListBoxItem` 仍在按下时提交同一个 selected item；SwiftList 的 Up/Down、Enter 与 pointer 也共享
+  一个 `SelectedResult`。NxTools.Next 原实现虽让移动后的 hover 和键盘共用索引，但直接按下另一行
+  会在 click 执行前继续显示旧键盘项，造成“可见选择”与“将执行项”短暂分裂。
+- 红—绿生产 GPUI 门禁先用真实 Down 键把第二行选中，再验证第一次 pointer move 不接管、第二次
+  不同坐标 move 选中第三行、Up 回到第二行，最后直接左键按下第三行；旧实现停在第二行，修复后
+  四条路径都写入同一个索引。点击执行、Ctrl+1…9、滚动、预览延时和跨实体调度链保持不变。
+- Quick Launch 定向回归为 105/105；升级后的生命周期架构门禁、`cargo check -p
+  nxtools-desktop --tests`、无允许项的严格 desktop Clippy、rustfmt 与 `git diff --check` 均通过。
+  Desktop 全套为 315/319，分类按钮 selector、网络尾距、剪贴板空态宽度和下载详情 progress
+  selector 四项失败与前序基线完全相同。标准 Release 包装首次被四项既有严格 Clippy 基线阻塞，
+  零行为修复后第二次在 Cargo 前被 5.43 GiB < 6 GiB commit-headroom 门禁拒绝；没有降低门槛，
+  没有生成或冒充新的 Release 截图。QL-03 行为与生产窗口验收完成；新的包级截图随内存余量恢复后
+  和 125%/150% 矩阵一起收口。下一切片为 QL-04 动作模式。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

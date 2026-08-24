@@ -990,6 +990,22 @@ Reverified on 2026-08-22 before the QL-02 result-row migration:
   shortcut rail. It uses Body 12/18 for the title and Label 11/16 for subtitle and shortcut, without
   importing SwiftList's badge treatment or advancing the QL-03 selection redesign.
 
+Reverified on 2026-08-24 before the QL-03 selection-state migration:
+
+- Listary `SearchItemList::OnSelectionChanged` scrolls the one selected item into view. Its row-level
+  `MouseMove` handler changes that same `ListBoxItem::IsSelected` only after a second movement at a
+  different pointer position; ordinary pointer entry therefore cannot steal a keyboard selection.
+  WPF `ListBoxItem` still applies normal press selection, so a direct click cannot execute a row
+  while leaving a different row visually selected.
+- SwiftList `QuickSearchWindow` binds `ResultsControl.SelectedItem` two-way to the single
+  `SelectedResult`, while `QuickSearchWindowInputHandler::MoveResultSelection` changes the same
+  `LstResults.SelectedIndex` and scrolls it into view. Enter reads that selected item; pointer and
+  keyboard activation do not own parallel selection models.
+- NxTools.Next QL-03 therefore keeps one Rust-owned `selected` index and one neutral
+  `Theme::element_selected` fill. A left pointer press must commit the row to that index before the
+  existing click activation is scheduled; the movement gate and shared virtual-list scroll handle
+  remain unchanged. Real Shell images stay unboxed and are never recolored by the selection surface.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。
