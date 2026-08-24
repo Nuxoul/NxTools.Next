@@ -6567,8 +6567,30 @@ mod tests {
     #[gpui::test]
     fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
+        let temp = tempfile::tempdir().expect("temporary selection catalog");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open selection catalog");
+        let (application, endpoint) = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
+            endpoint.set_connected_for_contract_test(true);
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            let application = cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications,
+                )
+            });
+            (application, endpoint)
+        });
         let panel_slot = Rc::new(RefCell::new(None));
         let panel_slot_for_window = Rc::clone(&panel_slot);
+        let application_for_window = application.clone();
         let (_root, window) = cx.add_window_view(move |window, cx| {
             window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
             let panel = cx.new(|cx| {
@@ -6576,7 +6598,7 @@ mod tests {
                     vec![
                         search_result("first", ApplicationSource::StartMenu),
                         search_result("second", ApplicationSource::IndexedFile),
-                        search_result("third", ApplicationSource::CustomCommand),
+                        search_result("third", ApplicationSource::Desktop),
                     ],
                     nxtools_protocol::ForegroundContext {
                         window_handle: 1,
@@ -6587,7 +6609,7 @@ mod tests {
                     },
                     None,
                     Vec::new(),
-                    WeakEntity::new_invalid(),
+                    application_for_window.downgrade(),
                     window,
                     cx,
                 );
@@ -6628,6 +6650,31 @@ mod tests {
         );
 
         panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 2));
+        window.simulate_mouse_up(
+            third_row.center(),
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
+        cx.run_until_parked();
+        let command = (0..8)
+            .filter_map(|_| endpoint.try_receive_command_for_contract_test().ok())
+            .find(|envelope| {
+                matches!(
+                    &envelope.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::OpenShellTarget(open)
+                    ) if open.target == "third.lnk" && open.action == ShellOpenAction::Open
+                )
+            })
+            .expect("the directly clicked third result executes after becoming selected");
+        application.read_with(cx, |application, _| {
+            let pending = application
+                .pending_actions
+                .get(&command.id)
+                .expect("direct click retains the correlated pending action");
+            assert_eq!(pending.entry_id, "third");
+            assert_eq!(pending.trigger, QuickLaunchActionTrigger::Pointer);
+        });
     }
 
     #[gpui::test]
