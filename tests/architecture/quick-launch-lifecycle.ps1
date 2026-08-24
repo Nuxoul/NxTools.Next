@@ -13,6 +13,8 @@ $hotkeyFieldPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\
 $hotkeyFieldSource = Get-Content -Raw -LiteralPath $hotkeyFieldPath
 $volumeScopePath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\volume_scope.rs'
 $volumeScopeSource = Get-Content -Raw -LiteralPath $volumeScopePath
+$pathListPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\path_list.rs'
+$pathListSource = Get-Content -Raw -LiteralPath $pathListPath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -183,7 +185,7 @@ if ($volumeScopeSource.Contains('.flex_wrap()') -or
 }
 $volumeScopeRenderStart = $quickLaunchSettings.IndexOf('        let available_volumes =')
 $volumeScopeRenderEnd = $quickLaunchSettings.IndexOf(
-    '        let mut index_exclusions_control =',
+    '        let main_window = cx.entity();',
     $volumeScopeRenderStart
 )
 if ($volumeScopeRenderStart -lt 0 -or $volumeScopeRenderEnd -le $volumeScopeRenderStart) {
@@ -197,6 +199,145 @@ if (($volumeScopeRender.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
     -not $volumeScopeRender.Contains('toggle_indexed_volume_selection(') -or
     -not $volumeScopeRender.Contains('application.set_indexed_volumes(')) {
     throw 'Volume-scope mutations must preserve canonical selection and defer cross-entity updates.'
+}
+foreach ($requiredPathListContract in @(
+    'PATH_LIST_ROW_HEIGHT: f32 = 40.0',
+    'PATH_LIST_ICON_RAIL_WIDTH: f32 = 16.0',
+    'PATH_LIST_DELETE_HIT_TARGET: f32 = 40.0',
+    'Button::new(',
+    'Tooltip::element',
+    'exact_path_tooltip(&path)',
+    'danger_ghost_button_variant(',
+    'TEXT_BODY',
+    'LINE_HEIGHT_BODY',
+    'TEXT_LABEL',
+    'LINE_HEIGHT_LABEL',
+    'quick-launch-exclusion-list'
+)) {
+    if (-not $pathListSource.Contains($requiredPathListContract)) {
+        throw 'QL-10 exclusion paths must use one tokenized list with a standard tail action and exact-path tooltip.'
+    }
+}
+if ($pathListSource.Contains('.text_size(px(9.5))') -or
+    $pathListSource.Contains('.h(px(24.0))') -or
+    $pathListSource.Contains('.w(px(210.0))') -or
+    -not $quickLaunchSettings.Contains('path_exclusion_setting(') -or
+    -not $mainWindowSource.Contains(
+        'fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_actions('
+    )) {
+    throw 'QL-10 must replace the private compact exclusion control with its production-window regression.'
+}
+if (-not $pathListSource.Contains(
+        'pub(crate) fn exact_path_tooltip(path: &str) -> SharedString'
+    ) -or
+    -not $pathListSource.Contains('path.to_owned().into()') -or
+    -not $mainWindowSource.Contains(
+        'the production tooltip seam must preserve the exact original path'
+    )) {
+    throw 'QL-10 must preserve and test the exact original path used by the production tooltip.'
+}
+$exclusionRenderStart = $quickLaunchSettings.IndexOf('        let main_window = cx.entity();')
+$exclusionRenderEnd = $quickLaunchSettings.IndexOf(
+    '        let mut command_list = div()',
+    $exclusionRenderStart
+)
+if ($exclusionRenderStart -lt 0 -or $exclusionRenderEnd -le $exclusionRenderStart) {
+    throw 'Could not isolate the Quick Launch exclusion-list renderer.'
+}
+$exclusionRender = $quickLaunchSettings.Substring(
+    $exclusionRenderStart,
+    $exclusionRenderEnd - $exclusionRenderStart
+)
+if (($exclusionRender.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
+    -not $exclusionRender.Contains('application.remove_excluded_path(&path, cx)') -or
+    -not $exclusionRender.Contains('application.request_index_exclusion_directory(cx)')) {
+    throw 'Exclusion-list add and remove callbacks must defer cross-entity updates.'
+}
+$exclusionKeyboardStart = $mainWindowSource.IndexOf('    fn handle_index_exclusion_keyboard(')
+$exclusionKeyboardEnd = $mainWindowSource.IndexOf(
+    '    fn render_notifications(',
+    $exclusionKeyboardStart
+)
+if ($exclusionKeyboardStart -lt 0 -or $exclusionKeyboardEnd -le $exclusionKeyboardStart) {
+    throw 'Could not isolate the Quick Launch exclusion-list keyboard lifecycle.'
+}
+$exclusionKeyboard = $mainWindowSource.Substring(
+    $exclusionKeyboardStart,
+    $exclusionKeyboardEnd - $exclusionKeyboardStart
+)
+foreach ($requiredExclusionKey in @('"up"', '"down"', '"escape"', '"delete"', '"backspace"')) {
+    if (-not $exclusionKeyboard.Contains($requiredExclusionKey)) {
+        throw 'QL-10 exclusion selection must support Up, Down, Escape, Delete and Backspace.'
+    }
+}
+if (-not $exclusionKeyboard.Contains('cx.defer(move |cx|') -or
+    -not $exclusionKeyboard.Contains('application.remove_excluded_path(&path, cx)')) {
+    throw 'Keyboard exclusion removal must defer the same canonical persistence path.'
+}
+if (($mainWindowSource.Split('exclusion_selection_after_removal(').Count - 1) -lt 3) {
+    throw 'Pointer and keyboard exclusion removal must share one selection-reconciliation rule.'
+}
+$pickerRequestStart = $quickLaunchSource.IndexOf(
+    '    pub(crate) fn request_index_exclusion_directory('
+)
+$pickerRequestEnd = $quickLaunchSource.IndexOf(
+    '    pub(crate) fn request_custom_command_program(',
+    $pickerRequestStart
+)
+if ($pickerRequestStart -lt 0 -or $pickerRequestEnd -le $pickerRequestStart) {
+    throw 'Could not isolate the Quick Launch exclusion directory picker request.'
+}
+$pickerRequest = $quickLaunchSource.Substring(
+    $pickerRequestStart,
+    $pickerRequestEnd - $pickerRequestStart
+)
+$pickerResultAnchor = $quickLaunchSource.IndexOf('matching exclusion picker must exist')
+$pickerResultStart = $quickLaunchSource.LastIndexOf('        if self', $pickerResultAnchor)
+$programPickerAnchor = $quickLaunchSource.IndexOf(
+    'matching program picker must exist',
+    $pickerResultAnchor
+)
+$pickerResultEnd = $quickLaunchSource.LastIndexOf('        if self', $programPickerAnchor)
+if ($pickerResultAnchor -lt 0 -or $pickerResultStart -lt 0 -or
+    $programPickerAnchor -lt 0 -or $pickerResultEnd -le $pickerResultStart) {
+    throw 'Could not isolate the Quick Launch exclusion directory picker result lifecycle.'
+}
+$pickerResult = $quickLaunchSource.Substring(
+    $pickerResultStart,
+    $pickerResultEnd - $pickerResultStart
+)
+foreach ($requiredPickerDiagnostic in @(
+    'quick_launch.index_exclusion_picker.started',
+    'correlation_id = %command_id',
+    'correlation_id = %attempt_correlation_id',
+    'started_at',
+    'elapsed_ms',
+    'native_error_code',
+    'outcome = "rejected"'
+)) {
+    if (-not $pickerRequest.Contains($requiredPickerDiagnostic)) {
+        throw 'The exclusion picker request must preserve correlated start/rejection diagnostics.'
+    }
+}
+foreach ($requiredPickerResultDiagnostic in @(
+    'pending.correlation_id == correlation_id',
+    'quick_launch.index_exclusion_picker.completed',
+    'correlation_id = %pending.correlation_id',
+    'elapsed_ms',
+    'native_error_code',
+    '"selected"',
+    '"cancelled"',
+    'outcome = "failure"'
+)) {
+    if (-not $pickerResult.Contains($requiredPickerResultDiagnostic)) {
+        throw 'The exclusion picker result must preserve identity and terminal diagnostics.'
+    }
+}
+if ($pickerRequest.Contains('current_directory = %') -or
+    $pickerResult.Contains('path = %') -or
+    $pickerResult.Contains('data = %') -or
+    $pickerResult.Contains('data = ?')) {
+    throw 'Exclusion picker diagnostics must never log selected or current paths.'
 }
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)

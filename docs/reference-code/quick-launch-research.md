@@ -1139,6 +1139,27 @@ Reverified on 2026-08-24 before the QL-09 index-volume migration:
   for automatic-all; selecting all currently discovered volumes canonicalizes back to automatic even
   when an old unavailable mount remains in persisted input.
 
+Reverified on 2026-08-24 before the QL-10 excluded-directory migration:
+
+- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or local-index exclusion UI, so it
+  supplies no visual or interaction source for this slice. NxTools.Next keeps the existing typed
+  boundary: Rust owns the ordered, case-insensitive path set and persistence; PlatformHost owns the
+  correlated Windows directory picker; the indexer receives the same `IndexSettings.excluded_paths`.
+- SwiftList's first-party `ExclusionsTab.xaml`, `Templates.xaml`, `Styles.xaml` and
+  `ExclusionSettingsViewModel.cs` use one stable rule row per path, trim long values, keep a dedicated
+  trailing remove action with a tooltip, reject blank/duplicate rules case-insensitively and persist
+  the resulting collection. This is behavioral evidence for a path list with bounded actions; its
+  cards, nested tabs, edit/bulk-text features and WPF styling are not copied into NxTools.Next.
+- Listary's managed options boundary was rechecked, but no equivalent user-owned excluded-directory
+  list was verified there; its native search engine source is not available and is not claimed as a
+  QL-10 reference.
+- NxTools.Next QL-10 therefore keeps one full-width continuous path list. Rows expose the complete
+  path through a tooltip, reserve a stable trailing delete hit target and support selection with
+  Up/Down plus Delete/Backspace. Pointer or keyboard deletion freezes the selected path, defers the
+  cross-entity mutation and emits at most one settings/indexer update. The existing picker correlation,
+  duplicate suppression, cancellation and failure notification remain unchanged; diagnostics record
+  correlation/outcome/elapsed/native code but never the selected path.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

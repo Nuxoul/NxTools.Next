@@ -57,8 +57,28 @@ fn danger_hover_button_palette(theme: Theme) -> DangerHoverButtonPalette {
     }
 }
 
+fn danger_ghost_button_palette(theme: Theme) -> DangerHoverButtonPalette {
+    DangerHoverButtonPalette {
+        rest: gpui::transparent_black().into(),
+        foreground: theme.icon_muted,
+        border: gpui::transparent_black().into(),
+        hover: theme.danger_soft,
+        active: theme.danger_soft,
+    }
+}
+
 pub(crate) fn danger_hover_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
     let palette = danger_hover_button_palette(theme);
+    ButtonCustomVariant::new(cx)
+        .color(palette.rest.into())
+        .foreground(palette.foreground.into())
+        .border(palette.border.into())
+        .hover(palette.hover.into())
+        .active(palette.active.into())
+}
+
+pub(crate) fn danger_ghost_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
+    let palette = danger_ghost_button_palette(theme);
     ButtonCustomVariant::new(cx)
         .color(palette.rest.into())
         .foreground(palette.foreground.into())
@@ -203,5 +223,12 @@ mod tests {
             actual == expected,
             "the destructive action tier must stay neutral at rest and use danger_soft only for hover/press"
         );
+
+        let ghost = danger_ghost_button_palette(theme);
+        assert_eq!(ghost.rest, gpui::transparent_black().into());
+        assert_eq!(ghost.foreground, theme.icon_muted);
+        assert_eq!(ghost.border, gpui::transparent_black().into());
+        assert_eq!(ghost.hover, theme.danger_soft);
+        assert_eq!(ghost.active, theme.danger_soft);
     }
 }

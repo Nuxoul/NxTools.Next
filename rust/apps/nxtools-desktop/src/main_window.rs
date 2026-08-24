@@ -54,6 +54,7 @@ use crate::ui::components::action::{
 };
 use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setting_row};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
+use crate::ui::components::path_list::path_exclusion_setting;
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::components::volume_scope::{
@@ -122,6 +123,10 @@ fn quick_find_scroll_step(current: f32, target: f32) -> (f32, bool) {
     }
 }
 
+fn exclusion_selection_after_removal(item_count: usize, removed_index: usize) -> Option<usize> {
+    (item_count > 1).then(|| removed_index.min(item_count - 2))
+}
+
 pub(crate) struct MainWindow {
     theme: Theme,
     shell: ShellState,
@@ -144,6 +149,7 @@ pub(crate) struct MainWindow {
     quick_find_scroll: ScrollHandle,
     quick_find_scroll_target: f32,
     quick_find_scroll_animation: u64,
+    selected_index_exclusion: Option<usize>,
     selected_custom_command: Option<usize>,
     selected_download_task: Option<DownloadTaskId>,
     selected_download_tasks: HashSet<DownloadTaskId>,
@@ -1295,6 +1301,7 @@ impl MainWindow {
             quick_find_scroll: ScrollHandle::new(),
             quick_find_scroll_target: 0.0,
             quick_find_scroll_animation: 0,
+            selected_index_exclusion: None,
             selected_custom_command: initial_custom_command.as_ref().map(|_| 0),
             selected_download_task: None,
             selected_download_tasks: HashSet::new(),
@@ -1469,10 +1476,75 @@ impl MainWindow {
             return;
         }
         self.quick_launch_settings_page = page;
+        self.selected_index_exclusion = None;
         self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1);
         self.quick_find_scroll_target = 0.0;
         self.quick_find_scroll.set_offset(point(px(0.0), px(0.0)));
         cx.notify();
+    }
+
+    fn handle_index_exclusion_keyboard(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.shell.active_module() != MainModule::QuickFind
+            || self.quick_launch_settings_page != QuickLaunchSettingsPage::Index
+            || event.keystroke.modifiers.modified()
+        {
+            return false;
+        }
+        let Some(application) = self.quick_launch.upgrade() else {
+            self.selected_index_exclusion = None;
+            return false;
+        };
+        let paths = application.read(cx).settings().excluded_paths.clone();
+        if paths.is_empty() {
+            self.selected_index_exclusion = None;
+            return false;
+        }
+        let key = event.keystroke.key.to_ascii_lowercase();
+        match key.as_str() {
+            "up" => {
+                self.selected_index_exclusion = Some(
+                    self.selected_index_exclusion
+                        .unwrap_or_default()
+                        .saturating_sub(1),
+                );
+            }
+            "down" => {
+                self.selected_index_exclusion = Some(
+                    self.selected_index_exclusion
+                        .map_or(0, |index| (index + 1).min(paths.len() - 1)),
+                );
+            }
+            "escape" => {
+                if self.selected_index_exclusion.take().is_none() {
+                    return false;
+                }
+            }
+            "delete" | "backspace" => {
+                let Some(index) = self
+                    .selected_index_exclusion
+                    .filter(|index| *index < paths.len())
+                else {
+                    return false;
+                };
+                let path = paths[index].clone();
+                self.selected_index_exclusion =
+                    exclusion_selection_after_removal(paths.len(), index);
+                let quick_launch = self.quick_launch.clone();
+                cx.defer(move |cx| {
+                    let _ = quick_launch.update(cx, |application, cx| {
+                        application.remove_excluded_path(&path, cx);
+                    });
+                });
+            }
+            _ => return false,
+        }
+        cx.stop_propagation();
+        cx.notify();
+        true
     }
 
     fn render_notifications(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2916,108 +2988,53 @@ impl MainWindow {
             "自动模式会持续包含新卷；取消任一卷后改为仅索引勾选项",
             volume_scope_rows,
         );
-        let mut index_exclusions_control = div()
-            .w(px(210.0))
-            .flex()
-            .flex_col()
-            .items_end()
-            .gap(px(4.0));
-        if settings.excluded_paths.is_empty() {
-            index_exclusions_control = index_exclusions_control.child(
-                div()
-                    .w_full()
-                    .h(px(24.0))
-                    .px(px(7.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.canvas)
-                    .flex()
-                    .items_center()
-                    .text_size(px(9.5))
-                    .text_color(theme.text_muted)
-                    .child("未排除目录"),
-            );
+        if self
+            .selected_index_exclusion
+            .is_some_and(|index| index >= settings.excluded_paths.len())
+        {
+            self.selected_index_exclusion = settings.excluded_paths.len().checked_sub(1);
         }
-        for (index, path) in settings.excluded_paths.iter().enumerate() {
-            let path_to_remove = path.clone();
-            let quick_launch = self.quick_launch.clone();
-            index_exclusions_control = index_exclusions_control.child(
-                div()
-                    .w_full()
-                    .h(px(24.0))
-                    .px(px(7.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.canvas)
-                    .flex()
-                    .items_center()
-                    .gap(px(5.0))
-                    .child(
-                        Icon::new(MaterialIcon::Folder)
-                            .size(px(13.0))
-                            .text_color(theme.icon_muted),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .truncate()
-                            .text_size(px(9.5))
-                            .text_color(theme.text_secondary)
-                            .child(path.clone()),
-                    )
-                    .child(
-                        div()
-                            .id(("quick-launch-remove-exclusion", index))
-                            .size(px(18.0))
-                            .rounded(px(3.0))
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                Icon::new(MaterialIcon::Close)
-                                    .size(px(12.0))
-                                    .text_color(theme.icon_muted),
-                            )
-                            .on_click(move |_event, _window, cx| {
-                                let _ = quick_launch.update(cx, |application, cx| {
-                                    application.remove_excluded_path(&path_to_remove, cx);
-                                });
-                                cx.stop_propagation();
-                            }),
-                    ),
-            );
-        }
-        let add_exclusion = self.quick_launch.clone();
-        index_exclusions_control = index_exclusions_control.child(
-            Button::new("quick-launch-add-index-exclusion")
-                .ghost()
-                .compact()
-                .xsmall()
-                .h(px(24.0))
-                .px(px(7.0))
-                .rounded(px(4.0))
-                .border_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.surface_raised)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .child(Icon::new(MaterialIcon::Add).size(px(12.0)))
-                        .child(div().text_size(px(10.0)).child("添加目录")),
-                )
-                .on_click(move |_event, _window, cx| {
-                    let _ = add_exclusion.update(cx, |application, cx| {
+        let main_window = cx.entity();
+        let select_main_window = main_window.clone();
+        let remove_main_window = main_window.clone();
+        let remove_quick_launch = self.quick_launch.clone();
+        let add_quick_launch = self.quick_launch.clone();
+        let exclusion_count = settings.excluded_paths.len();
+        let index_exclusions_control = path_exclusion_setting(
+            theme,
+            &settings.excluded_paths,
+            self.selected_index_exclusion,
+            move |index, window, cx| {
+                select_main_window.update(cx, |this, cx| {
+                    this.selected_index_exclusion = Some(index);
+                    this.hotkey_focus.focus(window);
+                    cx.notify();
+                });
+            },
+            move |index, path, window, cx| {
+                remove_main_window.update(cx, |this, cx| {
+                    this.selected_index_exclusion =
+                        exclusion_selection_after_removal(exclusion_count, index);
+                    this.hotkey_focus.focus(window);
+                    cx.notify();
+                });
+                let quick_launch = remove_quick_launch.clone();
+                cx.defer(move |cx| {
+                    let _ = quick_launch.update(cx, |application, cx| {
+                        application.remove_excluded_path(&path, cx);
+                    });
+                });
+            },
+            move |_event, _window, cx| {
+                let quick_launch = add_quick_launch.clone();
+                cx.defer(move |cx| {
+                    let _ = quick_launch.update(cx, |application, cx| {
                         application.request_index_exclusion_directory(cx);
                     });
-                }),
+                });
+            },
+            cx,
         );
-        let index_exclusions_control = index_exclusions_control.into_any_element();
         if self
             .selected_custom_command
             .is_some_and(|index| index >= settings.custom_commands.len())
@@ -3579,12 +3596,7 @@ impl MainWindow {
                             .into_any_element(),
                     ),
                     index_volumes_control,
-                    compact_setting_row(
-                        theme,
-                        "排除目录",
-                        "通过选择器添加；目录及其所有子项不进入结果",
-                        index_exclusions_control,
-                    ),
+                    index_exclusions_control,
                 ],
             ),
         );
@@ -4155,7 +4167,11 @@ impl Render for MainWindow {
             .overflow_hidden()
             .track_focus(&self.hotkey_focus)
             .on_key_down(cx.listener(|this, event, _window, cx| {
-                this.handle_hotkey_recording(event, cx);
+                if this.recording_hotkey.is_some() {
+                    this.handle_hotkey_recording(event, cx);
+                } else {
+                    this.handle_index_exclusion_keyboard(event, cx);
+                }
             }))
             .font_family(UI_FONT_FAMILY)
             .bg(self.theme.canvas)
@@ -6440,6 +6456,7 @@ mod tests {
     fn assert_single_index_settings_command(
         endpoint: &crate::runtime::IndexerProcessEndpoint,
         expected_volumes: &[&str],
+        expected_exclusions: &[&str],
     ) {
         let envelope = endpoint
             .try_recv_command_for_test()
@@ -6453,6 +6470,13 @@ mod tests {
             expected_volumes
                 .iter()
                 .map(|mount| (*mount).to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            settings.excluded_paths,
+            expected_exclusions
+                .iter()
+                .map(|path| (*path).to_owned())
                 .collect::<Vec<_>>()
         );
         assert!(
@@ -7086,7 +7110,7 @@ mod tests {
                 cx,
             );
         });
-        assert_single_index_settings_command(&indexer_endpoint, &[]);
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[]);
         let quick_launch_for_window = quick_launch.downgrade();
         let notifications_for_window = notifications.clone();
         let (_main_window, window) = cx.add_window_view(move |window, cx| {
@@ -7182,7 +7206,7 @@ mod tests {
             vec![r"D:\".to_owned(), r"E:\".to_owned()],
             "disabling one volume must materialize an explicit selected-volume set"
         );
-        assert_single_index_settings_command(&indexer_endpoint, &[r"D:\", r"E:\"]);
+        assert_single_index_settings_command(&indexer_endpoint, &[r"D:\", r"E:\"], &[]);
         window.refresh().expect("render specified volume scope");
         assert!(
             window
@@ -7208,7 +7232,7 @@ mod tests {
             vec![r"E:\".to_owned()],
             "the non-indicator row area must share the same single toggle path"
         );
-        assert_single_index_settings_command(&indexer_endpoint, &[r"E:\"]);
+        assert_single_index_settings_command(&indexer_endpoint, &[r"E:\"], &[]);
         window.refresh().expect("render final explicit volume");
 
         let e_volume = window
@@ -7240,7 +7264,350 @@ mod tests {
                 .is_empty(),
             "automatic mode must retain the empty-vector persistence contract"
         );
-        assert_single_index_settings_command(&indexer_endpoint, &[]);
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[]);
+    }
+
+    #[gpui::test]
+    fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_actions(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let executor = cx.executor();
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary Quick Launch exclusion fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open Quick Launch exclusion catalog");
+        let (platform, platform_endpoint) = platform_bridge(8);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let (indexer, indexer_endpoint) = crate::runtime::indexer_bridge(8);
+        indexer_endpoint.connect_for_test();
+        let long_path = r"C:\Users\Administrator\Documents\NxTools\Projects\Archived\Search Corpus";
+        let build_path = r"D:\Build\Cache";
+        let temp_path = r"E:\Temp";
+        let mut config = AppConfig::default();
+        config.quick_launch.excluded_paths = vec![
+            long_path.to_owned(),
+            build_path.to_owned(),
+            temp_path.to_owned(),
+        ];
+        let quick_launch = cx.update(|cx| {
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    config,
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications.clone(),
+                )
+            })
+        });
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(1060.0), px(720.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window.quick_launch_settings_page = QuickLaunchSettingsPage::Index;
+            main_window
+        });
+
+        window.refresh().expect("render exclusion path list");
+        let list = window
+            .debug_bounds("quick-launch-exclusion-list")
+            .expect("one continuous exclusion list");
+        let first_row = window
+            .debug_bounds("quick-launch-exclusion-row-0")
+            .expect("first exclusion row");
+        let second_row = window
+            .debug_bounds("quick-launch-exclusion-row-1")
+            .expect("second exclusion row");
+        let third_row = window
+            .debug_bounds("quick-launch-exclusion-row-2")
+            .expect("third exclusion row");
+        for row in [first_row, second_row, third_row] {
+            assert_eq!(row.size.height, px(40.0));
+            assert_eq!(row.left(), list.left() + px(1.0));
+            assert_eq!(row.size.width, list.size.width - px(2.0));
+        }
+        let first_path = window
+            .debug_bounds("quick-launch-exclusion-path-0")
+            .expect("truncated path rail");
+        let first_delete = window
+            .debug_bounds("quick-launch-exclusion-delete-0")
+            .expect("bounded delete hit target");
+        assert_eq!(first_path.size.height, px(LINE_HEIGHT_BODY));
+        assert_eq!(first_delete.size, size(px(40.0), px(40.0)));
+        assert!(first_path.right() <= first_delete.left());
+        assert_eq!(
+            crate::ui::components::path_list::exact_path_tooltip(long_path).to_string(),
+            long_path,
+            "the production tooltip seam must preserve the exact original path"
+        );
+
+        window.simulate_mouse_move(first_path.center(), None, Modifiers::default());
+        executor.advance_clock(Duration::from_millis(500));
+        window.run_until_parked();
+        assert!(
+            window
+                .debug_bounds("quick-launch-exclusion-path-tooltip-0")
+                .is_some(),
+            "the exact long path must remain available through a tooltip"
+        );
+
+        window.simulate_click(second_row.center(), Modifiers::default());
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_index_exclusion),
+            Some(1)
+        );
+        window.simulate_keystrokes("up");
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_index_exclusion),
+            Some(0)
+        );
+        window.simulate_keystrokes("down");
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_index_exclusion),
+            Some(1)
+        );
+        window.simulate_keystrokes("escape");
+        assert_eq!(
+            window.read(|cx| main_window.read(cx).selected_index_exclusion),
+            None
+        );
+        window.simulate_click(second_row.center(), Modifiers::default());
+        window.simulate_keystrokes("backspace");
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![long_path.to_owned(), temp_path.to_owned()]
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[long_path, temp_path]);
+
+        window
+            .refresh()
+            .expect("render list after keyboard removal");
+        let first_delete = window
+            .debug_bounds("quick-launch-exclusion-delete-0")
+            .expect("first delete target after keyboard removal");
+        window.simulate_click(first_delete.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![temp_path.to_owned()]
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[temp_path]);
+
+        window.refresh().expect("render add directory action");
+        let add = window
+            .debug_bounds("quick-launch-add-index-exclusion")
+            .expect("standard add-directory action");
+        assert_eq!(add.size.height, px(28.0));
+        window.simulate_click(add.center(), Modifiers::default());
+        window.run_until_parked();
+        let picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one typed directory picker command");
+        assert!(matches!(
+            &picker.message,
+            Message::PlatformCommand(PlatformCommand::PickDirectory(_))
+        ));
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "one add gesture must open only one directory picker"
+        );
+
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"F:\Archive".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![temp_path.to_owned()],
+            "a stale picker result must not mutate the current exclusion list"
+        );
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: picker.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"e:\TEMP".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert!(
+            indexer_endpoint.try_recv_command_for_test().is_none(),
+            "a case-insensitive duplicate picker result must not synchronize"
+        );
+
+        window.refresh().expect("render add action after duplicate");
+        let add = window
+            .debug_bounds("quick-launch-add-index-exclusion")
+            .expect("add action after duplicate");
+        window.simulate_click(add.center(), Modifiers::default());
+        window.run_until_parked();
+        let selected_picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("second typed directory picker command");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: selected_picker.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some(r"F:\Archive".into()),
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![temp_path.to_owned(), r"F:\Archive".to_owned()]
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[temp_path, r"F:\Archive"]);
+
+        window.refresh().expect("render add action after selection");
+        let add = window
+            .debug_bounds("quick-launch-add-index-exclusion")
+            .expect("add action after selection");
+        window.simulate_click(add.center(), Modifiers::default());
+        window.run_until_parked();
+        let cancelled_picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("third typed directory picker command");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: cancelled_picker.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert!(
+            indexer_endpoint.try_recv_command_for_test().is_none(),
+            "picker cancellation must not persist or synchronize"
+        );
+
+        window
+            .refresh()
+            .expect("render add action after cancellation");
+        let add = window
+            .debug_bounds("quick-launch-add-index-exclusion")
+            .expect("add action after cancellation");
+        window.simulate_click(add.center(), Modifiers::default());
+        window.run_until_parked();
+        let failed_picker = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("fourth typed directory picker command");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: failed_picker.id,
+                        result: PlatformCommandResult {
+                            success: false,
+                            error: Some("directory picker unavailable".into()),
+                            native_error_code: Some(5),
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        assert!(
+            indexer_endpoint.try_recv_command_for_test().is_none(),
+            "picker failure must not persist or synchronize"
+        );
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![temp_path.to_owned(), r"F:\Archive".to_owned()]
+        );
+
+        window.refresh().expect("render final keyboard removal");
+        let second_row = window
+            .debug_bounds("quick-launch-exclusion-row-1")
+            .expect("second exclusion row before Delete");
+        window.simulate_click(second_row.center(), Modifiers::default());
+        window.simulate_keystrokes("delete");
+        window.run_until_parked();
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().excluded_paths),
+            vec![temp_path.to_owned()]
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[temp_path]);
+
+        window.refresh().expect("render final exclusion row");
+        let final_row = window
+            .debug_bounds("quick-launch-exclusion-row-0")
+            .expect("final exclusion row");
+        window.simulate_click(final_row.center(), Modifiers::default());
+        window.simulate_keystrokes("delete");
+        window.run_until_parked();
+        assert!(
+            window
+                .update(|_, cx| quick_launch.read(cx).settings().excluded_paths)
+                .is_empty(),
+            "removing the last exclusion must leave a valid empty list"
+        );
+        assert_single_index_settings_command(&indexer_endpoint, &[], &[]);
+        window.refresh().expect("render empty exclusion list");
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-exclusion-empty")
+                .expect("neutral empty row")
+                .size
+                .height,
+            px(40.0)
+        );
     }
 
     #[gpui::test]
@@ -9922,6 +10289,7 @@ mod tests {
     #[test]
     fn index_scope_settings_use_a_checkbox_list_and_a_directory_picker_not_text_inputs() {
         let source = include_str!("main_window.rs");
+        let path_list = include_str!("ui/components/path_list.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
@@ -9933,7 +10301,8 @@ mod tests {
         assert!(production.contains("automatic_volume_scope_row("));
         assert!(production.contains("volume_scope_row("));
         assert!(!production.contains("quick-launch-index-all-volumes"));
-        assert!(production.contains("quick-launch-add-index-exclusion"));
+        assert!(production.contains("path_exclusion_setting("));
+        assert!(path_list.contains("quick-launch-add-index-exclusion"));
         assert!(production.contains("request_index_exclusion_directory"));
     }
 

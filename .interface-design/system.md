@@ -113,6 +113,24 @@
   cross-entity application updates to the next application turn. One pointer gesture emits at most
   one persistence/indexer update, whether it lands on the indicator or the remaining row content.
 
+### Path exclusion list
+
+- Local-index exclusions use one full-width continuous path list. The setting header owns Body 12/18
+  title, Label 11/16 explanation and one shared 28 px `添加目录` action. The list has one quiet outer
+  boundary; it never becomes a stack of chips or independent cards.
+- Each rule is one 40 px row with a 16 px folder rail, a flexible Body 12/18 path rail and a fixed
+  40 px trailing delete hit target. Long paths truncate without moving that trailing rail and expose
+  their exact original value through a tooltip. The empty state remains one neutral 40 px list row.
+- A pointer-selected or keyboard-selected row uses the shared neutral selection fill plus a non-
+  shifting 2 px accent edge. Up/Down moves within the presented rules, Escape clears selection and
+  Delete/Backspace removes exactly the selected rule. The trailing delete action is keyboard-focusable,
+  neutral at rest and uses danger only on hover/press; its tooltip names the destructive action.
+- Add keeps the existing correlated Windows directory picker, case-insensitive duplicate suppression,
+  persistence and indexer synchronization. Picker cancellation does not mutate the list; failure stays
+  in the existing notification boundary. Pointer and keyboard callbacks freeze the path and defer every
+  cross-entity mutation to the next application turn. Diagnostics retain correlation, outcome, elapsed
+  time and native code without recording directory paths.
+
 ### Master-detail settings
 
 - Repeated editable identities use a continuous master list beside one detail editor. Master rows

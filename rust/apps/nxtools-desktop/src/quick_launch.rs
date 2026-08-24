@@ -1329,7 +1329,7 @@ pub(crate) struct QuickLaunchApplication {
     pending_icon_resources: HashMap<String, uuid::Uuid>,
     failed_icon_resources: HashMap<String, Instant>,
     indexer_service_bootstrap: IndexerServiceBootstrap,
-    pending_exclusion_picker: Option<uuid::Uuid>,
+    pending_exclusion_picker: Option<PendingIndexExclusionPicker>,
     pending_program_picker: Option<(uuid::Uuid, usize)>,
     elevated_helper_request: Option<ElevatedDirectoryHelperRequest>,
     pending_elevated_helper: Option<uuid::Uuid>,
@@ -1350,6 +1350,12 @@ struct IndexSearchSession {
     items: Vec<IndexSearchItem>,
     complete: bool,
     last_completed_elapsed_us: Option<u64>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingIndexExclusionPicker {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
 }
 
 #[derive(Default)]
@@ -2688,6 +2694,8 @@ impl QuickLaunchApplication {
         if self.pending_exclusion_picker.is_some() {
             return;
         }
+        let attempt_correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
         let current_directory = self
             .config
             .quick_launch
@@ -2701,8 +2709,27 @@ impl QuickLaunchApplication {
                 current_directory,
                 title: "选择要从速启搜索中排除的目录".into(),
             })) {
-            Ok(command_id) => self.pending_exclusion_picker = Some(command_id),
+            Ok(command_id) => {
+                info!(
+                    event = "quick_launch.index_exclusion_picker.started",
+                    correlation_id = %command_id,
+                    "quick-launch index exclusion picker started"
+                );
+                self.pending_exclusion_picker = Some(PendingIndexExclusionPicker {
+                    correlation_id: command_id,
+                    started_at,
+                });
+            }
             Err(error) => {
+                warn!(
+                    event = "quick_launch.index_exclusion_picker.completed",
+                    correlation_id = %attempt_correlation_id,
+                    outcome = "rejected",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    native_error_code = ?Option::<i32>::None,
+                    error_reported = true,
+                    "quick-launch index exclusion picker could not start"
+                );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         "quick-launch-index-exclusion-picker",
@@ -3270,9 +3297,35 @@ impl QuickLaunchApplication {
             );
             return;
         }
-        if self.pending_exclusion_picker == Some(correlation_id) {
-            self.pending_exclusion_picker = None;
+        if self
+            .pending_exclusion_picker
+            .is_some_and(|pending| pending.correlation_id == correlation_id)
+        {
+            let pending = self
+                .pending_exclusion_picker
+                .take()
+                .expect("matching exclusion picker must exist");
+            let elapsed_ms =
+                u64::try_from(pending.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
             if result.success {
+                let outcome = if result
+                    .data
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|path| !path.is_empty())
+                {
+                    "selected"
+                } else {
+                    "cancelled"
+                };
+                info!(
+                    event = "quick_launch.index_exclusion_picker.completed",
+                    correlation_id = %pending.correlation_id,
+                    outcome,
+                    elapsed_ms,
+                    native_error_code = ?result.native_error_code,
+                    "quick-launch index exclusion picker completed"
+                );
                 if let Some(path) = result.data.as_deref().map(str::trim)
                     && !path.is_empty()
                     && !self
@@ -3286,6 +3339,15 @@ impl QuickLaunchApplication {
                     self.persist_and_sync_index_settings(cx);
                 }
             } else {
+                error!(
+                    event = "quick_launch.index_exclusion_picker.completed",
+                    correlation_id = %pending.correlation_id,
+                    outcome = "failure",
+                    elapsed_ms,
+                    native_error_code = ?result.native_error_code,
+                    error_reported = result.error.is_some(),
+                    "quick-launch index exclusion picker failed"
+                );
                 let reason = result
                     .error
                     .unwrap_or_else(|| "Windows 未返回错误详情".into());

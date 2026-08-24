@@ -1121,6 +1121,32 @@ rust/apps/nxtools-desktop/src/ui/
 - 按用户要求，本切片未执行 Release 打包、未启动 NxTools，也未制作或接受 Release OS 截图。
   QL-09 的结构、行为与自动验收完成，下一切片为 QL-10 排除目录。
 
+第三十九个 P1 速启排除目录切片（2026-08-24）：
+
+- QL-10 将索引页原先 210 px 宽、24 px 高、9.5 px 私有字阶的目录块替换为一个全宽连续
+  `PathExclusionList`：标题与说明使用共享 Body 12/18、Label 11/16，添加目录复用 28 px action；
+  每条规则固定为 40 px 行，包含 16 px folder rail、可伸缩且截断的完整路径主栏，以及固定
+  40×40 px 尾部删除命中区。长路径 Tooltip 保留精确原值，空集合仍显示一条中性 40 px 行；
+  删除按钮静止态保持中性，仅在 hover/press 使用 danger 语义。
+- 列表现在拥有单一选中索引；点击规则后 Up/Down 在当前列表内移动，Escape 清除选择，Delete
+  与 Backspace 均删除当前规则，删除最后一项安全回到空列表。选中只使用共享 neutral fill 和
+  非位移 2 px accent edge。指针删除、键盘删除及添加目录均冻结当前 intent，并把跨实体更新延迟到
+  下一 application turn；每次删除只持久化并向 indexer 发送一条类型化 `IndexSettings`。
+- Windows 目录选择器继续保留同一 typed `PickDirectory` 边界、correlation identity、大小写不敏感
+  去重、持久化、取消 no-op 与失败通知。新增 start/terminal 诊断记录 correlation、selected/
+  cancelled/failure outcome、elapsed 和 native error code，但不记录当前目录或用户选中的路径。
+  参考复核确认旧 NxTools 无对应界面；SwiftList 的稳定路径行、尾部动作、Tooltip 与去重只作为
+  行为证据，未复制其 WPF 卡片、嵌套 Tab 或批量文本编辑器。
+- 红—绿真实生产 `MainWindow` GPUI 回归在 1060×720 索引页验证连续列表左右轨、三条 40 px 行、
+  Body 路径行高、40×40 删除区、长路径 Tooltip、Up/Down/Escape/Backspace/Delete、指针删除、
+  最后一项删除与 40 px 空态；连接的内存 Platform/Indexer 端点同时验证每个 gesture 仅一条命令、
+  stale picker result 被拒绝、大小写重复与取消/失败不写入、匹配选择只同步一次。Quick Launch
+  定向为 119/119；严格 desktop Clippy（仅放行既有 build-script lint）、rustfmt、生命周期架构门禁
+  与 `git diff --check` 通过。Desktop 全套为 329/333，仍仅有分类上移 selector、下载详情 progress
+  selector、网络尾距与剪贴板空态宽度四项既有失败。
+- 按用户要求，本切片未执行 Release 打包、未启动 NxTools，也未制作或接受 Release OS 截图。
+  QL-10 的结构、行为与自动验收完成，下一切片为 QL-11 自定义命令。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；
