@@ -6567,27 +6567,7 @@ mod tests {
     #[gpui::test]
     fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
-        let temp = tempfile::tempdir().expect("temporary selection catalog");
-        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
-            .expect("open selection catalog");
-        let (application, endpoint) = cx.update(|cx| {
-            let notifications = cx.new(|_| NotificationCenter::default());
-            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
-            endpoint.set_connected_for_contract_test(true);
-            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
-            let application = cx.new(|_| {
-                QuickLaunchApplication::new(
-                    catalog,
-                    Rc::new(platform),
-                    Rc::new(indexer),
-                    AppConfig::default(),
-                    temp.path().join("config.json"),
-                    temp.path().join("logs"),
-                    notifications,
-                )
-            });
-            (application, endpoint)
-        });
+        let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
         let panel_slot = Rc::new(RefCell::new(None));
         let panel_slot_for_window = Rc::clone(&panel_slot);
         let application_for_window = application.clone();
@@ -6680,27 +6660,7 @@ mod tests {
     #[gpui::test]
     fn production_heterogeneous_result_rows_keep_one_three_rail_geometry(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
-        let temp = tempfile::tempdir().expect("temporary heterogeneous result catalog");
-        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
-            .expect("open heterogeneous result catalog");
-        let (application, endpoint) = cx.update(|cx| {
-            let notifications = cx.new(|_| NotificationCenter::default());
-            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
-            endpoint.set_connected_for_contract_test(true);
-            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
-            let application = cx.new(|_| {
-                QuickLaunchApplication::new(
-                    catalog,
-                    Rc::new(platform),
-                    Rc::new(indexer),
-                    AppConfig::default(),
-                    temp.path().join("config.json"),
-                    temp.path().join("logs"),
-                    notifications,
-                )
-            });
-            (application, endpoint)
-        });
+        let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
         let results = [
             (
                 "application",
@@ -7094,6 +7054,39 @@ mod tests {
             progress_description.size.height,
             empty_description.size.height
         );
+    }
+
+    fn quick_launch_application_fixture(
+        cx: &mut TestAppContext,
+    ) -> (
+        tempfile::TempDir,
+        Entity<QuickLaunchApplication>,
+        nxtools_ipc::PlatformServerEndpoint,
+    ) {
+        let temp = tempfile::tempdir().expect("temporary quick-launch application fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open quick-launch application fixture catalog");
+        let config_path = temp.path().join("config.json");
+        let logs_path = temp.path().join("logs");
+        let (application, endpoint) = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
+            endpoint.set_connected_for_contract_test(true);
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            let application = cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    config_path,
+                    logs_path,
+                    notifications,
+                )
+            });
+            (application, endpoint)
+        });
+        (temp, application, endpoint)
     }
 
     fn search_result(id: &str, source: ApplicationSource) -> SearchResult {
