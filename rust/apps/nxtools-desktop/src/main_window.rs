@@ -44,13 +44,15 @@ use crate::icons::{CaptionIcon, MaterialIcon};
 use crate::network_settings::NetworkSettingsApplication;
 use crate::notifications::{NOTIFICATION_EXIT_DURATION, NotificationCenter, NotificationLevel};
 use crate::quick_launch::{
-    QuickLaunchApplication, QuickLaunchApplicationEvent, QuickLaunchPerformanceSnapshot,
+    QuickLaunchApplication, QuickLaunchApplicationEvent, QuickLaunchHotkeyLifecycle,
+    QuickLaunchPerformanceSnapshot,
 };
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
 use crate::ui::components::action::{
     SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
 };
+use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setting_row};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::components::titlebar::ModuleHeader;
@@ -1231,7 +1233,7 @@ impl MainWindow {
         let hotkey_focus_subscription =
             cx.on_focus_out(&hotkey_focus, window, |this, _event, _window, cx| {
                 if this.recording_hotkey.take().is_some() {
-                    this.set_all_hotkey_recording(false, cx);
+                    this.defer_all_hotkey_recording(false, cx);
                     cx.notify();
                 }
             });
@@ -1828,29 +1830,61 @@ impl MainWindow {
             .into_any_element()
     }
 
-    fn set_hotkey_recording(
+    fn defer_hotkey_recording(
         &self,
         target: HotkeyRecordingTarget,
         recording: bool,
         cx: &mut Context<Self>,
     ) {
-        match target {
+        let clipboard = self.clipboard.clone();
+        let quick_launch = self.quick_launch.clone();
+        cx.defer(move |cx| match target {
             HotkeyRecordingTarget::Clipboard => {
-                let _ = self.clipboard.update(cx, |application, _| {
+                let _ = clipboard.update(cx, |application, _| {
                     application.set_clipboard_hotkey_recording(recording);
                 });
             }
             HotkeyRecordingTarget::QuickLaunch => {
-                let _ = self.quick_launch.update(cx, |application, _| {
+                let _ = quick_launch.update(cx, |application, _| {
                     application.set_hotkey_recording(recording);
                 });
             }
-        }
+        });
     }
 
-    fn set_all_hotkey_recording(&self, recording: bool, cx: &mut Context<Self>) {
-        self.set_hotkey_recording(HotkeyRecordingTarget::Clipboard, recording, cx);
-        self.set_hotkey_recording(HotkeyRecordingTarget::QuickLaunch, recording, cx);
+    fn defer_recorded_hotkey(
+        &self,
+        target: HotkeyRecordingTarget,
+        hotkey: ClipboardHotKey,
+        cx: &mut Context<Self>,
+    ) {
+        let clipboard = self.clipboard.clone();
+        let quick_launch = self.quick_launch.clone();
+        cx.defer(move |cx| match target {
+            HotkeyRecordingTarget::Clipboard => {
+                let _ = clipboard.update(cx, |application, _| {
+                    application.set_clipboard_hotkey(hotkey);
+                });
+            }
+            HotkeyRecordingTarget::QuickLaunch => {
+                let _ = quick_launch.update(cx, |application, _| {
+                    application.set_hotkey(hotkey);
+                });
+            }
+        });
+    }
+
+    fn defer_all_hotkey_recording(&self, recording: bool, cx: &mut Context<Self>) {
+        let clipboard = self.clipboard.clone();
+        let quick_launch = self.quick_launch.clone();
+        cx.defer(move |cx| {
+            let _ = clipboard.update(cx, |application, _| {
+                application.set_clipboard_hotkey_recording(recording);
+            });
+            let _ = quick_launch.update(cx, |application, _| {
+                application.set_hotkey_recording(recording);
+            });
+        });
     }
 
     fn handle_hotkey_recording(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
@@ -1859,7 +1893,7 @@ impl MainWindow {
         };
         if event.keystroke.key.eq_ignore_ascii_case("escape") {
             self.recording_hotkey = None;
-            self.set_all_hotkey_recording(false, cx);
+            self.defer_all_hotkey_recording(false, cx);
             cx.stop_propagation();
             cx.notify();
             return;
@@ -1867,11 +1901,11 @@ impl MainWindow {
         let clipboard_ready = self
             .clipboard
             .upgrade()
-            .is_some_and(|application| application.read(cx).clipboard_hotkey_recording_ready());
+            .is_none_or(|application| application.read(cx).clipboard_hotkey_recording_ready());
         let quick_launch_ready = self
             .quick_launch
             .upgrade()
-            .is_some_and(|application| application.read(cx).hotkey_recording_ready());
+            .is_none_or(|application| application.read(cx).hotkey_recording_ready());
         let recording_ready = clipboard_ready && quick_launch_ready;
         if !recording_ready {
             cx.stop_propagation();
@@ -1880,23 +1914,12 @@ impl MainWindow {
         let Some(hotkey) = hotkey_from_key_down(event) else {
             return;
         };
-        match target {
-            HotkeyRecordingTarget::Clipboard => {
-                let _ = self.clipboard.update(cx, |application, _| {
-                    application.set_clipboard_hotkey(hotkey);
-                });
-            }
-            HotkeyRecordingTarget::QuickLaunch => {
-                let _ = self.quick_launch.update(cx, |application, _| {
-                    application.set_hotkey(hotkey);
-                });
-            }
-        }
+        self.defer_recorded_hotkey(target, hotkey, cx);
         let other = match target {
             HotkeyRecordingTarget::Clipboard => HotkeyRecordingTarget::QuickLaunch,
             HotkeyRecordingTarget::QuickLaunch => HotkeyRecordingTarget::Clipboard,
         };
-        self.set_hotkey_recording(other, false, cx);
+        self.defer_hotkey_recording(other, false, cx);
         self.recording_hotkey = None;
         cx.stop_propagation();
         cx.notify();
@@ -2647,10 +2670,7 @@ impl MainWindow {
             settings,
             status,
             index_status,
-            configuration_status,
-            update_pending,
-            recording_ready,
-            recording_active,
+            hotkey_lifecycle,
             indexer_connected,
             history_summary,
             performance,
@@ -2664,10 +2684,7 @@ impl MainWindow {
                     application.settings(),
                     application.catalog_status(),
                     application.index_status(),
-                    application.configuration_status().to_owned(),
-                    application.hotkey_update_pending(),
-                    application.hotkey_recording_ready(),
-                    application.hotkey_recording_active(),
+                    application.hotkey_lifecycle(),
                     application.indexer_connected(),
                     application.history_summary(),
                     application.performance_snapshot(),
@@ -2679,10 +2696,9 @@ impl MainWindow {
                     nxtools_core::QuickLaunchSettings::default(),
                     nxtools_finder::CatalogStatus::default(),
                     None,
-                    "核心不可用".into(),
-                    false,
-                    false,
-                    false,
+                    QuickLaunchHotkeyLifecycle::Failed {
+                        error: "速启核心不可用".into(),
+                    },
                     false,
                     nxtools_finder::QuickLaunchHistorySummary::default(),
                     QuickLaunchPerformanceSnapshot::default(),
@@ -2690,65 +2706,60 @@ impl MainWindow {
                 )
             });
         let recording_quick = self.recording_hotkey == Some(HotkeyRecordingTarget::QuickLaunch);
-        if recording_quick && !recording_active {
+        if recording_quick && !hotkey_lifecycle.owns_recording_session() {
             self.recording_hotkey = None;
         }
-        let hotkey_label = if update_pending {
-            "正在应用…".to_owned()
-        } else if recording_quick {
-            if recording_ready {
-                "按下组合键…".to_owned()
-            } else {
-                "正在暂停…".to_owned()
-            }
-        } else {
-            settings.hotkey.display.clone()
+        let (hotkey_state, hotkey_value, hotkey_status) = match hotkey_lifecycle {
+            QuickLaunchHotkeyLifecycle::Applied => (
+                HotkeyFieldState::Applied,
+                settings.hotkey.display.clone(),
+                "已应用到 Windows 全局热键".to_owned(),
+            ),
+            QuickLaunchHotkeyLifecycle::WaitingForAdapter { status } => (
+                HotkeyFieldState::Waiting,
+                settings.hotkey.display.clone(),
+                status,
+            ),
+            QuickLaunchHotkeyLifecycle::WaitingForRecording { status } => (
+                HotkeyFieldState::Waiting,
+                settings.hotkey.display.clone(),
+                status,
+            ),
+            QuickLaunchHotkeyLifecycle::Recording => (
+                HotkeyFieldState::Recording,
+                "按下组合键".to_owned(),
+                "请按下包含修饰键的组合键 · Esc 取消".to_owned(),
+            ),
+            QuickLaunchHotkeyLifecycle::Applying { candidate } => (
+                HotkeyFieldState::Applying,
+                candidate.unwrap_or_else(|| settings.hotkey.display.clone()),
+                "正在向 Windows 应用全局热键".to_owned(),
+            ),
+            QuickLaunchHotkeyLifecycle::Failed { error } => (
+                HotkeyFieldState::Failed,
+                settings.hotkey.display.clone(),
+                error,
+            ),
         };
-        let hotkey_control = div()
-            .id("record-quick-launch-hotkey")
-            .h(px(26.0))
-            .min_w(px(116.0))
-            .px(px(9.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(if recording_quick {
-                theme.accent
-            } else {
-                theme.border
-            })
-            .bg(if recording_quick {
-                theme.accent_soft
-            } else {
-                theme.canvas
-            })
-            .cursor_pointer()
-            .flex()
-            .items_center()
-            .justify_center()
-            .font_family(UI_MONO_FONT_FAMILY)
-            .text_size(px(10.5))
-            .text_color(if recording_quick {
-                theme.accent_text
-            } else {
-                theme.text_secondary
-            })
-            .child(hotkey_label)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                if update_pending {
-                    return;
-                }
+        let hotkey_control = hotkey_field(
+            theme,
+            "quick-launch-hotkey-field",
+            hotkey_value,
+            hotkey_status,
+            hotkey_state,
+            cx.listener(move |this, _, window, cx| {
                 let recording = this.recording_hotkey != Some(HotkeyRecordingTarget::QuickLaunch);
                 if this.recording_hotkey.take().is_some() {
-                    this.set_all_hotkey_recording(false, cx);
+                    this.defer_all_hotkey_recording(false, cx);
                 }
                 this.recording_hotkey = recording.then_some(HotkeyRecordingTarget::QuickLaunch);
-                this.set_all_hotkey_recording(recording, cx);
+                this.defer_all_hotkey_recording(recording, cx);
                 if recording {
                     this.hotkey_focus.focus(window);
                 }
                 cx.notify();
-            }))
-            .into_any_element();
+            }),
+        );
         let auto_quick_switch = self.quick_launch.clone();
         let auto_quick_switch_enabled = settings.auto_quick_switch;
         let auto_quick_switch_control = compact_toggle(
@@ -3483,10 +3494,11 @@ impl MainWindow {
                 theme,
                 "呼出与执行",
                 vec![
-                    compact_setting_row(
+                    hotkey_setting_row(
                         theme,
+                        "quick-launch-hotkey-setting",
                         "全局呼出热键",
-                        format!("Windows 注册状态 · {configuration_status}"),
+                        "点击字段开始录制；Esc 或失焦取消",
                         hotkey_control,
                     ),
                     compact_setting_row(
@@ -3864,10 +3876,10 @@ impl MainWindow {
                 if !hotkey_update_pending {
                     let recording = this.recording_hotkey != Some(HotkeyRecordingTarget::Clipboard);
                     if this.recording_hotkey.take().is_some() {
-                        this.set_all_hotkey_recording(false, cx);
+                        this.defer_all_hotkey_recording(false, cx);
                     }
                     this.recording_hotkey = recording.then_some(HotkeyRecordingTarget::Clipboard);
-                    this.set_all_hotkey_recording(recording, cx);
+                    this.defer_all_hotkey_recording(recording, cx);
                     if recording {
                         this.hotkey_focus.focus(window);
                     }
@@ -6426,9 +6438,10 @@ mod tests {
     use nxtools_finder::FinderCatalog;
     use nxtools_network::NetworkPolicy;
 
-    use nxtools_ipc::platform_bridge;
+    use nxtools_ipc::{PlatformNotification, platform_bridge};
     use nxtools_protocol::{
         ActivateWindowCommand, IndexPhase, IndexStatus, Message, PlatformCommand,
+        PlatformCommandResult,
     };
 
     use crate::clipboard::ClipboardApplication;
@@ -7003,6 +7016,334 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[gpui::test]
+    fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        let temp = tempfile::tempdir().expect("temporary Quick Launch hotkey fixture");
+        let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+            .expect("open Quick Launch hotkey catalog");
+        let (platform, platform_endpoint) = platform_bridge(16);
+        platform_endpoint.set_connected_for_contract_test(true);
+        let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+        let quick_launch = cx.update(|cx| {
+            cx.new(|_| {
+                QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    temp.path().join("config.json"),
+                    temp.path().join("logs"),
+                    notifications.clone(),
+                )
+            })
+        });
+        quick_launch.update(cx, |application, cx| {
+            application.handle_platform_notification(PlatformNotification::Connected, cx);
+        });
+        let initial_configuration = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("apply the initial Quick Launch configuration");
+        assert!(matches!(
+            initial_configuration.message,
+            Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(_))
+        ));
+        let original_hotkey = cx.read(|cx| quick_launch.read(cx).settings().hotkey);
+        let quick_launch_for_window = quick_launch.downgrade();
+        let notifications_for_window = notifications.clone();
+        let (_main_window, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui::size(px(1060.0), px(500.0)));
+            let mut main_window = MainWindow::new(
+                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+                quick_launch_for_window,
+                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_window,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::QuickFind);
+            main_window
+        });
+
+        window
+            .refresh()
+            .expect("render initial applying Quick Launch hotkey");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-applying")
+                .is_some()
+        );
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: initial_configuration.id,
+                        result: PlatformCommandResult {
+                            success: false,
+                            error: Some("initial hotkey registration was rejected".into()),
+                            native_error_code: Some(1409),
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render failed initial Quick Launch hotkey");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-failed")
+                .is_some()
+        );
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().hotkey),
+            original_hotkey,
+            "a rejected initial registration must keep the configured hotkey"
+        );
+
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(PlatformNotification::Connected, cx);
+            });
+        });
+        let retry_configuration = (0..8)
+            .filter_map(|_| {
+                platform_endpoint
+                    .try_receive_command_for_contract_test()
+                    .ok()
+            })
+            .find(|envelope| {
+                matches!(
+                    envelope.message,
+                    Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(_))
+                )
+            })
+            .expect("retry the initial Quick Launch configuration");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: retry_configuration.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("render applied Quick Launch hotkey");
+        let field = window
+            .debug_bounds("quick-launch-hotkey-field-control")
+            .expect("shared Quick Launch HotkeyField");
+        assert_eq!(field.size.height, px(32.0));
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-value")
+                .expect("HotkeyField value")
+                .size
+                .height,
+            px(LINE_HEIGHT_BODY)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-status")
+                .expect("HotkeyField status")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-hotkey-setting-title")
+                .expect("HotkeyField setting title")
+                .size
+                .height,
+            px(LINE_HEIGHT_BODY)
+        );
+        assert_eq!(
+            window
+                .debug_bounds("quick-launch-hotkey-setting-description")
+                .expect("HotkeyField setting description")
+                .size
+                .height,
+            px(LINE_HEIGHT_LABEL)
+        );
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-applied")
+                .is_some()
+        );
+
+        window.simulate_click(field.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("render waiting HotkeyField");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-waiting")
+                .is_some()
+        );
+        let recording_envelope = (0..8)
+            .filter_map(|_| {
+                platform_endpoint
+                    .try_receive_command_for_contract_test()
+                    .ok()
+            })
+            .find(|envelope| {
+                matches!(
+                    &envelope.message,
+                    Message::PlatformCommand(PlatformCommand::SetQuickLaunchHotKeyRecording(
+                        command
+                    )) if command.recording
+                )
+            })
+            .expect("pause the native Quick Launch trigger before recording");
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: recording_envelope.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render recording HotkeyField");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-recording")
+                .is_some()
+        );
+        while platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+        window.simulate_click(field.center(), Modifiers::default());
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("keep the recording HotkeyField stable after pointer input");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-recording")
+                .is_some(),
+            "recording may be cancelled only through Escape or focus loss"
+        );
+        assert!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .is_err(),
+            "clicking the recording field must not send a second native command"
+        );
+
+        window.simulate_keystrokes("ctrl-alt-v");
+        window.run_until_parked();
+        let apply_envelope = (0..8)
+            .filter_map(|_| {
+                platform_endpoint
+                    .try_receive_command_for_contract_test()
+                    .ok()
+            })
+            .find(|envelope| {
+                matches!(
+                    &envelope.message,
+                    Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command))
+                        if command.hotkey_display == "Ctrl+Alt+V"
+                )
+            })
+            .expect("apply the recorded Quick Launch hotkey");
+        window.refresh().expect("render applying HotkeyField");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-applying")
+                .is_some()
+        );
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("ignore a stale successful hotkey result");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-applying")
+                .is_some(),
+            "an unrelated success cannot complete the pending hotkey"
+        );
+        assert_eq!(
+            window.update(|_, cx| quick_launch.read(cx).settings().hotkey),
+            original_hotkey,
+            "an unrelated success cannot replace the applied hotkey"
+        );
+
+        window.update(|_, cx| {
+            quick_launch.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: apply_envelope.id,
+                        result: PlatformCommandResult {
+                            success: false,
+                            error: Some("hotkey is already registered".into()),
+                            native_error_code: Some(1409),
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+            });
+        });
+        window.run_until_parked();
+        window.refresh().expect("render failed HotkeyField");
+        assert!(
+            window
+                .debug_bounds("quick-launch-hotkey-field-state-failed")
+                .is_some()
+        );
+        assert_eq!(
+            cx.read(|cx| quick_launch.read(cx).settings().hotkey),
+            original_hotkey,
+            "a rejected native registration must keep the applied hotkey"
+        );
     }
 
     #[gpui::test]

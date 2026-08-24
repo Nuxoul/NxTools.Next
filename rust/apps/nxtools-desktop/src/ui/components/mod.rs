@@ -1,6 +1,7 @@
 pub(crate) mod action;
 pub(crate) mod dialog;
 pub(crate) mod field;
+pub(crate) mod hotkey;
 pub(crate) mod list;
 pub(crate) mod menu;
 pub(crate) mod popover;

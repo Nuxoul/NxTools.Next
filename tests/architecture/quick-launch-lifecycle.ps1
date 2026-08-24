@@ -9,6 +9,8 @@ $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
 $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
 $mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
+$hotkeyFieldPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\hotkey.rs'
+$hotkeyFieldSource = Get-Content -Raw -LiteralPath $hotkeyFieldPath
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
 $quickLaunchSmokePath = Join-Path $root 'tests\runtime\quick-launch-search-smoke.ps1'
@@ -78,6 +80,74 @@ foreach ($requiredSettingsPageRegression in @(
     if (-not $mainWindowSource.Contains($requiredSettingsPageRegression)) {
         throw 'Quick Launch QL-07 requires real production-window navigation and exclusive-mount regressions.'
     }
+}
+$quickLaunchSettingsStart = $mainWindowSource.IndexOf('    fn render_quick_find(')
+$quickLaunchSettingsEnd = $mainWindowSource.IndexOf(
+    '    fn render_clipboard(',
+    $quickLaunchSettingsStart
+)
+if ($quickLaunchSettingsStart -lt 0 -or $quickLaunchSettingsEnd -le $quickLaunchSettingsStart) {
+    throw 'Could not isolate the Quick Launch settings render boundary.'
+}
+$quickLaunchSettings = $mainWindowSource.Substring(
+    $quickLaunchSettingsStart,
+    $quickLaunchSettingsEnd - $quickLaunchSettingsStart
+)
+foreach ($requiredHotkeyFieldToken in @(
+    'CONTROL_HEIGHT_INPUT',
+    'RADIUS_CONTROL',
+    'TEXT_BODY',
+    'LINE_HEIGHT_BODY',
+    'TEXT_LABEL',
+    'LINE_HEIGHT_LABEL',
+    'UI_MONO_FONT_FAMILY'
+)) {
+    if (-not $hotkeyFieldSource.Contains($requiredHotkeyFieldToken)) {
+        throw 'Quick Launch HotkeyField must use the shared input, radius and typography tokens.'
+    }
+}
+foreach ($requiredHotkeyFieldState in @(
+    'Applied',
+    'Waiting',
+    'Recording',
+    'Applying',
+    'Failed'
+)) {
+    if (-not $hotkeyFieldSource.Contains($requiredHotkeyFieldState) -or
+        -not $quickLaunchSettings.Contains("HotkeyFieldState::$requiredHotkeyFieldState")) {
+        throw 'Quick Launch HotkeyField must expose applied, waiting, recording, applying and failed states.'
+    }
+}
+if (-not $quickLaunchSettings.Contains(
+        'hotkey_field('
+    ) -or
+    -not $quickLaunchSettings.Contains(
+        'hotkey_setting_row('
+    ) -or
+    -not $mainWindowSource.Contains(
+        'fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle('
+    ) -or
+    -not $mainWindowSource.Contains(
+        'PlatformCommand::SetQuickLaunchHotKeyRecording'
+    ) -or
+    -not $mainWindowSource.Contains(
+        'PlatformCommand::ConfigureQuickLaunch'
+    )) {
+    throw 'QL-08 requires the shared HotkeyField and a real typed registration lifecycle regression.'
+}
+$hotkeyLifecycleStart = $mainWindowSource.IndexOf('    fn defer_hotkey_recording(')
+$hotkeyLifecycleEnd = $mainWindowSource.IndexOf('    fn module_icon(', $hotkeyLifecycleStart)
+if ($hotkeyLifecycleStart -lt 0 -or $hotkeyLifecycleEnd -le $hotkeyLifecycleStart) {
+    throw 'Could not isolate the shared hotkey recording lifecycle.'
+}
+$hotkeyLifecycle = $mainWindowSource.Substring(
+    $hotkeyLifecycleStart,
+    $hotkeyLifecycleEnd - $hotkeyLifecycleStart
+)
+if (($hotkeyLifecycle.Split('cx.defer(move |cx|').Count - 1) -lt 3 -or
+    -not $hotkeyLifecycle.Contains('fn defer_recorded_hotkey(') -or
+    -not $hotkeyLifecycle.Contains('fn defer_all_hotkey_recording(')) {
+    throw 'Hotkey recording and apply mutations must defer every cross-entity update.'
 }
 $searchInputStart = $panelRender.IndexOf('Input::new(&self.search_input)')
 $searchInputEnd = $panelRender.IndexOf('.when(recent_button_visible', $searchInputStart)

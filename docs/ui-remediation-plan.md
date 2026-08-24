@@ -1073,6 +1073,31 @@ rust/apps/nxtools-desktop/src/ui/
 - 本切片没有制作或接受 100%/125%/150% Release OS 截图，因此不声明速启 Release 视觉批次收口；
   QL-07 的结构、行为与自动化验收完成，下一切片为 QL-08 热键设置。
 
+第三十七个 P1 速启热键设置切片（2026-08-24）：
+
+- QL-08 将常规页的私有 26 px/10.5 px 热键按钮替换为共享 `HotkeyField`：固定 260 px 宽、
+  32 px 内凹录制字段和 16 px 同位状态行。当前或候选组合键使用 Mono Body 12/18，设置标题与
+  字段值使用 Body 12/18，说明与状态使用 Label 11/16；6 px 语义标记和克制边界分别表达已应用、
+  等待、录制、应用中与失败，不增加 keycap 色块、状态卡片或行宽变化。
+- 录制仍沿用现有类型化 `SetQuickLaunchHotKeyRecording -> ConfigureQuickLaunch` Windows 边界。
+  点击已应用/失败字段开始录制，原生暂停与应用期间拒绝第二次点击；Escape 与失焦继续取消。候选
+  组合键在相关命令等待期间保持可见，只有 correlation-matched 成功结果才替换并持久化当前设置；
+  非匹配成功结果保持应用中，Win32 冲突或其他失败保留上一个已应用热键并在字段下方显示错误。
+- 参考复核确认旧 NxTools 只有剪贴板热键录制链路而没有速启界面；Listary 与 SwiftList 均使用一个
+  聚焦、只读、原位录制字段。SwiftList 的裸 Ctrl 双击语义与 Listary 的字段行为仅作为行为证据，
+  本切片不复制其 WPF/反编译视觉，也不改变 NxTools.Next 已有 C# 双击 Ctrl 适配器。
+- 新增真实生产 `MainWindow` GPUI/内存 PlatformHost 回归，在 1060×500 常规页先验证初始配置的
+  应用中、correlation-matched 失败与重试成功，再逐步验证已应用、等待原生暂停、录制、候选
+  `Ctrl+Alt+V` 应用中和 Win32 1409 失败五态；录制态点击不会取消或发出第二条命令，非匹配成功
+  correlation 不能完成应用或替换当前设置。回归同时锁定 32 px 字段、
+  Body/Label 行高、类型化命令及失败后设置不变。共享录制/应用跨实体回调同时延迟到下一 application
+  turn，架构门禁锁定五态、共享令牌、真实测试和 deferred 边界。热键定向为 3/3，Quick Launch
+  为 117/117，严格 desktop Clippy、rustfmt、生命周期门禁与 `git diff --check` 通过；Desktop
+  全套为 327/331，仍仅有分类上移 selector、下载详情 progress selector、网络尾距与剪贴板空态
+  宽度四项既有失败。
+- 按用户要求，本切片未执行 Release 打包、未启动 NxTools，也未制作或接受 100%/125%/150% OS
+  截图；自动验证仅限源码测试和静态门禁。QL-08 完成，下一切片为 QL-09 索引卷。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

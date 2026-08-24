@@ -1094,6 +1094,29 @@ Reverified on 2026-08-24 before the QL-07 main-workspace settings split:
   ownership of the hotkey field, index-volume list, exclusion editor, command master-detail and
   diagnostics-detail redesigns.
 
+Reverified on 2026-08-24 before the QL-08 HotkeyField migration:
+
+- The old `D:/RiderProject/NxTools` tree still has no Quick Launch surface. Its clipboard settings
+  provide only the existing NxTools recording lifecycle reference: a read-only value, an explicit
+  recording prompt, Escape cancellation, an in-flight registration message and the native success
+  or failure result. QL-08 does not copy the old Avalonia card styling or merge the clipboard and
+  launcher owners.
+- Listary `Views/HotkeyView.cs` uses one focused, read-only field for display and capture. Focus
+  changes the cue, valid key input replaces the value in place, Backspace clears it and a small
+  trailing action remains inside the same field. `HotkeyOptionsViewModel` keeps application at the
+  options boundary. The managed inspection is behavioral evidence only; its template styling is
+  not copied.
+- SwiftList `HotkeyRecorderControl.xaml(.cs)` independently confirms a fixed recorder field with
+  focused key capture, clear/restore affordances and explicit modifier policy. Its first-party
+  hotkey guide and `GlobalHotkeyDetector` keep bare Ctrl as a double-tap summon gesture with release,
+  repeat, intervening-key and bounded-time guards. NxTools.Next retains its existing typed
+  `SetQuickLaunchHotKeyRecording` then `ConfigureQuickLaunch` protocol and C# gesture adapter; this
+  visual slice does not replace that native boundary.
+- NxTools.Next QL-08 therefore presents the current or pending chord on one stable Mono rail and
+  maps the existing correlated lifecycle to applied, waiting, recording, applying and failed states.
+  A rejected native result keeps the last applied setting; only a correlation-matched success may
+  replace and persist it.
+
 - Listary 的默认启动器合并应用、文件、文件夹和即时结果；NxTools.Next 的主速启和文件对话框
   附着搜索也使用同一类多来源结果语义。因此空结果提示必须使用中性的“没有匹配项”，不能仍写成
   仅针对应用的“没有匹配的应用”。

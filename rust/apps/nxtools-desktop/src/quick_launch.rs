@@ -1283,6 +1283,22 @@ pub(crate) struct QuickLaunchPerformanceSnapshot {
     pub last_index_search_us: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum QuickLaunchHotkeyLifecycle {
+    Applied,
+    WaitingForAdapter { status: String },
+    WaitingForRecording { status: String },
+    Recording,
+    Applying { candidate: Option<String> },
+    Failed { error: String },
+}
+
+impl QuickLaunchHotkeyLifecycle {
+    pub(crate) fn owns_recording_session(&self) -> bool {
+        matches!(self, Self::WaitingForRecording { .. } | Self::Recording)
+    }
+}
+
 pub(crate) struct QuickLaunchApplication {
     catalog: Rc<RefCell<FinderCatalog>>,
     catalog_refresh_in_progress: bool,
@@ -1296,6 +1312,7 @@ pub(crate) struct QuickLaunchApplication {
     preview: QuickLaunchPreviewSession,
     pending_configuration: HashSet<uuid::Uuid>,
     pending_hotkey: Option<(uuid::Uuid, ClipboardHotKey)>,
+    hotkey_error: Option<String>,
     pending_recording: Option<(uuid::Uuid, bool)>,
     recording_active: bool,
     recording_desired: bool,
@@ -2346,6 +2363,7 @@ impl QuickLaunchApplication {
             preview: QuickLaunchPreviewSession::default(),
             pending_configuration: HashSet::new(),
             pending_hotkey: None,
+            hotkey_error: None,
             pending_recording: None,
             recording_active: false,
             recording_desired: false,
@@ -2897,12 +2915,40 @@ impl QuickLaunchApplication {
         });
     }
 
-    pub(crate) fn configuration_status(&self) -> &str {
-        &self.configuration_status
-    }
-
-    pub(crate) fn hotkey_update_pending(&self) -> bool {
-        self.pending_hotkey.is_some()
+    pub(crate) fn hotkey_lifecycle(&self) -> QuickLaunchHotkeyLifecycle {
+        if let Some((_, hotkey)) = &self.pending_hotkey {
+            return QuickLaunchHotkeyLifecycle::Applying {
+                candidate: Some(hotkey.display.clone()),
+            };
+        }
+        if let Some(error) = &self.hotkey_error {
+            return QuickLaunchHotkeyLifecycle::Failed {
+                error: error.clone(),
+            };
+        }
+        if self.hotkey_recording_active() {
+            return if self.hotkey_recording_ready() {
+                QuickLaunchHotkeyLifecycle::Recording
+            } else {
+                QuickLaunchHotkeyLifecycle::WaitingForRecording {
+                    status: self.configuration_status.clone(),
+                }
+            };
+        }
+        if !self.pending_configuration.is_empty() {
+            return QuickLaunchHotkeyLifecycle::Applying { candidate: None };
+        }
+        if self.configuration_status.starts_with("等待") {
+            return QuickLaunchHotkeyLifecycle::WaitingForAdapter {
+                status: self.configuration_status.clone(),
+            };
+        }
+        if self.configuration_status.starts_with("应用失败") {
+            return QuickLaunchHotkeyLifecycle::Failed {
+                error: self.configuration_status.clone(),
+            };
+        }
+        QuickLaunchHotkeyLifecycle::Applied
     }
 
     pub(crate) fn hotkey_recording_ready(&self) -> bool {
@@ -2914,6 +2960,9 @@ impl QuickLaunchApplication {
     }
 
     pub(crate) fn set_hotkey_recording(&mut self, recording: bool) {
+        if recording {
+            self.hotkey_error = None;
+        }
         self.recording_desired = recording;
         self.drive_hotkey_recording();
     }
@@ -2924,10 +2973,13 @@ impl QuickLaunchApplication {
         }
         self.recording_desired = false;
         self.recording_active = false;
+        self.hotkey_error = None;
         let mut settings = self.config.quick_launch.clone();
         settings.hotkey = hotkey.clone();
         if let Some(command_id) = self.send_configuration_for(&settings) {
             self.pending_hotkey = Some((command_id, hotkey));
+        } else {
+            self.hotkey_error = Some(self.configuration_status.clone());
         }
     }
 
@@ -3385,6 +3437,7 @@ impl QuickLaunchApplication {
                     "热键录制失败：{}",
                     result.error.as_deref().unwrap_or("未知错误")
                 );
+                self.hotkey_error = Some(self.configuration_status.clone());
             }
             self.drive_hotkey_recording();
             cx.notify();
@@ -3401,9 +3454,16 @@ impl QuickLaunchApplication {
                 self.config.quick_launch.hotkey = hotkey;
                 if let Err(error) = self.config.save_to(&self.config_path) {
                     self.configuration_status = format!("热键已生效，但保存失败：{error}");
+                    self.hotkey_error = Some(self.configuration_status.clone());
                 } else {
                     self.configuration_status = "已启用".into();
+                    self.hotkey_error = None;
                 }
+            } else {
+                self.hotkey_error = Some(format!(
+                    "热键应用失败：{}",
+                    result.error.as_deref().unwrap_or("未知错误")
+                ));
             }
             cx.notify();
         }
@@ -3642,6 +3702,7 @@ impl QuickLaunchApplication {
                 self.recording_active = false;
                 self.recording_desired = false;
                 self.configuration_status = format!("热键录制失败：{error}");
+                self.hotkey_error = Some(self.configuration_status.clone());
             }
         }
     }

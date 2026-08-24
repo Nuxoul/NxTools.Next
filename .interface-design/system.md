@@ -79,6 +79,21 @@
   closes only after the underlying operation succeeds, and all cross-entity callbacks defer to the
   next application turn.
 
+### Hotkey field
+
+- A global shortcut is presented by one reusable `HotkeyField`: a fixed 260 px rail with a 32 px
+  inset recording control and one 16 px status line. The chord uses Mono Body 12/18; status copy uses
+  UI Label 11/16. Changing lifecycle state never changes the field width or moves its enclosing row.
+- Applied, native-waiting, recording, applying and failed states share the same geometry. A 6 px
+  semantic marker and restrained border carry state: success for applied, warning for waiting,
+  accent for focus/recording/applying and danger for failure. No state becomes a card or a row-wide
+  accent fill.
+- Clicking an applied or failed field begins recording; waiting/applying fields do not accept a
+  second request, while the recording field may cancel through the existing Escape/focus lifecycle.
+  The pending chord remains visible while Windows registration is in flight. A failed correlated
+  result keeps the last applied chord and exposes the boundary error without mutating persisted
+  settings.
+
 ### Master-detail settings
 
 - Repeated editable identities use a continuous master list beside one detail editor. Master rows
