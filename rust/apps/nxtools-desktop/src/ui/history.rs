@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Corner, ObjectFit, Pixels, Point, Rgba, Window, div, img,
-    point, prelude::*, px,
+    AnyElement, App, Bounds, ClickEvent, Corner, ObjectFit, Pixels, Point, Window, div, img, point,
+    prelude::*, px,
 };
 use gpui_component::Icon;
 use gpui_component::button::{Button, ButtonVariants};
@@ -20,6 +20,7 @@ use nxtools_core::ClipboardModifierActions;
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::action_from_modifiers;
+use crate::ui::components::list::compact_result_row;
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::RADIUS_CONTROL;
 use crate::ui::typography::{TEXT_BODY, TEXT_META};
@@ -129,292 +130,281 @@ pub fn history_row(
         .h(px(slot_height))
         .pb(px(ROW_GAP))
         .child(
-            div()
-                .id(("history-row", index))
-                .group(group_name.clone())
-                .h(px(card_height))
-                .px(px(7.0))
-                .py(px(4.0))
-                .rounded(px(RADIUS_CONTROL))
-                .border_1()
-                .border_color(history_row_border(theme, false))
-                .bg(history_row_background(theme, false))
-                .overflow_hidden()
-                .cursor_pointer()
-                .hover(move |style| {
-                    style
-                        .bg(history_row_background(theme, true))
-                        .border_color(history_row_border(theme, true))
-                })
-                .on_hover(move |hovered, window, cx| {
-                    let panel_bounds = window.bounds();
-                    let mouse = window.mouse_position();
-                    on_preview(
-                        *hovered,
-                        preview_entry.clone(),
-                        panel_bounds,
-                        point(
-                            panel_bounds.origin.x + mouse.x,
-                            panel_bounds.origin.y + mouse.y,
-                        ),
-                        window.scale_factor(),
-                        cx,
-                    );
-                })
-                .on_click(move |event, window, cx| {
-                    let Some(action) = action_from_click(event, modifier_actions) else {
-                        return;
-                    };
-                    click_action(action, event, window, cx);
-                })
-                .flex()
-                .flex_col()
-                .gap(px(CONTENT_GAP))
-                .child(
-                    div()
-                        .relative()
-                        .h(px(METADATA_HEIGHT))
-                        .flex()
-                        .items_center()
-                        .gap(px(5.0))
-                        .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
-                        .child(source_icon(theme, source, source_icon_path, index))
-                        .child(time_label(theme, relative_time))
-                        .child(div().flex_1())
-                        .when(is_pinned, |row| {
-                            row.child(state_icon(theme, MaterialIcon::Keep, "已置顶"))
-                        })
-                        .when(is_favorite, |row| {
-                            row.child(state_icon(theme, MaterialIcon::Star, "已收藏"))
-                        })
-                        .child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .right_0()
-                                .invisible()
-                                .group_hover(group_name, |style| style.visible())
-                                .h(px(METADATA_HEIGHT))
-                                .pl_1()
-                                .bg(theme.surface_hover)
-                                .flex()
-                                .items_center()
-                                .gap(px(2.0))
-                                .when(!open_targets.is_empty(), |actions| {
-                                    actions.child(open_targets_button(
-                                        theme,
-                                        index,
-                                        open_targets,
-                                        on_open,
-                                    ))
-                                })
-                                .when(can_edit, |actions| {
-                                    actions.child(management_button(
-                                        theme,
-                                        MaterialIcon::Edit,
-                                        "编辑文本",
-                                        ClipboardItemAction::Edit,
-                                        edit_action,
-                                        false,
-                                    ))
-                                })
-                                .child(management_button(
+            compact_result_row(
+                theme,
+                ("history-row", index),
+                group_name.clone(),
+                card_height,
+            )
+            .on_hover(move |hovered, window, cx| {
+                let panel_bounds = window.bounds();
+                let mouse = window.mouse_position();
+                on_preview(
+                    *hovered,
+                    preview_entry.clone(),
+                    panel_bounds,
+                    point(
+                        panel_bounds.origin.x + mouse.x,
+                        panel_bounds.origin.y + mouse.y,
+                    ),
+                    window.scale_factor(),
+                    cx,
+                );
+            })
+            .on_click(move |event, window, cx| {
+                let Some(action) = action_from_click(event, modifier_actions) else {
+                    return;
+                };
+                click_action(action, event, window, cx);
+            })
+            .flex()
+            .flex_col()
+            .gap(px(CONTENT_GAP))
+            .child(
+                div()
+                    .relative()
+                    .h(px(METADATA_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
+                    .child(source_icon(theme, source, source_icon_path, index))
+                    .child(time_label(theme, relative_time))
+                    .child(div().flex_1())
+                    .when(is_pinned, |row| {
+                        row.child(state_icon(theme, MaterialIcon::Keep, "已置顶"))
+                    })
+                    .when(is_favorite, |row| {
+                        row.child(state_icon(theme, MaterialIcon::Star, "已收藏"))
+                    })
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .right_0()
+                            .invisible()
+                            .group_hover(group_name, |style| style.visible())
+                            .h(px(METADATA_HEIGHT))
+                            .pl_1()
+                            .bg(theme.surface_hover)
+                            .flex()
+                            .items_center()
+                            .gap(px(2.0))
+                            .when(!open_targets.is_empty(), |actions| {
+                                actions.child(open_targets_button(
                                     theme,
-                                    MaterialIcon::Keep,
-                                    if is_pinned { "取消置顶" } else { "置顶" },
-                                    ClipboardItemAction::TogglePinned,
-                                    pin_action,
-                                    is_pinned,
+                                    index,
+                                    open_targets,
+                                    on_open,
                                 ))
-                                .child(management_button(
+                            })
+                            .when(can_edit, |actions| {
+                                actions.child(management_button(
                                     theme,
-                                    MaterialIcon::Star,
-                                    if is_favorite {
-                                        "取消收藏"
-                                    } else {
-                                        "收藏"
-                                    },
-                                    ClipboardItemAction::ToggleFavorite,
-                                    favorite_action,
-                                    is_favorite,
-                                ))
-                                .child(management_button(
-                                    theme,
-                                    MaterialIcon::Delete,
-                                    "删除",
-                                    ClipboardItemAction::Delete,
-                                    delete_action,
+                                    MaterialIcon::Edit,
+                                    "编辑文本",
+                                    ClipboardItemAction::Edit,
+                                    edit_action,
                                     false,
-                                )),
-                        ),
-                )
-                .child(content)
-                .context_menu(move |menu, window, cx| {
-                    let menu = context_menu_shell(menu)
-                        .item(
-                            context_menu_item(
+                                ))
+                            })
+                            .child(management_button(
                                 theme,
-                                "clipboard-menu-paste",
-                                "粘贴",
-                                MaterialIcon::ContentPaste,
-                                MenuTone::Normal,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&original_action);
-                                move |event, window, cx| {
-                                    action(ClipboardAction::OriginalPaste, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
-                                theme,
-                                "clipboard-menu-copy",
-                                "复制",
-                                MaterialIcon::ContentCopy,
-                                MenuTone::Normal,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&copy_action);
-                                move |event, window, cx| {
-                                    action(ClipboardAction::CopyOnly, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
-                                theme,
-                                "clipboard-menu-plain-paste",
-                                "纯文本粘贴",
-                                MaterialIcon::TextFields,
-                                MenuTone::Normal,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&plain_action);
-                                move |event, window, cx| {
-                                    action(ClipboardAction::PlainText, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
-                                theme,
-                                "clipboard-menu-without-breaks",
-                                "去除换行",
-                                MaterialIcon::Cancel,
-                                MenuTone::Normal,
-                            )
-                            .disabled(without_breaks_disabled)
-                            .on_click({
-                                let action = Rc::clone(&without_breaks_action);
-                                move |event, window, cx| {
-                                    action(ClipboardAction::WithoutLineBreaks, event, window, cx);
-                                }
-                            }),
-                        )
-                        .separator()
-                        .item(
-                            context_menu_item(
-                                theme,
-                                "clipboard-menu-edit",
-                                "编辑",
-                                MaterialIcon::Edit,
-                                MenuTone::Normal,
-                            )
-                            .disabled(!can_edit)
-                            .on_click({
-                                let action = Rc::clone(&menu_edit_action);
-                                move |event, window, cx| {
-                                    action(ClipboardItemAction::Edit, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
-                                theme,
-                                "clipboard-menu-pin",
+                                MaterialIcon::Keep,
                                 if is_pinned { "取消置顶" } else { "置顶" },
-                                MaterialIcon::ArrowUpward,
-                                MenuTone::Normal,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&menu_pin_action);
-                                move |event, window, cx| {
-                                    action(ClipboardItemAction::TogglePinned, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
+                                ClipboardItemAction::TogglePinned,
+                                pin_action,
+                                is_pinned,
+                            ))
+                            .child(management_button(
                                 theme,
-                                "clipboard-menu-favorite",
+                                MaterialIcon::Star,
                                 if is_favorite {
                                     "取消收藏"
                                 } else {
                                     "收藏"
                                 },
-                                MaterialIcon::Star,
-                                MenuTone::Normal,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&menu_favorite_action);
-                                move |event, window, cx| {
-                                    action(ClipboardItemAction::ToggleFavorite, event, window, cx);
-                                }
-                            }),
-                        )
-                        .item(
-                            context_menu_item(
+                                ClipboardItemAction::ToggleFavorite,
+                                favorite_action,
+                                is_favorite,
+                            ))
+                            .child(management_button(
                                 theme,
-                                "clipboard-menu-delete",
-                                "删除",
                                 MaterialIcon::Delete,
-                                MenuTone::Danger,
-                            )
-                            .on_click({
-                                let action = Rc::clone(&menu_delete_action);
-                                move |event, window, cx| {
-                                    action(ClipboardItemAction::Delete, event, window, cx);
-                                }
-                            }),
-                        );
-                    let options = category_menu.options.clone();
-                    let unavailable_hint = category_menu.unavailable_hint.clone();
-                    let management = Rc::clone(&menu_category_action);
-                    menu.separator().submenu(
-                        "来源分类",
-                        window,
-                        cx,
-                        move |submenu, _window, _cx| {
-                            let submenu = context_menu_shell(submenu);
-                            if let Some(hint) = unavailable_hint.clone() {
-                                submenu.item(PopupMenuItem::new(hint).disabled(true))
-                            } else {
-                                options
-                                    .clone()
-                                    .into_iter()
-                                    .fold(submenu, |submenu, option| {
-                                        let management = Rc::clone(&management);
-                                        submenu.item(
-                                            PopupMenuItem::new(option.name.clone())
-                                                .checked(option.included)
-                                                .on_click(move |event, window, cx| {
-                                                    management(
-                                                        ClipboardItemAction::ToggleCategorySource {
-                                                            category_id: option.category_id.clone(),
-                                                            remove: option.included,
-                                                        },
-                                                        event,
-                                                        window,
-                                                        cx,
-                                                    );
-                                                }),
-                                        )
-                                    })
+                                "删除",
+                                ClipboardItemAction::Delete,
+                                delete_action,
+                                false,
+                            )),
+                    ),
+            )
+            .child(content)
+            .context_menu(move |menu, window, cx| {
+                let menu = context_menu_shell(menu)
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-paste",
+                            "粘贴",
+                            MaterialIcon::ContentPaste,
+                            MenuTone::Normal,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&original_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::OriginalPaste, event, window, cx);
                             }
-                        },
+                        }),
                     )
-                }),
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-copy",
+                            "复制",
+                            MaterialIcon::ContentCopy,
+                            MenuTone::Normal,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&copy_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::CopyOnly, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-plain-paste",
+                            "纯文本粘贴",
+                            MaterialIcon::TextFields,
+                            MenuTone::Normal,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&plain_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::PlainText, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-without-breaks",
+                            "去除换行",
+                            MaterialIcon::Cancel,
+                            MenuTone::Normal,
+                        )
+                        .disabled(without_breaks_disabled)
+                        .on_click({
+                            let action = Rc::clone(&without_breaks_action);
+                            move |event, window, cx| {
+                                action(ClipboardAction::WithoutLineBreaks, event, window, cx);
+                            }
+                        }),
+                    )
+                    .separator()
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-edit",
+                            "编辑",
+                            MaterialIcon::Edit,
+                            MenuTone::Normal,
+                        )
+                        .disabled(!can_edit)
+                        .on_click({
+                            let action = Rc::clone(&menu_edit_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::Edit, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-pin",
+                            if is_pinned { "取消置顶" } else { "置顶" },
+                            MaterialIcon::ArrowUpward,
+                            MenuTone::Normal,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&menu_pin_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::TogglePinned, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-favorite",
+                            if is_favorite {
+                                "取消收藏"
+                            } else {
+                                "收藏"
+                            },
+                            MaterialIcon::Star,
+                            MenuTone::Normal,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&menu_favorite_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::ToggleFavorite, event, window, cx);
+                            }
+                        }),
+                    )
+                    .item(
+                        context_menu_item(
+                            theme,
+                            "clipboard-menu-delete",
+                            "删除",
+                            MaterialIcon::Delete,
+                            MenuTone::Danger,
+                        )
+                        .on_click({
+                            let action = Rc::clone(&menu_delete_action);
+                            move |event, window, cx| {
+                                action(ClipboardItemAction::Delete, event, window, cx);
+                            }
+                        }),
+                    );
+                let options = category_menu.options.clone();
+                let unavailable_hint = category_menu.unavailable_hint.clone();
+                let management = Rc::clone(&menu_category_action);
+                menu.separator().submenu(
+                    "来源分类",
+                    window,
+                    cx,
+                    move |submenu, _window, _cx| {
+                        let submenu = context_menu_shell(submenu);
+                        if let Some(hint) = unavailable_hint.clone() {
+                            submenu.item(PopupMenuItem::new(hint).disabled(true))
+                        } else {
+                            options
+                                .clone()
+                                .into_iter()
+                                .fold(submenu, |submenu, option| {
+                                    let management = Rc::clone(&management);
+                                    submenu.item(
+                                        PopupMenuItem::new(option.name.clone())
+                                            .checked(option.included)
+                                            .on_click(move |event, window, cx| {
+                                                management(
+                                                    ClipboardItemAction::ToggleCategorySource {
+                                                        category_id: option.category_id.clone(),
+                                                        remove: option.included,
+                                                    },
+                                                    event,
+                                                    window,
+                                                    cx,
+                                                );
+                                            }),
+                                    )
+                                })
+                        }
+                    },
+                )
+            }),
         )
 }
 
@@ -716,22 +706,6 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
         .child(text)
 }
 
-fn history_row_border(theme: Theme, hovered: bool) -> Rgba {
-    if hovered {
-        theme.border
-    } else {
-        theme.border_subtle
-    }
-}
-
-fn history_row_background(theme: Theme, hovered: bool) -> Rgba {
-    if hovered {
-        theme.surface_hover
-    } else {
-        theme.surface_raised
-    }
-}
-
 fn time_label(theme: Theme, text: String) -> impl IntoElement {
     div()
         .max_w(px(92.0))
@@ -824,11 +798,18 @@ mod tests {
 
     #[test]
     fn history_rows_use_launcher_style_neutral_layering() {
-        let theme = Theme::zed_dark();
-        assert_eq!(history_row_border(theme, false), theme.border_subtle);
-        assert_eq!(history_row_border(theme, true), theme.border);
-        assert_eq!(history_row_background(theme, false), theme.surface_raised);
-        assert_eq!(history_row_background(theme, true), theme.surface_hover);
+        // The row shell now lives in the shared compact_result_row component;
+        // assert its neutral layering contract instead of retired helpers.
+        let shell_source = include_str!("components/list.rs");
+        let shell = shell_source
+            .split("pub(crate) fn compact_result_row(")
+            .nth(1)
+            .and_then(|source| source.split("\n}\n").next())
+            .expect("shared compact result row shell source");
+        assert!(shell.contains(".border_color(theme.border_subtle)"));
+        assert!(shell.contains(".bg(theme.surface_raised)"));
+        assert!(shell.contains(".bg(theme.surface_hover)"));
+        assert!(shell.contains(".border_color(theme.border)"));
 
         let source = include_str!("history.rs");
         for function in ["fn image_content(", "fn time_label(", "fn metric_chip("] {

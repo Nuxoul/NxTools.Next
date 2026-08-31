@@ -81,4 +81,20 @@ foreach ($requiredProductionEvidence in @(
     }
 }
 
-Write-Host 'PASS clipboard settings keep one shared continuous primary-secondary surface'
+$historyRowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\history.rs'
+$listPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\list.rs'
+$historyRowSource = Get-Content -Raw -LiteralPath $historyRowPath
+$listSource = Get-Content -Raw -LiteralPath $listPath
+
+if (-not $listSource.Contains('pub(crate) fn compact_result_row(')) {
+    throw 'CL-03 requires the shared compact_result_row shell in ui/components/list.rs.'
+}
+if (-not $historyRowSource.Contains('compact_result_row(')) {
+    throw 'CL-03 requires clipboard history rows to render through the shared compact_result_row shell.'
+}
+if ($historyRowSource.Contains('fn history_row_border') -or
+    $historyRowSource.Contains('fn history_row_background')) {
+    throw 'CL-03 must retire the private hand-rolled history row border/background helpers.'
+}
+
+Write-Host 'PASS clipboard history rows render through the shared compact result row shell'

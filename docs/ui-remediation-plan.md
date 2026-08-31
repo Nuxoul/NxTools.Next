@@ -1258,6 +1258,26 @@ rust/apps/nxtools-desktop/src/ui/
   与本次通过的过滤测试。
 - 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
 
+第四十五个 P2 剪贴板历史行共享外壳切片（2026-09-01，自动化管线运行）：
+
+- CL-03 在 `ui/components/list.rs` 新增共享 `compact_result_row` 外壳： Neutral raised 静止面、
+  hover 提升面与边框、7/4 px 紧凑内距、4 px 内容间距与 `RADIUS_CONTROL` 圆角收进组件常量,
+  调用方只保留 on_hover/on_click 与内容子节点;外壳返回 `Stateful<Div>` 以保留 id/group 交互语义。
+- `ui/history.rs::history_row` 的手写外壳（含私有 `history_row_border`/`history_row_background`
+  辅助函数）退役,行渲染改经共享外壳;图片比例算法、行高计算、元数据（来源图标/时间/次数/字符数）、
+  hover 管理按钮与右键菜单等调用方所有权不变。
+- 红色门禁：`clipboard-ui-lifecycle.ps1` 新增 CL-03 契约（list.rs 必须定义共享外壳、history.rs
+  必须经过它渲染、私有边框/背景辅助函数必须消失）,先红后绿。
+- 验证：cargo fmt;cargo check 通过无警告;严格 clippy -D warnings(all-targets) 通过;
+  clipboard/row_metrics/image_preview 过滤测试 24 通过、1 失败为既有基线
+  `production_clipboard_history_uses_the_shared_empty_state`（与 ERRORS.md 已记录条目一致,
+  非本切片回归）;ui-token-boundaries / clipboard-ui-lifecycle / ui-state-lifecycle 门禁通过。
+- 视觉证据：`docs/audits/clipboard-history-cl-03-2026-09-01/` 保存三条真实历史行（URL 截断、
+  短文本、104 字符长中文）在迁移前后的同几何（316×449）对照,行高、截断点、元数据与分类条
+  完全一致;时间标签因捕获间隔从"刚刚/1 分钟前"变为"N 分钟前",属预期内容演化而非渲染差异。
+  历史内容经系统剪贴板写入并由真实 PlatformHost 捕获落库,实例捕获后即退出。
+- 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

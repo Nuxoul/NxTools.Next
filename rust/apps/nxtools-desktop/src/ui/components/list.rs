@@ -1,9 +1,18 @@
-use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, Div, ElementId, IntoElement, SharedString, Stateful, Window, div, prelude::*,
+    px,
+};
 use gpui_component::tooltip::Tooltip;
 
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_DEFAULT, SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8};
+use crate::ui::metrics::{
+    CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8,
+};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
+
+const COMPACT_RESULT_ROW_PADDING_X: f32 = 7.0;
+const COMPACT_RESULT_ROW_PADDING_Y: f32 = 4.0;
+const COMPACT_RESULT_ROW_CONTENT_GAP: f32 = 4.0;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -127,6 +136,35 @@ pub(crate) fn compact_list_row(
         )
         .when(!enabled, |row| row.opacity(0.62))
         .into_any_element()
+}
+
+/// Shared shell for result-style rows (clipboard history today; other result
+/// surfaces may adopt it later). The caller owns interactions and content
+/// children; the shell owns the neutral raised surface, hover semantics and
+/// the compact padding rhythm. Content-driven rows keep their own height.
+#[allow(dead_code)]
+pub(crate) fn compact_result_row(
+    theme: Theme,
+    id: impl Into<ElementId>,
+    group: impl Into<SharedString>,
+    height: f32,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .group(group)
+        .h(px(height))
+        .px(px(COMPACT_RESULT_ROW_PADDING_X))
+        .py(px(COMPACT_RESULT_ROW_PADDING_Y))
+        .rounded(px(RADIUS_CONTROL))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface_raised)
+        .overflow_hidden()
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.surface_hover).border_color(theme.border))
+        .flex()
+        .flex_col()
+        .gap(px(COMPACT_RESULT_ROW_CONTENT_GAP))
 }
 
 pub(crate) fn radio_list_row(
