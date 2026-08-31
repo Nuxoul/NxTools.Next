@@ -1410,6 +1410,20 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:扩展全部 5 个测试套件通过。本切片为纯 CSS 呈现变化,不涉及 Rust/C# 编译;
   未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十四个 P1 浏览器扩展资源列表 meta 收敛切片（2026-09-01，自动化管线运行）：
+
+- EX-06 将资源行的 meta chips 从 7 类收敛为计划要求的 3 个稳定位:清晰度(resolution)、
+  类型(kind)、大小(size),顺序与存在性稳定;badge、来源、trackHint、blobNote 四类不再
+  占据行内 chip。
+- 移除内容的去向:badge 与 track/blob 状态提示并入行标题 Tooltip
+  (`resolution · kind · badge · trackHint · blobNote`);来源本就在 `.resource-url` 详情行
+  (大小 · MIME · 来源)中展示——满足"其他内容放详情/Tooltip"。
+- 红色门禁:`popup-contract.test.js` 新增 EX-06 契约——chips 数组必须精确匹配三稳定位,
+  四类被移除的 chip 字面量必须消失,且 badge/trackHint/blobNote 必须仍在 tooltip/详情链路
+  中可达;先红后绿(实现中一次正则尾逗号不匹配已修正)。
+- 验证:扩展全部 5 个测试套件通过。`.meta-chip` 样式保留(3 个稳定 chip 继续使用)。
+  本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

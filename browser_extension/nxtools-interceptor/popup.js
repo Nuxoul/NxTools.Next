@@ -520,19 +520,19 @@ function renderResources(target, resources, emptyText) {
       ? "Blob 临时地址"
       : "";
     const trackHint = resourceTrackHint(resource);
+    // EX-06: only type, resolution and size stay as stable chips; the rest
+    // moves to the title tooltip or the detail line.
     const chips = [
       resolution ? { text: resolution, important: true } : null,
       { text: resourceKindLabel(info.kind), important: true },
-      { text: info.badge || "资源", important: true },
-      resource.size ? { text: formatBytes(resource.size) } : null,
-      resource.source ? { text: sourceLabel(resource.source) } : null,
-      trackHint ? { text: trackHint } : null,
-      blobNote ? { text: blobNote } : null
+      resource.size ? { text: formatBytes(resource.size) } : null
     ].filter(Boolean);
     const title = [
       resolution,
       resourceKindLabel(info.kind),
-      info.badge || ""
+      info.badge || "",
+      trackHint,
+      blobNote
     ].filter(Boolean).join(" · ");
     const subtitle = [
       name,

@@ -148,6 +148,22 @@ test("popup tabs keep text plus a 2px accent underline and quiet counts (EX-05)"
   assert.doesNotMatch(css, /\.tab\.active \.tab-count/);
 });
 
+test("resource rows keep three stable meta chips and move the rest to details (EX-06)", () => {
+  // Exactly resolution, kind and size stay as chips, in that order.
+  assert.match(
+    script,
+    /const chips = \[\s*resolution \? \{ text: resolution, important: true \} : null,\s*\{ text: resourceKindLabel\(info\.kind\), important: true \},\s*resource\.size \? \{ text: formatBytes\(resource\.size\) \} : null,?\s*\]\.filter\(Boolean\);/,
+  );
+  assert.doesNotMatch(script, /\{ text: info\.badge \|\| "资源", important: true \}/);
+  assert.doesNotMatch(script, /resource\.source \? \{ text: sourceLabel\(resource\.source\) \} : null,/);
+  assert.doesNotMatch(script, /trackHint \? \{ text: trackHint \}/);
+  assert.doesNotMatch(script, /blobNote \? \{ text: blobNote \}/);
+  // The moved context stays reachable: badge remains in the title tooltip and
+  // track/blob hints join the title tooltip as well.
+  assert.match(script, /info\.badge \|\| ""/);
+  assert.match(script, /trackHint,\s*blobNote/);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");
