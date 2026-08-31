@@ -1438,6 +1438,21 @@ rust/apps/nxtools-desktop/src/ui/
   迁移零行为影响。验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;
   未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十六个 P1 浏览器扩展设置页语法统一切片（2026-09-01，自动化管线运行）：
+
+- EX-08 将设置页的开关控件统一到桌面语法:`input[type="checkbox"]` 滑块的 3 个非 token
+  旧字面量(边框 #3a444d、off 轨 #1a1f24、knob #87919a)迁移为
+  `var(--border)/var(--surface-raised)/var(--text-muted)`;选中态从"accent-soft 底 +
+  accent 滑块"改为桌面的"accent 轨 + 画布色滑块"(`var(--nt-accent)` 轨 +
+  `var(--nt-canvas)` 滑块),与桌面 40×22 Toggle 的视觉语言一致(popup 保持紧凑 31×17 尺寸)。
+- `.switch-row small` 补上显式 `font-size: 10px`(元数据级;此前依赖继承,是 EX-03
+  字号普查的继承盲区),行结构(grid 标题列 + 控件列、发丝分隔线)与 11px strong 保持不变。
+- 红色门禁:`popup-contract.test.js` 新增 EX-08 契约——行规则必须保持两列 grid,
+  开关规则禁止任何 hex 字面量并必须使用 token 轨道,选中态必须是 accent 轨 + 画布滑块,
+  `.switch-row small` 必须声明 10px,三个旧字面量必须消失;先红后绿。
+- 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
+  125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

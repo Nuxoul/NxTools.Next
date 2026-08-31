@@ -896,6 +896,7 @@ input[type="number"]:focus {
 
 .switch-row small {
   display: block;
+  font-size: 10px;
   line-height: 14px;
 }
 
@@ -922,10 +923,10 @@ input[type="checkbox"] {
   width: 31px;
   height: 17px;
   margin: 0;
-  border: 1px solid #3a444d;
+  border: 1px solid var(--border);
   border-radius: 99px;
   appearance: none;
-  background: #1a1f24;
+  background: var(--surface-raised);
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
@@ -937,18 +938,18 @@ input[type="checkbox"]::after {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #87919a;
+  background: var(--text-muted);
   content: "";
   transition: transform 140ms var(--ease-out), background 120ms ease;
 }
 
 input[type="checkbox"]:checked {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  border-color: var(--nt-accent);
+  background: var(--nt-accent);
 }
 
 input[type="checkbox"]:checked::after {
-  background: var(--accent);
+  background: var(--nt-canvas);
   transform: translateX(14px);
 }
 

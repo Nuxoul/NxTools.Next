@@ -178,6 +178,24 @@ test("capture tool toggles stay flat command rows, not a card wall (EX-07)", () 
   assert.doesNotMatch(css, /#59646e/i);
 });
 
+test("popup settings reuse the desktop row, toggle and footer grammar (EX-08)", () => {
+  const switchRowRule = cssRule(".switch-row");
+  assert.match(switchRowRule, /grid-template-columns:\s*minmax\(0, 1fr\) auto/);
+  const toggleRule = cssRule('input[type="checkbox"]');
+  assert.doesNotMatch(toggleRule, /#[0-9a-fA-F]{6}/);
+  assert.match(toggleRule, /border:\s*1px solid var\(--border\)/);
+  assert.match(toggleRule, /background:\s*var\(--surface-raised\)/);
+  const checkedRule = cssRule('input[type="checkbox"]:checked');
+  assert.match(checkedRule, /background:\s*var\(--nt-accent\)/);
+  const knobCheckedRule = cssRule('input[type="checkbox"]:checked::after');
+  assert.match(knobCheckedRule, /background:\s*var\(--nt-canvas\)/);
+  const smallRule = cssRule(".switch-row small");
+  assert.match(smallRule, /font-size:\s*10px/);
+  assert.doesNotMatch(css, /#3a444d/i);
+  assert.doesNotMatch(css, /#1a1f24/i);
+  assert.doesNotMatch(css, /#87919a/i);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");
