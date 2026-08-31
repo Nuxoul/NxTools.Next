@@ -1317,6 +1317,18 @@ rust/apps/nxtools-desktop/src/ui/
 - 本切片无渲染变化,无需新增截图对照;未启动 Release 打包,125%/150% DPI 截图矩阵仍归统一
   人工验收。
 
+第四十八个 P2 批次 5 回归基准收口切片（2026-09-01，自动化管线运行）：
+
+- CL-06 将批次 5 的固定截图对照集整理为持久回归基准：
+  `docs/audits/clipboard-batch5-2026-09-01/audit.md` 索引 CL-01~05 的全部迁移前后对照对、
+  保护项清单（300×440 尺寸、8px 边距、滚轮/拖动测试、图片比例、96 项资源 LRU）与必跑静态
+  门禁（ui-token-boundaries / clipboard-ui-lifecycle / ui-state-lifecycle）,并如实记录证据边界
+  （空历史下菜单/悬停像素对照待补、125%/150% DPI 归用户矩阵）。
+- 新增批次收口实拍 `final-clipboard-popup-batch5-close.png`（`e58458d`,同几何 316×449）,
+  确认批次结束态与各切片证据一致。
+- 批次 5 清单三项全部勾选;未修改任何渲染代码,无需红色门禁;clipboard-ui-lifecycle 三组契约
+  复跑通过。未启动 Release 打包。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
@@ -1362,9 +1374,10 @@ rust/apps/nxtools-desktop/src/ui/
 
 ### 批次 5：剪贴板保护性迁移
 
-- [ ] 完成 CL-01 至 CL-06；
-- [ ] 每次迁移都与批次 1 的剪贴板基准截图对照；
-- [ ] 不改面板、预览和粘贴生命周期。
+- [x] 完成 CL-01 至 CL-06（2026-09-01 自动化管线收口,对照索引见
+  `docs/audits/clipboard-batch5-2026-09-01/audit.md`）；
+- [x] 每次迁移都与批次 1 的剪贴板基准截图对照；
+- [x] 不改面板、预览和粘贴生命周期。
 
 ### 批次 6：浏览器扩展
 
