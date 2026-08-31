@@ -6,8 +6,8 @@
 
 ## 已确认决策
 
-1. 实际开发目标是 `D:\RiderProject\NxTools.Next`。
-2. `D:\RiderProject\NxTools` 只作为旧版用户行为参考，不在旧项目上继续开发。
+1. 实际开发目标是 `D:\Code\NxTools.Next-main`。
+2. `D:\Code\NxTools` 只作为旧版用户行为参考，不在旧项目上继续开发。
 3. 第一批协议只实现 HTTP/HTTPS；HLS/DASH 保留在后续明确阶段，不得从计划中删除。
 4. 不迁移旧版设置、任务历史或未完成任务的临时分段文件。
 5. 增加 Rust CLI。CLI 和 GPUI 必须调用同一个下载引擎，不允许形成第二套下载实现。

@@ -6,10 +6,10 @@ Last verified: 2026-08-11.
 
 | Source | Role | Reuse rule |
 | --- | --- | --- |
-| `D:\RiderProject\NxTools` | Existing NxTools user-visible behavior and legacy migration format | Preserve useful behavior; do not carry its architecture into NxTools.Next |
+| `D:\Code\NxTools` | Existing NxTools user-visible behavior and legacy migration format | Preserve useful behavior; do not carry its architecture into NxTools.Next |
 | `D:\Code\ab-download-manager-master` | Primary HTTP, queue, destination and CLI source reference | Apache-2.0; concepts or attributed compatible reuse are allowed |
 | `D:\Code\FluxDown-main` | Rust engine, event, persistence and dynamic-segment research | AGPL-3.0; clean-room behavioral/architectural reference only, no code copying |
-| `D:\RiderProject\NxTools.Next` | Product implementation target | MIT OR Apache-2.0 |
+| `D:\Code\NxTools.Next-main` | Product implementation target | MIT OR Apache-2.0 |
 
 The old NxTools application is the behavior source when the references disagree about existing product behavior.
 ABDM is the primary implementation reference for HTTP transfer and CLI interactions. FluxDown is useful for

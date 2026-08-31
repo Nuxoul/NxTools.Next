@@ -17,7 +17,7 @@ Last verified: 2026-07-18.
 
 ## Old NxTools: behavioral source of truth
 
-Root: `D:\RiderProject\NxTools`
+Root: `D:\Code\NxTools`
 
 | File | Verified responsibility |
 | --- | --- |

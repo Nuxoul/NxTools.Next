@@ -15,7 +15,7 @@ forward unless the user explicitly approves the reorder and the plan is updated.
 Before implementing or changing a migrated interaction:
 
 1. Read the matching note in `docs/reference-code/` first.
-2. Follow its recorded files in `D:\RiderProject\NxTools` and the supplied reference projects.
+2. Follow its recorded files in `D:\Code\NxTools` and the supplied reference projects.
 3. Search source only to fill an index gap or verify changed code; update the note with every newly
    verified entry file, call chain and invariant before implementing.
 4. Write down the layout, lifecycle, cancellation, placement, focus, and failure-state invariants that must survive the migration.

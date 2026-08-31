@@ -22,8 +22,15 @@ behavior.
 | --- | --- |
 | `D:\Code\SwiftList-main` | Source and first-party documentation inspected |
 | `D:\Program Files\Listary` | Installed file layout inspected |
-| `D:\Tools\dnSpy-net-win64\dnSpy.Console.exe` | Used to decompile `Listary.exe` managed metadata/code into local diagnostics only |
-| `D:\RiderProject\NxTools.Next\.diagnostics\listary-managed` | Temporary investigation output; not a production dependency |
+| `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` | Used to decompile `Listary.exe` managed metadata/code into local diagnostics only |
+| `D:\Code\NxTools.Next-main\.diagnostics\listary-managed` | Temporary investigation output; not a production dependency |
+
+> 2026-08-31 迁移说明:项目移植到新机器后,参考项目已恢复,Listary 托管反编译输出已用
+> `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` 按原命令重新生成(抽查 22 处文档引用路径全部命中)。
+> 当前 `D:\Code\SwiftList-main` 快照的目录结构与首次核对时不同:`InstantAnswers`、`Indexing`、
+> `QuickNav`、`Presenter`、`Helpers`、`Persistence`、`WindowAdapters`、`Commands`、`DriveMonitoring`
+> 等子目录为新增层级;本文记录的 SwiftList 路径已按当前快照更新,但原始核对的行号引用仍来自旧
+> 快照,复用某条结论前需按当前文件重新定位。
 
 ## SwiftList verified behavior and entry points
 
@@ -170,7 +177,7 @@ message, while foreground capture and IPC remain on the adapter's message loop.
 
 | File | Verified responsibility |
 | --- | --- |
-| `App\Views\QuickSearchWindow\QuickSearchWindowController.cs` | Captures the previous foreground HWND, toggles visibility, positions on the active display, requests foreground/topmost and waits for real focus before focusing input. |
+| `App\Views\QuickSearchWindow\Helpers\QuickSearchWindowController.cs` | Captures the previous foreground HWND, toggles visibility, positions on the active display, requests foreground/topmost and waits for real focus before focusing input. |
 | `App\Views\QuickSearchWindow\QuickSearchWindowInputHandler.cs` | Escape, Enter, arrows, action menu, selection completion and history navigation. It distinguishes WPF's `Key.ImeProcessed` Enter from an ordinary Enter and leaves the former to the IME instead of executing a result. |
 | `App\Views\QuickSearchWindow\QuickSearchWindowResultExecutor.cs` | Records usage before executing results, hides the quick window and routes normal/admin execution. |
 | `Site\zh-CN\user-guide\hotkeys.md` | First-party key behavior and quick-navigation contract. |
@@ -238,9 +245,9 @@ lifecycle:
 
 | SwiftList source | Verified observation |
 | --- | --- |
-| `Core/DriveRecovery.cs` | Recovery opens a per-drive cache first, validates/catches up from its journal identity and cursor, and rebuilds only that drive when restore or USN catch-up fails. |
+| `Core/DriveMonitoring/DriveRecovery.cs` | Recovery opens a per-drive cache first, validates/catches up from its journal identity and cursor, and rebuilds only that drive when restore or USN catch-up fails. |
 | `Core/Indexer/Usn/UsnIndexerCacheExtensions.cs` | A cache is accepted only when snapshot format and current volume identity match; an accepted snapshot becomes searchable before live monitoring starts. |
-| `Core/IndexV2/SnapshotFormat.cs` + `Snapshot.cs` | The base index is one versioned columnar file opened through a read-only memory map. Opening does not rebuild per-row strings or lookup dictionaries; sections page in on demand. |
+| `Core/IndexV2/Persistence/SnapshotFormat.cs` + `Snapshot.cs` | The base index is one versioned columnar file opened through a read-only memory map. Opening does not rebuild per-row strings or lookup dictionaries; sections page in on demand. |
 | `Core/IndexV2/LiveIndex.cs` | The mapped immutable base and mutable delta have separate ownership. Empty deltas skip periodic compaction; a compaction atomically writes and swaps a fresh snapshot. |
 
 This supports three architectural conclusions: launcher, file-manager and dialog search are distinct
@@ -256,7 +263,7 @@ separate operations. Names that remain obfuscated are not treated as evidence of
 | `.diagnostics/listary-managed/Listary/Core/Search/Class230.cs` | The default search mode recognizes absolute HTTP(S) URLs and a legacy-regex set of bare domains/IP addresses; bare targets are normalized to HTTPS and emitted as one browser-open result. |
 | `.diagnostics/listary-managed/Listary/Core/Launcher/Class293.cs` | The URL provider is part of the ordinary merged launcher mode rather than a keyword-only nested web-search mode. |
 | `.diagnostics/listary-managed/Listary/Core/ViewModels/Class178.cs` | URL/search results use a geography icon and execute away from the UI callback through the system URL opener. |
-| `D:\Code\SwiftList-main\Plugins\CoreExtensions\Providers\WebUrlInstantProvider.cs` | The secondary open-source reference accepts trimmed explicit HTTP(S) URLs with a non-empty host, returns one typed instant result and opens it on Enter/click. |
+| `D:\Code\SwiftList-main\Plugins\CoreExtensions\Providers\InstantAnswers\WebUrlInstantProvider.cs` | The secondary open-source reference accepts trimmed explicit HTTP(S) URLs with a non-empty host, returns one typed instant result and opens it on Enter/click. |
 
 NxTools.Next keeps Listary's useful bare-domain behavior but intentionally does not reproduce the
 legacy regex's false positives. Rust performs bounded structured parsing, accepts only HTTP(S), and
@@ -273,7 +280,7 @@ result with a Material Symbols language icon. Activation reuses the existing val
 | Reference entry | Verified responsibility / invariant |
 | --- | --- |
 | `.diagnostics/listary-managed/Listary/Core/Commands/CustomCommandViewModel.cs` | The observable Listary managed boundary expands environment variables for configured command paths and arguments, but it does not expose a confirmable launcher environment-variable result provider. No native behavior is inferred from this boundary. |
-| `D:\Code\SwiftList-main\Plugins\CoreExtensions\Providers\EnvironmentVariableInstantProvider.cs` | The secondary open-source reference recognizes `%NAME%`, resolves names case-insensitively, and returns typed instant actions without sending the query to file search. It also has a broader `%partial` enumeration mode, which is not part of this first NxTools.Next slice. |
+| `D:\Code\SwiftList-main\Plugins\CoreExtensions\Providers\InstantAnswers\EnvironmentVariableInstantProvider.cs` | The secondary open-source reference recognizes `%NAME%`, resolves names case-insensitively, and returns typed instant actions without sending the query to file search. It also has a broader `%partial` enumeration mode, which is not part of this first NxTools.Next slice. |
 | `D:\Code\SwiftList-main\Site\zh-CN\user-guide\instant-answers.md` | The documented public syntax distinguishes exact `%NAME%` expansion from partial-name enumeration and treats environment results as always-on instant answers. |
 
 NxTools.Next's first environment-variable slice accepts exactly one complete, bounded `%NAME%`
@@ -303,12 +310,12 @@ owns the Finder query and is not merged with coincidentally named file candidate
 - 同一 Listary 类型把计算结果包装成一个带数学图标的 `ISearchItem`；激活委托只把格式化后的结果
   写入剪贴板。字符串资源仍被混淆，因此本记录不推断其精确中文标题或小数格式。
 - SwiftList 的 MIT 源码
-  `Plugins/CoreExtensions/Providers/CalculatorInstantProvider.cs` 与
-  `ScientificMathParser.cs` 独立确认了相同的产品边界：即时结果先做严格数学字符/常量门禁，普通
+  `Plugins/CoreExtensions/Providers/InstantAnswers/CalculatorInstantProvider.cs` 与
+  `Plugins/CoreExtensions/Providers/InstantAnswers/ScientificMathParser.cs` 独立确认了相同的产品边界：即时结果先做严格数学字符/常量门禁，普通
   纯字母搜索不触发；支持括号、常用算术/科学函数和显式进制转换；无效、`NaN`、无穷大及“结果
   与输入相同”的查询不产生结果。
 - SwiftList 一方文档 `Site/zh-CN/user-guide/instant-answers.md` 明确说明计算结果实时出现，
-  `Enter` 把最终值复制到剪贴板。`App/Services/PluginActionExecutor.cs` 进一步确认即时结果执行
+  `Enter` 把最终值复制到剪贴板。`App/Services/Plugin/PluginActionExecutor.cs` 进一步确认即时结果执行
   通过类型化 `Copy` 动作，而不是伪装成文件路径或 Shell 启动目标。
 
 ### 本纵向切片必须保持的不变量
@@ -571,7 +578,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   可观察的宿主分类和产品行为，不声称掌握 Listary 原生实现。
 - SwiftList `App/Services/ExplorerLocateHelper.cs`：通过 Shell Windows COM 集合按精确 `HWND`
   找到既有资源管理器窗口；目录使用该窗口自己的 `Navigate2`，不会启动第二个 Explorer。
-- SwiftList `App/Services/ShellMenu/QuickNavigationNavigator.cs`：目标 HWND 必须在弹出辅助 UI 前捕获；
+- SwiftList `App/Services/ShellMenu/QuickNav/QuickNavigationNavigator.cs`：目标 HWND 必须在弹出辅助 UI 前捕获；
   执行时重新读取前台窗口会被辅助窗口自身的焦点变化污染。
 - SwiftList `App/Views/InlineSearchWindow/Helpers/InlineSearchNavigator.cs`：索引结果的目录类型是动作
   决策依据，但执行前仍重新确认路径存在；成功导航后才隐藏搜索面板。
@@ -582,7 +589,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 - Listary `.diagnostics/listary-managed/Listary/Core/Commands/Class424.cs` 与
   `Core/HookedWindows/Class342.cs`：`IOpenFolder`、`IOpenFolderAndSelectFile` 和 `IOpenFile`
   是彼此独立的宿主能力。对非文件夹结果提供“切换到此目录”不等于执行或提交该结果。
-- SwiftList `App/Services/ShellMenu/QuickNavigationNavigator.cs`：文件对话框收到非目录结果时，
+- SwiftList `App/Services/ShellMenu/QuickNav/QuickNavigationNavigator.cs`：文件对话框收到非目录结果时，
   先用 `Path.GetDirectoryName` 转为父目录，再发送 `NavigateDialog`；不会把完整文件路径提交给
   打开/保存按钮。
 - SwiftList `Core/Hook/ExplorerIntegration/ExplorerTracker.cs` 与
@@ -618,7 +625,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 
 #### 新核对的参考入口
 
-- 旧 `D:\RiderProject\NxTools` 未找到速启、文件对话框宿主识别或目录导航入口；本切片没有可迁移的
+- 旧 `D:\Code\NxTools` 未找到速启、文件对话框宿主识别或目录导航入口；本切片没有可迁移的
   旧行为实现。
 - Listary 托管边界 `.diagnostics/listary-managed/Listary/Main/Views/DialogSearchWindow.cs` 与
   `DialogSearchWindowFactory.cs` 表明文件对话框使用独立的搜索窗口形态，并按宿主提供的放置边界
@@ -627,7 +634,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   `Core/Plugins/FileAppPlugin/Class278.cs` 把文件宿主能力拆成 `IGetFolder`、`IOpenFolder`、
   `IOpenFolderAndSelectFile` 和 `IOpenFile`。本记录只确认托管职责边界，不声称掌握其原生对话框
   导航实现。
-- SwiftList `PluginSdk/Abstractions/Plugins/IFileDialogAdapter.cs` 将宿主识别、当前路径、目录导航、
+- SwiftList `PluginSdk/Abstractions/Plugins/WindowAdapters/IFileDialogAdapter.cs` 将宿主识别、当前路径、目录导航、
   停靠边界和焦点恢复定义为同一适配器能力；`FileDialogAdapterRegistry.cs` 按宿主选择适配器。
 - SwiftList `Plugins/CoreExtensions/FileDialog/StandardFileDialogAdapter.cs` 使用顶层 `#32770` 加
   `Breadcrumb Parent` 区分现代 Windows 文件对话框；`ClassicFileDialogAdapter.cs` 对同类名额外要求
@@ -637,7 +644,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   当前目录仍停留在桌面；先激活原对话框、发送 `Ctrl+L`、取得该对话框线程新获得焦点的地址栏
   `Edit`，再写入目录并提交则可稳定切到目标目录。现代打开/保存对话框因此必须走地址栏导航，
   不能把文件名输入框当成通用目录导航接口；经典对话框保留文件名控件回退。
-- SwiftList `App/Services/ShellMenu/QuickNavigationNavigator.cs` 与
+- SwiftList `App/Services/ShellMenu/QuickNav/QuickNavigationNavigator.cs` 与
   `App/Views/InlineSearchWindow/Helpers/InlineSearchNavigator.cs` 在辅助 UI 出现前冻结对话框 HWND；
   目录结果导航到该目录，文件结果只允许导航到父目录，绝不替用户提交“打开/保存”。
 
@@ -675,7 +682,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 
 #### 新核对的参考入口
 
-- 旧 `D:\RiderProject\NxTools` 未找到速启、桌面宿主识别或最近目录入口；本切片没有可迁移的旧实现。
+- 旧 `D:\Code\NxTools` 未找到速启、桌面宿主识别或最近目录入口；本切片没有可迁移的旧实现。
 - Listary 托管边界
   `.diagnostics/listary-managed/Listary/Core/HookedWindows/Implementations/Class352.cs` 只接受两种
   Shell 桌面窗口类并创建 `Class328`；`Class328.cs` 将宿主明确标为 `WND_DESKTOP`，再沿桌面宿主
@@ -684,11 +691,11 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 - SwiftList `Core/Hook/ExplorerIntegration/ExplorerNativeHooks.cs` 将 `GetShellWindow()` 和
   `Progman` 识别为桌面；`WorkerW` 只有包含 `SHELLDLL_DefView` 子窗口时才算桌面，避免把普通
   WorkerW 误识别。`ExplorerWindowClassifier.cs` 在同一次前台分类中冻结 HWND 与 `isDesktop`。
-- SwiftList `Plugins/CoreExtensions/Providers/ExplorerPathCollector.cs` 对桌面返回
+- SwiftList `Plugins/CoreExtensions/Providers/Indexing/ExplorerPathCollector.cs` 对桌面返回
   `Environment.SpecialFolder.Desktop`，不向 Shell COM 查询一个虚假的 Explorer 当前目录。
   `ExplorerInlineSearchAdapter.cs` 在桌面执行目录结果时通过 Shell 打开目标；只有普通
   `CabinetWClass` 才在原窗口内 `Navigate2`。
-- SwiftList `App/Views/QuickSearchWindow/QuickSearchWindowController.cs` 在 `ShowWindow` 时保存
+- SwiftList `App/Views/QuickSearchWindow/Helpers/QuickSearchWindowController.cs` 在 `ShowWindow` 时保存
   `_lastActiveHwnd`，普通 `HideWindow(true)` 隐藏后立即用 `SetForegroundWindow` 恢复该窗口；
   `QuickSearchWindowInputHandler.cs` 的 Escape 走这条恢复链路。只有即将打开另一个产品窗口或
   执行会接管前台的动作才调用 `HideWindowNoRestore`。这使 Escape 后的下一次全局热键仍能从真实
@@ -696,7 +703,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 - Listary `Core/Menus/Class284.cs`、`Class285.cs` 把历史作为快速导航菜单的独立分组，并与当前
   已打开目录分开。其托管历史存储细节不能完整确认。
 - SwiftList `Core/SearchHistoryStore.cs` 对同一路径去重，成功执行时更新最近时间，并从持久化
-  JSON 建立内存排序快照；`Plugins/FolderCascader/Navigation/Helper.cs` 只从该快照取最近 30 项，
+  JSON 建立内存排序快照；`Plugins/FolderCascader/Navigation/MenuBuilderContentExtensions.cs` 只从该快照取最近 30 项，
   `MenuBuilder.cs` 延迟到用户展开“历史”层级时才生成菜单，不在普通结果逐行渲染时读磁盘。
 
 #### 本纵向切片必须保持的不变量
@@ -731,12 +738,12 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 
 #### 新核对的参考入口
 
-- 旧 `D:\RiderProject\NxTools` 未找到速启或第三方文件管理器导航入口；本切片没有可迁移的旧实现。
+- 旧 `D:\Code\NxTools` 未找到速启或第三方文件管理器导航入口；本切片没有可迁移的旧实现。
 - Listary 安装目录的 `FileAppPlugins` 证明其文件管理器集成是按宿主能力拆分的适配器体系；
   `OneCommander/ListaryPluginManifest.json` 明确声明独立的 OneCommander 文件应用插件。Listary
   专有插件的原生导航细节不可见，因此这里只记录可观察的宿主隔离边界，不复制其实现。
-- SwiftList `PluginSdk/Abstractions/Plugins/IInlineSearchAdapter.cs` 将宿主识别、当前目录读取和结果
-  执行定义成适配器能力；`Core/Hook/InlineAdapterCommandHandler.cs` 在宿主同权限的 Hook 进程内
+- SwiftList `PluginSdk/Abstractions/Plugins/WindowAdapters/IInlineSearchAdapter.cs` 将宿主识别、当前目录读取和结果
+  执行定义成适配器能力；`Core/Hook/Commands/InlineAdapterCommandHandler.cs` 在宿主同权限的 Hook 进程内
   执行这些操作，并要求 COM/UI Automation 适配器在 STA 上运行。
 - SwiftList `Plugins/TotalCommander/TotalCommanderInlineSearchAdapter.cs` 与
   `Win32/Win32Helper.cs` 只接受 `totalcmd*` 进程的 `TTOTAL_CMD` 顶层窗口，使用 Total Commander
@@ -819,7 +826,7 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
 
 #### 新核对的参考入口
 
-- 旧 `D:\RiderProject\NxTools` 没有速启自定义命令实现，本切片没有可迁移的旧行为。
+- 旧 `D:\Code\NxTools` 没有速启自定义命令实现，本切片没有可迁移的旧行为。
 - Listary 托管边界 `.diagnostics/listary-managed/Listary/Core/Search/Class263.cs` 表明启用且关键词
   非空的命令有两种匹配：查询仍是关键词前缀时显示提示；查询以完整关键词加一个空格开头时，
   空格后的原始文本作为参数传给命令。大小写不敏感，关键词后没有空格的更长单词不会误匹配。
@@ -1022,7 +1029,7 @@ Reverified on 2026-08-24 before the QL-04 action-mode migration:
 - Listary `SearchBarViewModel::method_9` pushes the child `SearchMode`, while `method_10` disposes only
   that child and reactivates the same parent mode object. The parent therefore retains its committed
   results, selected item and query rather than rebuilding a visually new list before restoration.
-- SwiftList `App/Services/ShellMenu/ShellMenuPresenter.cs::EnterActionsMode` hides the existing result
+- SwiftList `App/Services/ShellMenu/Presenter/ShellMenuPresenter.cs::EnterActionsMode` hides the existing result
   grid without replacing it. `ExitActionsMode` makes that same grid visible, restores the saved query
   while action-mode filtering is still active (so result search cannot restart), and only then calls
   `ScrollIntoView` for the already-selected result. Its source comment explicitly protects the exact
@@ -1034,7 +1041,7 @@ Reverified on 2026-08-24 before the QL-04 action-mode migration:
 
 Reverified on 2026-08-24 before the QL-05 preview migration:
 
-- The old `D:/RiderProject/NxTools` tree has no Quick Launch product surface, so it supplies no
+- The old `D:/Code/NxTools` tree has no Quick Launch product surface, so it supplies no
   launcher-preview behavior to preserve. Its clipboard preview remains relevant only as the product's
   existing preview-content reference; QL-05 does not merge clipboard and launcher window lifecycles.
 - SwiftList `App/Services/QuickLookManager.cs::ShowOrUpdate` retains one `QuickLookWindow`, calls
@@ -1055,7 +1062,7 @@ Reverified on 2026-08-24 before the QL-05 preview migration:
 
 Reverified on 2026-08-24 before the QL-06 file-dialog-search migration:
 
-- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or attached file-dialog search
+- The old `D:/Code/NxTools` tree still has no Quick Launch or attached file-dialog search
   surface, so there is no older product rendering to preserve. The already-verified
   `file_dialog_search.rs` host recognition, activation, navigation, cancellation and placement
   lifecycle remains the behavioral baseline for this visual slice.
@@ -1086,7 +1093,7 @@ Reverified on 2026-08-24 before the QL-06 file-dialog-search migration:
 
 Reverified on 2026-08-24 before the QL-07 main-workspace settings split:
 
-- The old `D:/RiderProject/NxTools` tree has no Quick Launch settings surface, so it contributes no
+- The old `D:/Code/NxTools` tree has no Quick Launch settings surface, so it contributes no
   legacy all-in-one layout or page lifecycle that NxTools.Next must preserve.
 - Listary `OptionsWindowViewModel` owns one stable `Pages` collection plus one `SelectedPage` and its
   `Navigate` method changes the selected page before forwarding a nested target. Its separate Apply,
@@ -1107,7 +1114,7 @@ Reverified on 2026-08-24 before the QL-07 main-workspace settings split:
 
 Reverified on 2026-08-24 before the QL-08 HotkeyField migration:
 
-- The old `D:/RiderProject/NxTools` tree still has no Quick Launch surface. Its clipboard settings
+- The old `D:/Code/NxTools` tree still has no Quick Launch surface. Its clipboard settings
   provide only the existing NxTools recording lifecycle reference: a read-only value, an explicit
   recording prompt, Escape cancellation, an in-flight registration message and the native success
   or failure result. QL-08 does not copy the old Avalonia card styling or merge the clipboard and
@@ -1130,7 +1137,7 @@ Reverified on 2026-08-24 before the QL-08 HotkeyField migration:
 
 Reverified on 2026-08-24 before the QL-09 index-volume migration:
 
-- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or local-file-index scope UI, so
+- The old `D:/Code/NxTools` tree still has no Quick Launch or local-file-index scope UI, so
   it supplies no visual source for this slice. NxTools.Next retains its established typed settings
   boundary: Rust persists selected mount points and synchronizes them to the indexer; the service
   continues reporting every discovered NTFS volume even when that volume is outside the enabled
@@ -1152,7 +1159,7 @@ Reverified on 2026-08-24 before the QL-09 index-volume migration:
 
 Reverified on 2026-08-24 before the QL-10 excluded-directory migration:
 
-- The old `D:/RiderProject/NxTools` tree still has no Quick Launch or local-index exclusion UI, so it
+- The old `D:/Code/NxTools` tree still has no Quick Launch or local-index exclusion UI, so it
   supplies no visual or interaction source for this slice. NxTools.Next keeps the existing typed
   boundary: Rust owns the ordered, case-insensitive path set and persistence; PlatformHost owns the
   correlated Windows directory picker; the indexer receives the same `IndexSettings.excluded_paths`.
@@ -1173,7 +1180,7 @@ Reverified on 2026-08-24 before the QL-10 excluded-directory migration:
 
 Reverified on 2026-08-24 before the QL-12 diagnostics-page closure:
 
-- The old `D:/RiderProject/NxTools` tree still has no Quick Launch settings, history-learning or
+- The old `D:/Code/NxTools` tree still has no Quick Launch settings, history-learning or
   query-performance surface, so it provides no legacy diagnostic layout to preserve.
 - The previously verified Listary boundary keeps index metadata and commands in settings, while its
   `FileSearchIndexDebugViewModel` opens a separate diagnostic text/copy flow through the typed index

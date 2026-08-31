@@ -2,7 +2,7 @@
 
 > 研究日期：2026-07-24<br>
 > 参考版本：本机 `D:\Program Files\Listary\Listary.exe`，文件版本 `6.3.5.94`<br>
-> 主要证据：`D:\RiderProject\NxTools.Next\.diagnostics\listary-managed\Listary` 中的托管反编译边界<br>
+> 主要证据：`D:\Code\NxTools.Next-main\.diagnostics\listary-managed\Listary` 中的托管反编译边界<br>
 > 次级证据：`D:\Code\SwiftList-main` 开源代码
 
 ## 结论
@@ -231,7 +231,7 @@ SwiftList 不是第一行为标准，但其开源结构印证了上面的能力�
 
 ### 文件对话框适配器
 
-`PluginSdk/Abstractions/Plugins/IFileDialogAdapter.cs` 将以下能力放入同一宿主适配器：
+`PluginSdk/Abstractions/Plugins/WindowAdapters/IFileDialogAdapter.cs` 将以下能力放入同一宿主适配器：
 
 - `CanHandle`
 - `GetCurrentPath`
