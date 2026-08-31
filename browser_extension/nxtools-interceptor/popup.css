@@ -39,9 +39,7 @@ body {
   min-height: 540px;
   margin: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 92% -8%, color-mix(in srgb, var(--nt-accent) 8%, transparent), transparent 34%),
-    linear-gradient(180deg, #101316 0%, var(--bg) 48%);
+  background: var(--bg);
 }
 
 button,
@@ -108,13 +106,7 @@ p {
 
 .shell {
   min-height: 540px;
-  border: 1px solid #242b31;
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent 0,
-    transparent 27px,
-    rgba(255, 255, 255, 0.012) 28px
-  );
+  border: 1px solid var(--nt-border-subtle);
 }
 
 .masthead {
@@ -201,7 +193,7 @@ p {
 
 .dot.bad {
   background: var(--warning);
-  box-shadow: 0 0 0 3px rgba(215, 168, 90, 0.10);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nt-warning) 10%, transparent);
 }
 
 .signal-rail {
@@ -292,7 +284,7 @@ p {
 
 .tab:hover:not(:disabled) {
   border: 0;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-hover);
 }
 
 .tab::after {
@@ -379,7 +371,7 @@ p {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent);
   border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--accent-soft), rgba(21, 25, 29, 0.92) 36%);
+  background: var(--accent-soft);
 }
 
 .page-copy,
@@ -535,7 +527,7 @@ button.primary:hover:not(:disabled) {
   min-height: 52px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--line-soft);
-  background: rgba(21, 25, 29, 0.58);
+  background: var(--surface-1);
   transition: background 120ms ease, box-shadow 120ms ease;
 }
 
@@ -544,7 +536,7 @@ button.primary:hover:not(:disabled) {
 }
 
 .item:hover {
-  background: rgba(30, 36, 41, 0.82);
+  background: var(--surface-hover);
 }
 
 .item.resource {
@@ -556,7 +548,7 @@ button.primary:hover:not(:disabled) {
 }
 
 .item.resource.selected {
-  background: linear-gradient(90deg, var(--accent-soft), rgba(25, 30, 35, 0.82) 42%);
+  background: var(--accent-soft);
   box-shadow: inset 2px 0 var(--accent);
 }
 
@@ -721,7 +713,7 @@ button.ghost {
 }
 
 .task-actions .mini-send.danger {
-  border-color: rgba(228, 124, 114, .34);
+  border-color: color-mix(in srgb, var(--nt-danger) 34%, transparent);
   color: var(--danger);
 }
 
@@ -768,7 +760,7 @@ button.ghost {
   margin-bottom: 9px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(21, 25, 29, 0.78);
+  background: var(--surface-1);
 }
 
 .tool-panel {
@@ -781,9 +773,9 @@ input[type="number"] {
   width: 100%;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid #343d45;
+  border: 1px solid var(--line);
   border-radius: 4px;
-  background: #101316;
+  background: var(--surface-0);
   color: var(--text);
   outline: none;
 }
@@ -864,7 +856,7 @@ input[type="number"]:focus {
 }
 
 .feature-card.active {
-  background: linear-gradient(90deg, var(--accent-soft), transparent 68%);
+  background: var(--accent-soft);
   box-shadow: inset 2px 0 var(--accent);
 }
 
@@ -942,7 +934,7 @@ input[type="number"]:focus {
   padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(21, 25, 29, 0.72);
+  background: var(--surface-1);
 }
 
 .site-toggle.disabled {
@@ -950,8 +942,8 @@ input[type="number"]:focus {
 }
 
 .site-toggle.off {
-  border-color: rgba(215, 168, 90, .36);
-  background: rgba(85, 58, 25, .15);
+  border-color: color-mix(in srgb, var(--nt-warning) 36%, transparent);
+  background: color-mix(in srgb, var(--nt-warning) 15%, transparent);
 }
 
 input[type="checkbox"] {
@@ -1014,7 +1006,7 @@ input[type="checkbox"]:checked::after {
   gap: 7px;
   padding: 0 11px;
   border-top: 1px solid var(--line);
-  background: #101316;
+  background: var(--surface-0);
 }
 
 .footer-key {

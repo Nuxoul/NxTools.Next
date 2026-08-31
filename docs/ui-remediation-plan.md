@@ -1348,6 +1348,28 @@ rust/apps/nxtools-desktop/src/ui/
   全部通过。本切片不涉及 Rust/C# 编译;扩展打包为整目录复制,popup-tokens.css 随目录分发,
   无需 manifest 变更;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十个 P1 浏览器扩展 Popup 背景 flatten 切片（2026-09-01，自动化管线运行）：
+
+- EX-02 将 Popup 背景层全部改为纯色连续 surface：body 的径向青色 tint + 双层渐变收敛为
+  `var(--bg)`;`.shell` 的 `repeating-linear-gradient` 竖网格删除,边框对齐
+  `var(--nt-border-subtle)`;历史/资源行、悬停态、panel/settings-group、site-toggle 等
+  6 处半透明面板(`rgba(21,25,29,…)`/`rgba(30,36,41,…)`/`rgba(255,255,255,…)` 全形)替换为
+  `--surface-1/--surface-hover` 纯色 token;页面简介条、选中资源行与 feature-card 高亮的
+  3 处 `accent-soft` 静态渐变收敛为纯色 `var(--accent-soft)`。
+- 顺带清理指向已废弃旧色值的 alpha 字面量:旧 warning `rgba(215,168,90,…)` ×2、旧 danger
+  `rgba(228,124,114,…)`、旧 warning-soft `rgba(85,58,25,.15)` 与输入框/页脚残留
+  `#101316`、`#343d45`,全部改为 `color-mix(var(--nt-warning/danger) …)` 与
+  `var(--surface-0)/var(--line)`。
+- 红色门禁:`popup-contract.test.js` 新增 EX-02 契约——body 规则禁 gradient、禁
+  `repeating-linear-gradient`、禁 accent-soft 静态渐变、禁上述全部半透明与旧色字面量,
+  `.shell` 必须使用 token 边框;signal-sweep 扫光渐变按计划保留至 EX-09。先红后绿
+  (红由缺失契约触发,实现中又先后暴露 2 处 accent-soft 渐变与 2 处 #101316 残留,
+  均已清除并复绿)。
+- 验证:扩展全部 5 个测试套件通过。遗留事项如实记录:popup.css 仍散布约 10 处小范围
+  边框/文本/滚动条 hex 字面量(#343c44、#46515c、#364049、#071013 等)与扫光内的
+  `#b5f4fb`,不属于 EX-02 的背景层范围,归入批次 6 后续 EX 切片统一收口。
+- 本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

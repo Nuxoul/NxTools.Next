@@ -90,6 +90,23 @@ test("popup visual system keeps compact tokens, focus and reduced-motion gates",
   assert.doesNotMatch(css, /width:\s*520px/);
 });
 
+test("popup surfaces stay flat, opaque and grid-free (EX-02)", () => {
+  // The shell canvas is one continuous surface; decorations, grid meshes and
+  // translucent panels are retired. The signal sweep overlay keeps its
+  // gradient until EX-09 removes the whole animation.
+  const bodyRule = cssRule("body");
+  const shellRule = cssRule(".shell");
+  assert.doesNotMatch(bodyRule, /gradient/);
+  assert.match(shellRule, /border:\s*1px solid var\(--nt-border-subtle\)/);
+  assert.doesNotMatch(css, /repeating-linear-gradient/);
+  assert.doesNotMatch(css, /linear-gradient\(90deg,\s*var\(--accent-soft\)/);
+  assert.doesNotMatch(css, /rgba\(21,\s*25,\s*29/);
+  assert.doesNotMatch(css, /rgba\(30,\s*36,\s*41/);
+  assert.doesNotMatch(css, /rgba\(255,\s*255,\s*255/);
+  assert.doesNotMatch(css, /#101316/i);
+  assert.doesNotMatch(css, /#242b31/i);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");
