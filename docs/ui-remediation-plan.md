@@ -1224,6 +1224,11 @@ rust/apps/nxtools-desktop/src/ui/
   待用户要求打包运行并提供迁移后主窗口截图后，需与补录的 100% 基准逐项核对密度、主次层级和
   长中文裁切；通过后下一切片才是 CL-02 剪贴板弹窗字体、图标、菜单与状态组件。
 
+  2026-09-01 补充:CL-01 对照证据已补齐——`docs/audits/clipboard-settings-cl-01-2026-09-01/`
+  保存了同一几何、同一 100% DPI 下的迁移前（由 `36db4aa` 工作树构建渲染）与迁移后截图及
+  `audit.md` 逐项对照；密度、层级与长中文均无退化，仅一处说明文字因 11px 令牌升幅换行。
+  剩余动作是用户对"舒适度未下降"的最终签字，签字后即进入 CL-02。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
