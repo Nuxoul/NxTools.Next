@@ -107,6 +107,25 @@ test("popup surfaces stay flat, opaque and grid-free (EX-02)", () => {
   assert.doesNotMatch(css, /#242b31/i);
 });
 
+test("popup typography keeps the 10px metadata floor and 11px Chinese body (EX-03)", () => {
+  const sizes = [...css.matchAll(/font-size:\s*([0-9.]+)px/g)].map((match) =>
+    parseFloat(match[1]),
+  );
+  assert.ok(sizes.length > 0, "popup should declare font sizes");
+  for (const size of sizes) {
+    assert.ok(
+      size >= 10,
+      `font-size ${size}px is below the 10px metadata floor`,
+    );
+    assert.ok(
+      Number.isInteger(size),
+      `font-size ${size}px must be an integer token value`,
+    );
+  }
+  assert.match(css, /font-size:\s*11px/);
+  assert.match(css, /font-size:\s*12px/);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");
