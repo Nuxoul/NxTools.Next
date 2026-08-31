@@ -37,6 +37,7 @@ use crate::theme::{
     COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, SEARCH_TEXT_SIZE, Theme, UI_FONT_FAMILY,
 };
 use crate::ui::components::state::empty_state;
+use crate::ui::metrics::RADIUS_CONTROL;
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
 };
@@ -1278,7 +1279,7 @@ impl Render for ClipboardPanel {
                                 .id("search-scope-toggle")
                                 .size(px(20.0))
                                 .flex_none()
-                                .rounded(px(4.0))
+                                .rounded(px(RADIUS_CONTROL))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1966,7 +1967,7 @@ fn category_tab(
         .w(px(tab_width))
         .flex_none()
         .px(px(7.0))
-        .rounded(px(5.0))
+        .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(if selected {
             theme.accent
@@ -2063,7 +2064,7 @@ fn dialog_button(
         )))
         .h(px(28.0))
         .px_3()
-        .rounded(px(5.0))
+        .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(if primary { theme.accent } else { theme.border })
         .bg(if primary {

@@ -8,6 +8,8 @@ use crate::ui::typography::{
 };
 use gpui::{AnyElement, FontWeight, IntoElement, div, prelude::*, px};
 
+const TOGGLE_KNOB_SIZE: f32 = 16.0;
+
 pub(crate) struct SettingsShellIds {
     pub root: &'static str,
     pub content: &'static str,
@@ -204,11 +206,16 @@ pub(crate) fn settings_toggle(
         .flex()
         .when(enabled, |toggle| toggle.justify_end())
         .on_click(on_toggle)
-        .child(div().size(px(16.0)).rounded(px(8.0)).bg(if enabled {
-            theme.accent
-        } else {
-            theme.text_muted
-        }))
+        .child(
+            div()
+                .size(px(TOGGLE_KNOB_SIZE))
+                .rounded(px(TOGGLE_KNOB_SIZE / 2.0))
+                .bg(if enabled {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                }),
+        )
         .into_any_element()
 }
 

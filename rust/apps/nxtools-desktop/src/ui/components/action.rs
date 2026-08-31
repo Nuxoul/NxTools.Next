@@ -5,7 +5,7 @@ use gpui_component::{Icon, Selectable, Sizable};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_8};
+use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_8};
 
 pub(crate) type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -175,7 +175,7 @@ pub(crate) fn segmented_control(
                 .small()
                 .h_full()
                 .w_full()
-                .rounded(px(0.0))
+                .rounded(px(RADIUS_NONE))
                 .selected(selected)
                 .when(selected, |button| button.custom(selected_variant))
                 .when(!selected, |button| button.ghost())

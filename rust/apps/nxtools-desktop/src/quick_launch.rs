@@ -55,7 +55,9 @@ use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
     SPACING_2, SPACING_8, SPACING_12,
 };
-use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
+use crate::ui::typography::{
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
+};
 use crate::ui::{
     PREVIEW_APPEAR_DURATION, native_window_handle, preview_media_surface, preview_shell,
 };
@@ -6429,7 +6431,7 @@ impl QuickLaunchPanel {
                         .px(px(8.0))
                         .flex()
                         .items_center()
-                        .text_size(px(10.0))
+                        .text_size(px(TEXT_META))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(theme.text_muted)
                         .child(label),

@@ -1224,6 +1224,31 @@ rust/apps/nxtools-desktop/src/ui/
   待用户要求打包运行并提供迁移后主窗口截图后，需与补录的 100% 基准逐项核对密度、主次层级和
   长中文裁切；通过后下一切片才是 CL-02 剪贴板弹窗字体、图标、菜单与状态组件。
 
+第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
+
+- 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
+  `ui/motion.rs` 三个令牌模块外，桌面生产 UI 源码不得出现字体家族字符串、原始
+  `text_size(px(N))`、`line_height(px(N))`、`.rounded(px(N))` 或组件主题字号赋值；门禁同时锁定
+  两个令牌模块的常量契约。先红后绿：同一规则对迁移前 HEAD 报告 62 处违规，迁移后为 0。
+- 本切片只迁移"原始字面量"，不改变既有令牌值的视觉：等于令牌刻度的字号机械替换为
+  `TEXT_BODY/LABEL/META`；偏离刻度字号（8.5–13.0px）按 DS-02/DS-03 语义就近映射——中文普通信息
+  升到 Label 11（任务窗指标标签、速启设置行、剪贴板维护按钮、indexer 状态 chip），机器/元数据
+  （FIXED/READY/PARTIAL、字节、路径、状态徽章、热键字母）归 Meta 10，13.0px 行名降为 Body 12。
+  圆角 2/3/4/5/8px → `RADIUS_CONTROL`，6px → `RADIUS_FLOATING`，显式方角 → 新令牌
+  `RADIUS_NONE`，76px 圆形状态徽章半径改为由自身尺寸变量推导。
+- `main.rs` 组件主题引导改用 `UI_FONT_FAMILY`/`UI_MONO_FONT_FAMILY`/`TEXT_BODY`/`TEXT_LABEL`，
+  字体家族字符串现在只存在于 `ui/typography.rs`；令牌模块新增 `TEXT_STATUS_GLYPH`（28px，
+  完成/关机窗单字符状态符号，非普通文本）。
+- `theme.rs` 旧剪贴板常量（`SEARCH_TEXT_SIZE` 13.5、`RESULT_TITLE_SIZE` 13.0、
+  `RESULT_DETAIL_SIZE` 10.5、`META_TEXT_SIZE`、`COMPACT_RADIUS`，45 处引用）有意保留：它们是
+  CL-02 的迁移对象，提前改写会破坏 CL-01 尚未采集的迁移前基准截图；CL-02 完成后应删除并并入
+  令牌模块。
+- 已知视觉影响：部分站点的中文文本按规则上升 0.5–2.5px，任务窗与设置行的真实渲染核对归入既有
+  Release 100/125/150% DPI 截图矩阵；本切片未启动 GUI、未打包。
+- 验证：新门禁通过；`cargo fmt -p nxtools-desktop` 稳定；`cargo check -p nxtools-desktop`
+  （单作业、禁增量、256 codegen-units）通过且无警告。desktop 测试套保持既有 4 项已记录基线
+  失败，本切片未运行完整测试套，也不把 check 冒充为测试结果。
+
 ### 批次 2：主壳层与全局设置
 
 - [ ] 完成 SH-01 至 SH-08；

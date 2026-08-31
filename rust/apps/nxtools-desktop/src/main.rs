@@ -49,6 +49,7 @@ use std::rc::Rc;
 use std::sync::Once;
 use std::time::Instant;
 use tracing::{error, info};
+use ui::typography::{TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,10 +158,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let clear = transparent_black();
             let visual_theme = crate::theme::Theme::zed_dark();
             let component_theme = Theme::global_mut(cx);
-            component_theme.font_family = "Microsoft YaHei UI".into();
-            component_theme.mono_font_family = "Consolas".into();
-            component_theme.font_size = px(12.0);
-            component_theme.mono_font_size = px(11.0);
+            component_theme.font_family = UI_FONT_FAMILY.into();
+            component_theme.mono_font_family = UI_MONO_FONT_FAMILY.into();
+            component_theme.font_size = px(TEXT_BODY);
+            component_theme.mono_font_size = px(TEXT_LABEL);
             component_theme.colors.background = clear;
             component_theme.colors.window_border = clear;
             component_theme.colors.foreground = visual_theme.text.into();

@@ -8,7 +8,9 @@ use gpui_component::{Icon, Sizable};
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_2, SPACING_8, SPACING_12};
+use crate::ui::metrics::{
+    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_2, SPACING_8, SPACING_12,
+};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 const PATH_LIST_ROW_HEIGHT: f32 = 40.0;
@@ -231,7 +233,7 @@ fn path_row(
                         .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
                         .small()
                         .size(px(PATH_LIST_DELETE_HIT_TARGET))
-                        .rounded(px(0.0))
+                        .rounded(px(RADIUS_NONE))
                         .custom(delete_variant)
                         .tooltip("移除排除目录")
                         .on_click(move |_event, window, cx| {

@@ -14,6 +14,7 @@ pub(crate) const COMPACT_RESULT_ROW_HEIGHT: f32 = 40.0;
 pub(crate) const COMPACT_RESULT_ICON_RAIL_WIDTH: f32 = 26.0;
 pub(crate) const COMPACT_RESULT_TRAILING_RAIL_WIDTH: f32 = 48.0;
 
+pub(crate) const RADIUS_NONE: f32 = 0.0;
 pub(crate) const RADIUS_CONTROL: f32 = 4.0;
 pub(crate) const RADIUS_FLOATING: f32 = 6.0;
 
@@ -56,7 +57,10 @@ mod tests {
             ],
             [18.0, 22.0, 28.0, 32.0]
         );
-        assert_eq!([RADIUS_CONTROL, RADIUS_FLOATING], [4.0, 6.0]);
+        assert_eq!(
+            [RADIUS_NONE, RADIUS_CONTROL, RADIUS_FLOATING],
+            [0.0, 4.0, 6.0]
+        );
         assert_eq!(
             [
                 SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16, SPACING_24

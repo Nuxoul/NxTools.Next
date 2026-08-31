@@ -1870,11 +1870,15 @@ impl MainWindow {
         .h(px(26.0))
         .w(px(154.0))
         .px(px(8.0))
-        .rounded(px(4.0))
+        .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface_raised)
-        .child(div().text_size(px(11.0)).child(click_action_label(current)))
+        .child(
+            div()
+                .text_size(px(TEXT_LABEL))
+                .child(click_action_label(current)),
+        )
         .text_color(theme.text_secondary)
         .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
             ClipboardClickAction::ALL.into_iter().fold(
@@ -1884,7 +1888,7 @@ impl MainWindow {
                     let label = click_action_label(action);
                     menu.item(
                         PopupMenuItem::element(move |_window, _cx| {
-                            div().text_size(px(11.0)).child(label)
+                            div().text_size(px(TEXT_LABEL)).child(label)
                         })
                         .checked(action == current)
                         .on_click(move |_event, _window, cx| {
@@ -1911,7 +1915,7 @@ impl MainWindow {
         div()
             .id(id)
             .h(px(26.0))
-            .rounded(px(4.0))
+            .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border)
             .bg(theme.canvas)
@@ -1958,7 +1962,7 @@ impl MainWindow {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(11.0))
+                    .text_size(px(TEXT_LABEL))
                     .font_family(UI_MONO_FONT_FAMILY)
                     .child(value.to_string()),
             )
@@ -2164,7 +2168,7 @@ impl MainWindow {
                             .id("main-brand-icon")
                             .debug_selector(|| "main-brand-icon".into())
                             .size(px(18.0))
-                            .rounded(px(4.0))
+                            .rounded(px(RADIUS_CONTROL))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -2278,7 +2282,7 @@ impl MainWindow {
                     .debug_selector(move || debug_selector.to_string())
                     .h(px(SIDEBAR_ROW_HEIGHT))
                     .px(px(10.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_l_2()
                     .border_color(if selected { theme.accent } else { theme.canvas })
                     .flex()
@@ -2348,7 +2352,7 @@ impl MainWindow {
             .child(
                 div().px(px(8.0)).pt(px(8.0)).pb(px(14.0)).child(
                     div()
-                        .text_size(px(11.0))
+                        .text_size(px(TEXT_LABEL))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text_muted)
                         .child("工作区"),
@@ -2957,11 +2961,11 @@ impl MainWindow {
             .xsmall()
             .h(px(26.0))
             .px(px(9.0))
-            .rounded(px(4.0))
+            .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border_subtle)
             .bg(theme.surface_raised)
-            .child(div().text_size(px(10.5)).child(if indexer_connected {
+            .child(div().text_size(px(TEXT_LABEL)).child(if indexer_connected {
                 "刷新"
             } else {
                 "安装"
@@ -3354,7 +3358,7 @@ impl MainWindow {
                         "键盘动作",
                         "↑↓ 选择；Enter 打开；Ctrl+Enter 定位；Esc 清空或隐藏",
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(TEXT_META))
                             .text_color(theme.text_muted)
                             .child("FIXED")
                             .into_any_element(),
@@ -3396,7 +3400,7 @@ impl MainWindow {
                         "扫描状态",
                         scan_state,
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(TEXT_META))
                             .text_color(if status.errors.is_empty() {
                                 theme.success
                             } else {
@@ -3414,7 +3418,7 @@ impl MainWindow {
                         "当前范围",
                         "开始菜单、桌面、系统工具与 NTFS 文件索引",
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(TEXT_META))
                             .text_color(theme.text_muted)
                             .child(format!("{} ITEMS", status.indexed_items))
                             .into_any_element(),
@@ -3429,7 +3433,7 @@ impl MainWindow {
                             .gap(px(SPACING_6))
                             .child(
                                 div()
-                                    .text_size(px(10.0))
+                                    .text_size(px(TEXT_META))
                                     .text_color(file_index_badge_color)
                                     .child(file_index_badge),
                             )
@@ -3687,7 +3691,7 @@ impl MainWindow {
             .h(px(26.0))
             .min_w(px(116.0))
             .px(px(9.0))
-            .rounded(px(4.0))
+            .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(if recording_clipboard {
                 theme.accent
@@ -3704,7 +3708,7 @@ impl MainWindow {
             .items_center()
             .justify_center()
             .font_family(UI_MONO_FONT_FAMILY)
-            .text_size(px(10.5))
+            .text_size(px(TEXT_META))
             .text_color(if recording_clipboard {
                 theme.accent_text
             } else {
@@ -3743,7 +3747,7 @@ impl MainWindow {
         let exclusions_control = div()
             .w(px(250.0))
             .h(px(28.0))
-            .rounded(px(4.0))
+            .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border)
             .bg(theme.canvas)
@@ -3770,12 +3774,12 @@ impl MainWindow {
                     .xsmall()
                     .h(px(26.0))
                     .px(px(9.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_raised)
                     .disabled(management_busy)
-                    .child(div().text_size(px(10.5)).child("导出"))
+                    .child(div().text_size(px(TEXT_LABEL)).child("导出"))
                     .on_click(move |_event, _window, cx| {
                         let _ = export_clipboard.update(cx, |application, cx| {
                             application.request_clipboard_export(cx);
@@ -3789,12 +3793,12 @@ impl MainWindow {
                     .xsmall()
                     .h(px(26.0))
                     .px(px(9.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_raised)
                     .disabled(management_busy)
-                    .child(div().text_size(px(10.5)).child("导入"))
+                    .child(div().text_size(px(TEXT_LABEL)).child("导入"))
                     .on_click(move |_event, _window, cx| {
                         let _ = import_clipboard.update(cx, |application, cx| {
                             application.request_clipboard_import(cx);
@@ -3815,12 +3819,12 @@ impl MainWindow {
                     .xsmall()
                     .h(px(26.0))
                     .px(px(9.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_raised)
                     .disabled(management_busy)
-                    .child(div().text_size(px(10.5)).child("备份"))
+                    .child(div().text_size(px(TEXT_LABEL)).child("备份"))
                     .on_click(move |_event, _window, cx| {
                         let _ = backup_clipboard.update(cx, |application, cx| {
                             application.request_clipboard_database_backup(cx);
@@ -3834,12 +3838,12 @@ impl MainWindow {
                     .xsmall()
                     .h(px(26.0))
                     .px(px(9.0))
-                    .rounded(px(4.0))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_raised)
                     .disabled(management_busy)
-                    .child(div().text_size(px(10.5)).child("压缩"))
+                    .child(div().text_size(px(TEXT_LABEL)).child("压缩"))
                     .on_click(move |_event, _window, cx| {
                         let _ = compact_clipboard.update(cx, |application, cx| {
                             application.request_clipboard_database_compaction(cx);
@@ -3854,12 +3858,12 @@ impl MainWindow {
             .xsmall()
             .h(px(26.0))
             .px(px(9.0))
-            .rounded(px(4.0))
+            .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border_subtle)
             .bg(theme.surface_raised)
             .disabled(management_busy)
-            .child(div().text_size(px(10.5)).child("迁移"))
+            .child(div().text_size(px(TEXT_LABEL)).child("迁移"))
             .on_click(move |_event, _window, cx| {
                 let _ = migrate_clipboard.update(cx, |application, cx| {
                     application.request_clipboard_storage_migration(cx);
@@ -4124,10 +4128,10 @@ fn compact_setting_row(
                 .flex()
                 .flex_col()
                 .gap(px(2.0))
-                .child(div().text_size(px(11.5)).child(title.into()))
+                .child(div().text_size(px(TEXT_BODY)).child(title.into()))
                 .child(
                     div()
-                        .text_size(px(9.5))
+                        .text_size(px(TEXT_LABEL))
                         .text_color(theme.text_muted)
                         .child(description.into()),
                 ),
@@ -4147,7 +4151,7 @@ fn compact_toggle(
         .h(px(24.0))
         .min_w(px(54.0))
         .px(px(7.0))
-        .rounded(px(4.0))
+        .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(if enabled {
             theme.accent
@@ -4164,7 +4168,7 @@ fn compact_toggle(
         .items_center()
         .justify_center()
         .gap(px(4.0))
-        .text_size(px(9.5))
+        .text_size(px(TEXT_LABEL))
         .text_color(if enabled {
             theme.accent_text
         } else {
@@ -4205,7 +4209,7 @@ fn compact_group(theme: Theme, title: &'static str, rows: Vec<AnyElement>) -> An
                 .border_color(theme.border_subtle)
                 .flex()
                 .items_center()
-                .text_size(px(11.0))
+                .text_size(px(TEXT_LABEL))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child(title),
@@ -4629,13 +4633,13 @@ fn download_task_row(
                                 })
                                 .w_full()
                                 .h(px(3.0))
-                                .rounded(px(2.0))
+                                .rounded(px(RADIUS_CONTROL))
                                 .bg(theme.surface_raised)
                                 .child(
                                     div()
                                         .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH * transfer.fraction))
                                         .h_full()
-                                        .rounded(px(2.0))
+                                        .rounded(px(RADIUS_CONTROL))
                                         .bg(status_color),
                                 ),
                         ),
@@ -5402,7 +5406,7 @@ fn download_segment_detail(
     let mut aggregate = div()
         .h(px(5.0))
         .w_full()
-        .rounded(px(3.0))
+        .rounded(px(RADIUS_CONTROL))
         .overflow_hidden()
         .bg(theme.surface_raised)
         .flex();
@@ -9057,7 +9061,7 @@ mod tests {
         assert!(!downloads.contains("download-filter-sidebar"));
         assert!(row.contains(".border_b_1()"));
         assert!(row.contains(".border_l_2()"));
-        assert!(!row.contains(".rounded(px(6.0))"));
+        assert!(!row.contains(".rounded(px(RADIUS_FLOATING))"));
         assert!(!row.contains("Button::new"));
         assert!(!row.contains("DOWNLOAD_ACTIONS_COLUMN_WIDTH"));
         assert!(
@@ -9067,7 +9071,7 @@ mod tests {
         assert!(row.contains(".whitespace_nowrap()"));
         assert!(!production.contains(".child(\"操作\")"));
         assert!(detail.contains(".border_t_1()"));
-        assert!(!detail.contains(".rounded(px(6.0))"));
+        assert!(!detail.contains(".rounded(px(RADIUS_FLOATING))"));
         assert!(!detail.contains("\"无错误\""));
     }
 

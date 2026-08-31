@@ -20,6 +20,7 @@ use nxtools_core::ClipboardModifierActions;
 use crate::icons::MaterialIcon;
 use crate::theme::{COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, Theme};
 use crate::ui::action_from_modifiers;
+use crate::ui::metrics::RADIUS_CONTROL;
 
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
@@ -462,7 +463,7 @@ fn management_button(
             "clipboard-item-action-{tooltip}"
         )))
         .size(px(20.0))
-        .rounded(px(4.0))
+        .rounded(px(RADIUS_CONTROL))
         .cursor_pointer()
         .flex()
         .items_center()
@@ -633,7 +634,7 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
         .min_w(px(20.0))
         .h(px(16.0))
         .px(px(4.0))
-        .rounded(px(3.0))
+        .rounded(px(RADIUS_CONTROL))
         .bg(theme.element)
         .text_size(px(META_TEXT_SIZE))
         .text_color(theme.text_secondary)
@@ -677,7 +678,7 @@ fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
     div()
         .h(px(18.0))
         .px(px(5.0))
-        .rounded(px(3.0))
+        .rounded(px(RADIUS_CONTROL))
         .bg(theme.element)
         .text_size(px(META_TEXT_SIZE))
         .text_color(theme.text_muted)

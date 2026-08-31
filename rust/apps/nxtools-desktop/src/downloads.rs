@@ -81,13 +81,13 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT,
-    SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,
+    SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
-    TEXT_LABEL, TEXT_META, TEXT_TITLE, UI_MONO_FONT_FAMILY,
+    TEXT_LABEL, TEXT_META, TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4942,6 +4942,7 @@ impl Render for DownloadShutdownCountdownView {
                 });
             },
         );
+        let status_badge_size = 76.0_f32;
         let body = div()
             .size_full()
             .px(px(SPACING_16))
@@ -4951,8 +4952,8 @@ impl Render for DownloadShutdownCountdownView {
             .gap(px(SPACING_16))
             .child(
                 div()
-                    .size(px(76.0))
-                    .rounded(px(38.0))
+                    .size(px(status_badge_size))
+                    .rounded(px(status_badge_size / 2.0))
                     .border_1()
                     .border_color(theme.danger)
                     .bg(theme.surface_raised)
@@ -4962,7 +4963,7 @@ impl Render for DownloadShutdownCountdownView {
                     .pb(px(SPACING_16))
                     .child(
                         div()
-                            .text_size(px(28.0))
+                            .text_size(px(TEXT_STATUS_GLYPH))
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.danger)
                             .child(if self.executing {
@@ -9590,7 +9591,7 @@ impl Render for NewDownloadView {
                                     .w_full()
                                     .h(px(38.0))
                                     .px(px(SPACING_8))
-                                    .rounded(px(4.0))
+                                    .rounded(px(RADIUS_CONTROL))
                                     .bg(category_choice_background(
                                         theme,
                                         selected_category_id_for_menu.is_none(),
@@ -9664,7 +9665,7 @@ impl Render for NewDownloadView {
                                         .w_full()
                                         .h(px(38.0))
                                         .px(px(SPACING_8))
-                                        .rounded(px(4.0))
+                                        .rounded(px(RADIUS_CONTROL))
                                         .bg(category_choice_background(
                                             theme,
                                             selected,
@@ -10081,7 +10082,7 @@ impl Render for NewDownloadView {
                             .flex()
                             .items_center()
                             .gap(px(7.0))
-                            .text_size(px(12.0))
+                            .text_size(px(TEXT_BODY))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(
                                 Icon::new(MaterialIcon::Download)
@@ -11174,7 +11175,7 @@ impl Render for DownloadTaskWindowView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(11.0))
+                        .text_size(px(TEXT_LABEL))
                         .text_color(theme.text_muted)
                         .child("任务已被移除"),
                 )
@@ -11220,7 +11221,7 @@ impl Render for DownloadTaskWindowView {
                     .child(
                         div()
                             .size(px(38.0))
-                            .rounded(px(6.0))
+                            .rounded(px(RADIUS_FLOATING))
                             .bg(theme.accent_soft)
                             .flex()
                             .items_center()
@@ -11240,14 +11241,14 @@ impl Render for DownloadTaskWindowView {
                             .gap(px(3.0))
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(px(TEXT_BODY))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .truncate()
                                     .child(name),
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.0))
+                                    .text_size(px(TEXT_META))
                                     .text_color(theme.text_muted)
                                     .child(
                                         task.total_bytes.map(format_download_size).unwrap_or_else(
@@ -11257,7 +11258,7 @@ impl Render for DownloadTaskWindowView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(9.5))
+                                    .text_size(px(TEXT_META))
                                     .text_color(theme.text_muted)
                                     .truncate()
                                     .child(final_path),
@@ -11352,7 +11353,7 @@ impl Render for DownloadTaskWindowView {
                                 div()
                                     .min_w_0()
                                     .flex_1()
-                                    .text_size(px(11.5))
+                                    .text_size(px(TEXT_LABEL))
                                     .font_weight(FontWeight::MEDIUM)
                                     .truncate()
                                     .child(name),
@@ -11363,16 +11364,16 @@ impl Render for DownloadTaskWindowView {
                             .w_full()
                             .px(px(9.0))
                             .py(px(7.0))
-                            .rounded(px(5.0))
+                            .rounded(px(RADIUS_CONTROL))
                             .bg(theme.danger_soft)
-                            .text_size(px(9.5))
+                            .text_size(px(TEXT_LABEL))
                             .text_color(theme.danger)
                             .truncate()
                             .child(error),
                     )
                     .child(
                         div()
-                            .text_size(px(9.0))
+                            .text_size(px(TEXT_META))
                             .text_color(theme.text_muted)
                             .truncate()
                             .child(final_path),
@@ -11555,14 +11556,14 @@ impl Render for DownloadTaskWindowView {
                             div()
                                 .min_w_0()
                                 .flex_1()
-                                .text_size(px(11.5))
+                                .text_size(px(TEXT_LABEL))
                                 .font_weight(FontWeight::MEDIUM)
                                 .truncate()
                                 .child(name),
                         )
                         .child(
                             div()
-                                .text_size(px(9.5))
+                                .text_size(px(TEXT_META))
                                 .text_color(status_color)
                                 .child(progress_badge),
                         ),
@@ -11571,14 +11572,14 @@ impl Render for DownloadTaskWindowView {
                     div()
                         .w_full()
                         .h(px(5.0))
-                        .rounded(px(4.0))
+                        .rounded(px(RADIUS_CONTROL))
                         .bg(theme.surface_raised)
                         .when_some(ratio, |track, ratio| {
                             track.child(
                                 div()
                                     .h_full()
                                     .w(px(408.0 * ratio))
-                                    .rounded(px(4.0))
+                                    .rounded(px(RADIUS_CONTROL))
                                     .bg(status_color),
                             )
                         }),
@@ -11604,7 +11605,7 @@ impl Render for DownloadTaskWindowView {
                 )
                 .child(
                     div()
-                        .text_size(px(8.5))
+                        .text_size(px(TEXT_META))
                         .text_color(theme.text_muted)
                         .truncate()
                         .child(final_path),
@@ -11635,7 +11636,7 @@ impl Render for DownloadTaskWindowView {
                                         .small()
                                         .h(px(28.0))
                                         .px(px(10.0))
-                                        .rounded(px(4.0))
+                                        .rounded(px(RADIUS_CONTROL))
                                         .when(shutdown_armed, |button| {
                                             button
                                                 .custom(download_primary_button_variant(theme, cx))
@@ -11668,13 +11669,13 @@ fn download_window_metric(theme: Theme, label: &'static str, value: String) -> i
         .gap(px(2.0))
         .child(
             div()
-                .text_size(px(8.5))
+                .text_size(px(TEXT_LABEL))
                 .text_color(theme.text_muted)
                 .child(label),
         )
         .child(
             div()
-                .text_size(px(10.0))
+                .text_size(px(TEXT_META))
                 .font_weight(FontWeight::MEDIUM)
                 .truncate()
                 .child(value),
@@ -11694,7 +11695,7 @@ pub(crate) fn download_window_titlebar(theme: Theme, title: &'static str) -> imp
         .child(
             div()
                 .flex_1()
-                .text_size(px(12.0))
+                .text_size(px(TEXT_BODY))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(title),
         )
