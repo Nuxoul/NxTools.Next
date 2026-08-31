@@ -1,6 +1,7 @@
 /target/
 /artifacts/
 /.diagnostics/
+/.pipeline/
 /target-ui-check/
 **/bin/
 **/obj/
