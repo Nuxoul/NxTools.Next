@@ -1329,6 +1329,25 @@ rust/apps/nxtools-desktop/src/ui/
 - 批次 5 清单三项全部勾选;未修改任何渲染代码,无需红色门禁;clipboard-ui-lifecycle 三组契约
   复跑通过。未启动 Release 打包。
 
+第四十九个 P1 浏览器扩展 Popup 色彩 token 切片（2026-09-01，自动化管线运行）：
+
+- EX-01 新建共享浏览器 token 文件 `popup-tokens.css`,逐值镜像桌面
+  `theme.rs::zed_dark` 语义色(canvas/surface 阶梯、border、文本四级、accent/accent-soft/
+  accent-text、warning/danger/danger-soft),文件头注明与桌面主题保持同步;EX-14 的网页注入层
+  将复用同一文件。
+- `popup.css` 的 :root 旧私有调色板整体改为解析到 token(`--bg/--surface-*/--line/--text/
+  --accent/--accent-soft/--warning/--danger` 等),两个头牌旧色(#0d0f11 背景、#53c7d8 accent)
+  与 4 处青色 rgba 字面量(0.08/0.11×2/0.42)全部退役;0.42 分隔线与 0.11 光点光环改用
+  `color-mix(in srgb, var(--nt-accent) …)` 由 token 派生,径向渐变内的青色 tint 同步换色
+  (渐变结构的移除属 EX-02)。`popup.html` 在 popup.css 之前加载 token 文件。
+- 契约测试先红后绿:`popup-contract.test.js` 的视觉系统测试改为逐值锁定 14 个 token、
+  禁止 #53c7d8/#0d0f11/rgba(83,199,216,…) 回流、并断言 token 文件先于 popup.css 加载;
+  原"#53c7d8 旧色锁"删除(兑现计划"更新现有 Popup contract tests,不再锁死旧青绿色"的约定,
+  EX-09 的扫光动画断言保留至该切片)。
+- 验证:`node tests/popup-contract.test.js` 通过;扩展全部 5 个测试套件(policy×4+contract)
+  全部通过。本切片不涉及 Rust/C# 编译;扩展打包为整目录复制,popup-tokens.css 随目录分发,
+  无需 manifest 变更;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

@@ -54,7 +54,36 @@ test("every popup script element id exists exactly once", () => {
 });
 
 test("popup visual system keeps compact tokens, focus and reduced-motion gates", () => {
-  assert.match(css, /--accent:\s*#53c7d8/i);
+  // EX-01: the popup mirrors the desktop zed_dark semantic palette through the
+  // shared browser token file instead of an independent cyan-on-black scheme.
+  const tokens = fs.readFileSync(path.join(root, "popup-tokens.css"), "utf8");
+  for (const [name, value] of [
+    ["--nt-canvas", "#1e1f22"],
+    ["--nt-surface", "#242529"],
+    ["--nt-surface-raised", "#2a2b2f"],
+    ["--nt-surface-hover", "#303238"],
+    ["--nt-border-subtle", "#34363b"],
+    ["--nt-border", "#44474f"],
+    ["--nt-text", "#e0e0e0"],
+    ["--nt-text-secondary", "#b8bac0"],
+    ["--nt-text-muted", "#858991"],
+    ["--nt-accent", "#4791bf"],
+    ["--nt-accent-soft", "#273744"],
+    ["--nt-accent-text", "#d6e8f5"],
+    ["--nt-warning", "#d6a85f"],
+    ["--nt-danger", "#ff6b78"],
+  ]) {
+    assert.match(tokens, new RegExp(`${name.replace(/-/g, "\\-")}:\\s*${value}`, "i"));
+  }
+  assert.match(css, /--accent:\s*var\(--nt-accent\)/);
+  assert.doesNotMatch(css, /#53c7d8/i);
+  assert.doesNotMatch(css, /#0d0f11/i);
+  assert.doesNotMatch(css, /rgba\(83,\s*199,\s*216/);
+  assert.ok(
+    html.indexOf("popup-tokens.css") >= 0 &&
+      html.indexOf("popup-tokens.css") < html.indexOf("popup.css"),
+    "popup-tokens.css must load before popup.css",
+  );
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /signal-sweep/);

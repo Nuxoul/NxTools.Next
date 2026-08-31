@@ -1,21 +1,23 @@
 :root {
   color-scheme: dark;
   font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", "Segoe UI", sans-serif;
-  --bg: #0d0f11;
-  --surface-0: #111417;
-  --surface-1: #15191d;
-  --surface-2: #1b2025;
-  --surface-hover: #20262c;
-  --line: #282f36;
-  --line-soft: #20262b;
-  --text: #e6e9ec;
-  --text-dim: #a7afb7;
-  --muted: #77818b;
-  --accent: #53c7d8;
-  --accent-soft: rgba(83, 199, 216, 0.11);
-  --accent-line: rgba(83, 199, 216, 0.42);
-  --warning: #d7a85a;
-  --danger: #e47c72;
+  /* EX-01: legacy popup variable names resolve to the shared browser token
+   * file (popup-tokens.css), which mirrors the desktop zed_dark palette. */
+  --bg: var(--nt-canvas);
+  --surface-0: var(--nt-canvas);
+  --surface-1: var(--nt-surface);
+  --surface-2: var(--nt-surface-raised);
+  --surface-hover: var(--nt-surface-hover);
+  --line: var(--nt-border-subtle);
+  --line-soft: var(--nt-border-subtle);
+  --text: var(--nt-text);
+  --text-dim: var(--nt-text-secondary);
+  --muted: var(--nt-text-muted);
+  --accent: var(--nt-accent);
+  --accent-soft: var(--nt-accent-soft);
+  --accent-line: color-mix(in srgb, var(--nt-accent) 42%, transparent);
+  --warning: var(--nt-warning);
+  --danger: var(--nt-danger);
   --radius: 6px;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
   background: var(--bg);
@@ -38,7 +40,7 @@ body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 92% -8%, rgba(83, 199, 216, 0.08), transparent 34%),
+    radial-gradient(circle at 92% -8%, color-mix(in srgb, var(--nt-accent) 8%, transparent), transparent 34%),
     linear-gradient(180deg, #101316 0%, var(--bg) 48%);
 }
 
@@ -194,7 +196,7 @@ p {
 
 .dot.ok {
   background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(83, 199, 216, 0.11);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nt-accent) 11%, transparent);
 }
 
 .dot.bad {

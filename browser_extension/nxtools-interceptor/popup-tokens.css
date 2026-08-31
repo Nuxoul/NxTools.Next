@@ -1,0 +1,29 @@
+/* Shared NxTools.Next browser UI tokens (EX-01).
+ *
+ * These values mirror the desktop semantic palette in
+ * rust/apps/nxtools-desktop/src/theme.rs (Theme::zed_dark). Keep the two files
+ * in sync: the popup contract test locks the values below, so a desktop theme
+ * change must update this file in the same slice.
+ *
+ * The content-script overlay styles (EX-14) consume the same file, so surface,
+ * text and accent semantics stay one vocabulary across all injected UI. */
+
+:root {
+  --nt-canvas: #1e1f22;
+  --nt-surface: #242529;
+  --nt-surface-raised: #2a2b2f;
+  --nt-surface-hover: #303238;
+  --nt-surface-pressed: #35373d;
+  --nt-border-subtle: #34363b;
+  --nt-border: #44474f;
+  --nt-text: #e0e0e0;
+  --nt-text-secondary: #b8bac0;
+  --nt-text-muted: #858991;
+  --nt-text-disabled: #64676e;
+  --nt-accent: #4791bf;
+  --nt-accent-soft: #273744;
+  --nt-accent-text: #d6e8f5;
+  --nt-warning: #d6a85f;
+  --nt-danger: #ff6b78;
+  --nt-danger-soft: #35252a;
+}
