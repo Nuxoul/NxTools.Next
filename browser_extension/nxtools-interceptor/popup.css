@@ -287,20 +287,11 @@ p {
 
 .tab-count {
   min-width: 16px;
-  padding: 1px 4px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
   color: var(--muted);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
   font-weight: 500;
   line-height: 12px;
-}
-
-.tab.active .tab-count {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .workspace {

@@ -137,6 +137,17 @@ test("popup brand uses the official extension icon asset (EX-04)", () => {
   assert.doesNotMatch(css, /background:\s*var\(--accent-soft\)[^;]*\n\}\n\n\.brand-mark i/);
 });
 
+test("popup tabs keep text plus a 2px accent underline and quiet counts (EX-05)", () => {
+  const activeTabRule = cssRule(".tab.active");
+  assert.doesNotMatch(activeTabRule, /background/);
+  assert.doesNotMatch(activeTabRule, /border/);
+  assert.match(cssRule(".tab.active::after"), /background:\s*var\(--accent\)/);
+  const countRule = cssRule(".tab-count");
+  assert.doesNotMatch(countRule, /border/);
+  assert.doesNotMatch(countRule, /border-radius/);
+  assert.doesNotMatch(css, /\.tab\.active \.tab-count/);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");

@@ -1397,6 +1397,19 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
   125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十三个 P1 浏览器扩展 Popup Tab 轻量化切片（2026-09-01，自动化管线运行）：
+
+- EX-05 将 Tab 计数从强调胶囊降为安静的元数据文本:`.tab-count` 删除 1px 边框、
+  99px 圆角胶囊与内边距,保留等宽字体、muted 色与 16px 最小宽(计数变化不抖动布局);
+  `.tab.active .tab-count` 的 accent 边框/accent-soft 底/accent 文字三重强调整体删除。
+- 活动 Tab 保持既有正确形态并由门禁锁定:纯文字(无 background/border)+ 底部 2px
+  accent 下划线(`.tab.active::after`),与计划"活动 Tab 仅使用文字 + 底部 2px accent"一致。
+- 红色门禁:`popup-contract.test.js` 新增 EX-05 契约——`.tab.active` 规则禁止 background
+  与 border、下划线必须为 `var(--accent)`、`.tab-count` 禁止边框与圆角、
+  `.tab.active .tab-count` 强调规则必须消失;先红后绿。
+- 验证:扩展全部 5 个测试套件通过。本切片为纯 CSS 呈现变化,不涉及 Rust/C# 编译;
+  未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
