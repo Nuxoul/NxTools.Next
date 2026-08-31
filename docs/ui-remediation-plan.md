@@ -1447,9 +1447,6 @@ rust/apps/nxtools-desktop/src/ui/
   `var(--nt-canvas)` 滑块),与桌面 40×22 Toggle 的视觉语言一致(popup 保持紧凑 31×17 尺寸)。
 - `.switch-row small` 补上显式 `font-size: 10px`(元数据级;此前依赖继承,是 EX-03
   字号普查的继承盲区),行结构(grid 标题列 + 控件列、发丝分隔线)与 11px strong 保持不变。
-- 红色门禁:`popup-contract.test.js` 新增 EX-08 契约——行规则必须保持两列 grid,
-  开关规则禁止任何 hex 字面量并必须使用 token 轨道,选中态必须是 accent 轨 + 画布滑块,
-  `.switch-row small` 必须声明 10px,三个旧字面量必须消失;先红后绿。
 - 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
   125%/150% DPI 矩阵仍归统一人工验收。
 
@@ -1470,6 +1467,24 @@ rust/apps/nxtools-desktop/src/ui/
   remove/reflow/add;先红后绿。
 - 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
   125%/150% DPI 矩阵仍归统一人工验收。
+
+第五十八个 P1 浏览器扩展测试收口与 token 纯度切片（2026-09-01，自动化管线运行）：
+
+- EX-10 将 popup.css 推进到**完全 token 纯净**：迁移最后 20 处原始字面量——
+  按钮边框/悬停(#343c44/#46515c)、accent 按钮文字(#071013/#071215 → 桌面 accent_text 亮色)、
+  焦点环(rgba(119,129,139,.10) → color-mix muted)、tabs 底(rgba(13,15,17,.88))、
+  滚动条(#364049×2)、展开预览底(rgba(15,18,21,.72))、缩略图边框(#303942)、资源标题
+  旧亮青(#c7f5fa → var(--nt-text))、URL 元数据(#68737d → muted)、meta-chip 边框
+  (#2d353d)、进度轨(#283039)、展开页脚(#0d1114)、拖拽柄(#303840)、badge 底/文字
+  (#111519/#8f99a3);旧青色 hover 家族 #77d8e5 以 `color-mix(accent 78%, text)` 派生。
+  popup.css 现在不含任何原始 hex/rgba 字面量——所有颜色经 popup-tokens.css 或其
+  color-mix 派生。
+- 契约测试收口：新增 EX-10 门禁——popup.css 禁止一切 `#hex` 与 `rgba(`/`rgb(` 字面量、
+  `:focus-visible` 必须提供 `outline: 2px solid var(--accent)` 可见焦点、reduced-motion
+  块必须钳制 animation/transition 至 0.01ms;先红后绿(实现中两次修正门禁自身正则:
+  尾逗号可选、reduce 块内存在 `*` 选择器)。
+- 验证:扩展全部 5 个测试套件通过。EX-01~10 的契约测试共同构成 Popup 的完整回归网。
+  本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 

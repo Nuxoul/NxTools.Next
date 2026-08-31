@@ -226,4 +226,19 @@ test("signal rail pulses once per state change and never loops (EX-09)", () => {
   assert.match(script, /classList\.add\("pulse"\)/);
 });
 
+test("popup css is token-pure with visible focus and reduced-motion gates (EX-10)", () => {
+  // Every color resolves through popup-tokens.css (or color-mix over those
+  // tokens); no raw hex or rgba literals remain anywhere in popup.css.
+  assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/);
+  assert.doesNotMatch(css, /rgba?\(/);
+  // Interactive elements keep a visible focus outline.
+  assert.match(cssRule(":focus-visible"), /outline:\s*2px solid var\(--accent\)/);
+  // Reduced motion clamps every animation and transition.
+  assert.match(css, /prefers-reduced-motion:\s*reduce/);
+  assert.match(
+    css,
+    /prefers-reduced-motion:\s*reduce[\s\S]*animation-duration:\s*0\.01ms[\s\S]*transition-duration:\s*0\.01ms/,
+  );
+});
+
 console.log("popup contract tests passed");
