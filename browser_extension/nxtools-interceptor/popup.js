@@ -615,6 +615,17 @@ function renderCaptureSummary(state) {
   elements.signalRail.classList.toggle("capturing", connected && enabled && recentCount > 0);
   elements.signalRail.classList.toggle("offline", !connected);
   elements.signalRail.classList.toggle("paused", connected && !enabled);
+  // EX-09: the rail plays one pulse only when its state actually changes;
+  // steady-state rendering never requests animation frames.
+  const signalState = [
+    connected ? (enabled ? (recentCount > 0 ? "capturing" : "online") : "paused") : "offline",
+  ].join("");
+  if (elements.signalRail.dataset.signalState !== signalState) {
+    elements.signalRail.dataset.signalState = signalState;
+    elements.signalRail.classList.remove("pulse");
+    void elements.signalRail.offsetWidth;
+    elements.signalRail.classList.add("pulse");
+  }
 }
 
 function escapeHtml(value) {

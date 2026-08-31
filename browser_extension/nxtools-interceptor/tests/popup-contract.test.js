@@ -86,14 +86,12 @@ test("popup visual system keeps compact tokens, focus and reduced-motion gates",
   );
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.match(css, /signal-sweep/);
   assert.doesNotMatch(css, /width:\s*520px/);
 });
 
 test("popup surfaces stay flat, opaque and grid-free (EX-02)", () => {
   // The shell canvas is one continuous surface; decorations, grid meshes and
-  // translucent panels are retired. The signal sweep overlay keeps its
-  // gradient until EX-09 removes the whole animation.
+  // translucent panels are retired.
   const bodyRule = cssRule("body");
   const shellRule = cssRule(".shell");
   assert.doesNotMatch(bodyRule, /gradient/);
@@ -208,6 +206,24 @@ test("popup root uses deterministic intrinsic dimensions", () => {
   assert.match(workspaceRule, /min-height:\s*420px/);
   assert.match(workspaceRule, /max-height:\s*445px/);
   assert.doesNotMatch(workspaceRule, /(?:vw|vh)/);
+});
+
+test("signal rail pulses once per state change and never loops (EX-09)", () => {
+  // The continuous capture sweep is retired; the rail plays a one-shot pulse
+  // only when its state class actually changes.
+  assert.doesNotMatch(css, /signal-sweep/);
+  assert.doesNotMatch(css, /infinite/);
+  assert.doesNotMatch(css, /#b5f4fb/i);
+  const pulseRule = cssRule(".signal-rail.pulse .signal-track i");
+  assert.match(pulseRule, /animation:\s*signal-pulse\s+240ms ease-out 1/);
+  const railRule = cssRule(".signal-rail");
+  assert.doesNotMatch(railRule, /rgba\(17,\s*20,\s*23/);
+  assert.match(railRule, /background:\s*var\(--surface-0\)/);
+  assert.match(cssRule(".signal-track"), /background:\s*var\(--surface-2\)/);
+  // JS restarts the pulse only when the rail state string changes.
+  assert.match(script, /dataset\.signalState/);
+  assert.match(script, /classList\.remove\("pulse"\)/);
+  assert.match(script, /classList\.add\("pulse"\)/);
 });
 
 console.log("popup contract tests passed");

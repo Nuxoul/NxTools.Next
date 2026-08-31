@@ -1453,6 +1453,24 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
   125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十七个 P1 浏览器扩展状态栏 pulse 切片（2026-09-01，自动化管线运行）：
+
+- EX-09 退役捕获扫光:`.signal-rail.capturing` 的青色渐变扫光(含 `#b5f4fb` 高亮、
+  `signal-sweep 1.4s linear infinite` 与对应 keyframes)整体删除;捕获态轨道改为静态
+  accent 条(44% 宽),与 online/offline/paused 各态的静态轨道同语法。
+- 新增一次性 pulse:JS 在信号轨状态串(online/capturing/paused/offline)实际变化时
+  移除并重加 `.pulse` 类(经 reflow 重启动画),CSS 播放 `signal-pulse 240ms ease-out 1`
+  单次透明度脉冲;稳定态零动画帧请求。既有全局 `prefers-reduced-motion` 规则继续把
+  该动画钳制到 0.01ms。
+- 顺带扁平化 EX-02 普查遗留:信号轨半透明底 `rgba(17,20,23,.84)` → `var(--surface-0)`,
+  轨道底 `#2a3239` → `var(--surface-2)`。
+- 红色门禁:`popup-contract.test.js` 的 EX-01 断言移除 `signal-sweep` 存在性(兑现保留
+  约定);新增 EX-09 契约——禁 `signal-sweep`/`infinite`/`#b5f4fb`、pulse 规则必须为
+  单次动画、rail/track 必须用 token、JS 必须以 `dataset.signalState` 变更驱动
+  remove/reflow/add;先红后绿。
+- 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
+  125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

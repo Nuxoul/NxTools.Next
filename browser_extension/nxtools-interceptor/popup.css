@@ -184,7 +184,7 @@ p {
   gap: 9px;
   padding: 0 12px;
   border-bottom: 1px solid var(--line-soft);
-  background: rgba(17, 20, 23, 0.84);
+  background: var(--surface-0);
   color: var(--text-dim);
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
@@ -195,7 +195,7 @@ p {
   display: block;
   height: 2px;
   overflow: hidden;
-  background: #2a3239;
+  background: var(--surface-2);
 }
 
 .signal-track i {
@@ -213,12 +213,15 @@ p {
 
 .signal-rail.capturing .signal-track i {
   width: 44%;
-  background: linear-gradient(90deg, transparent, var(--accent), #b5f4fb, transparent);
-  animation: signal-sweep 1.4s linear infinite;
+  background: var(--accent);
 }
 
 .signal-rail.offline .signal-track i {
   background: var(--warning);
+}
+
+.signal-rail.pulse .signal-track i {
+  animation: signal-pulse 240ms ease-out 1;
 }
 
 .signal-primary,
@@ -233,9 +236,9 @@ p {
   text-align: right;
 }
 
-@keyframes signal-sweep {
-  from { transform: translateX(-130%); }
-  to { transform: translateX(330%); }
+@keyframes signal-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
 }
 
 .tabs {
