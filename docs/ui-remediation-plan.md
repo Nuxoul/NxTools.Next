@@ -1298,9 +1298,24 @@ rust/apps/nxtools-desktop/src/ui/
   "分类上移 selector",断言点 `download-settings-category-up` debug_bounds);横向滚轮与拖动排序
   两个保护性测试在通过集合中;ui-token-boundaries / ui-state-lifecycle 门禁通过。
 - 视觉证据:`docs/audits/clipboard-category-cl-04-2026-09-01/03-clipboard-category-strip-post-CL-04.png`
-  为迁移后分类条(11px 令牌)实拍;迁移前状态即第四十五个切片的 d5e434e 同几何截图(12px text_xs),
-  两者构成 CL-04 对照。实例捕获后即退出。
 - 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
+
+第四十七个 P2 剪贴板预览窗确认切片（2026-09-01，自动化管线运行）：
+
+- CL-05 为确认性切片：速启与剪贴板共享的 `preview_shell`/`preview_media_surface` 已由 QL-05
+  落地并有既有生产测试锁定,本切片把该共享 seam 与资源上限提升为静态架构契约——
+  `clipboard-ui-lifecycle.ps1` 新增 CL-05 契约：preview.rs 必须定义共享外壳与媒体承托面、
+  `ClipboardPreview` 及其共享外壳测试必须存在,`IMAGE_RESOURCE_CACHE_CAPACITY` 必须保持 96,
+  且必须存在资源逐出回归测试;先红（缺逐出测试）后绿。
+- 新增 `image_resource_cache_evicts_the_oldest_entry_beyond_capacity` 回归：容量 2 下第三条
+  插入逐出最旧项、重触刷新新旧顺序、空路径永不入缓存,并断言生产容量恰为 96;预览位置/尺寸
+  由既有 `preview_layout` 多分辨率测试继续保护,本切片未改动任何预览渲染代码。
+- 验证：cargo fmt;clipboard 过滤测试 18 通过、1 失败为既有基线
+  `production_clipboard_history_uses_the_shared_empty_state`（ERRORS.md 已记录）;严格 clippy
+  -D warnings(all-targets) 通过;clipboard-ui-lifecycle（CL-01~05 全部契约）/ ui-token-boundaries /
+  ui-state-lifecycle 门禁通过。
+- 本切片无渲染变化,无需新增截图对照;未启动 Release 打包,125%/150% DPI 截图矩阵仍归统一
+  人工验收。
 
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 

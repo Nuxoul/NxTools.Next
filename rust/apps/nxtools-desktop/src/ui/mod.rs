@@ -2181,6 +2181,33 @@ mod tests {
         assert_eq!(clipboard_header_summary("全部", 134), "全部 · 134 条");
     }
 
+    #[test]
+    fn image_resource_cache_evicts_the_oldest_entry_beyond_capacity() {
+        let mut cache = BoundedImageResourceCache::new(2);
+        let a = Path::new("C:\\cache\\a.png");
+        let b = Path::new("C:\\cache\\b.png");
+        let c = Path::new("C:\\cache\\c.png");
+
+        assert!(cache.touch(a).is_none());
+        assert!(cache.touch(b).is_none());
+        assert_eq!(cache.len(), 2);
+
+        // Inserting a third entry evicts the least recently used entry.
+        assert_eq!(cache.touch(c).as_deref(), Some(a));
+
+        // Re-touching a resident entry refreshes recency instead of evicting it.
+        assert!(cache.touch(b).is_none());
+        assert_eq!(cache.touch(a).as_deref(), Some(c));
+        assert_eq!(cache.len(), 2);
+
+        // Empty paths never enter the cache.
+        assert!(cache.touch(Path::new("")).is_none());
+        assert_eq!(cache.len(), 2);
+
+        // The production cache is bounded at 96 entries.
+        assert_eq!(IMAGE_RESOURCE_CACHE_CAPACITY, 96);
+    }
+
     #[gpui::test]
     fn production_clipboard_history_uses_the_shared_empty_state(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);

@@ -124,3 +124,26 @@ foreach ($requiredTabContract in @(
 
 Write-Host 'PASS clipboard history rows render through the shared compact result row shell'
 Write-Host 'PASS clipboard category strip uses token typography with preserved drag, wheel and menu lifecycle'
+
+$previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
+$previewSource = Get-Content -Raw -LiteralPath $previewPath
+foreach ($previewContract in @(
+    'pub(crate) fn preview_shell(theme: Theme) -> Div',
+    'pub(crate) fn preview_media_surface(theme: Theme) -> Div',
+    'struct ClipboardPreview',
+    'clipboard_preview_uses_the_shared_neutral_shell_and_media_surface'
+)) {
+    if (-not $previewSource.Contains($previewContract)) {
+        throw "CL-05 shared preview contract missing: $previewContract"
+    }
+}
+foreach ($previewCapContract in @(
+    'const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;',
+    'fn image_resource_cache_evicts_the_oldest_entry_beyond_capacity()'
+)) {
+    if (-not $popupModSource.Contains($previewCapContract)) {
+        throw "CL-05 preview resource cap contract missing: $previewCapContract"
+    }
+}
+
+Write-Host 'PASS clipboard preview shares the QL preview shell with a bounded 96-entry resource cache'
