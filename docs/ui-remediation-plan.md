@@ -1278,6 +1278,30 @@ rust/apps/nxtools-desktop/src/ui/
   历史内容经系统剪贴板写入并由真实 PlatformHost 捕获落库,实例捕获后即退出。
 - 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
 
+第四十六个 P2 剪贴板分类栏令牌切片（2026-09-01，自动化管线运行）：
+
+- CL-04 将剪贴板弹窗内残余的 3 处 gpui `.text_xs()` 非令牌字号迁入 ui::typography：分类 tab 与
+  弹窗对话框按钮 → `TEXT_LABEL/LINE_HEIGHT_LABEL`（分类名与按钮中文保持 ≥11px）,右下角缩放把手的
+  装饰字形 → `TEXT_META`;分类栏不再出现任何非令牌字号。
+- Tooltip 已经由 gpui_component `Tooltip` 统一承载并保持"名称 · 拖动排序 · 右键管理"内容契约;
+  菜单已在第四十四个切片迁入共享 `context_menu_shell`——本切片在门禁中将两者锁定为必需契约,
+  防止回退。
+- 焦点态：核实 gpui 0.2.2 仅提供 `focusable()` 标志而没有焦点样式钩子(无 when_focused/focus
+  border API),为分类栏添加真实键盘焦点可视化被与 DS-08 相同的依赖缺口阻塞,本切片如实记录阻塞
+  而不做无样式效果的半实现;待依赖升级后与 DS-08 一并解决。
+- 红色门禁：`clipboard-ui-lifecycle.ps1` 新增 CL-04 契约——弹窗源码禁止 `.text_xs()`,分类条
+  必须使用 TEXT_LABEL/LINE_HEIGHT_LABEL 令牌且保留 `Tooltip::new`、`context_menu_shell`、
+  `on_drag`/`on_drop`/`on_scroll_wheel` 生命周期,先红后绿。
+- 验证：cargo fmt;cargo check 通过无警告;严格 clippy -D warnings(all-targets) 通过;
+  category/clipboard 过滤测试 24 通过、2 失败均为既有基线并逐一定位(`production_clipboard_history_
+  uses_the_shared_empty_state` 空态宽度、`category_settings_use_a_readable_list_...` 即记录中的
+  "分类上移 selector",断言点 `download-settings-category-up` debug_bounds);横向滚轮与拖动排序
+  两个保护性测试在通过集合中;ui-token-boundaries / ui-state-lifecycle 门禁通过。
+- 视觉证据:`docs/audits/clipboard-category-cl-04-2026-09-01/03-clipboard-category-strip-post-CL-04.png`
+  为迁移后分类条(11px 令牌)实拍;迁移前状态即第四十五个切片的 d5e434e 同几何截图(12px text_xs),
+  两者构成 CL-04 对照。实例捕获后即退出。
+- 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

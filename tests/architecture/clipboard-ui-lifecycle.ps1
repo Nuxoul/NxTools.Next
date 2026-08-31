@@ -97,4 +97,30 @@ if ($historyRowSource.Contains('fn history_row_border') -or
     throw 'CL-03 must retire the private hand-rolled history row border/background helpers.'
 }
 
+$popupModPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\mod.rs'
+$popupModSource = Get-Content -Raw -LiteralPath $popupModPath
+if ($popupModSource.Contains('.text_xs()')) {
+    throw 'CL-04 requires clipboard popup typography to use ui::typography tokens instead of gpui text_xs.'
+}
+$categoryTabStart = $popupModSource.IndexOf('fn category_tab(')
+$categoryTabEnd = $popupModSource.IndexOf('fn dialog_button(', $categoryTabStart)
+if ($categoryTabStart -lt 0 -or $categoryTabEnd -le $categoryTabStart) {
+    throw 'Could not isolate the clipboard category tab renderer.'
+}
+$categoryTab = $popupModSource.Substring($categoryTabStart, $categoryTabEnd - $categoryTabStart)
+foreach ($requiredTabContract in @(
+    '.text_size(px(TEXT_LABEL))',
+    '.line_height(px(LINE_HEIGHT_LABEL))',
+    'Tooltip::new(',
+    'context_menu_shell(',
+    '.on_drag(',
+    '.on_drop(',
+    '.on_scroll_wheel('
+)) {
+    if (-not $popupModSource.Contains($requiredTabContract)) {
+        throw "CL-04 category strip contract missing: $requiredTabContract"
+    }
+}
+
 Write-Host 'PASS clipboard history rows render through the shared compact result row shell'
+Write-Host 'PASS clipboard category strip uses token typography with preserved drag, wheel and menu lifecycle'

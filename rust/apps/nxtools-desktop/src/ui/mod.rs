@@ -37,7 +37,7 @@ use crate::theme::{Theme, UI_FONT_FAMILY};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::empty_state;
 use crate::ui::metrics::RADIUS_CONTROL;
-use crate::ui::typography::{TEXT_BODY, TEXT_META};
+use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META};
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
 };
@@ -1732,7 +1732,7 @@ impl Render for ClipboardPanel {
             .child(panel_resize_hitbox(
                 div()
                     .cursor_e_resize()
-                    .text_xs()
+                    .text_size(px(TEXT_META))
                     .text_color(theme.text_muted)
                     .flex()
                     .items_center()
@@ -1979,7 +1979,8 @@ fn category_tab(
         } else {
             gpui::rgba(0x00000000)
         })
-        .text_xs()
+        .text_size(px(TEXT_LABEL))
+        .line_height(px(LINE_HEIGHT_LABEL))
         .text_color(if selected {
             theme.accent_text
         } else {
@@ -2091,7 +2092,8 @@ fn dialog_button(
         } else {
             theme.surface_raised
         })
-        .text_xs()
+        .text_size(px(TEXT_LABEL))
+        .line_height(px(LINE_HEIGHT_LABEL))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(if primary {
             theme.accent_text
