@@ -1424,6 +1424,20 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:扩展全部 5 个测试套件通过。`.meta-chip` 样式保留(3 个稳定 chip 继续使用)。
   本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十五个 P1 浏览器扩展工具页行语法锁定切片（2026-09-01，自动化管线运行）：
+
+- EX-07 普查确认捕获工具开关已是扁平行形态(整宽、透明底、1px 底部分隔线、无边框圆角),
+  不存在卡片墙;本切片把该行语法提升为静态契约并清理最后一块陈旧字面量——
+  `.feature-index` 的 `#59646e` 迁移为 `var(--muted)`(与 EX-02 普查遗留清单对账)。
+- 红色门禁:`popup-contract.test.js` 新增 EX-07 契约——`.feature-card` 必须保持
+  `border-radius: 0` + `border-bottom: 1px solid var(--line-soft)` + 透明底的行语法,
+  `.feature-grid` 禁止多列卡片网格(`repeat(` 网格),`.feature-card.active` 必须保持桌面
+  `inset 2px 0 var(--accent)` 左缘选中语法,`.feature-index` 必须用 `var(--muted)` 且
+  `#59646e` 消失;先红后绿。
+- JS 侧仅以元素 ID 引用三个开关按钮(`featureOverlayButton` 等),类名无脚本依赖,
+  迁移零行为影响。验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;
+  未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

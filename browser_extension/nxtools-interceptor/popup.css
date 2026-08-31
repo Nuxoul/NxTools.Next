@@ -851,7 +851,7 @@ input[type="number"]:focus {
 }
 
 .feature-index {
-  color: #59646e;
+  color: var(--muted);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
 }

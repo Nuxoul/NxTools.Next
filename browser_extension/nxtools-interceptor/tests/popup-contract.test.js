@@ -164,6 +164,20 @@ test("resource rows keep three stable meta chips and move the rest to details (E
   assert.match(script, /trackHint,\s*blobNote/);
 });
 
+test("capture tool toggles stay flat command rows, not a card wall (EX-07)", () => {
+  const cardRule = cssRule(".feature-card");
+  // Row grammar: flat, full-width, separated by one hairline, no card chrome.
+  assert.match(cardRule, /border-radius:\s*0/);
+  assert.match(cardRule, /border-bottom:\s*1px solid var\(--line-soft\)/);
+  assert.match(cardRule, /background:\s*transparent/);
+  assert.doesNotMatch(css, /\.feature-grid\s*\{[^}]*grid-template-columns:\s*repeat/);
+  // The active state uses the desktop 2px left accent edge, not a card fill.
+  assert.match(cssRule(".feature-card.active"), /inset 2px 0 var\(--accent\)/);
+  // Index numerals are metadata and must use token colors.
+  assert.match(cssRule(".feature-index"), /color:\s*var\(--muted\)/);
+  assert.doesNotMatch(css, /#59646e/i);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");
