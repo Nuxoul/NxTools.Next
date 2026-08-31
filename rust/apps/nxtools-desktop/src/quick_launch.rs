@@ -46,14 +46,11 @@ use tracing::{error, info, warn};
 use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
-use crate::theme::{
-    COMPACT_RADIUS, META_TEXT_SIZE, ROW_HORIZONTAL_PADDING, SURFACE_INSET, Theme, UI_FONT_FAMILY,
-    UI_MONO_FONT_FAMILY,
-};
+use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
-    SPACING_2, SPACING_8, SPACING_12,
+    RADIUS_CONTROL, SPACING_2, SPACING_6, SPACING_8, SPACING_12,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
@@ -69,7 +66,6 @@ const PANEL_WIDTH: f32 = 620.0;
 const PANEL_HEIGHT: f32 = 410.0;
 const SEARCH_HEADER_HEIGHT: f32 = 42.0;
 const COLLAPSED_PANEL_HEIGHT: f32 = SEARCH_HEADER_HEIGHT + 2.0;
-const QUICK_LAUNCH_SEARCH_TEXT_SIZE: f32 = TEXT_BODY;
 const RESULT_LIMIT: usize = 200;
 const RECENT_DIRECTORY_LIMIT: usize = 64;
 const INDEX_CANDIDATE_LIMIT: usize = 200;
@@ -5327,8 +5323,8 @@ fn quick_launch_row_shell(theme: Theme, selected: bool) -> Div {
     div()
         .w_full()
         .h(px(COMPACT_RESULT_ROW_HEIGHT))
-        .px(px(ROW_HORIZONTAL_PADDING))
-        .rounded(px(COMPACT_RADIUS))
+        .px(px(SPACING_8))
+        .rounded(px(RADIUS_CONTROL))
         .flex()
         .items_center()
         .gap(px(SPACING_8))
@@ -6477,7 +6473,7 @@ impl Render for QuickLaunchPanel {
                 .min_h_0()
                 .track_scroll(&self.action_scroll)
                 .overflow_y_scroll()
-                .p(px(SURFACE_INSET))
+                .p(px(SPACING_6))
                 .flex()
                 .flex_col()
                 .child(
@@ -6485,7 +6481,7 @@ impl Render for QuickLaunchPanel {
                         .debug_selector(|| "quick-launch-action-context".into())
                         .h(px(QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT))
                         .mb(px(SPACING_2))
-                        .px(px(ROW_HORIZONTAL_PADDING))
+                        .px(px(SPACING_8))
                         .flex()
                         .items_center()
                         .gap(px(SPACING_8))
@@ -6568,7 +6564,7 @@ impl Render for QuickLaunchPanel {
                 }),
             )
             .size_full()
-            .p(px(SURFACE_INSET))
+            .p(px(SPACING_6))
             .track_scroll(self.result_scroll.clone());
             div()
                 .id("quick-launch-results-scroll")
@@ -6626,7 +6622,7 @@ impl Render for QuickLaunchPanel {
                     .flex()
                     .items_center()
                     .gap(px(SPACING_8))
-                    .text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))
+                    .text_size(px(TEXT_BODY))
                     .line_height(px(LINE_HEIGHT_BODY))
                     .child(
                         gpui_component::Icon::new(MaterialIcon::Search)
@@ -6639,7 +6635,7 @@ impl Render for QuickLaunchPanel {
                                 .appearance(false)
                                 .bordered(false)
                                 .focus_bordered(false)
-                                .text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))
+                                .text_size(px(TEXT_BODY))
                                 .line_height(px(LINE_HEIGHT_BODY)),
                         ),
                     )
@@ -6648,7 +6644,7 @@ impl Render for QuickLaunchPanel {
                             div()
                                 .id("quick-launch-recent-directories")
                                 .size(px(27.0))
-                                .rounded(px(COMPACT_RADIUS))
+                                .rounded(px(RADIUS_CONTROL))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -6689,14 +6685,14 @@ impl Render for QuickLaunchPanel {
                         .bottom(px(8.0))
                         .h(px(28.0))
                         .px(px(12.0))
-                        .rounded(px(COMPACT_RADIUS))
+                        .rounded(px(RADIUS_CONTROL))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface_raised)
                         .shadow_sm()
                         .flex()
                         .items_center()
-                        .text_size(px(META_TEXT_SIZE))
+                        .text_size(px(TEXT_META))
                         .text_color(theme.text_secondary)
                         .child(status),
                 )
@@ -7199,7 +7195,7 @@ mod tests {
 
     #[test]
     fn main_popup_search_uses_the_shared_body_type_role() {
-        assert_eq!(QUICK_LAUNCH_SEARCH_TEXT_SIZE, TEXT_BODY);
+        assert_eq!(TEXT_BODY, 12.0);
         assert_eq!(LINE_HEIGHT_BODY, 18.0);
     }
 

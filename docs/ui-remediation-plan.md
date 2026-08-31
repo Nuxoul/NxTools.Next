@@ -1231,6 +1231,33 @@ rust/apps/nxtools-desktop/src/ui/
   下一片并推送远端；CL-01 据此标记完成并进入 CL-02。阶段级人工验收项（下载阶段 6 第 4 项、
   速启阶段 5 清单、125%/150% DPI Release 截图矩阵）仍保留给用户，管线不得冒领。
 
+第四十四个 P2 剪贴板弹窗令牌与菜单切片（2026-09-01，自动化管线运行）：
+
+- CL-02 将剪贴板弹窗与共享表面从 theme.rs 的旧私有字号/圆角常量整体迁入设计令牌：
+  SEARCH_TEXT_SIZE 13.5 与 RESULT_TITLE_SIZE 13.0 → Body 12,RESULT_DETAIL_SIZE 10.5 与
+  META_TEXT_SIZE 10.0 → Meta 10,COMPACT_RADIUS → RADIUS_CONTROL,quick_launch 的
+  SURFACE_INSET/ROW_HORIZONTAL_PADDING → SPACING_6/SPACING_8;theme.rs 删除全部 7 个旧常量
+  （66 处引用）。PANEL 300×440 默认尺寸与 8px 安全边距保持不变。
+- ui-token-boundaries.ps1 扩展"退役旧令牌"规则：任何源码（含注释）重新出现这些名字即失败;
+  先红（66）后绿（0）。
+- 弹窗菜单统一：历史行右键（粘贴/复制/纯文本粘贴/去除换行/编辑/置顶/收藏/删除）与分类右键
+  （重命名/删除分类）迁入共享 context_menu_shell（192–240px 壳层）+ context_menu_item
+  （28px 行、14px 图标槽、Body 12/18、normal/danger 语义）；共享 context_menu_item 的 label
+  泛化为 `impl Into<SharedString>` 以支持动态标签。打开目标选择器保留 180×320 壳层（整条注册表
+  路径/文件位置需要更宽），行组件与按类型图标（注册表 Settings、系统工具 Terminal、目录 Folder、
+  文件 OpenInNew、网址 Language）统一；来源分类子菜单改用共享壳层，勾选行保留 checked 语义。
+- 验证：cargo fmt；cargo check 通过无警告；严格 clippy -D warnings（all-targets）通过——教训已记录：
+  命令行 `-A` 标志会泄漏到 rustc 编译的 build-script 并在 -D warnings 下报 renamed_and_removed_lints
+  （ERRORS.md ERR-20260901-CLIPPY-ALLOW-FLAG-LEAK）；clipboard 过滤测试 20 通过、1 失败为既有基线
+  `production_clipboard_history_uses_the_shared_empty_state`（精确测试名补记
+  ERRORS.md ERR-20260901-CL02-KNOWN-BASELINE-TEST-NAME;CL-02 字号缩幅不可能增大该宽度断言）；
+  ui-token-boundaries / clipboard-ui-lifecycle / ui-state-lifecycle 门禁全部通过。
+- 视觉证据：docs/audits/clipboard-popup-cl-02-2026-09-01/ 保存迁移前后弹窗对照（同几何
+  316×449,Alt+C 经 PlatformHost 呼出,独立 NXTOOLS_BASELINE_DATA_ROOT 数据根,实例捕获后即退出）；
+  空历史下右键菜单与行排版的像素对照无法在空数据上呈现,菜单呈现依赖共享组件的 DL-05 视觉门禁
+  与本次通过的过滤测试。
+- 本切片未启动 Release 打包;125%/150% DPI 截图矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

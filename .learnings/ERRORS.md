@@ -9766,3 +9766,55 @@ not explicitly recorded.
 - **Notes**: Located the file with `rg --files` at
   `shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/settings/CommonSettings.kt`, verified
   both appearance settings, and continued from the actual path.
+
+---
+
+## [ERR-20260901-CL02-KNOWN-BASELINE-TEST-NAME] clipboard empty-state width baseline test identified exactly
+
+**Logged**: 2026-09-01T01:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The recorded "剪贴板弹窗空态宽度" baseline failure now has its exact test identity:
+`ui::tests::production_clipboard_history_uses_the_shared_empty_state`
+(`rust/apps/nxtools-desktop/src/ui/mod.rs` asserts `state.size.width < px(520.0)`).
+
+### Context
+- Re-produced during the CL-02 pipeline run: 20 passed / this 1 failed in the
+  clipboard-filtered desktop suite.
+- CL-02 only shrank popup text sizes (13.5→12, 13→12, 10.5/10→10) and normalized radii to
+  tokens; none of those deltas can increase the measured width.
+- First described in the 2026-08-20 DL-18 slice record; every later full-suite run listed the
+  same failure without the test name.
+
+### Resolution
+- **Resolved**: 2026-09-01T01:50:00+08:00
+- **Notes**: Recorded the exact test name so future pipeline runs can distinguish this known
+  baseline from new regressions by name instead of by description.
+
+---
+
+## [ERR-20260901-CLIPPY-ALLOW-FLAG-LEAK] clippy `-A` command-line lint flags leak into rustc build-script compilation
+
+**Logged**: 2026-09-01T01:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+`cargo clippy -p nxtools-desktop --all-targets -- -D warnings -A needless_borrows_for_generic_args`
+failed with `renamed_and_removed_lints` inside `nxtools-core`: the command-line `-A` applies to every
+compilation unit including rustc-compiled build scripts and proc macros, where the clippy-only lint
+name is unknown and `-D warnings` escalates it to an error.
+
+### Context
+- `cargo clippy -p nxtools-core -- -D warnings` and `--all-targets` both pass alone.
+- `cargo clippy -p nxtools-desktop --all-targets -- -D warnings` also passes on the current HEAD:
+  the once-recorded `build.rs` needless-borrow baseline no longer exists, so no allow flag is needed.
+
+### Resolution
+- **Resolved**: 2026-09-01T01:50:00+08:00
+- **Notes**: Use plain `-D warnings`; only reintroduce a targeted allow as a source-level
+  `#[allow]` or `[lints]` entry when an actual baseline reappears, never as a command-line `-A`.

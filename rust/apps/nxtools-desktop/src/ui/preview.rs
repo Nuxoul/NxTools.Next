@@ -12,9 +12,9 @@ use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 use unicode_width::UnicodeWidthStr;
 
 use crate::clipboard::ClipboardApplication;
-use crate::theme::{
-    COMPACT_RADIUS, META_TEXT_SIZE, RESULT_DETAIL_SIZE, Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
-};
+use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+use crate::ui::metrics::RADIUS_CONTROL;
+use crate::ui::typography::TEXT_META;
 
 const TEXT_LINE_HEIGHT: f32 = 20.0;
 const META_LINE_HEIGHT: f32 = 16.0;
@@ -43,7 +43,7 @@ pub(crate) fn preview_media_surface(theme: Theme) -> Div {
     div()
         .debug_selector(|| "preview-media-surface".into())
         .overflow_hidden()
-        .rounded(px(COMPACT_RADIUS))
+        .rounded(px(RADIUS_CONTROL))
         .bg(theme.surface)
 }
 
@@ -106,7 +106,7 @@ impl Render for ClipboardPreview {
                     .flex_none()
                     .overflow_hidden()
                     .font_family(UI_MONO_FONT_FAMILY)
-                    .text_size(px(RESULT_DETAIL_SIZE))
+                    .text_size(px(TEXT_META))
                     .line_height(px(TEXT_LINE_HEIGHT))
                     .whitespace_normal()
                     .child(preview_body(&self.item));
@@ -131,7 +131,7 @@ impl Render for ClipboardPreview {
                     .when(!Path::new(&self.item.image_path).is_file(), |preview| {
                         preview.child(
                             div()
-                                .text_size(px(RESULT_DETAIL_SIZE))
+                                .text_size(px(TEXT_META))
                                 .text_color(theme.text_muted)
                                 .child("原图片文件已不存在"),
                         )
@@ -150,7 +150,7 @@ impl Render for ClipboardPreview {
                     .children(self.item.file_paths.iter().cloned().map(|path| {
                         div()
                             .font_family(UI_MONO_FONT_FAMILY)
-                            .text_size(px(RESULT_DETAIL_SIZE))
+                            .text_size(px(TEXT_META))
                             .line_height(px(TEXT_LINE_HEIGHT))
                             .whitespace_normal()
                             .child(path)
@@ -178,7 +178,7 @@ impl Render for ClipboardPreview {
                     div()
                         .w_full()
                         .flex_none()
-                        .text_size(px(META_TEXT_SIZE))
+                        .text_size(px(TEXT_META))
                         .line_height(px(META_LINE_HEIGHT))
                         .text_color(theme.text_muted)
                         .whitespace_normal()

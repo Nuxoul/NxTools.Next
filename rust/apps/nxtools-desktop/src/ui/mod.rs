@@ -19,7 +19,7 @@ use gpui::{
 use gpui_component::Icon;
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
+use gpui_component::menu::ContextMenuExt;
 use gpui_component::tooltip::Tooltip;
 use nxtools_clipboard::{
     BUILTIN_ALL_CATEGORY_ID, ClipboardAction, ClipboardCategory, ClipboardCategoryKind,
@@ -33,11 +33,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::clipboard::ClipboardApplication;
 use crate::icons::MaterialIcon;
-use crate::theme::{
-    COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, SEARCH_TEXT_SIZE, Theme, UI_FONT_FAMILY,
-};
+use crate::theme::{Theme, UI_FONT_FAMILY};
+use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::empty_state;
 use crate::ui::metrics::RADIUS_CONTROL;
+use crate::ui::typography::{TEXT_BODY, TEXT_META};
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
 };
@@ -161,12 +161,12 @@ impl Render for CategoryDrag {
                 div()
                     .h(px(26.0))
                     .px_2()
-                    .rounded(px(COMPACT_RADIUS))
+                    .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_active)
                     .bg(theme.surface_raised)
                     .shadow_md()
-                    .text_size(px(META_TEXT_SIZE))
+                    .text_size(px(TEXT_META))
                     .text_color(theme.accent_text)
                     .flex()
                     .items_center()
@@ -1100,7 +1100,7 @@ impl Render for ClipboardPanel {
                     })
                     .child(
                         div()
-                            .text_size(px(RESULT_TITLE_SIZE))
+                            .text_size(px(TEXT_BODY))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("剪贴板"),
                     )
@@ -1108,7 +1108,7 @@ impl Render for ClipboardPanel {
                         div()
                             .min_w_0()
                             .flex_1()
-                            .text_size(px(META_TEXT_SIZE))
+                            .text_size(px(TEXT_META))
                             .text_color(theme.text_muted)
                             .truncate()
                             .child(header_summary),
@@ -1118,11 +1118,11 @@ impl Render for ClipboardPanel {
                             div()
                                 .h(px(21.0))
                                 .px_2()
-                                .rounded(px(COMPACT_RADIUS))
+                                .rounded(px(RADIUS_CONTROL))
                                 .border_1()
                                 .border_color(theme.accent)
                                 .bg(theme.accent_soft)
-                                .text_size(px(META_TEXT_SIZE))
+                                .text_size(px(TEXT_META))
                                 .text_color(theme.accent_text)
                                 .flex()
                                 .items_center()
@@ -1135,7 +1135,7 @@ impl Render for ClipboardPanel {
                                 .max_w(px(150.0))
                                 .h(px(21.0))
                                 .px_2()
-                                .rounded(px(COMPACT_RADIUS))
+                                .rounded(px(RADIUS_CONTROL))
                                 .border_1()
                                 .border_color(if status_is_error {
                                     theme.danger
@@ -1147,7 +1147,7 @@ impl Render for ClipboardPanel {
                                 } else {
                                     theme.accent_soft
                                 })
-                                .text_size(px(META_TEXT_SIZE))
+                                .text_size(px(TEXT_META))
                                 .text_color(if status_is_error {
                                     theme.danger
                                 } else {
@@ -1215,7 +1215,7 @@ impl Render for ClipboardPanel {
                         div()
                             .id("add-clipboard-category")
                             .size(px(24.0))
-                            .rounded(px(COMPACT_RADIUS))
+                            .rounded(px(RADIUS_CONTROL))
                             .cursor_pointer()
                             .flex_none()
                             .flex()
@@ -1249,7 +1249,7 @@ impl Render for ClipboardPanel {
                         .min_w_0()
                         .flex_1()
                         .h(px(28.0))
-                        .rounded(px(COMPACT_RADIUS))
+                        .rounded(px(RADIUS_CONTROL))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface)
@@ -1265,7 +1265,7 @@ impl Render for ClipboardPanel {
                             div()
                                 .min_w_0()
                                 .flex_1()
-                                .text_size(px(SEARCH_TEXT_SIZE))
+                                .text_size(px(TEXT_BODY))
                                 .text_color(theme.text)
                                 .child(
                                     Input::new(&self.search_input)
@@ -1496,14 +1496,14 @@ impl Render for ClipboardPanel {
                                         .id("back-to-top")
                                         .h(px(28.0))
                                         .px_3()
-                                        .rounded(px(COMPACT_RADIUS))
+                                        .rounded(px(RADIUS_CONTROL))
                                         .border_1()
                                         .border_color(theme.border)
                                         .bg(theme.surface_raised)
                                         .shadow_md()
                                         .cursor_pointer()
                                         .hover(move |style| style.bg(theme.surface_hover))
-                                        .text_size(px(META_TEXT_SIZE))
+                                        .text_size(px(TEXT_META))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .flex()
                                         .items_center()
@@ -1539,14 +1539,14 @@ impl Render for ClipboardPanel {
                                         .id("undo-clipboard-delete")
                                         .h(px(30.0))
                                         .px_3()
-                                        .rounded(px(COMPACT_RADIUS))
+                                        .rounded(px(RADIUS_CONTROL))
                                         .border_1()
                                         .border_color(theme.border_active)
                                         .bg(theme.surface_raised)
                                         .shadow_md()
                                         .cursor_pointer()
                                         .hover(move |style| style.bg(theme.surface_hover))
-                                        .text_size(px(META_TEXT_SIZE))
+                                        .text_size(px(TEXT_META))
                                         .text_color(theme.text)
                                         .flex()
                                         .items_center()
@@ -1576,7 +1576,7 @@ impl Render for ClipboardPanel {
                         .right_2()
                         .bottom_2()
                         .p_2()
-                        .rounded(px(COMPACT_RADIUS))
+                        .rounded(px(RADIUS_CONTROL))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface_raised)
@@ -1591,13 +1591,13 @@ impl Render for ClipboardPanel {
                                 .child(
                                     div()
                                         .flex_1()
-                                        .text_size(px(RESULT_TITLE_SIZE))
+                                        .text_size(px(TEXT_BODY))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child("编辑文本"),
                                 )
                                 .child(
                                     div()
-                                        .text_size(px(META_TEXT_SIZE))
+                                        .text_size(px(TEXT_META))
                                         .text_color(theme.text_muted)
                                         .child("保存后统一为纯文本"),
                                 ),
@@ -1607,7 +1607,7 @@ impl Render for ClipboardPanel {
                                 .flex_1()
                                 .min_h_0()
                                 .p_2()
-                                .rounded(px(COMPACT_RADIUS))
+                                .rounded(px(RADIUS_CONTROL))
                                 .border_1()
                                 .border_color(theme.border)
                                 .bg(theme.surface)
@@ -1627,7 +1627,7 @@ impl Render for ClipboardPanel {
                                 .child(
                                     div()
                                         .flex_1()
-                                        .text_size(px(META_TEXT_SIZE))
+                                        .text_size(px(TEXT_META))
                                         .text_color(theme.text_muted)
                                         .child("Ctrl+Enter 保存 · Esc 取消"),
                                 )
@@ -1662,7 +1662,7 @@ impl Render for ClipboardPanel {
                         .left_3()
                         .right_3()
                         .p_2()
-                        .rounded(px(COMPACT_RADIUS))
+                        .rounded(px(RADIUS_CONTROL))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface_raised)
@@ -1672,7 +1672,7 @@ impl Render for ClipboardPanel {
                         .gap_2()
                         .child(
                             div()
-                                .text_size(px(RESULT_TITLE_SIZE))
+                                .text_size(px(TEXT_BODY))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .child(category_editor_title),
                         )
@@ -1680,7 +1680,7 @@ impl Render for ClipboardPanel {
                             div()
                                 .h(px(32.0))
                                 .px_2()
-                                .rounded(px(COMPACT_RADIUS))
+                                .rounded(px(RADIUS_CONTROL))
                                 .border_1()
                                 .border_color(theme.border)
                                 .bg(theme.surface)
@@ -1695,7 +1695,7 @@ impl Render for ClipboardPanel {
                         )
                         .child(
                             div()
-                                .text_size(px(META_TEXT_SIZE))
+                                .text_size(px(TEXT_META))
                                 .text_color(theme.text_muted)
                                 .child("在条目右键菜单中把来源程序加入分类"),
                         )
@@ -2027,24 +2027,43 @@ fn category_tab(
         .child(label);
     if is_custom {
         tab.context_menu(move |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("重命名").on_click({
-                let panel = panel.clone();
-                let category = edit_category.clone();
-                move |_event, window, app| {
-                    let _ = panel.update(app, |panel, cx| {
-                        panel.begin_category_editor(Some(&category), window, cx);
-                    });
-                }
-            }))
-            .item(PopupMenuItem::new("删除分类").on_click({
-                let panel = panel.clone();
-                let category_id = delete_category_id.clone();
-                move |_event, _window, app| {
-                    let _ = panel.update(app, |panel, cx| {
-                        panel.delete_category(&category_id, cx);
-                    });
-                }
-            }))
+            context_menu_shell(menu)
+                .item(
+                    context_menu_item(
+                        theme,
+                        "clipboard-category-menu-rename",
+                        "重命名",
+                        MaterialIcon::Edit,
+                        MenuTone::Normal,
+                    )
+                    .on_click({
+                        let panel = panel.clone();
+                        let category = edit_category.clone();
+                        move |_event, window, app| {
+                            let _ = panel.update(app, |panel, cx| {
+                                panel.begin_category_editor(Some(&category), window, cx);
+                            });
+                        }
+                    }),
+                )
+                .item(
+                    context_menu_item(
+                        theme,
+                        "clipboard-category-menu-delete",
+                        "删除分类",
+                        MaterialIcon::Delete,
+                        MenuTone::Danger,
+                    )
+                    .on_click({
+                        let panel = panel.clone();
+                        let category_id = delete_category_id.clone();
+                        move |_event, _window, app| {
+                            let _ = panel.update(app, |panel, cx| {
+                                panel.delete_category(&category_id, cx);
+                            });
+                        }
+                    }),
+                )
         })
         .into_any_element()
     } else {

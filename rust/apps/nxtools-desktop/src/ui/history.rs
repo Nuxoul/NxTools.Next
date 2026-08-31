@@ -18,9 +18,11 @@ use nxtools_clipboard::{
 use nxtools_core::ClipboardModifierActions;
 
 use crate::icons::MaterialIcon;
-use crate::theme::{COMPACT_RADIUS, META_TEXT_SIZE, RESULT_TITLE_SIZE, Theme};
+use crate::theme::Theme;
 use crate::ui::action_from_modifiers;
+use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::RADIUS_CONTROL;
+use crate::ui::typography::{TEXT_BODY, TEXT_META};
 
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
@@ -133,7 +135,7 @@ pub fn history_row(
                 .h(px(card_height))
                 .px(px(7.0))
                 .py(px(4.0))
-                .rounded(px(COMPACT_RADIUS))
+                .rounded(px(RADIUS_CONTROL))
                 .border_1()
                 .border_color(history_row_border(theme, false))
                 .bg(history_row_background(theme, false))
@@ -248,68 +250,112 @@ pub fn history_row(
                 )
                 .child(content)
                 .context_menu(move |menu, window, cx| {
-                    let menu = menu
-                        .min_w(px(0.0))
-                        .item(PopupMenuItem::new("粘贴").on_click({
-                            let action = Rc::clone(&original_action);
-                            move |event, window, cx| {
-                                action(ClipboardAction::OriginalPaste, event, window, cx);
-                            }
-                        }))
-                        .item(PopupMenuItem::new("复制").on_click({
-                            let action = Rc::clone(&copy_action);
-                            move |event, window, cx| {
-                                action(ClipboardAction::CopyOnly, event, window, cx);
-                            }
-                        }))
-                        .item(PopupMenuItem::new("纯文本粘贴").on_click({
-                            let action = Rc::clone(&plain_action);
-                            move |event, window, cx| {
-                                action(ClipboardAction::PlainText, event, window, cx);
-                            }
-                        }))
+                    let menu = context_menu_shell(menu)
                         .item(
-                            PopupMenuItem::new("去除换行")
-                                .disabled(without_breaks_disabled)
-                                .on_click({
-                                    let action = Rc::clone(&without_breaks_action);
-                                    move |event, window, cx| {
-                                        action(
-                                            ClipboardAction::WithoutLineBreaks,
-                                            event,
-                                            window,
-                                            cx,
-                                        );
-                                    }
-                                }),
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-paste",
+                                "粘贴",
+                                MaterialIcon::ContentPaste,
+                                MenuTone::Normal,
+                            )
+                            .on_click({
+                                let action = Rc::clone(&original_action);
+                                move |event, window, cx| {
+                                    action(ClipboardAction::OriginalPaste, event, window, cx);
+                                }
+                            }),
+                        )
+                        .item(
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-copy",
+                                "复制",
+                                MaterialIcon::ContentCopy,
+                                MenuTone::Normal,
+                            )
+                            .on_click({
+                                let action = Rc::clone(&copy_action);
+                                move |event, window, cx| {
+                                    action(ClipboardAction::CopyOnly, event, window, cx);
+                                }
+                            }),
+                        )
+                        .item(
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-plain-paste",
+                                "纯文本粘贴",
+                                MaterialIcon::TextFields,
+                                MenuTone::Normal,
+                            )
+                            .on_click({
+                                let action = Rc::clone(&plain_action);
+                                move |event, window, cx| {
+                                    action(ClipboardAction::PlainText, event, window, cx);
+                                }
+                            }),
+                        )
+                        .item(
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-without-breaks",
+                                "去除换行",
+                                MaterialIcon::Cancel,
+                                MenuTone::Normal,
+                            )
+                            .disabled(without_breaks_disabled)
+                            .on_click({
+                                let action = Rc::clone(&without_breaks_action);
+                                move |event, window, cx| {
+                                    action(ClipboardAction::WithoutLineBreaks, event, window, cx);
+                                }
+                            }),
                         )
                         .separator()
-                        .item(PopupMenuItem::new("编辑").disabled(!can_edit).on_click({
-                            let action = Rc::clone(&menu_edit_action);
-                            move |event, window, cx| {
-                                action(ClipboardItemAction::Edit, event, window, cx);
-                            }
-                        }))
                         .item(
-                            PopupMenuItem::new(if is_pinned { "取消置顶" } else { "置顶" })
-                                .on_click({
-                                    let action = Rc::clone(&menu_pin_action);
-                                    move |event, window, cx| {
-                                        action(
-                                            ClipboardItemAction::TogglePinned,
-                                            event,
-                                            window,
-                                            cx,
-                                        );
-                                    }
-                                }),
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-edit",
+                                "编辑",
+                                MaterialIcon::Edit,
+                                MenuTone::Normal,
+                            )
+                            .disabled(!can_edit)
+                            .on_click({
+                                let action = Rc::clone(&menu_edit_action);
+                                move |event, window, cx| {
+                                    action(ClipboardItemAction::Edit, event, window, cx);
+                                }
+                            }),
                         )
                         .item(
-                            PopupMenuItem::new(if is_favorite {
-                                "取消收藏"
-                            } else {
-                                "收藏"
-                            })
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-pin",
+                                if is_pinned { "取消置顶" } else { "置顶" },
+                                MaterialIcon::ArrowUpward,
+                                MenuTone::Normal,
+                            )
+                            .on_click({
+                                let action = Rc::clone(&menu_pin_action);
+                                move |event, window, cx| {
+                                    action(ClipboardItemAction::TogglePinned, event, window, cx);
+                                }
+                            }),
+                        )
+                        .item(
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-favorite",
+                                if is_favorite {
+                                    "取消收藏"
+                                } else {
+                                    "收藏"
+                                },
+                                MaterialIcon::Star,
+                                MenuTone::Normal,
+                            )
                             .on_click({
                                 let action = Rc::clone(&menu_favorite_action);
                                 move |event, window, cx| {
@@ -317,12 +363,21 @@ pub fn history_row(
                                 }
                             }),
                         )
-                        .item(PopupMenuItem::new("删除").on_click({
-                            let action = Rc::clone(&menu_delete_action);
-                            move |event, window, cx| {
-                                action(ClipboardItemAction::Delete, event, window, cx);
-                            }
-                        }));
+                        .item(
+                            context_menu_item(
+                                theme,
+                                "clipboard-menu-delete",
+                                "删除",
+                                MaterialIcon::Delete,
+                                MenuTone::Danger,
+                            )
+                            .on_click({
+                                let action = Rc::clone(&menu_delete_action);
+                                move |event, window, cx| {
+                                    action(ClipboardItemAction::Delete, event, window, cx);
+                                }
+                            }),
+                        );
                     let options = category_menu.options.clone();
                     let unavailable_hint = category_menu.unavailable_hint.clone();
                     let management = Rc::clone(&menu_category_action);
@@ -331,7 +386,7 @@ pub fn history_row(
                         window,
                         cx,
                         move |submenu, _window, _cx| {
-                            let submenu = submenu.min_w(px(0.0));
+                            let submenu = context_menu_shell(submenu);
                             if let Some(hint) = unavailable_hint.clone() {
                                 submenu.item(PopupMenuItem::new(hint).disabled(true))
                             } else {
@@ -398,6 +453,8 @@ fn open_targets_button(
         button
             .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
                 targets.clone().into_iter().fold(
+                    // Kept wider than the shared 192-240 shell: these rows carry
+                    // whole registry paths and file locations that must stay readable.
                     menu.min_w(px(180.0)).max_w(px(320.0)),
                     |menu, target| {
                         let handler = Rc::clone(&handler);
@@ -406,8 +463,22 @@ fn open_targets_button(
                             open_target_menu_prefix(&target.kind),
                             compact_target_label(&target.value)
                         );
+                        let icon = match target.kind {
+                            ClipboardOpenTargetKind::Web => MaterialIcon::Language,
+                            ClipboardOpenTargetKind::Directory => MaterialIcon::Folder,
+                            ClipboardOpenTargetKind::File => MaterialIcon::OpenInNew,
+                            ClipboardOpenTargetKind::RegistryKey => MaterialIcon::Settings,
+                            ClipboardOpenTargetKind::SystemTool => MaterialIcon::Terminal,
+                        };
                         menu.item(
-                            PopupMenuItem::new(label).on_click(move |event, window, cx| {
+                            context_menu_item(
+                                theme,
+                                "clipboard-open-target-menu-item",
+                                label,
+                                icon,
+                                MenuTone::Normal,
+                            )
+                            .on_click(move |event, window, cx| {
                                 cx.stop_propagation();
                                 handler(target.clone(), event, window, cx);
                             }),
@@ -519,7 +590,7 @@ fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
             div()
                 .min_w_0()
                 .flex_1()
-                .text_size(px(RESULT_TITLE_SIZE))
+                .text_size(px(TEXT_BODY))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.text)
                 .truncate()
@@ -555,7 +626,7 @@ fn files_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
             div()
                 .min_w_0()
                 .flex_1()
-                .text_size(px(RESULT_TITLE_SIZE))
+                .text_size(px(TEXT_BODY))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.text)
                 .truncate()
@@ -578,7 +649,7 @@ fn image_content(
         .w_full()
         .h(px(preview_height + 8.0))
         .p(px(4.0))
-        .rounded(px(COMPACT_RADIUS))
+        .rounded(px(RADIUS_CONTROL))
         .bg(theme.image_well)
         .flex()
         .items_center()
@@ -636,7 +707,7 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
         .px(px(4.0))
         .rounded(px(RADIUS_CONTROL))
         .bg(theme.element)
-        .text_size(px(META_TEXT_SIZE))
+        .text_size(px(TEXT_META))
         .text_color(theme.text_secondary)
         .flex()
         .items_center()
@@ -666,7 +737,7 @@ fn time_label(theme: Theme, text: String) -> impl IntoElement {
         .max_w(px(92.0))
         .h(px(18.0))
         .px(px(2.0))
-        .text_size(px(META_TEXT_SIZE))
+        .text_size(px(TEXT_META))
         .text_color(theme.text_muted)
         .flex()
         .items_center()
@@ -680,7 +751,7 @@ fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
         .px(px(5.0))
         .rounded(px(RADIUS_CONTROL))
         .bg(theme.element)
-        .text_size(px(META_TEXT_SIZE))
+        .text_size(px(TEXT_META))
         .text_color(theme.text_muted)
         .flex()
         .items_center()

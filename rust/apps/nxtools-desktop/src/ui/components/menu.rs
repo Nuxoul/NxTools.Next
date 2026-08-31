@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, px};
+use gpui::{SharedString, div, prelude::*, px};
 use gpui_component::Icon;
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 
@@ -27,10 +27,11 @@ pub(crate) fn context_menu_shell(menu: PopupMenu) -> PopupMenu {
 pub(crate) fn context_menu_item(
     theme: Theme,
     selector: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     icon: MaterialIcon,
     tone: MenuTone,
 ) -> PopupMenuItem {
+    let label = label.into();
     let foreground = match tone {
         MenuTone::Normal => theme.text,
         MenuTone::Danger => theme.danger,
@@ -69,7 +70,7 @@ pub(crate) fn context_menu_item(
                             .text_color(icon_color),
                     ),
             )
-            .child(div().min_w_0().flex_1().child(label))
+            .child(div().min_w_0().flex_1().child(label.clone()))
     })
 }
 

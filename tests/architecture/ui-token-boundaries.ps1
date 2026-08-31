@@ -56,7 +56,8 @@ $patterns = @(
     @{ Name = "raw text size"; Regex = '\.text_size\(px\(-?[0-9]+(?:\.[0-9]+)?\)\)' },
     @{ Name = "raw line height"; Regex = '\.line_height\(px\(-?[0-9]+(?:\.[0-9]+)?\)\)' },
     @{ Name = "raw corner radius"; Regex = '\.rounded\(px\(-?[0-9]+(?:\.[0-9]+)?\)\)' },
-    @{ Name = "raw component font size"; Regex = '(mono_)?font_size\s*=\s*px\(-?[0-9]+(?:\.[0-9]+)?\)' }
+    @{ Name = "raw component font size"; Regex = '(mono_)?font_size\s*=\s*px\(-?[0-9]+(?:\.[0-9]+)?\)' },
+    @{ Name = "retired legacy theme token"; Regex = '(SEARCH_TEXT_SIZE|RESULT_TITLE_SIZE|RESULT_DETAIL_SIZE|META_TEXT_SIZE|COMPACT_RADIUS|SURFACE_INSET|ROW_HORIZONTAL_PADDING)' }
 )
 
 $violations = @()
