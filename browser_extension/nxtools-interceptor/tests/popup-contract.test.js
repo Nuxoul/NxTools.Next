@@ -126,6 +126,17 @@ test("popup typography keeps the 10px metadata floor and 11px Chinese body (EX-0
   assert.match(css, /font-size:\s*12px/);
 });
 
+test("popup brand uses the official extension icon asset (EX-04)", () => {
+  assert.ok(
+    fs.existsSync(path.join(root, "icons", "icon-32.png")),
+    "the official icon-32.png asset must exist",
+  );
+  assert.match(html, /<img class="brand-mark" src="icons\/icon-32\.png"/);
+  assert.doesNotMatch(html, /<i><\/i><i><\/i><i><\/i>/);
+  assert.doesNotMatch(css, /\.brand-mark i\b/);
+  assert.doesNotMatch(css, /background:\s*var\(--accent-soft\)[^;]*\n\}\n\n\.brand-mark i/);
+});
+
 test("popup root uses deterministic intrinsic dimensions", () => {
   const htmlRule = cssRule("html");
   const bodyRule = cssRule("body");

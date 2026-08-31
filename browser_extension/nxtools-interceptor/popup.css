@@ -121,8 +121,9 @@ p {
 .brand-lockup,
 .connection,
 .brand-mark {
-  display: flex;
-  align-items: center;
+  display: block;
+  width: 27px;
+  height: 27px;
 }
 
 .brand-lockup {
@@ -142,27 +143,6 @@ p {
   font-size: 11px;
   letter-spacing: 0.14em;
 }
-
-.brand-mark {
-  width: 27px;
-  height: 27px;
-  justify-content: center;
-  gap: 2px;
-  border: 1px solid var(--accent-line);
-  border-radius: 5px;
-  background: var(--accent-soft);
-}
-
-.brand-mark i {
-  display: block;
-  width: 3px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-
-.brand-mark i:nth-child(1) { height: 7px; opacity: .58; }
-.brand-mark i:nth-child(2) { height: 14px; }
-.brand-mark i:nth-child(3) { height: 10px; opacity: .78; }
 
 .connection {
   max-width: 232px;

@@ -1383,6 +1383,20 @@ rust/apps/nxtools-desktop/src/ui/
   禁 vw/vh)同步复跑通过,字号提升未破坏确定性外框(内容按预期在既有滚动区内承载)。
 - 本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十二个 P1 浏览器扩展 Popup 品牌资产切片（2026-09-01，自动化管线运行）：
+
+- EX-04 将 masthead 的"三根 CSS 柱"假标志(27px accent-soft 盒内三条不同高度的 `<i>` 柱,
+  共 5 条样式规则)替换为正式扩展图标资产:popup.html 渲染
+  `<img class="brand-mark" src="icons/icon-32.png" alt="" width="27" height="27">`
+  (装饰性,aria 语义由 h1 承担);popup.css 合并两条 `.brand-mark` 块为一条 27px
+  `display:block` 规则并删除全部 `.brand-mark i` 柱规则——与桌面标题栏、任务栏和托盘
+  同一品牌资产,不再有第二套模拟标志。
+- 红色门禁:`popup-contract.test.js` 新增 EX-04 契约——icon-32.png 资产必须存在、
+  popup.html 必须以 `img.brand-mark` 引用它、三柱 `<i></i>` 结构与 `.brand-mark i` 样式
+  必须消失;先红后绿。
+- 验证:扩展全部 5 个测试套件通过。本切片不涉及 Rust/C# 编译;未生成 Release 包,
+  125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
