@@ -2050,14 +2050,24 @@
     const root = dropTargetHost.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        :host { font: 13px/18px "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif; }
+        :host {
+          /* Shared browser tokens (EX-13); EX-14 extracts these into the
+           * shared style module. Values mirror popup-tokens.css. */
+          --nt-surface: #242529;
+          --nt-border: #44474f;
+          --nt-text: #e0e0e0;
+          --nt-text-secondary: #b8bac0;
+          --nt-accent: #4791bf;
+          --nt-accent-soft: #273744;
+          font: 13px/18px "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
+        }
         .target {
           align-items: center;
-          background: rgba(17, 19, 20, .88);
-          border: 1px dashed rgba(56, 214, 199, .72);
-          border-radius: 8px;
-          box-shadow: 0 16px 36px rgba(0,0,0,.34);
-          color: #eafffb;
+          background: var(--nt-surface, #242529);
+          border: 1px dashed var(--nt-border, #44474f);
+          border-radius: 6px;
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+          color: var(--nt-text, #e0e0e0);
           display: grid;
           gap: 4px;
           height: 100%;
@@ -2065,15 +2075,37 @@
           padding: 10px;
           text-align: center;
           width: 100%;
-          backdrop-filter: blur(14px);
         }
-        .icon { color: #38d6c7; font-size: 20px; font-weight: 700; line-height: 20px; }
+        .icon {
+          align-items: center;
+          color: var(--nt-text-secondary, #b8bac0);
+          display: inline-flex;
+          height: 24px;
+          justify-content: center;
+          width: 24px;
+        }
+        .icon svg {
+          fill: currentColor;
+          height: 22px;
+          width: 22px;
+        }
         strong { font-size: 13px; font-weight: 700; }
-        small { color: #8ee6dc; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
-        :host(.inside) .target { background: rgba(18, 52, 49, .94); border-style: solid; }
+        small {
+          color: var(--nt-text-secondary, #b8bac0);
+          font-size: 11px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          width: 100%;
+        }
+        :host(.inside) .target {
+          background: var(--nt-accent-soft, #273744);
+          border-color: var(--nt-accent, #4791bf);
+          border-style: solid;
+        }
       </style>
       <div class="target">
-        <span class="icon">↓</span>
+        <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
         <strong>拖到这里下载</strong>
         <small>发送到 NxTools 队列</small>
       </div>

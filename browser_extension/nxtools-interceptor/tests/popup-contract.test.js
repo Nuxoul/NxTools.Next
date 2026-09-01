@@ -317,4 +317,47 @@ test("media panel is a 6px token popover with standard two-level resource rows (
   assert.match(hostTokens, /--nt-text-muted:\s*#858991/);
 });
 
+test("drop target uses the real download icon on a quiet token surface (EX-13)", () => {
+  // EX-13 owns the drop-target shadow root only; the media panel above is
+  // EX-12's scope.
+  const dropRegion = contentScript.split("dropTargetHost.attachShadow")[1];
+  const dropStyle = dropRegion
+    .split(".target {")[1]
+    .split("</style>")[0];
+  const dropHost = dropRegion.split(".target {")[0];
+  const dropMarkup = dropRegion.split("</style>")[1];
+  // The teal drop grammar is retired: dashed cyan border, frosted blur, the
+  // 8px radius, the heavy two-digit shadow and the text arrow are all gone.
+  assert.doesNotMatch(dropStyle, /rgba\(56,\s*214,\s*199/);
+  assert.doesNotMatch(dropStyle, /backdrop-filter/);
+  assert.doesNotMatch(dropStyle, /border-radius:\s*8px/);
+  assert.doesNotMatch(dropStyle, /0 16px 36px/);
+  assert.doesNotMatch(dropStyle, /#38d6c7|#8ee6dc|#eafffb/i);
+  assert.doesNotMatch(dropMarkup, /class="icon">↓</);
+  // Quiet token surface: opaque --nt-surface with a dashed shared border, the
+  // 6px popover radius and one restrained single-layer shadow.
+  assert.match(dropStyle, /background:\s*var\(--nt-surface,\s*#242529\)/);
+  assert.match(dropStyle, /border:\s*1px dashed var\(--nt-border,\s*#44474f\)/);
+  assert.match(dropStyle, /border-radius:\s*6px/);
+  assert.match(dropStyle, /box-shadow:\s*0 10px 26px rgba\(0,\s*0,\s*0,\s*0\.28\)/);
+  assert.match(dropStyle, /color:\s*var\(--nt-text,\s*#e0e0e0\)/);
+  assert.match(dropStyle, /small\s*{[^}]*var\(--nt-text-secondary,\s*#b8bac0\)/);
+  // Entering the target only enhances border and background: accent-soft fill
+  // with a solid accent border; the icon and text stay untouched.
+  const insideStyle = dropRegion.split(":host(.inside)")[1].split("</style>")[0];
+  assert.match(
+    insideStyle,
+    /{\s*background:\s*var\(--nt-accent-soft,\s*#273744\);\s*border-color:\s*var\(--nt-accent,\s*#4791bf\);\s*border-style:\s*solid;\s*}/,
+  );
+  // The real download glyph replaces the text arrow.
+  assert.match(
+    dropMarkup,
+    /class="icon"><svg viewBox="0 0 24 24"[^]*?M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z/,
+  );
+  // The drop-target shadow defines the shared tokens locally until EX-14
+  // extracts the shared style module.
+  assert.match(dropHost, /--nt-text-secondary:\s*#b8bac0/);
+  assert.match(dropHost, /--nt-accent-soft:\s*#273744/);
+});
+
 console.log("popup contract tests passed");
