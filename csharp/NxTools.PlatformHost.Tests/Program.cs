@@ -43,6 +43,8 @@ internal static class Program
             ("file-dialog navigation keeps the captured host window", FileDialogNavigationKeepsCapturedWindow),
             ("third-party file manager navigation keeps the captured host and active pane", ThirdPartyFileManagerNavigationKeepsCapturedHost),
             ("Directory Opus adapter requires the real lister and preserves the active pane", DirectoryOpusAdapterPreservesActivePane),
+            ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
+            ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
             ("Total Commander adapter uses the captured source panel", TotalCommanderAdapterPreservesSourcePanel),
             ("OneCommander adapter freezes its UI Automation pane before the popup opens", OneCommanderAdapterPreservesAutomationPane),
             ("Files identity matches the Listary process and UIA root contract", FilesIdentityMatchesListaryContract),
@@ -4137,6 +4139,60 @@ internal static class Program
         {
             throw new InvalidOperationException("assertion failed");
         }
+    }
+
+    private static Task DirectoryOpusDisplayPathsCanonicalize()
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "C:\\",
+            "C:\\Users",
+            "C:\\Users\\Administrator",
+            "C:\\Users\\Administrator\\Desktop",
+            "C:\\Users\\Administrator\\Desktop\\奕心五子棋",
+            "C:\\Users\\Administrator\\Desktop\\奕心五子棋\\piskvork85",
+        };
+        bool DirectoryExists(string path) => existing.Contains(path);
+        IReadOnlyDictionary<string, string> aliases =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["用户"] = "C:\\Users",
+                ["桌面"] = "C:\\Users\\Administrator\\Desktop",
+            };
+        Assert(
+            ThirdPartyFileManagerDisplayPath.Canonicalize(
+                "C:\\用户\\Administrator\\桌面\\奕心五子棋\\piskvork85",
+                DirectoryExists,
+                aliases)
+            == "C:\\Users\\Administrator\\Desktop\\奕心五子棋\\piskvork85");
+        Assert(
+            ThirdPartyFileManagerDisplayPath.Canonicalize(
+                "C:\\Users\\Administrator\\Desktop",
+                DirectoryExists,
+                aliases)
+            == "C:\\Users\\Administrator\\Desktop");
+        Assert(
+            ThirdPartyFileManagerDisplayPath.Canonicalize(
+                "C:\\不存在\\子目录",
+                DirectoryExists,
+                aliases)
+            is null);
+        return Task.CompletedTask;
+    }
+
+    private static Task KnownFolderDisplayAliasesCoverDesktop()
+    {
+        var aliases = ThirdPartyFileManagerDisplayPath.KnownFolderDisplayAliases();
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        Assert(aliases.Values.Any(value =>
+            string.Equals(value, desktop, StringComparison.OrdinalIgnoreCase)));
+        // The alias map must resolve the folder's own shell display name back
+        // to the real parsing path on every locale.
+        var display = ThirdPartyFileManagerDisplayPath.GetShellItemDisplayName(desktop);
+        Assert(!string.IsNullOrWhiteSpace(display));
+        Assert(aliases.TryGetValue(display!, out var resolved));
+        Assert(string.Equals(resolved, desktop, StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
     }
 
     private static void AssertThrows<TException>(Action action)

@@ -322,17 +322,33 @@ internal sealed class Win32DirectoryOpusWindowOperations :
     private static string? GetContainerPath(IntPtr container)
     {
         var caption = GetWindowCaption(container);
+        string? candidate;
         if (ThirdPartyFileManagerPath.LooksLikeRootedDirectory(caption))
         {
-            return caption;
+            candidate = caption;
         }
-        var pathControl = FindDescendant(container, "dopus.ctl.treepath");
-        var path = pathControl == IntPtr.Zero
-            ? null
-            : GetWindowCaption(pathControl);
-        return ThirdPartyFileManagerPath.LooksLikeRootedDirectory(path)
-            ? path
-            : null;
+        else
+        {
+            var pathControl = FindDescendant(container, "dopus.ctl.treepath");
+            var path = pathControl == IntPtr.Zero
+                ? null
+                : GetWindowCaption(pathControl);
+            candidate = ThirdPartyFileManagerPath.LooksLikeRootedDirectory(path)
+                ? path
+                : null;
+        }
+        if (candidate is null)
+        {
+            return null;
+        }
+        // Directory Opus renders profile folders in their localized display
+        // form (e.g. C:\用户\Administrator\桌面 on a zh-CN system); resolve
+        // those segments back to the real parsing paths every downstream
+        // exists-check requires.
+        return ThirdPartyFileManagerDisplayPath.Canonicalize(
+            candidate,
+            Directory.Exists,
+            ThirdPartyFileManagerDisplayPath.KnownFolderDisplayAliases());
     }
 
     private static IntPtr FindDescendant(IntPtr parent, string className)
