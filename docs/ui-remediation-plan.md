@@ -1501,6 +1501,27 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:content-script.js 通过 node --check;扩展全部 5 个测试套件通过。本切片
   不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第六十个 P0 启动失败可视性与测试基线清零切片（2026-09-01，人工指挥）：
+
+- 修复 GUI 子系统启动失败完全静默的产品缺陷（用户实机运行打包版时踩中：下载库 schema
+  守卫拒绝启动,零反馈）。方案:桌面在顶层错误路径写 `startup-failure.log`（追加式）并
+  拉起同级 PlatformHost 的一次性 `--error-dialog` 模式展示原生错误框——Windows 对话框
+  所有权保持在 C# 侧,desktop crate 全程零 unsafe（workspace lints 强制）。background
+  宿主只写文件报告,不弹框。
+- PlatformHost 新增 `ErrorDialog`（参数解析 + 有界读取）与两个 C# 测试;desktop 新增
+  `startup_failure` 模块（write_report 追加语义 + interactive 分支）与三个单测。
+- 顺带根因清除四个长期基线失败(全量 338/338 首次全绿):空态宽度断言改为"填满视口"
+  不变量并新增 `clipboard-history-viewport` 稳定 selector;全局设置窗口高度 368→352
+  恢复 12–14px 尾距契约;分类测试的按钮 id 改由共享 action_button/icon_action_button
+  统一注册 debug_selector(修复 gpui-component Button id 不可寻址的根因);下载详情测试
+  以确定性的三态序列(空态→清空→progress→注入 error)重写。
+- 发现并记录 gpui 0.2.2 的两个测试语义事实:debug_bounds 按 mem::swap 双缓冲跨帧保留
+  陈旧条目(删除元素的 is_none 断言不可靠);debug_selector 在 release 构建为 no-op。
+  quick-launch 预览 12px 断言补充 0.5px 亚像素容差注释。
+- 验证:cargo fmt;严格 clippy -D warnings(all-targets) 通过;全量 desktop 套件
+  338/338 通过;ui-token-boundaries / clipboard-ui-lifecycle / ui-state-lifecycle 门禁
+  通过。下一轮打包可不再使用 -SkipVerification。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、

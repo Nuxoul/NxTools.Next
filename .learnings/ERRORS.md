@@ -9825,7 +9825,7 @@ name is unknown and `-D warnings` escalates it to an error.
 
 **Logged**: 2026-09-01T09:30:00+08:00
 **Priority**: medium
-**Status**: open
+**Status**: resolved
 **Area**: packaging
 
 ### Summary
@@ -9847,8 +9847,53 @@ download-engine schema guard rejected the user's migrated database. The user exp
 - The packaged desktop process is named `NxTools.exe`, not `nxtools-desktop`;
   triage must match the packaged name.
 
-### Suggested Fix
-Surface a native error dialog (PlatformHost-owned) when desktop startup fails before
-the first window exists, carrying the typed failure reason (e.g. schema_guard). Track
-the schema-9 database provenance separately if the newer build's source becomes
-available.
+### Resolution
+- **Resolved**: 2026-09-01T10:10:00+08:00
+- **Notes**: Implemented the suggested design. The desktop now writes
+  startup-failure.log into its log directory at the top-level error path and asks the
+  sibling PlatformHost (new one-shot --error-dialog mode, Windows-dialog ownership stays
+  in C#) to present the report for interactive launches; background hosts keep the file
+  report only. Covered by startup_failure unit tests. The four recorded desktop test
+  baseline failures were also eliminated in the same pass (see
+  ERR-20260901-BASELINE-QUADRUPLE-RESOLVED).
+
+---
+
+## [ERR-20260901-BASELINE-QUADRUPLE-RESOLVED] the four recorded desktop test baselines are fixed
+
+**Logged**: 2026-09-01T10:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The four long-standing desktop test failures ("分类上移 selector", "网络设置尾距",
+"剪贴板弹窗空态宽度", "下载详情 progress selector") were root-caused and fixed; the full
+desktop suite is green for the first time since they appeared (338 passed / 0 failed).
+
+### Root causes and fixes
+- gpui 0.2.2 `debug_bounds` only sees explicit `.debug_selector(...)` keys, and the frame
+  double-buffer (mem::swap) retains entries for removed elements, so absence assertions
+  (`is_none()`) on selectors painted in earlier frames are unreliable. The category test's
+  old-marker absence assert was rewritten as a selection-state assert plus a presence assert
+  on the clicked row.
+- gpui-component `Button` ids are not debug selectors. The shared `action_button` and
+  `icon_action_button` now register their ids via the trait's debug_selector (no-op in
+  release builds), making every shared button addressable by geometry gates.
+- The global settings window height (368) had drifted 16px stale after later slices
+  changed shared row heights; corrected to 352, restoring the contracted 12-14px trailing
+  inset above the footer.
+- The clipboard empty-state width assertion depended on the absolute window width, which
+  the test harness does not guarantee; replaced with a fill invariant (empty state width
+  equals the history viewport width) plus a stable "clipboard-history-viewport" debug
+  selector.
+- The download detail dock test now drives the detail query deterministically
+  (run_until_parked, assert the empty segments state, clear the detail cache through the
+  new clear_task_detail_for_test hook, then assert progress and injected-error states).
+- One flaky assertion (quick-launch preview 12px inset, 0.5px subpixel jitter under the
+  full suite) gained a 0.5px tolerance with an explanatory comment.
+
+### Resolution
+- **Resolved**: 2026-09-01T10:10:00+08:00
+- **Notes**: Full desktop suite green (338 passed / 0 failed) with strict clippy
+  -D warnings; packaging no longer needs -SkipVerification for these tests.

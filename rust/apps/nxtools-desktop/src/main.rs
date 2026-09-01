@@ -15,6 +15,7 @@ mod popup_lifecycle;
 mod quick_launch;
 mod runtime;
 mod shell;
+mod startup_failure;
 mod theme;
 mod ui;
 #[cfg(test)]
@@ -32,7 +33,7 @@ use gpui_component::{Root, Theme, ThemeMode};
 use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
-use nxtools_core::SystemSettings;
+use nxtools_core::{AppPaths, SystemSettings};
 use platform_events::{
     BrowserStartupWindow, PlatformApplicationTargets, PlatformEventDispatcher,
     PlatformEventDispatcherGlobal,
@@ -431,7 +432,18 @@ fn main() {
         }
     };
     if let Err(error) = result {
-        eprintln!("NxTools could not start: {error:#}");
+        let log_dir = AppPaths::discover().ok().map(|paths| paths.log_dir);
+        let platform_host = std::env::current_exe().ok().and_then(|executable| {
+            let host = executable.parent()?.join("NxTools.PlatformHost.exe");
+            host.exists().then_some(host)
+        });
+        let interactive = !matches!(launch_mode, DesktopLaunchMode::Background);
+        startup_failure::report(
+            log_dir.as_deref(),
+            platform_host.as_deref(),
+            &error,
+            interactive,
+        );
         std::process::exit(1);
     }
 }

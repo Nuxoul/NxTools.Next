@@ -88,7 +88,10 @@ pub(crate) fn danger_ghost_button_variant(theme: Theme, cx: &App) -> ButtonCusto
 }
 
 pub(crate) fn action_button(id: &'static str, label: impl Into<SharedString>) -> Button {
+    // The debug selector makes every shared action button addressable by the
+    // production geometry gates; it is a no-op outside test builds.
     Button::new(id)
+        .debug_selector(move || id.to_string())
         .label(label)
         .small()
         .h(px(CONTROL_HEIGHT_ACTION))
@@ -114,6 +117,7 @@ pub(crate) fn icon_action(
 
 pub(crate) fn icon_action_button(id: &'static str, icon: MaterialIcon) -> Button {
     Button::new(id)
+        .debug_selector(move || id.to_string())
         .icon(Icon::new(icon).size(px(14.0)))
         .small()
         .size(px(CONTROL_HEIGHT_ACTION))

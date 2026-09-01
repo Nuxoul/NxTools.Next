@@ -140,7 +140,9 @@ internal static class Program
             ("indexer service installer only accepts packaged sibling", IndexerServiceInstallerAcceptsOnlyPackagedSibling),
             ("protected indexer service root stays under ProgramData", ProtectedIndexerServiceRootStaysUnderProgramData),
             ("indexer service update stops only exact protected executable paths", IndexerServiceUpdateStopsOnlyExactProtectedPaths),
-            ("indexer service registration requires service arguments", IndexerServiceRegistrationRequiresServiceArguments)
+            ("indexer service registration requires service arguments", IndexerServiceRegistrationRequiresServiceArguments),
+            ("error dialog arguments parse the packaged startup report", ErrorDialogArgumentsParseReportPath),
+            ("error dialog reads a bounded startup failure report", ErrorDialogReadsBoundedReport)
         };
 
         var selectedTests = args.Length == 0
@@ -4080,6 +4082,52 @@ internal static class Program
             new EndOfStreamException("Desktop closed the platform pipe.")) == "info");
         Assert(PlatformPipeClient.DisconnectLogLevel(
             new InvalidDataException("bad frame")) == "error");
+        return Task.CompletedTask;
+    }
+
+    private static Task ErrorDialogArgumentsParseReportPath()
+    {
+        var report = Path.Combine(
+            Path.GetTempPath(),
+            $"nxtools-startup-failure-{Guid.NewGuid():N}.log");
+        File.WriteAllText(report, "NxTools could not start:\nschema guard");
+        try
+        {
+            Assert(ErrorDialog.TryParseArguments(
+                new[] { "--error-dialog", report },
+                out var parsed));
+            Assert(parsed == report);
+            // A missing report is recognized but silent: the mode must never
+            // fall through to a full PlatformHost startup.
+            Assert(ErrorDialog.TryParseArguments(
+                new[] { "--error-dialog", Path.Combine(Path.GetTempPath(), "missing-report.log") },
+                out var missing));
+            Assert(missing is null);
+            Assert(!ErrorDialog.TryParseArguments(Array.Empty<string>(), out _));
+        }
+        finally
+        {
+            File.Delete(report);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ErrorDialogReadsBoundedReport()
+    {
+        var report = Path.Combine(
+            Path.GetTempPath(),
+            $"nxtools-startup-failure-{Guid.NewGuid():N}.log");
+        File.WriteAllText(report, new string('x', 5000));
+        try
+        {
+            var message = ErrorDialog.ReadMessage(report);
+            Assert(message.Length <= 4001);
+            Assert(message.EndsWith("\n…", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(report);
+        }
         return Task.CompletedTask;
     }
 

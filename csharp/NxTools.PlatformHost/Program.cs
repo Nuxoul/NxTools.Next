@@ -30,6 +30,12 @@ internal static class Program
                 helperPipeName!,
                 helperAuthenticationToken!);
         }
+        if (ErrorDialog.TryParseArguments(args, out var errorReportPath))
+        {
+            return errorReportPath is null
+                ? 0
+                : ErrorDialog.Show(errorReportPath!);
+        }
         using var log = PlatformLog.CreateDefault();
         if (TryParseIndexerServiceInstall(args, out var indexerPath))
         {

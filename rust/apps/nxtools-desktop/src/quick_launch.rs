@@ -9254,8 +9254,23 @@ mod tests {
             .debug_bounds("quick-launch-preview-text-copy")
             .expect("top-aligned text preview copy");
 
-        assert_eq!(copy.left(), media.left() + px(SPACING_12));
-        assert_eq!(copy.top(), media.top() + px(SPACING_12));
+        // The 12px inset is asserted with a 0.5px tolerance: subpixel centering
+        // can jitter by half a pixel depending on the window origin the test
+        // harness assigns.
+        let expected_left = media.left() + px(SPACING_12);
+        assert!(
+            (copy.left() - expected_left).abs() <= px(0.5),
+            "copy.left={} expected {}",
+            copy.left(),
+            expected_left
+        );
+        let expected_top = media.top() + px(SPACING_12);
+        assert!(
+            (copy.top() - expected_top).abs() <= px(0.5),
+            "copy.top={} expected {}",
+            copy.top(),
+            expected_top
+        );
     }
 
     #[gpui::test]

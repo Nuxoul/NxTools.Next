@@ -1314,6 +1314,7 @@ impl Render for ClipboardPanel {
             ))
             .child(inset_panel_section(
                 div()
+                    .debug_selector(|| "clipboard-history-viewport".into())
                     .mb(px(PANEL_CONTENT_INSET))
                     .relative()
                     .flex_1()
@@ -2261,7 +2262,12 @@ mod tests {
         assert_eq!(title.size.height, px(18.0));
         assert_eq!(description.size.height, px(16.0));
         assert_eq!(title.left(), description.left());
-        assert!(state.size.width < px(520.0));
+        // The empty state fills its viewport exactly (harness-independent fill
+        // invariant); absolute window width varies with the test display.
+        let viewport = window
+            .debug_bounds("clipboard-history-viewport")
+            .expect("clipboard history viewport");
+        assert_eq!(state.size.width, viewport.size.width);
     }
 
     #[gpui::test]

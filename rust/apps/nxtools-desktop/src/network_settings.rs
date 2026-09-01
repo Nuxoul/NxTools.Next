@@ -35,7 +35,7 @@ use crate::ui::metrics::{SPACING_6, SPACING_8, SPACING_12};
 use crate::ui::typography::TEXT_LABEL;
 
 const GLOBAL_SETTINGS_WINDOW_WIDTH: f32 = 720.0;
-const GLOBAL_SETTINGS_WINDOW_HEIGHT: f32 = 368.0;
+const GLOBAL_SETTINGS_WINDOW_HEIGHT: f32 = 352.0;
 
 pub(crate) struct NetworkSettingsApplication {
     policy: NetworkPolicy,
@@ -948,7 +948,7 @@ mod tests {
         let actual_window_size = window_handle
             .update(cx, |_, window, _| window.bounds().size)
             .expect("read production global-settings bounds");
-        assert_eq!(actual_window_size, size(px(720.0), px(368.0)));
+        assert_eq!(actual_window_size, size(px(720.0), px(352.0)));
         window.update(|window, cx| {
             view.update(cx, |view, cx| {
                 view.host.update(cx, |input, cx| {

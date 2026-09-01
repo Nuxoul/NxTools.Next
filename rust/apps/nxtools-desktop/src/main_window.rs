@@ -10312,6 +10312,24 @@ mod tests {
             window.read(|cx| main_window.read(cx).download_detail_tab),
             DownloadDetailTab::Segments
         );
+        // The detail query settles deterministically in tests: the fixture task
+        // has no transfer plan, so the dock first shows the empty segments
+        // state.
+        window.run_until_parked();
+        window.refresh().expect("render settled segment detail");
+        let segments_empty = window
+            .debug_bounds("download-detail-segments-empty")
+            .expect("empty segment detail state");
+        assert!(segments_empty.size.height >= px(72.0));
+
+        // Reset the detail cache so the loading progress state can be asserted
+        // deterministically before the injected error state.
+        window.update(|_, cx| {
+            downloads.update(cx, |application, cx| {
+                application.clear_task_detail_for_test(cx);
+            });
+        });
+        window.run_until_parked();
         window.refresh().expect("render detail progress state");
         let detail_progress = window
             .debug_bounds("download-detail-segments-progress")
