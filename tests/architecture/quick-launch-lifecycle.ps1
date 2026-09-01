@@ -4,7 +4,15 @@ $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events.rs'
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
-$quickLaunchSource = Get-Content -Raw -LiteralPath $quickLaunchPath
+$quickLaunchModuleDir = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch'
+$quickLaunchSource = (@(
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'preview.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'panel.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'actions.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'search.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'icon.rs')),
+        (Get-Content -Raw -LiteralPath $quickLaunchPath)
+    )) -join "`n"
 $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
 $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
@@ -646,8 +654,8 @@ foreach ($requiredSearchInputTypeRole in @(
         throw 'Quick Launch search input must apply the shared Body type role directly.'
     }
 }
-$resultRenderStart = $quickLaunchSource.IndexOf('    fn render_result(')
-$resultRenderEnd = $quickLaunchSource.IndexOf('    fn render_action(', $resultRenderStart)
+$resultRenderStart = $quickLaunchSource.IndexOf('fn render_result(')
+$resultRenderEnd = $quickLaunchSource.IndexOf('fn render_action(', $resultRenderStart)
 if ($resultRenderStart -lt 0 -or $resultRenderEnd -le $resultRenderStart) {
     throw 'Could not isolate the production Quick Launch result renderer.'
 }
@@ -713,7 +721,7 @@ if (-not $rowShell.Contains('theme.element_selected') -or
     -not $quickLaunchSource.Contains('fn stationary_pointer_does_not_steal_keyboard_selection(')) {
     throw 'Quick Launch QL-03 requires neutral selection plus real pointer and stationary-pointer regressions.'
 }
-$actionRenderStart = $quickLaunchSource.IndexOf('    fn render_action(')
+$actionRenderStart = $quickLaunchSource.IndexOf('fn render_action(')
 $actionRenderEnd = $quickLaunchSource.IndexOf(
     'impl Render for QuickLaunchPanel',
     $actionRenderStart
@@ -765,9 +773,9 @@ if ($panelRender.Contains('.bg(theme.element)') -or
     )) {
     throw 'Quick Launch QL-04 must remain the same work surface rather than a second styled popup.'
 }
-$exitActionModeStart = $quickLaunchSource.IndexOf('    fn exit_action_mode(')
+$exitActionModeStart = $quickLaunchSource.IndexOf('fn exit_action_mode(')
 $exitActionModeEnd = $quickLaunchSource.IndexOf(
-    '    fn replace_results(',
+    'fn replace_results(',
     $exitActionModeStart
 )
 if ($exitActionModeStart -lt 0 -or $exitActionModeEnd -le $exitActionModeStart) {
@@ -1242,7 +1250,7 @@ non-restoring hide path so they do not steal focus from the user's new target.
 
 Write-Host 'PASS explicit dismissal restores the captured host for the next summon'
 
-$keyboardMoveStart = $quickLaunchSource.IndexOf('fn move_selection(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>)')
+$keyboardMoveStart = $quickLaunchSource.IndexOf('fn move_selection(')
 $pointerMoveStart = $quickLaunchSource.IndexOf('fn pointer_moved_result(')
 if ($keyboardMoveStart -lt 0 -or $pointerMoveStart -le $keyboardMoveStart) {
     throw 'Quick-launch keyboard-preview regression: keyboard selection callback boundaries could not be located.'

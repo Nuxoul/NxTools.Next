@@ -12,7 +12,9 @@ $state = Get-Content -LiteralPath $statePath -Raw
 $main = (@(Get-Content -LiteralPath $mainPath -Raw) +
     (Get-ChildItem (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\main_window") -Filter '*.rs' |
         Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw })) -join "`n"
-$quick = Get-Content -LiteralPath $quickPath -Raw
+$quick = (@(Get-Content -LiteralPath $quickPath -Raw) +
+    (Get-ChildItem (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\quick_launch") -Filter '*.rs' |
+        Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw })) -join "`n"
 $clipboard = Get-Content -LiteralPath $clipboardPath -Raw
 
 foreach ($contract in @(

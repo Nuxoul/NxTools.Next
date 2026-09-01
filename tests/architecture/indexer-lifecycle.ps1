@@ -8,7 +8,10 @@ $indexer = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-ind
 $mft = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\mft.rs')
 $indexerMain = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\main.rs')
 $serviceHost = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\windows_service_host.rs')
-$quickLaunch = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs')
+$quickLaunchDir = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch'
+$quickLaunch = (@((Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'))) +
+    (Get-ChildItem -LiteralPath $quickLaunchDir -Filter '*.rs' | Sort-Object Name |
+        ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName })) -join "`n"
 $finder = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\crates\nxtools-finder\src\lib.rs')
 
 if ($runtime -notmatch 'NxTools\.Indexer\.exe' -or

@@ -1,0 +1,9 @@
+{
+  "file_scan_exclusions": [
+    "**/target",
+    "**/target-ui-check",
+    "**/artifacts",
+    "**/bin",
+    "**/obj"
+  ]
+}
