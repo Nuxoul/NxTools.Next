@@ -13,3 +13,4 @@
 *.log
 *.pdb
 .DS_Store
+.split_ranges.json
