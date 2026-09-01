@@ -9818,3 +9818,37 @@ name is unknown and `-D warnings` escalates it to an error.
 - **Resolved**: 2026-09-01T01:50:00+08:00
 - **Notes**: Use plain `-D warnings`; only reintroduce a targeted allow as a source-level
   `#[allow]` or `[lints]` entry when an actual baseline reappears, never as a command-line `-A`.
+
+---
+
+## [ERR-20260901-PACKAGED-SILENT-STARTUP-FAILURE] GUI-subsystem desktop fails silently on data guard rejections
+
+**Logged**: 2026-09-01T09:30:00+08:00
+**Priority**: medium
+**Status**: open
+**Area**: packaging
+
+### Summary
+The packaged Release desktop (GUI subsystem) exited with zero visible feedback when the
+download-engine schema guard rejected the user's migrated database. The user experienced
+"double-click does nothing" with no error surface, log entry or dialog.
+
+### Context
+- The user's real `downloads.sqlite3` (Roaming) carried `user_version = 9` while the
+  repository's `DOWNLOAD_SCHEMA_VERSION` is 8; no commit in any branch ever contained
+  schema 9, so the DB was written by a local build newer than anything pushed and the
+  schema-9 migration code is not in this repository.
+- The guard behavior itself is correct (never open a newer database); the gap is purely
+  the missing failure surface on a GUI-subsystem binary.
+- Non-fatal warnings observed on the packaged run: product-shell reconcile timed out
+  once (platform_timeout, retried on reconnect) and the elevated directory helper
+  refused requests because no protected %ProgramData% deployment exists on this
+  machine; quick-launch index provider still reached Ready with ~3.09M items.
+- The packaged desktop process is named `NxTools.exe`, not `nxtools-desktop`;
+  triage must match the packaged name.
+
+### Suggested Fix
+Surface a native error dialog (PlatformHost-owned) when desktop startup fails before
+the first window exists, carrying the typed failure reason (e.g. schema_guard). Track
+the schema-9 database provenance separately if the newer build's source becomes
+available.
