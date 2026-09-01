@@ -4,8 +4,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$sourcePath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads.rs"
-$source = Get-Content -LiteralPath $sourcePath -Raw
+$downloadsFiles = @(
+    'downloads.rs',
+    'downloads\delete_confirmation.rs',
+    'downloads\new_download_view.rs',
+    'downloads\schedule_view.rs',
+    'downloads\shutdown_window.rs',
+    'downloads\settings_view.rs',
+    'downloads\task_window.rs'
+)
+$source = ($downloadsFiles | ForEach-Object {
+    Get-Content -LiteralPath (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\$_") -Raw
+}) -join "`n"
 $dialogComponentPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\ui\components\dialog.rs"
 $dialogComponent = Get-Content -LiteralPath $dialogComponentPath -Raw
 $platformAdapterPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs"
@@ -158,9 +168,9 @@ foreach ($requiredNativeCloseGuard in @(
         -Message "Deferred auxiliary-dialog cleanup must remain guarded by the current window or correlation identity."
 }
 $deleteDialogStart = $source.IndexOf("impl Render for DeleteDownloadView")
-$deleteDialogEnd = $source.IndexOf("struct DownloadTaskWindowView", $deleteDialogStart)
+$deleteDialogEnd = $source.IndexOf("pub(crate) enum NewDownloadInitialSource", $deleteDialogStart)
 $shutdownDialogStart = $source.IndexOf("impl Render for DownloadShutdownCountdownView")
-$shutdownDialogEnd = $source.IndexOf("const DOWNLOAD_SETTINGS_WINDOW_WIDTH", $shutdownDialogStart)
+$shutdownDialogEnd = $source.IndexOf("pub(crate) struct DownloadSettingsInput", $shutdownDialogStart)
 $scheduleDialogStart = $source.IndexOf("impl Render for DownloadScheduleView")
 $scheduleDialogEnd = $source.IndexOf("fn schedule_trigger_row", $scheduleDialogStart)
 if ($deleteDialogStart -lt 0 -or $deleteDialogEnd -le $deleteDialogStart -or
@@ -264,7 +274,7 @@ if ($source.Contains('"等待链接探测"')) {
 }
 
 $newViewStart = $source.IndexOf("impl NewDownloadView {")
-$requestStart = $source.IndexOf("    fn request(", $newViewStart)
+$requestStart = $source.IndexOf("    pub(crate) fn request(", $newViewStart)
 if ($newViewStart -lt 0 -or $requestStart -le $newViewStart) {
     throw "Could not isolate the destination picker lifecycle."
 }

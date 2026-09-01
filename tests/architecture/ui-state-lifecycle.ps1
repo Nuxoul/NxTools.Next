@@ -9,7 +9,9 @@ $mainPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\main_window
 $quickPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\quick_launch.rs"
 $clipboardPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\ui\mod.rs"
 $state = Get-Content -LiteralPath $statePath -Raw
-$main = Get-Content -LiteralPath $mainPath -Raw
+$main = (@(Get-Content -LiteralPath $mainPath -Raw) +
+    (Get-ChildItem (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\main_window") -Filter '*.rs' |
+        Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw })) -join "`n"
 $quick = Get-Content -LiteralPath $quickPath -Raw
 $clipboard = Get-Content -LiteralPath $clipboardPath -Raw
 

@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $main = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs') -Raw
-$mainWindow = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs') -Raw
+$mainWindow = (@(Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs') -Raw) +
+    (Get-ChildItem (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window') -Filter '*.rs' |
+        Sort-Object Name | ForEach-Object { Get-Content $_.FullName -Raw })) -join "`n"
 $platformEvents = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events.rs') -Raw
 $desktopBuild = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\build.rs') -Raw
 $trayPresentation = Get-Content (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\DesktopTrayPresentation.cs') -Raw

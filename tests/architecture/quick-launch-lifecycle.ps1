@@ -9,6 +9,12 @@ $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
 $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
 $mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
+$mainWindowPageDir = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window'
+$quickLaunchPageSource = Get-Content -Raw -LiteralPath (Join-Path $mainWindowPageDir 'quick_launch_page.rs')
+$clipboardPageSource = Get-Content -Raw -LiteralPath (Join-Path $mainWindowPageDir 'clipboard_page.rs')
+$mainWindowAllSource = (@($mainWindowSource) +
+    (Get-ChildItem $mainWindowPageDir -Filter '*.rs' | Sort-Object Name |
+        ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName })) -join "`n"
 $hotkeyFieldPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\hotkey.rs'
 $hotkeyFieldSource = Get-Content -Raw -LiteralPath $hotkeyFieldPath
 $volumeScopePath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\volume_scope.rs'
@@ -34,8 +40,7 @@ $panelRender = $quickLaunchSource.Substring($panelRenderStart, $panelRenderEnd -
 foreach ($requiredPopupConstant in @(
     'const PANEL_WIDTH: f32 = 620.0',
     'const PANEL_HEIGHT: f32 = 410.0',
-    'const SEARCH_HEADER_HEIGHT: f32 = 42.0',
-    'const QUICK_LAUNCH_SEARCH_TEXT_SIZE: f32 = TEXT_BODY'
+    'const SEARCH_HEADER_HEIGHT: f32 = 42.0'
 )) {
     if (-not $quickLaunchSource.Contains($requiredPopupConstant)) {
         throw 'Quick Launch must preserve the tokenized collapsed/expanded popup constants.'
@@ -62,12 +67,12 @@ if (-not $quickLaunchSource.Contains(
     )) {
     throw 'Quick Launch popup geometry requires a real production-window regression test.'
 }
-$settingsPageStart = $mainWindowSource.IndexOf('    fn select_quick_launch_settings_page(')
-$settingsPageEnd = $mainWindowSource.IndexOf('    fn render_notifications(', $settingsPageStart)
+$settingsPageStart = $quickLaunchPageSource.IndexOf('fn select_quick_launch_settings_page(')
+$settingsPageEnd = $quickLaunchPageSource.IndexOf('fn render_quick_find(', $settingsPageStart)
 if ($settingsPageStart -lt 0 -or $settingsPageEnd -le $settingsPageStart) {
     throw 'Could not isolate the Quick Launch settings page lifecycle.'
 }
-$settingsPageLifecycle = $mainWindowSource.Substring(
+$settingsPageLifecycle = $quickLaunchPageSource.Substring(
     $settingsPageStart,
     $settingsPageEnd - $settingsPageStart
 )
@@ -85,19 +90,19 @@ foreach ($requiredSettingsPageRegression in @(
     'fn quick_launch_settings_navigation_mounts_only_the_selected_page(',
     'fn every_quick_launch_settings_frame_mounts_exactly_one_page('
 )) {
-    if (-not $mainWindowSource.Contains($requiredSettingsPageRegression)) {
+    if (-not $mainWindowAllSource.Contains($requiredSettingsPageRegression)) {
         throw 'Quick Launch QL-07 requires real production-window navigation and exclusive-mount regressions.'
     }
 }
-$quickLaunchSettingsStart = $mainWindowSource.IndexOf('    fn render_quick_find(')
-$quickLaunchSettingsEnd = $mainWindowSource.IndexOf(
-    '    fn render_clipboard(',
+$quickLaunchSettingsStart = $quickLaunchPageSource.IndexOf('fn render_quick_find(')
+$quickLaunchSettingsEnd = $quickLaunchPageSource.IndexOf(
+    'fn compact_setting_row(',
     $quickLaunchSettingsStart
 )
 if ($quickLaunchSettingsStart -lt 0 -or $quickLaunchSettingsEnd -le $quickLaunchSettingsStart) {
     throw 'Could not isolate the Quick Launch settings render boundary.'
 }
-$quickLaunchSettings = $mainWindowSource.Substring(
+$quickLaunchSettings = $quickLaunchPageSource.Substring(
     $quickLaunchSettingsStart,
     $quickLaunchSettingsEnd - $quickLaunchSettingsStart
 )
@@ -132,23 +137,23 @@ if (-not $quickLaunchSettings.Contains(
     -not $quickLaunchSettings.Contains(
         'hotkey_setting_row('
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle('
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'PlatformCommand::SetQuickLaunchHotKeyRecording'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'PlatformCommand::ConfigureQuickLaunch'
     )) {
     throw 'QL-08 requires the shared HotkeyField and a real typed registration lifecycle regression.'
 }
-$hotkeyLifecycleStart = $mainWindowSource.IndexOf('    fn defer_hotkey_recording(')
-$hotkeyLifecycleEnd = $mainWindowSource.IndexOf('    fn module_icon(', $hotkeyLifecycleStart)
+$hotkeyLifecycleStart = $clipboardPageSource.IndexOf('fn defer_hotkey_recording(')
+$hotkeyLifecycleEnd = $clipboardPageSource.IndexOf('fn render_clipboard(', $hotkeyLifecycleStart)
 if ($hotkeyLifecycleStart -lt 0 -or $hotkeyLifecycleEnd -le $hotkeyLifecycleStart) {
     throw 'Could not isolate the shared hotkey recording lifecycle.'
 }
-$hotkeyLifecycle = $mainWindowSource.Substring(
+$hotkeyLifecycle = $clipboardPageSource.Substring(
     $hotkeyLifecycleStart,
     $hotkeyLifecycleEnd - $hotkeyLifecycleStart
 )
@@ -178,11 +183,11 @@ if ($volumeScopeSource.Contains('.flex_wrap()') -or
     -not $quickLaunchSettings.Contains('automatic_volume_scope_row(') -or
     -not $quickLaunchSettings.Contains('volume_scope_row(') -or
     $quickLaunchSettings.Contains('quick-launch-index-all-volumes') -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_semantics('
     ) -or
-    -not $mainWindowSource.Contains('fn assert_single_index_settings_command(') -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains('fn assert_single_index_settings_command(') -or
+    -not $mainWindowAllSource.Contains(
         'a rejected last-volume toggle must not persist or synchronize'
     )) {
     throw 'QL-09 must replace wrapping chips with the production VolumeScope regression.'
@@ -226,7 +231,7 @@ if ($pathListSource.Contains('.text_size(px(9.5))') -or
     $pathListSource.Contains('.h(px(24.0))') -or
     $pathListSource.Contains('.w(px(210.0))') -or
     -not $quickLaunchSettings.Contains('path_exclusion_setting(') -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_actions('
     )) {
     throw 'QL-10 must replace the private compact exclusion control with its production-window regression.'
@@ -235,7 +240,7 @@ if (-not $pathListSource.Contains(
         'pub(crate) fn exact_path_tooltip(path: &str) -> SharedString'
     ) -or
     -not $pathListSource.Contains('path.to_owned().into()') -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'the production tooltip seam must preserve the exact original path'
     )) {
     throw 'QL-10 must preserve and test the exact original path used by the production tooltip.'
@@ -257,15 +262,15 @@ if (($exclusionRender.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
     -not $exclusionRender.Contains('application.request_index_exclusion_directory(cx)')) {
     throw 'Exclusion-list add and remove callbacks must defer cross-entity updates.'
 }
-$exclusionKeyboardStart = $mainWindowSource.IndexOf('    fn handle_index_exclusion_keyboard(')
-$exclusionKeyboardEnd = $mainWindowSource.IndexOf(
-    '    fn render_notifications(',
+$exclusionKeyboardStart = $quickLaunchPageSource.IndexOf('fn handle_index_exclusion_keyboard(')
+$exclusionKeyboardEnd = $quickLaunchPageSource.IndexOf(
+    'fn render_quick_find(',
     $exclusionKeyboardStart
 )
 if ($exclusionKeyboardStart -lt 0 -or $exclusionKeyboardEnd -le $exclusionKeyboardStart) {
     throw 'Could not isolate the Quick Launch exclusion-list keyboard lifecycle.'
 }
-$exclusionKeyboard = $mainWindowSource.Substring(
+$exclusionKeyboard = $quickLaunchPageSource.Substring(
     $exclusionKeyboardStart,
     $exclusionKeyboardEnd - $exclusionKeyboardStart
 )
@@ -278,7 +283,7 @@ if (-not $exclusionKeyboard.Contains('cx.defer(move |cx|') -or
     -not $exclusionKeyboard.Contains('application.remove_excluded_path(&path, cx)')) {
     throw 'Keyboard exclusion removal must defer the same canonical persistence path.'
 }
-if (($mainWindowSource.Split('exclusion_selection_after_removal(').Count - 1) -lt 3) {
+if (($mainWindowAllSource.Split('exclusion_selection_after_removal(').Count - 1) -lt 3) {
     throw 'Pointer and keyboard exclusion removal must share one selection-reconciliation rule.'
 }
 $pickerRequestStart = $quickLaunchSource.IndexOf(
@@ -435,7 +440,7 @@ if ($commandMasterRow.Contains('quick-launch-command-enabled-') -or
     $commandMasterRow.Contains('quick-launch-command-delete-')) {
     throw 'QL-11 master rows must remain identity-only; enabled and delete belong to the detail editor.'
 }
-if (-not $mainWindowSource.Contains(
+if (-not $mainWindowAllSource.Contains(
     'fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_actions('
 )) {
     throw 'QL-11 requires a real production MainWindow interaction and geometry regression.'
@@ -465,16 +470,16 @@ foreach ($requiredCustomCommandCallback in @(
     }
 }
 if (($customCommandCallbacks.Split('cx.defer(move |cx|').Count - 1) -lt 4 -or
-    -not $mainWindowSource.Contains('pending_custom_command_program_picker') -or
-    -not $mainWindowSource.Contains('custom_command_draft_generation')) {
+    -not $mainWindowAllSource.Contains('pending_custom_command_program_picker') -or
+    -not $mainWindowAllSource.Contains('custom_command_draft_generation')) {
     throw 'QL-11 cross-entity actions must defer and program-picker results must match the current draft identity.'
 }
-$customCommandDraftStart = $mainWindowSource.IndexOf('    fn select_custom_command_draft(')
-$customCommandSaveStart = $mainWindowSource.IndexOf('    fn save_selected_custom_command(')
+$customCommandDraftStart = $clipboardPageSource.IndexOf('fn select_custom_command_draft(')
+$customCommandSaveStart = $clipboardPageSource.IndexOf('fn save_selected_custom_command(')
 if ($customCommandDraftStart -lt 0 -or $customCommandSaveStart -le $customCommandDraftStart) {
     throw 'Could not isolate the QL-11 custom-command draft selection boundary.'
 }
-$customCommandDraft = $mainWindowSource.Substring(
+$customCommandDraft = $clipboardPageSource.Substring(
     $customCommandDraftStart,
     $customCommandSaveStart - $customCommandDraftStart
 )
@@ -483,14 +488,14 @@ if (-not $customCommandDraft.Contains('cx.defer(move |cx|') -or
     -not $customCommandDraft.Contains('state.set_value(value, window, cx)')) {
     throw 'QL-11 master selection must defer every InputState mutation to a later application turn.'
 }
-$customCommandSaveEnd = $mainWindowSource.IndexOf(
-    '    fn smooth_scroll_quick_find(',
+$customCommandSaveEnd = $clipboardPageSource.IndexOf(
+    'fn render_modifier_action_selector(',
     $customCommandSaveStart
 )
 if ($customCommandSaveStart -lt 0 -or $customCommandSaveEnd -le $customCommandSaveStart) {
     throw 'Could not isolate the QL-11 custom-command save boundary.'
 }
-$customCommandSave = $mainWindowSource.Substring(
+$customCommandSave = $clipboardPageSource.Substring(
     $customCommandSaveStart,
     $customCommandSaveEnd - $customCommandSaveStart
 )
@@ -525,10 +530,10 @@ foreach ($requiredProgramPickerEventContract in @(
     }
 }
 if (($customCommandPickerEvent.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'leaving and returning to the same index must still reject the stale picker identity'
     ) -or
-    -not $mainWindowSource.Contains('picker cancellation must not modify the current draft')) {
+    -not $mainWindowAllSource.Contains('picker cancellation must not modify the current draft')) {
     throw 'QL-11 requires separately gated deferred picker apply plus stale-same-index and cancellation regressions.'
 }
 foreach ($requiredDiagnosticsContract in @(
@@ -556,25 +561,25 @@ if ($diagnosticsSource.Contains('.text_size(px(10.0))') -or
     $diagnosticsSource.Contains('"LIVE"') -or
     $diagnosticsSource.Contains('"IDLE"') -or
     -not $quickLaunchSettings.Contains('quick_launch_diagnostics(') -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface('
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'the diagnostics tooltip must preserve the exact log directory'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'one click must emit one shell command'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'the detached log action must not remain interactive on'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'the detached history action must not remain interactive on'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'diagnostics metrics must remount only after returning to Diagnostics'
     ) -or
-    -not $mainWindowSource.Contains(
+    -not $mainWindowAllSource.Contains(
         'performance metrics may mount only on the Diagnostics page'
     )) {
     throw 'QL-12 must replace private status badges with its real production-window diagnostics regression.'
@@ -634,7 +639,7 @@ if ($searchInputStart -lt 0 -or $searchInputEnd -le $searchInputStart) {
 }
 $searchInputRender = $panelRender.Substring($searchInputStart, $searchInputEnd - $searchInputStart)
 foreach ($requiredSearchInputTypeRole in @(
-    '.text_size(px(QUICK_LAUNCH_SEARCH_TEXT_SIZE))',
+    '.text_size(px(TEXT_BODY))',
     '.line_height(px(LINE_HEIGHT_BODY))'
 )) {
     if (-not $searchInputRender.Contains($requiredSearchInputTypeRole)) {
@@ -908,7 +913,7 @@ foreach ($requiredSharedPreviewContract in @(
     '.border_color(theme.window_border)',
     'pub(crate) fn preview_media_surface(theme: Theme) -> Div',
     '.bg(theme.surface)',
-    '.rounded(px(COMPACT_RADIUS))'
+    '.rounded(px(RADIUS_CONTROL))'
 )) {
     if (-not $previewSource.Contains($requiredSharedPreviewContract)) {
         throw 'Clipboard and Quick Launch must keep the shared PreviewShell/media presentation seam.'

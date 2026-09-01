@@ -5,6 +5,8 @@ $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
 $settingsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\settings.rs'
 $mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
 $settingsSource = Get-Content -Raw -LiteralPath $settingsPath
+$clipboardPagePath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\clipboard_page.rs'
+$clipboardPageSource = Get-Content -Raw -LiteralPath $clipboardPagePath
 
 $splitSurfaceStart = $settingsSource.IndexOf('pub(crate) fn settings_split_surface(')
 $splitSurfaceEnd = $settingsSource.IndexOf('pub(crate) fn settings_shell(', $splitSurfaceStart)
@@ -36,12 +38,12 @@ if ($splitSurface.Contains('.rounded(') -or
     throw 'CL-01 split settings must stay square, continuous and neutral.'
 }
 
-$clipboardRenderStart = $mainWindowSource.IndexOf('    fn render_clipboard(')
-$clipboardRenderEnd = $mainWindowSource.IndexOf("`n    }`n}`n`nimpl Render for MainWindow", $clipboardRenderStart)
+$clipboardRenderStart = $clipboardPageSource.IndexOf('fn render_clipboard(')
+$clipboardRenderEnd = $clipboardPageSource.IndexOf('fn click_action_label(', $clipboardRenderStart)
 if ($clipboardRenderStart -lt 0 -or $clipboardRenderEnd -le $clipboardRenderStart) {
     throw 'Could not isolate the production clipboard workspace.'
 }
-$clipboardRender = $mainWindowSource.Substring(
+$clipboardRender = $clipboardPageSource.Substring(
     $clipboardRenderStart,
     $clipboardRenderEnd - $clipboardRenderStart
 )
