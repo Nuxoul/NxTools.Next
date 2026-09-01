@@ -1467,7 +1467,12 @@
     }
 
     panel.hidden = true;
-    overlayHost.shadowRoot.querySelector("button")?.setAttribute("aria-expanded", "false");
+    const button = overlayHost.shadowRoot.querySelector("button");
+    button?.setAttribute("aria-expanded", "false");
+    const activeElement = overlayHost.shadowRoot.activeElement;
+    if (activeElement && panel.contains(activeElement)) {
+      button?.focus();
+    }
     const label = overlayHost.shadowRoot.querySelector(".label");
     if (label) {
       label.textContent = "下载此媒体";
@@ -1529,18 +1534,44 @@
       <style>
         ${NxToolsShadowStyles.mediaEntry}
       </style>
-      <button class="trigger" type="button" title="选择媒体资源" aria-expanded="false">
+      <button class="trigger" type="button" title="选择媒体资源" aria-haspopup="true" aria-controls="nxtools-media-panel" aria-expanded="false">
         <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
         <span class="label">下载此媒体</span>
-        <span class="status"></span>
+        <span class="status" role="status" aria-live="polite"></span>
       </button>
-      <div class="panel" hidden></div>
+      <div class="panel" id="nxtools-media-panel" aria-label="媒体资源列表" role="group" hidden></div>
     `;
 
     const button = root.querySelector("button");
     const label = root.querySelector(".label");
     const status = root.querySelector(".status");
     const panel = root.querySelector(".panel");
+
+    panel.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp" &&
+          event.key !== "Home" && event.key !== "End") {
+        return;
+      }
+      const choices = [...panel.querySelectorAll(".choice")];
+      if (choices.length === 0) {
+        return;
+      }
+      const currentIndex = choices.indexOf(root.activeElement);
+      let nextIndex;
+      if (event.key === "ArrowDown") {
+        nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % choices.length;
+      } else if (event.key === "ArrowUp") {
+        nextIndex = currentIndex < 0
+          ? choices.length - 1
+          : (currentIndex - 1 + choices.length) % choices.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else {
+        nextIndex = choices.length - 1;
+      }
+      event.preventDefault();
+      choices[nextIndex]?.focus();
+    });
 
     function setStatus(text, failed = false) {
       status.textContent = text || "";
@@ -1610,6 +1641,10 @@
         choice.className = "choice";
         choice.type = "button";
         choice.dataset.index = String(index);
+        choice.setAttribute(
+          "aria-label",
+          `${resourceChoiceLabel(candidate, index)}，${resourceChoiceFileText(candidate, index)}，${resourceChoiceMetaText(candidate)}`,
+        );
         choice.title = `${resourceChoiceLabel(candidate, index)}\n${resourceChoiceFileText(candidate, index)}\n${resourceChoiceMetaText(candidate)}`;
 
         const file = document.createElement("span");
@@ -1918,6 +1953,7 @@
 
     dropTargetHost = document.createElement("div");
     dropTargetHost.id = "nxToolsDropTarget";
+    dropTargetHost.setAttribute("aria-hidden", "true");
     Object.assign(dropTargetHost.style, {
       display: "none",
       left: "0",

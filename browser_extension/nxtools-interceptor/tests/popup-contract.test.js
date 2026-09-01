@@ -359,4 +359,35 @@ test("drop target uses the real download icon on a quiet token surface (EX-13)",
   assert.match(dropHost, /--nt-accent-soft:\s*#273744/);
 });
 
+test("media overlay exposes aria wiring, keyboard navigation and focus return (EX-15)", () => {
+  // The trigger announces the popover relationship; the panel carries an
+  // accessible name; the status line is a live region instead of a
+  // display:none string invisible to assistive tech.
+  assert.match(contentScript, /class="trigger"[^>]*aria-haspopup="true"/);
+  assert.match(contentScript, /class="trigger"[^>]*aria-controls="nxtools-media-panel"/);
+  assert.match(contentScript, /class="panel" id="nxtools-media-panel" aria-label="媒体资源列表" role="group" hidden/);
+  assert.match(contentScript, /class="status" role="status" aria-live="polite"/);
+  // The drop target is a pointer-only decoration for assistive tech.
+  assert.match(contentScript, /dropTargetHost\.setAttribute\("aria-hidden", "true"\)/);
+  // Choice rows carry a programmatic label, not only a mouse tooltip.
+  assert.match(contentScript, /choice\.setAttribute\(\s*"aria-label",/);
+  // Panel rows navigate with ArrowUp/ArrowDown (wrapping) and Home/End.
+  const nav = contentScript
+    .split('panel.addEventListener("keydown"')[1]
+    .split('button.addEventListener("click"')[0];
+  assert.match(nav, /"ArrowDown"/);
+  assert.match(nav, /"ArrowUp"/);
+  assert.match(nav, /"Home"/);
+  assert.match(nav, /"End"/);
+  assert.match(nav, /\.focus\(\)/);
+  // Escape close returns focus to the trigger when the panel held it.
+  const closer = contentScript
+    .split("function closeOverlayPanel")[1]
+    .split("function isOverlayEvent")[0];
+  assert.match(closer, /panel\.contains\(activeElement\)/);
+  assert.match(closer, /\.focus\(\)/);
+  // The status line stays visually hidden but reachable by assistive tech.
+  assert.match(shadowStyles.mediaEntry, /\.status\s*{[^}]*position:\s*absolute/);
+});
+
 console.log("popup contract tests passed");

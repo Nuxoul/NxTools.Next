@@ -83,7 +83,14 @@ ${tokens}
           width: 16px;
           fill: currentColor;
         }
-        .status { display: none; }
+        .status {
+          height: 1px;
+          opacity: 0;
+          overflow: hidden;
+          pointer-events: none;
+          position: absolute;
+          width: 1px;
+        }
         .label {
           height: 1px;
           opacity: 0;

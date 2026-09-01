@@ -1675,3 +1675,49 @@ rust/apps/nxtools-desktop/src/ui/
 - `browser_extension/nxtools-interceptor/popup.css`
 - `browser_extension/nxtools-interceptor/popup.js`
 - `browser_extension/nxtools-interceptor/content-script.js`
+
+第六十一个 P1 媒体选择面板 6px Popover 切片（2026-09-01，EX-12）：
+
+- EX-12 将网页媒体选择面板从私有青绿语法(9px 圆角、rgba 青绿边框与 hover、磨砂
+  backdrop blur、双层重阴影)与 999px 胶囊(.quality/.kind/.size + .choice-head)重写为
+  标准语言:.panel 采用 6px Popover(--nt-surface-raised 底、--nt-border 边、与 EX-11
+  触发器同值的单层收敛阴影);.choice 重构为标准两级资源行——标题行(11px/600 单行
+  截断,对齐 popup .resource-title strong)加一条 mono 弱化 meta 行(quality · kind ·
+  size,EX-06 的三稳定位顺序),hover 仅提升背景,行圆角 4px。
+- shadow :host 补充 --nt-text-muted(镜像 popup-tokens.css),EX-14 抽取共享模块。
+- 红色门禁:popup-contract.test.js 新增 EX-12 契约,断言作用域精确限定在面板样式区
+  与行构建函数(拖放目标归 EX-13);先红后绿。
+- 验证:content-script.js 通过 node --check;扩展全部 5 个测试套件通过。不涉及
+  Rust/C# 编译;125%/150% DPI 矩阵归统一人工验收。
+
+第六十二个 P1 拖放目标降噪切片（2026-09-01，EX-13）：
+
+- EX-13 将拖放悬浮目标从"虚线青绿 + 磨砂半透明 + 8px 圆角 + 重阴影 + 文字箭头↓"
+  重写为安静 token 面:不透明 --nt-surface、--nt-border 虚线、6px Popover 圆角、
+  单层收敛阴影;文字回落 --nt-text/--nt-text-secondary;正式 Material 下载 SVG
+  (22px currentColor,--nt-text-secondary)替换文字箭头,与 EX-11 图标同源。
+- 进入态只增强边框与背景:accent-soft 填充 + accent 实线边,图标文字不动——
+  对齐 popup 选中行语言而非整卡强调块。
+- 红色门禁:EX-13 契约限定在拖放 shadow 区;先红后绿。验证同上(5 套件)。
+
+第六十三个 P1 页面隔离共享样式模块切片（2026-09-01，EX-14）：
+
+- EX-14 新增 UMD 模块 shadow-styles.js:唯一权威 token 块 + mediaEntry/dropTarget
+  两个样式段;content-script.js 两个 shadow root 改为插值引用,manifest 在
+  content-script 之前注入模块。两个悬浮入口不再内联任何 :host/--nt-*/青绿 rgba。
+- popup-tokens.css ↔ shadow-styles.js 逐声明同步锁(shadow-styles.test.js),桌面
+  主题变更必须同切片更新两处;EX-11/12/13 门禁改为从模块取样式断言;
+  shadow-styles.test.js 新增(共 6 套件):token 同步锁、插值与 manifest 顺序、
+  各切片契约可达性、退役语法不回流。
+- 验证:两个 JS 通过 node --check;扩展全部 6 个测试套件通过。
+
+第六十四个 P1 悬浮层可访问性切片（2026-09-01，EX-15）：
+
+- EX-15 补齐网页悬浮层的无障碍契约:触发器 aria-haspopup/aria-controls 关联;
+  面板 id + role="group" + aria-label;状态行从 display:none 改为视觉隐藏的
+  role="status" aria-live="polite"(读屏可达);资源行补 aria-label(不再仅靠鼠标
+  tooltip);面板行方向键/Home/End 环绕导航;Escape 关闭时若焦点在面板内则归还
+  触发器;拖放目标 host 标记 aria-hidden(纯指针装饰)。
+- 红色门禁:popup-contract.test.js EX-15 契约锁定上述全部行为;先红后绿。
+- 验证:node --check 通过;扩展全部 6 个测试套件通过。批次 6 至此完成;
+  Release 100/125/150% DPI 截图与人工验收仍归统一打包前验收,不冒领。
