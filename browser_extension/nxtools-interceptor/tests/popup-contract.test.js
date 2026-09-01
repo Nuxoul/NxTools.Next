@@ -9,6 +9,7 @@ const html = fs.readFileSync(path.join(root, "popup.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "popup.css"), "utf8");
 const script = fs.readFileSync(path.join(root, "popup.js"), "utf8");
 const contentScript = fs.readFileSync(path.join(root, "content-script.js"), "utf8");
+const shadowStyles = require(path.join(root, "shadow-styles.js"));
 
 function cssRule(selector) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -243,11 +244,10 @@ test("popup css is token-pure with visible focus and reduced-motion gates (EX-10
 });
 
 test("media entry is a 28px graphite icon button with the real download icon (EX-11)", () => {
-  // EX-11 owns the media ENTRY's shadow style only; the panel (EX-12) and the
-  // drop target (EX-13) keep their own styles until their slices run.
-  const entryStyle = contentScript
-    .split("root.innerHTML = `")[1]
-    .split('<button class="trigger"')[0];
+  // EX-11 owns the media ENTRY's shadow style (since EX-14 it lives in the
+  // shared shadow-styles module); the panel (EX-12) and the drop target
+  // (EX-13) keep their own sections.
+  const entryStyle = shadowStyles.mediaEntry;
   const entryTriggerStyle = entryStyle.split(".panel {")[0];
   // The shadow root defines the shared browser tokens locally until EX-14
   // extracts the style module.
@@ -272,12 +272,11 @@ test("media entry is a 28px graphite icon button with the real download icon (EX
 });
 
 test("media panel is a 6px token popover with standard two-level resource rows (EX-12)", () => {
-  // EX-12 owns the media PANEL style block (from `.panel {` to the end of the
-  // entry shadow style template) plus the choice-row builder. The drop target
-  // is EX-13's separate shadow root and stays out of scope here.
-  const panelStyle = contentScript
-    .split(".panel {")[1]
-    .split("</style>")[0];
+  // EX-12 owns the media PANEL style section (from `.panel {` to the end of
+  // the entry style module) plus the choice-row builder. The drop target is
+  // EX-13's separate shadow root and stays out of scope here.
+  const panelStyle = shadowStyles.mediaEntry
+    .split(".panel {")[1];
   // The teal panel grammar is retired: cyan border/accents, frosted blur,
   // the 9px panel radius, the 7px row radius and the 999px pill capsules.
   assert.doesNotMatch(panelStyle, /rgba\(56,\s*214,\s*199/);
@@ -310,22 +309,20 @@ test("media panel is a 6px token popover with standard two-level resource rows (
   assert.match(builder, /className = "choice-meta"/);
   assert.match(builder, /resourceChoiceQuality[\s\S]*·[\s\S]*resourceChoiceTypeText[\s\S]*·[\s\S]*resourceChoiceSizeText/);
   // The shadow tokens gain the muted text color the meta line needs (mirrors
-  // popup-tokens.css until EX-14 extracts the shared module).
-  const hostTokens = contentScript
+  // popup-tokens.css; EX-14 moved them into the shared module).
+  const hostTokens = shadowStyles.mediaEntry
     .split(":host {")[1]
     .split(".trigger {")[0];
   assert.match(hostTokens, /--nt-text-muted:\s*#858991/);
 });
 
 test("drop target uses the real download icon on a quiet token surface (EX-13)", () => {
-  // EX-13 owns the drop-target shadow root only; the media panel above is
-  // EX-12's scope.
-  const dropRegion = contentScript.split("dropTargetHost.attachShadow")[1];
-  const dropStyle = dropRegion
-    .split(".target {")[1]
-    .split("</style>")[0];
-  const dropHost = dropRegion.split(".target {")[0];
-  const dropMarkup = dropRegion.split("</style>")[1];
+  // EX-13 owns the drop-target shadow style (since EX-14 it lives in the
+  // shared shadow-styles module); the media panel above is EX-12's scope.
+  const dropStyle = shadowStyles.dropTarget
+    .split(".target {")[1];
+  const dropHost = shadowStyles.dropTarget
+    .split(".target {")[0];
   // The teal drop grammar is retired: dashed cyan border, frosted blur, the
   // 8px radius, the heavy two-digit shadow and the text arrow are all gone.
   assert.doesNotMatch(dropStyle, /rgba\(56,\s*214,\s*199/);
@@ -333,7 +330,7 @@ test("drop target uses the real download icon on a quiet token surface (EX-13)",
   assert.doesNotMatch(dropStyle, /border-radius:\s*8px/);
   assert.doesNotMatch(dropStyle, /0 16px 36px/);
   assert.doesNotMatch(dropStyle, /#38d6c7|#8ee6dc|#eafffb/i);
-  assert.doesNotMatch(dropMarkup, /class="icon">↓</);
+  assert.doesNotMatch(contentScript, /class="icon">↓</);
   // Quiet token surface: opaque --nt-surface with a dashed shared border, the
   // 6px popover radius and one restrained single-layer shadow.
   assert.match(dropStyle, /background:\s*var\(--nt-surface,\s*#242529\)/);
@@ -344,12 +341,14 @@ test("drop target uses the real download icon on a quiet token surface (EX-13)",
   assert.match(dropStyle, /small\s*{[^}]*var\(--nt-text-secondary,\s*#b8bac0\)/);
   // Entering the target only enhances border and background: accent-soft fill
   // with a solid accent border; the icon and text stay untouched.
-  const insideStyle = dropRegion.split(":host(.inside)")[1].split("</style>")[0];
+  const insideStyle = shadowStyles.dropTarget.split(":host(.inside)")[1];
   assert.match(
     insideStyle,
     /{\s*background:\s*var\(--nt-accent-soft,\s*#273744\);\s*border-color:\s*var\(--nt-accent,\s*#4791bf\);\s*border-style:\s*solid;\s*}/,
   );
-  // The real download glyph replaces the text arrow.
+  // The real download glyph replaces the text arrow inside the drop target
+  // markup (the content-script region after the style-module interpolation).
+  const dropMarkup = contentScript.split("NxToolsShadowStyles.dropTarget")[1];
   assert.match(
     dropMarkup,
     /class="icon"><svg viewBox="0 0 24 24"[^]*?M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z/,
