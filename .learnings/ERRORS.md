@@ -9897,3 +9897,23 @@ desktop suite is green for the first time since they appeared (338 passed / 0 fa
 - **Resolved**: 2026-09-01T10:10:00+08:00
 - **Notes**: Full desktop suite green (338 passed / 0 failed) with strict clippy
   -D warnings; packaging no longer needs -SkipVerification for these tests.
+
+## ERR-20260901-LOOPBACK-TEST-FLAKINESS (resolved: environmental, packaged with -SkipVerification once)
+
+- **Symptom**: Five consecutive `scripts/package.ps1` runs each failed workspace
+  verification on a DIFFERENT timing-sensitive test: nxtools-download engine_contract
+  (AES-128 HLS loopback request error; ffmpeg mux process did not start; resume probe
+  answered 409) and nxtools-browser-host blob_upload (raw TcpStream ConnectionReset
+  10054 on write and on read). Every failing test passed when re-run in isolation.
+- **Root cause**: This workstation's NIC has third-party NDIS filter drivers
+  (Huorong NDIS Filter, Leigod LightWeight Filter, SpeedupPDrv) plus a Mihomo (Clash
+  kernel) TUN adapter. These mid-stack traffic filters intercept, inspect and re-inject
+  short-lived loopback TCP connections; under full-suite parallel load they randomly
+  reset connections or reorder packets, breaking the in-process test HTTP/TCP servers'
+  state machines.
+- **Not a code regression**: all five failures live in crates untouched by the day's
+  refactor; the desktop crate (the only changed crate) passed its full 338-test suite
+  five separate times, and packaging's PE-subsystem/product-icon gates passed.
+- **Resolution**: one package produced with `-SkipVerification` per user decision so
+  manual acceptance could proceed. For fully verified packages on this machine, exit
+  Huorong / Leigod / Speedup / Mihomo first, then run `scripts/package.ps1` normally.
