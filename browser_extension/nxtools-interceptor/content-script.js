@@ -1528,6 +1528,14 @@
     root.innerHTML = `
       <style>
         :host {
+          /* Shared browser tokens (EX-11); EX-14 extracts these into the
+           * shared style module. Values mirror popup-tokens.css. */
+          --nt-canvas: #1e1f22;
+          --nt-surface-raised: #2a2b2f;
+          --nt-surface-hover: #303238;
+          --nt-border: #44474f;
+          --nt-text: #e0e0e0;
+          --nt-accent: #4791bf;
           font: 13px/18px "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
           height: 28px;
           overflow: visible;
@@ -1536,41 +1544,39 @@
         }
         .trigger {
           align-items: center;
-          background:
-            radial-gradient(circle at 38% 32%, rgba(255,255,255,.75) 0 2px, transparent 3px),
-            linear-gradient(145deg, rgba(56, 214, 199, .98), rgba(20, 138, 125, .96));
-          border: 1px solid rgba(230, 255, 251, .5);
-          border-radius: 999px;
-          box-shadow: 0 8px 18px rgba(0,0,0,.34), 0 0 0 1px rgba(56,214,199,.18);
-          color: #eafffb;
+          background: var(--nt-surface-raised, #2a2b2f);
+          border: 1px solid var(--nt-border, #44474f);
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+          color: var(--nt-text, #e0e0e0);
           cursor: pointer;
           display: inline-flex;
           font: inherit;
-          font-weight: 650;
           height: 28px;
           justify-content: center;
           padding: 0;
           width: 28px;
-          backdrop-filter: blur(14px);
         }
         .trigger:hover {
-          box-shadow: 0 10px 24px rgba(0,0,0,.42), 0 0 0 4px rgba(56,214,199,.16);
-          transform: translateY(-1px);
+          background: var(--nt-surface-hover, #303238);
+          border-color: var(--nt-accent, #4791bf);
         }
-        .trigger:disabled { cursor: default; opacity: .78; transform: none; }
+        .trigger:disabled { cursor: default; opacity: .78; }
         .trigger[aria-expanded="true"] {
-          box-shadow: 0 10px 26px rgba(0,0,0,.44), 0 0 0 4px rgba(56,214,199,.18);
+          border-color: var(--nt-accent, #4791bf);
         }
         .icon {
           align-items: center;
-          color: #061412;
+          color: var(--nt-text, #e0e0e0);
           display: inline-flex;
-          font-size: 16px;
-          font-weight: 800;
           height: 28px;
           justify-content: center;
-          line-height: 28px;
           width: 28px;
+        }
+        .icon svg {
+          height: 16px;
+          width: 16px;
+          fill: currentColor;
         }
         .status { display: none; }
         .label {
@@ -1661,7 +1667,7 @@
         }
       </style>
       <button class="trigger" type="button" title="选择媒体资源" aria-expanded="false">
-        <span class="icon">↓</span>
+        <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
         <span class="label">下载此媒体</span>
         <span class="status"></span>
       </button>

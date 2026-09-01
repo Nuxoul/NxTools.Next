@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "popup.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "popup.css"), "utf8");
 const script = fs.readFileSync(path.join(root, "popup.js"), "utf8");
+const contentScript = fs.readFileSync(path.join(root, "content-script.js"), "utf8");
 
 function cssRule(selector) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -238,6 +239,35 @@ test("popup css is token-pure with visible focus and reduced-motion gates (EX-10
   assert.match(
     css,
     /prefers-reduced-motion:\s*reduce[\s\S]*animation-duration:\s*0\.01ms[\s\S]*transition-duration:\s*0\.01ms/,
+  );
+});
+
+test("media entry is a 28px graphite icon button with the real download icon (EX-11)", () => {
+  // EX-11 owns the media ENTRY's shadow style only; the panel (EX-12) and the
+  // drop target (EX-13) keep their own styles until their slices run.
+  const entryStyle = contentScript
+    .split("root.innerHTML = `")[1]
+    .split('<button class="trigger"')[0];
+  const entryTriggerStyle = entryStyle.split(".panel {")[0];
+  // The shadow root defines the shared browser tokens locally until EX-14
+  // extracts the style module.
+  assert.match(entryStyle, /--nt-surface-raised:\s*#2a2b2f/);
+  assert.match(entryStyle, /--nt-accent:\s*#4791bf/);
+  // The cyan gradient ball grammar is retired from the trigger: teal gradients,
+  // frosted blur, heavy shadows, cyan rings and the pill radius are all gone.
+  assert.doesNotMatch(entryTriggerStyle, /rgba\(56,\s*214,\s*199/);
+  assert.doesNotMatch(entryTriggerStyle, /rgba\(20,\s*138,\s*125/);
+  assert.doesNotMatch(entryTriggerStyle, /#061412/i);
+  assert.doesNotMatch(entryTriggerStyle, /backdrop-filter/);
+  assert.doesNotMatch(entryTriggerStyle, /border-radius:\s*999px/);
+  // The trigger is a 28px graphite control with the desktop 4px control radius.
+  assert.match(entryTriggerStyle, /background:\s*var\(--nt-surface-raised,\s*#2a2b2f\)/);
+  assert.match(entryTriggerStyle, /border:\s*1px solid var\(--nt-border,\s*#44474f\)/);
+  assert.match(entryTriggerStyle, /border-radius:\s*4px/);
+  // The real download glyph replaces the text arrow inside the entry button.
+  assert.match(
+    contentScript,
+    /class="trigger"[^]*?M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z/,
   );
 });
 

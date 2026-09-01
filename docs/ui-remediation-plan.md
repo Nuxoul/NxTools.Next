@@ -1486,6 +1486,21 @@ rust/apps/nxtools-desktop/src/ui/
 - 验证:扩展全部 5 个测试套件通过。EX-01~10 的契约测试共同构成 Popup 的完整回归网。
   本切片不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
 
+第五十九个 P1 媒体悬浮入口石墨化切片（2026-09-01，自动化管线运行）：
+
+- EX-11 将网页媒体悬浮入口从"青绿渐变圆球"(径向高光 + 青绿渐变、999px 胶囊、
+  重阴影 + 青色光环、backdrop blur)重写为 28px 石墨色图标按钮:`--nt-surface-raised` 底、
+  `--nt-border` 边框、桌面 4px 控件圆角、收敛的单层小阴影;hover 使用 surface-hover +
+  accent 边框,展开态以 accent 边框示意;无 backdrop-filter。
+- 真实下载图标:文字箭头"↓"(深青 #061412)替换为内联 Material download SVG
+  (16px,currentColor);shadow :host 定义本地共享 token(镜像 popup-tokens.css,
+  EX-14 抽取为共享样式模块)。
+- 作用域纪律:入口面板(.panel)属 EX-12、拖放目标属 EX-13——红色门禁的断言作用域
+  精确限定在入口触发器样式区(`.panel {` 之前),面板内残留的青色边框不在本切片
+  处置范围;红色门禁先红后绿(作用域两次收窄后全绿)。
+- 验证:content-script.js 通过 node --check;扩展全部 5 个测试套件通过。本切片
+  不涉及 Rust/C# 编译;未生成 Release 包,125%/150% DPI 矩阵仍归统一人工验收。
+
 第四十三个 P0 设计令牌静态门禁切片（2026-08-31）：
 
 - 新增 `tests/architecture/ui-token-boundaries.ps1`：除 `ui/typography.rs`、`ui/metrics.rs`、
