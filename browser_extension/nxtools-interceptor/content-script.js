@@ -1535,6 +1535,7 @@
           --nt-surface-hover: #303238;
           --nt-border: #44474f;
           --nt-text: #e0e0e0;
+          --nt-text-muted: #858991;
           --nt-accent: #4791bf;
           font: 13px/18px "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
           height: 28px;
@@ -1589,81 +1590,64 @@
         }
         .error { color: #ff9b91; }
         .panel {
-          background: rgba(17, 19, 20, 0.96);
-          border: 1px solid rgba(56, 214, 199, .36);
-          border-radius: 9px;
-          box-shadow: 0 18px 40px rgba(0,0,0,.34);
+          background: var(--nt-surface-raised, #2a2b2f);
+          border: 1px solid var(--nt-border, #44474f);
+          border-radius: 6px;
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
           display: grid;
-          gap: 5px;
+          gap: 3px;
           max-width: min(430px, calc(100vw - 16px));
           max-height: min(386px, calc(100vh - 72px));
           overflow: auto;
-          padding: 5px;
+          padding: 4px;
           position: absolute;
           right: 0;
           top: 34px;
           width: min(414px, calc(100vw - 16px));
-          backdrop-filter: blur(16px);
         }
         .panel[hidden] { display: none; }
         .choice {
           align-items: start;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.055);
-          border-radius: 7px;
-          box-shadow: none;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 4px;
           display: grid;
-          gap: 4px;
+          gap: 2px;
           grid-template-columns: minmax(0, 1fr);
-          min-height: 66px;
-          padding: 7px 8px;
+          min-height: 44px;
+          padding: 6px 8px;
           text-align: left;
           width: 100%;
           cursor: pointer;
         }
-        .choice:hover { background: rgba(255,255,255,.08); border-color: rgba(56,214,199,.32); }
-        .choice:focus-visible { outline: 2px solid rgba(56,214,199,.72); outline-offset: 1px; }
+        .choice:hover {
+          background: var(--nt-surface-hover, #303238);
+        }
+        .choice:focus-visible { outline: 2px solid var(--nt-accent, #4791bf); outline-offset: 1px; }
         .choice span {
           min-width: 0;
         }
-        .choice-head {
-          align-items: center;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 5px;
-        }
-        .quality,
-        .kind,
-        .size {
-          border: 1px solid rgba(56,214,199,.16);
-          border-radius: 999px;
-          line-height: 17px;
-          padding: 0 6px;
-          white-space: nowrap;
-        }
-        .quality { color: #eafffb; font-size: 12px; font-weight: 750; }
-        .kind { background: rgba(56,214,199,.10); color: #a9fff4; font-size: 11.5px; font-weight: 700; }
-        .size { color: #d9e3de; font-size: 11px; }
         .choice-file {
-          color: #f5f3ee;
-          display: -webkit-box;
-          font-size: 11.5px;
-          font-weight: 620;
-          line-height: 15.5px;
-          max-height: 31px;
+          color: var(--nt-text, #e0e0e0);
+          display: block;
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 15px;
           overflow: hidden;
           overflow-wrap: anywhere;
-          white-space: normal;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
         .choice-meta {
-          color: #9aa7a3;
+          color: var(--nt-text-muted, #858991);
           display: block;
-          font-size: 10.5px;
+          font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
           line-height: 14px;
+          overflow: hidden;
           overflow-wrap: anywhere;
-          white-space: normal;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
       </style>
       <button class="trigger" type="button" title="选择媒体资源" aria-expanded="false">
@@ -1749,32 +1733,15 @@
         choice.dataset.index = String(index);
         choice.title = `${resourceChoiceLabel(candidate, index)}\n${resourceChoiceFileText(candidate, index)}\n${resourceChoiceMetaText(candidate)}`;
 
-        const head = document.createElement("div");
-        head.className = "choice-head";
-
-        const quality = document.createElement("span");
-        quality.className = "quality";
-        quality.textContent = resourceChoiceQuality(candidate, index);
-
-        const kind = document.createElement("span");
-        kind.className = "kind";
-        kind.textContent = resourceChoiceTypeText(candidate);
-
-        const size = document.createElement("span");
-        size.className = "size";
-        size.textContent = resourceChoiceSizeText(candidate);
-
-        head.append(quality, kind, size);
-
         const file = document.createElement("span");
         file.className = "choice-file";
         file.textContent = resourceChoiceFileText(candidate, index);
 
         const meta = document.createElement("span");
         meta.className = "choice-meta";
-        meta.textContent = resourceChoiceMetaText(candidate);
+        meta.textContent = `${resourceChoiceQuality(candidate, index)} · ${resourceChoiceTypeText(candidate)} · ${resourceChoiceSizeText(candidate)}`;
 
-        choice.append(head, file, meta);
+        choice.append(file, meta);
         return choice;
       });
       panel.replaceChildren(...rows);

@@ -271,4 +271,50 @@ test("media entry is a 28px graphite icon button with the real download icon (EX
   );
 });
 
+test("media panel is a 6px token popover with standard two-level resource rows (EX-12)", () => {
+  // EX-12 owns the media PANEL style block (from `.panel {` to the end of the
+  // entry shadow style template) plus the choice-row builder. The drop target
+  // is EX-13's separate shadow root and stays out of scope here.
+  const panelStyle = contentScript
+    .split(".panel {")[1]
+    .split("</style>")[0];
+  // The teal panel grammar is retired: cyan border/accents, frosted blur,
+  // the 9px panel radius, the 7px row radius and the 999px pill capsules.
+  assert.doesNotMatch(panelStyle, /rgba\(56,\s*214,\s*199/);
+  assert.doesNotMatch(panelStyle, /backdrop-filter/);
+  assert.doesNotMatch(panelStyle, /border-radius:\s*9px/);
+  assert.doesNotMatch(panelStyle, /border-radius:\s*7px/);
+  assert.doesNotMatch(panelStyle, /border-radius:\s*999px/);
+  assert.doesNotMatch(panelStyle, /0 18px 40px/);
+  assert.doesNotMatch(panelStyle, /\.quality\b|\.kind\b|\.size\b/);
+  // The panel is the standard 6px popover on the raised surface with the
+  // shared border and one restrained single-layer shadow.
+  assert.match(panelStyle, /background:\s*var\(--nt-surface-raised,\s*#2a2b2f\)/);
+  assert.match(panelStyle, /border:\s*1px solid var\(--nt-border,\s*#44474f\)/);
+  assert.match(panelStyle, /border-radius:\s*6px/);
+  assert.match(panelStyle, /box-shadow:\s*0 10px 26px rgba\(0,\s*0,\s*0,\s*0\.28\)/);
+  // Resource rows follow the two-level standard: hover lifts the background
+  // only, the title line ellipses like the popup resource rows, and the meta
+  // line is one muted mono string.
+  assert.match(panelStyle, /\.choice:hover\s*{\s*background:\s*var\(--nt-surface-hover/);
+  assert.match(panelStyle, /\.choice-file\s*{[^}]*white-space:\s*nowrap/);
+  assert.match(panelStyle, /\.choice-meta\s*{[^}]*Cascadia Mono/);
+  assert.match(panelStyle, /\.choice-meta\s*{[^}]*var\(--nt-text-muted,\s*#858991\)/);
+  // The builder emits exactly two levels per row: title plus one
+  // `quality · kind · size` meta line; the pill head is gone.
+  const builder = contentScript
+    .split("function showResourceChoices")[1]
+    .split("panel.replaceChildren")[0];
+  assert.doesNotMatch(builder, /choice-head|className = "quality"|className = "kind"|className = "size"/);
+  assert.match(builder, /className = "choice-file"/);
+  assert.match(builder, /className = "choice-meta"/);
+  assert.match(builder, /resourceChoiceQuality[\s\S]*·[\s\S]*resourceChoiceTypeText[\s\S]*·[\s\S]*resourceChoiceSizeText/);
+  // The shadow tokens gain the muted text color the meta line needs (mirrors
+  // popup-tokens.css until EX-14 extracts the shared module).
+  const hostTokens = contentScript
+    .split(":host {")[1]
+    .split(".trigger {")[0];
+  assert.match(hostTokens, /--nt-text-muted:\s*#858991/);
+});
+
 console.log("popup contract tests passed");
