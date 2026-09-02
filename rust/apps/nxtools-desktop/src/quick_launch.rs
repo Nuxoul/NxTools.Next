@@ -62,6 +62,22 @@ use crate::ui::{
 mod file_dialog_search;
 use file_dialog_search::FileDialogSearchSession;
 
+/// Count-only index status changes are file-churn telemetry: they coalesce
+/// into at most one log record per interval while structural changes always
+/// log immediately.
+const INDEX_COUNT_STATUS_LOG_INTERVAL: Duration = Duration::from_secs(60);
+
+pub(crate) fn should_log_index_status_change(
+    count_only: bool,
+    last_logged: Option<Instant>,
+    now: Instant,
+) -> bool {
+    !count_only
+        || last_logged
+            .map(|logged| now.duration_since(logged) >= INDEX_COUNT_STATUS_LOG_INTERVAL)
+            .unwrap_or(true)
+}
+
 const PANEL_WIDTH: f32 = 620.0;
 const PANEL_HEIGHT: f32 = 410.0;
 const SEARCH_HEADER_HEIGHT: f32 = 42.0;
@@ -186,6 +202,7 @@ pub(crate) struct QuickLaunchApplication {
     index_status: Option<IndexStatus>,
     index_search: IndexSearchSession,
     last_local_search_us: Option<u64>,
+    last_count_status_log: Option<Instant>,
 }
 
 impl EventEmitter<QuickLaunchApplicationEvent> for QuickLaunchApplication {}
@@ -252,6 +269,7 @@ impl QuickLaunchApplication {
             index_status: None,
             index_search: IndexSearchSession::default(),
             last_local_search_us: None,
+            last_count_status_log: None,
         }
     }
 
@@ -718,11 +736,25 @@ impl QuickLaunchApplication {
             IndexerNotification::Event(IndexerEvent::Status(status))
                 if index_status_affects_presentation(self.index_status.as_ref(), status) =>
             {
-                info!(
-                phase = ?status.phase,
-                indexed_items = status.indexed_items,
-                "quick-launch index provider status changed"
-                )
+                // Count-only updates arrive at journal-poll frequency on a
+                // live system; they coalesce into rate-limited records while
+                // phase, error and drive-structure changes always log.
+                let count_only = index_status_count_only_change(self.index_status.as_ref(), status);
+                if should_log_index_status_change(
+                    count_only,
+                    self.last_count_status_log,
+                    Instant::now(),
+                ) {
+                    info!(
+                        phase = ?status.phase,
+                        indexed_items = status.indexed_items,
+                        count_only,
+                        "quick-launch index provider status changed"
+                    );
+                    if count_only {
+                        self.last_count_status_log = Some(Instant::now());
+                    }
+                }
             }
             IndexerNotification::Event(IndexerEvent::Status(_)) => {}
             IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) => info!(
@@ -6822,6 +6854,66 @@ mod tests {
             .expect("select_result source");
 
         assert!(!select_result.contains("result_scroll.set_offset"));
+    }
+
+    #[test]
+    fn count_only_status_changes_coalesce_into_rate_limited_logs() {
+        let base = IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 100,
+            drives: vec![nxtools_protocol::IndexDriveStatus {
+                mount_point: r"C:\".into(),
+                file_system: "NTFS".into(),
+                indexed_items: 100,
+                journal_id: Some(7),
+                next_usn: None,
+            }],
+            last_error: None,
+        };
+        let count_change = IndexStatus {
+            indexed_items: 101,
+            drives: vec![nxtools_protocol::IndexDriveStatus {
+                indexed_items: 101,
+                ..base.drives[0].clone()
+            }],
+            ..base.clone()
+        };
+        assert!(index_status_affects_presentation(
+            Some(&base),
+            &count_change
+        ));
+        assert!(index_status_count_only_change(Some(&base), &count_change));
+
+        let phase_change = IndexStatus {
+            phase: nxtools_protocol::IndexPhase::VolumesReady,
+            ..base.clone()
+        };
+        assert!(!index_status_count_only_change(Some(&base), &phase_change));
+
+        let mut journal_change = base.clone();
+        journal_change.drives[0].journal_id = Some(8);
+        assert!(!index_status_count_only_change(
+            Some(&base),
+            &journal_change
+        ));
+
+        let error_change = IndexStatus {
+            last_error: Some("volume denied".into()),
+            ..base.clone()
+        };
+        assert!(!index_status_count_only_change(Some(&base), &error_change));
+
+        // A first status always logs; a repeat inside the interval does not.
+        let now = Instant::now();
+        assert!(should_log_index_status_change(true, None, now));
+        assert!(!should_log_index_status_change(true, Some(now), now));
+        assert!(should_log_index_status_change(
+            true,
+            Some(now - INDEX_COUNT_STATUS_LOG_INTERVAL),
+            now
+        ));
+        // Structural changes log regardless of the last count-only record.
+        assert!(should_log_index_status_change(false, Some(now), now));
     }
 
     #[test]

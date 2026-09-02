@@ -318,6 +318,31 @@ pub(crate) fn index_status_affects_presentation(
             })
 }
 
+/// True when the presentation changed only through item counts: phase, error
+/// and drive structure are identical, so the change is high-frequency file
+/// churn telemetry rather than a state transition worth its own log record.
+pub(crate) fn index_status_count_only_change(
+    previous: Option<&IndexStatus>,
+    current: &IndexStatus,
+) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    index_status_affects_presentation(Some(previous), current)
+        && previous.phase == current.phase
+        && previous.last_error == current.last_error
+        && previous.drives.len() == current.drives.len()
+        && previous
+            .drives
+            .iter()
+            .zip(&current.drives)
+            .all(|(previous, current)| {
+                previous.mount_point == current.mount_point
+                    && previous.file_system == current.file_system
+                    && previous.journal_id == current.journal_id
+            })
+}
+
 #[derive(Default)]
 pub(crate) struct ImeEnterGate {
     pub(crate) composition_seen: bool,
