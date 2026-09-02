@@ -256,6 +256,19 @@ fn handle_connection(
     );
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
+    // Windows sends RST - which can destroy a response the peer has already
+    // received but not read - whenever a socket closes with unread receive
+    // data. The bounded rejection drains above can give up early under
+    // scheduling pressure, so drain once more to a bounded close: EOF when the
+    // peer closes, or one read timeout when it lingers.
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+    let mut sink = [0_u8; 4096];
+    loop {
+        match stream.read(&mut sink) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -899,20 +912,45 @@ mod tests {
     }
 
     fn post_blob(service: &BlobUploadService, path: &str, offset: u64, body: &[u8]) -> String {
-        let mut stream = TcpStream::connect(service.address()).expect("connect loopback upload");
-        write!(
-            stream,
-            "POST {path}?offset={offset} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nContent-Type: text/plain;charset=UTF-8\r\nConnection: close\r\n\r\n",
-            service.address(),
-            body.len()
-        )
-        .expect("write Blob request headers");
-        stream.write_all(body).expect("write Blob request body");
-        let mut response = String::new();
-        stream
-            .read_to_string(&mut response)
-            .expect("read Blob response");
-        response
+        // A reset or software abort while establishing the connection or
+        // before the request headers are fully written cannot have reached
+        // the upload state machine, so a fresh connection is observationally
+        // identical to the first attempt. Once the headers are written the
+        // attempt commits: body and response failures surface as-is.
+        const TRANSPORT_ATTEMPTS: usize = 3;
+        let mut last_transport_error: Option<std::io::Error> = None;
+        for attempt in 0..TRANSPORT_ATTEMPTS {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            let mut stream = match TcpStream::connect(service.address()) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    last_transport_error = Some(error);
+                    continue;
+                }
+            };
+            match write!(
+                stream,
+                "POST {path}?offset={offset} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nContent-Type: text/plain;charset=UTF-8\r\nConnection: close\r\n\r\n",
+                service.address(),
+                body.len()
+            ) {
+                Ok(()) => {
+                    stream.write_all(body).expect("write Blob request body");
+                    let mut response = String::new();
+                    stream
+                        .read_to_string(&mut response)
+                        .expect("read Blob response");
+                    return response;
+                }
+                Err(error) => last_transport_error = Some(error),
+            }
+        }
+        panic!(
+            "write Blob request headers after {TRANSPORT_ATTEMPTS} attempts: {}",
+            last_transport_error.expect("transport error")
+        );
     }
 
     fn unique_test_directory() -> PathBuf {
