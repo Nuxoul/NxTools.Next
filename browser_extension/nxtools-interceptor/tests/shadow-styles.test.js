@@ -39,12 +39,14 @@ test("shadow tokens mirror popup-tokens.css declaration for declaration", () => 
 test("both shadow roots interpolate the shared module (EX-14)", () => {
   assert.match(
     contentScript,
-    /<style>\s*\$\{NxToolsShadowStyles\.mediaEntry\}\s*<\/style>/,
+    /entrySheet\.replaceSync\(NxToolsShadowStyles\.mediaEntry\)/,
   );
   assert.match(
     contentScript,
-    /<style>\s*\$\{NxToolsShadowStyles\.dropTarget\}\s*<\/style>/,
+    /dropSheet\.replaceSync\(NxToolsShadowStyles\.dropTarget\)/,
   );
+  assert.match(contentScript, /adoptedStyleSheets = \[entrySheet\]/);
+  assert.match(contentScript, /adoptedStyleSheets = \[dropSheet\]/);
   // Page isolation: the content script carries no inline style copies
   // anymore - tokens, radii and surfaces live only in the module.
   assert.doesNotMatch(contentScript, /backdrop-filter/);

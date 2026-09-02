@@ -1530,10 +1530,12 @@
     });
 
     const root = overlayHost.attachShadow({ mode: "open" });
+    // Adoptable stylesheets keep the overlay styled on pages whose CSP
+    // forbids inline <style> elements.
+    const entrySheet = new CSSStyleSheet();
+    entrySheet.replaceSync(NxToolsShadowStyles.mediaEntry);
+    root.adoptedStyleSheets = [entrySheet];
     root.innerHTML = `
-      <style>
-        ${NxToolsShadowStyles.mediaEntry}
-      </style>
       <button class="trigger" type="button" title="选择媒体资源" aria-haspopup="true" aria-controls="nxtools-media-panel" aria-expanded="false">
         <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
         <span class="label">下载此媒体</span>
@@ -1963,10 +1965,10 @@
     });
 
     const root = dropTargetHost.attachShadow({ mode: "open" });
+    const dropSheet = new CSSStyleSheet();
+    dropSheet.replaceSync(NxToolsShadowStyles.dropTarget);
+    root.adoptedStyleSheets = [dropSheet];
     root.innerHTML = `
-      <style>
-        ${NxToolsShadowStyles.dropTarget}
-      </style>
       <div class="target">
         <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
         <strong>拖到这里下载</strong>

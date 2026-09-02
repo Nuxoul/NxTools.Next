@@ -2163,7 +2163,7 @@ function injectContentBridge(tabId, pageUrl = "") {
 
     chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      files: ["content-script.js"],
+      files: ["shadow-styles.js", "blob-transfer-policy.js", "content-script.js"],
       injectImmediately: false
     }, () => {
       const lastError = chrome.runtime.lastError;
