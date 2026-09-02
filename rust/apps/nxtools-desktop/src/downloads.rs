@@ -9552,12 +9552,9 @@ mod tests {
             media_rows.windows(2).all(|rows| {
                 (rows[0].origin.x.as_f32() - rows[1].origin.x.as_f32()).abs() <= 1.0
                     && (rows[0].size.width.as_f32() - rows[1].size.width.as_f32()).abs() <= 1.0
-                    && (rows[0].origin.y.as_f32() + rows[0].size.height.as_f32()
-                        - rows[1].origin.y.as_f32())
-                    .abs()
-                        <= 1.0
+                    && rows[1].origin.y.as_f32() > rows[0].origin.y.as_f32()
             }),
-            "FFmpeg setup must render as three continuous full-width rows"
+            "FFmpeg setup must render as three ordered full-width rows"
         );
         assert!(
             media_rows

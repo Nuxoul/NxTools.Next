@@ -1,4 +1,27 @@
 use super::*;
+
+/// Translates raw engine failure text into guidance the user can act on.
+/// The engine strings stay canonical for logs; only the surfaced message is
+/// humanized.
+pub(crate) fn humanize_download_fault(message: &str) -> String {
+    if message.contains("status 404") {
+        "服务器返回 404:该地址不存在或已过期。确认链接是否仍有效，或改用页面上的真实文件直链。"
+            .into()
+    } else if message.contains("status 403") {
+        "服务器返回 403:拒绝访问。这类直链通常只允许原来的浏览器会话下载(防盗链)，请从页面重新获取下载地址。".into()
+    } else if message.contains("status 4") || message.contains("status 5") {
+        format!("服务器返回错误({message})。地址可能已失效或需要登录，请在浏览器中确认后重试。")
+    } else if message.to_lowercase().contains("timed out")
+        || message.to_lowercase().contains("timeout")
+    {
+        "连接超时。检查网络与代理设置后重试；若使用系统代理，尝试切换为直连。".into()
+    } else if message.to_lowercase().contains("dns") {
+        "域名解析失败。检查链接拼写与网络连接。".into()
+    } else {
+        message.to_owned()
+    }
+}
+
 use crate::ui::metrics::ICON_GLYPH_SMALL;
 
 #[derive(Clone)]
@@ -392,7 +415,7 @@ impl NewDownloadView {
         let request = match self.request(cx) {
             Ok(request) => request,
             Err(error) => {
-                self.error = Some(error);
+                self.error = Some(humanize_download_fault(&error));
                 self.confirmed_request = None;
                 self.probe = None;
                 cx.notify();
@@ -470,7 +493,7 @@ impl NewDownloadView {
                         true
                     }
                     DownloadCommandOutcome::Rejected { fault } => {
-                        this.error = Some(fault.message);
+                        this.error = Some(humanize_download_fault(&fault.message));
                         false
                     }
                     _ => {
@@ -560,7 +583,7 @@ impl NewDownloadView {
                     Err(message) => {
                         let _ = view.update(cx, |view, cx| {
                             view.submitting = false;
-                            view.error = Some(message);
+                            view.error = Some(humanize_download_fault(&message));
                             cx.notify();
                         });
                     }
@@ -571,7 +594,7 @@ impl NewDownloadView {
         let current = match self.request(cx) {
             Ok(request) => request,
             Err(error) => {
-                self.error = Some(error);
+                self.error = Some(humanize_download_fault(&error));
                 cx.notify();
                 return;
             }
@@ -589,7 +612,7 @@ impl NewDownloadView {
         ) {
             Ok(media) => media,
             Err(error) => {
-                self.error = Some(error);
+                self.error = Some(humanize_download_fault(&error));
                 cx.notify();
                 return;
             }

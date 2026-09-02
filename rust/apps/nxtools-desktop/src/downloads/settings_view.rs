@@ -2573,10 +2573,9 @@ pub(crate) fn download_settings_section(
         .w_full()
         .flex()
         .flex_col()
+        .gap(px(SPACING_8))
         .child(
             div()
-                .pb(px(SPACING_4))
-                .px(px(SPACING_12))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(FontWeight::SEMIBOLD)
@@ -2584,13 +2583,7 @@ pub(crate) fn download_settings_section(
                 .child(title),
         )
         .children(rows)
-        .child(
-            div()
-                .mt(px(SPACING_8))
-                .h(px(1.0))
-                .w_full()
-                .bg(theme.border_subtle),
-        )
+        .child(div().h(px(1.0)).w_full().bg(theme.border_subtle))
         .into_any_element()
 }
 
@@ -2701,8 +2694,7 @@ pub(crate) fn download_settings_row(
     div()
         .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
         .px(px(SPACING_8))
-        .border_b_1()
-        .border_color(theme.border_subtle)
+        .py(px(SPACING_4))
         .flex()
         .items_center()
         .gap(px(SPACING_12))
