@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using NxTools.PlatformHost.Diagnostics;
@@ -155,6 +156,12 @@ internal static class Program
         {
             try
             {
+                // WinForms-installing tests (tray icon, context menus) leave a
+                // WindowsFormsSynchronizationContext on this thread; a console
+                // runner has no message pump, so the first later async test
+                // that suspends posts its continuation into that dead context
+                // and the suite freezes. Every test starts ambient-free.
+                SynchronizationContext.SetSynchronizationContext(null);
                 Console.WriteLine($"RUN {test.Name}");
                 await test.Run();
                 Console.WriteLine($"PASS {test.Name}");
