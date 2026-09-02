@@ -115,12 +115,17 @@ struct TransferRateSampler {
 const ADAPTIVE_SAMPLE_COUNT: usize = 5;
 const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
 const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
+/// A transfer whose average speed stays below this share of the baseline for
+/// a full stability window shrinks back one segment at a time, down to the
+/// initial segment count.
+const ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT: u64 = 60;
 const MIB: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AdaptiveConnectionDecision {
     Hold,
     Grow,
+    Shrink,
     DisabledAfterRetry,
     DisabledForLowBenefit,
 }
@@ -131,6 +136,9 @@ struct AdaptiveSegmentController {
     samples: VecDeque<u64>,
     pending_evaluation: Option<(u64, u16, u16)>,
     disabled: bool,
+    /// Baseline speed recorded right before the last growth batch; shrink
+    /// compares the current average against it.
+    growth_baseline: Option<(u64, u16)>,
 }
 
 impl AdaptiveSegmentController {
@@ -140,6 +148,7 @@ impl AdaptiveSegmentController {
             samples: VecDeque::with_capacity(ADAPTIVE_SAMPLE_COUNT),
             pending_evaluation: None,
             disabled: !enabled || max_segments <= 1,
+            growth_baseline: None,
         }
     }
 
@@ -203,9 +212,57 @@ impl AdaptiveSegmentController {
             return AdaptiveConnectionDecision::Hold;
         }
         let baseline_segments = segment_count.max(1);
+        self.growth_baseline = Some((average, baseline_segments));
         self.pending_evaluation = Some((average, baseline_segments, baseline_segments));
         self.samples.clear();
         AdaptiveConnectionDecision::Grow
+    }
+
+    /// Shrink fires when the transfer has grown beyond its initial segment
+    /// count and a full stability window now averages below the configured
+    /// share of the pre-growth baseline: the extra segments stopped paying
+    /// for themselves, so shed one.
+    fn observe_shrink(
+        &mut self,
+        bytes_per_second: u64,
+        segment_count: u16,
+        initial_segment_count: u16,
+    ) -> AdaptiveConnectionDecision {
+        if self.disabled || segment_count <= initial_segment_count || segment_count <= 1 {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        let Some((baseline_speed, baseline_segments)) = self.growth_baseline else {
+            return AdaptiveConnectionDecision::Hold;
+        };
+        if baseline_speed == 0 {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        self.samples.push_back(bytes_per_second);
+        while self.samples.len() > ADAPTIVE_SAMPLE_COUNT {
+            self.samples.pop_front();
+        }
+        if self.samples.len() < ADAPTIVE_SAMPLE_COUNT || !adaptive_samples_are_stable(&self.samples)
+        {
+            return AdaptiveConnectionDecision::Hold;
+        }
+        let average = self.samples.iter().copied().sum::<u64>()
+            / u64::try_from(self.samples.len()).unwrap_or(1);
+        self.samples.clear();
+        let baseline_segments = u128::from(baseline_segments.max(1));
+        let grown_segments = u128::from(segment_count.max(1));
+        // The baseline earned by baseline_segments is the reference; the
+        // per-segment fair share decides whether the extra segments still
+        // carry meaningful traffic.
+        let expected = u128::from(baseline_speed)
+            .saturating_mul(grown_segments)
+            .saturating_div(baseline_segments)
+            .saturating_mul(u128::from(ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT))
+            / 100;
+        if u128::from(average) < expected {
+            AdaptiveConnectionDecision::Shrink
+        } else {
+            AdaptiveConnectionDecision::Hold
+        }
     }
 
     fn confirm_growth_target(&mut self, target_segments: u16) {
@@ -223,6 +280,14 @@ impl AdaptiveSegmentController {
     fn cancel_growth(&mut self) {
         self.pending_evaluation = None;
         self.samples.clear();
+    }
+
+    fn record_completed_growth(&mut self, grown_segments: u16) {
+        if let Some((baseline_speed, baseline_segments)) = self.growth_baseline
+            && grown_segments > baseline_segments
+        {
+            self.growth_baseline = Some((baseline_speed, grown_segments.min(self.max_segments)));
+        }
     }
 }
 
@@ -6184,7 +6249,9 @@ async fn run_segmented_task(
     let mut paused = false;
     let mut cancelled = false;
     let mut pending_rebalance = None;
+    let mut pending_shrink: Option<u32> = None;
     let mut adaptive_growth_remaining = 0_usize;
+    let initial_segment_count = u16::try_from(segments.len()).unwrap_or(u16::MAX);
     let target_connections = usize::from(max_connections);
     let mut segment_count = segments.len();
     let adaptive_policy = request.adaptive_segment_policy.unwrap_or_default();
@@ -6227,11 +6294,21 @@ async fn run_segmented_task(
                 sampled_at = now;
                 sampled_bytes = downloaded;
                 let current_segments = u16::try_from(segment_count).unwrap_or(u16::MAX);
-                match adaptive.observe(
+                let observed = adaptive.observe(
                     speed,
                     current_segments,
                     retry_observed.load(Ordering::Acquire),
-                ) {
+                );
+                let decision = if matches!(observed, AdaptiveConnectionDecision::Hold) {
+                    adaptive.observe_shrink(
+                        speed,
+                        current_segments,
+                        initial_segment_count,
+                    )
+                } else {
+                    observed
+                };
+                match decision {
                     AdaptiveConnectionDecision::Grow if pending_rebalance.is_none() => {
                         adaptive_growth_remaining =
                             adaptive_max_segments.saturating_sub(segment_count).min(4);
@@ -6275,6 +6352,35 @@ async fn run_segmented_task(
                             adaptive.cancel_growth();
                         }
                     }
+                    AdaptiveConnectionDecision::Shrink => {
+                        // Shed one segment: pick the one with the most
+                        // remaining bytes, cancel its worker, checkpoint it
+                        // back to Waiting, merge its untouched range into the
+                        // neighbouring Waiting segment and respawn that
+                        // neighbour. segment_count is decremented when the
+                        // joined worker is reaped below.
+                        if let Some((candidate_index, _remaining)) = select_rebalance_candidate(
+                            inner,
+                            task_id,
+                            &worker_controls,
+                            &progress_by_segment,
+                            adaptive_min_remaining_bytes,
+                        )? && let Some(candidate_control) = worker_controls.get(&candidate_index)
+                        {
+                            candidate_control.request_rebalance();
+                            pending_shrink = Some(candidate_index);
+                            info!(
+                                event = "download.adaptive_segments.shrink_requested",
+                                %correlation_id,
+                                ?task_id,
+                                segment_index = candidate_index,
+                                sampled_bytes_per_second = speed,
+                                current_segments,
+                                initial_segments = initial_segment_count,
+                                "stable slow transfer shed one adaptive segment"
+                            );
+                        }
+                    }
                     AdaptiveConnectionDecision::DisabledAfterRetry => {
                         adaptive_growth_remaining = 0;
                         warn!(
@@ -6307,6 +6413,95 @@ async fn run_segmented_task(
         worker_controls.remove(&segment.index());
         if pending_rebalance == Some(segment.index()) {
             pending_rebalance = None;
+        }
+        let shrink_requested = pending_shrink == Some(segment.index());
+        if shrink_requested {
+            pending_shrink = None;
+        }
+        let skip_shrink = pending_shrink.is_none()
+            || paused
+            || cancelled
+            || first_error.is_some()
+            || !u16::try_from(segment_count)
+                .map(|count| count > initial_segment_count)
+                .unwrap_or(false);
+        // Adaptive shrink: the shed worker exits through its cancel path with
+        // its remaining range checkpointed back to Waiting; fold that range
+        // into the neighbouring Waiting segment and respawn the neighbour.
+        if shrink_requested && !skip_shrink {
+            let Some(plan) = inner.store.load_transfer_plan(task_id)? else {
+                info!(
+                    event = "download.adaptive_segments.shrink_missing_plan",
+                    %correlation_id,
+                    ?task_id,
+                    "adaptive shrink skipped: transfer plan disappeared"
+                );
+                // The shed worker simply exits; the segment stays as waiting
+                // state and the queue refills it on the next run.
+                continue;
+            };
+            let cancelled_segment = plan
+                .segments()
+                .iter()
+                .find(|candidate| candidate.index() == segment.index())
+                .cloned();
+            if let Some(cancelled) = cancelled_segment
+                && cancelled.state == DownloadSegmentState::Waiting
+            {
+                let neighbour = plan
+                    .segments()
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.index() != segment.index()
+                            && candidate.state == DownloadSegmentState::Waiting
+                            && (candidate.end_byte().saturating_add(1) == cancelled.start_byte()
+                                || cancelled.end_byte().saturating_add(1) == candidate.start_byte())
+                    })
+                    .max_by_key(|candidate| candidate.len())
+                    .cloned();
+                if let Some(neighbour) = neighbour {
+                    let Some(mut merge_plan) = inner.store.load_transfer_plan(task_id)? else {
+                        info!(
+                            event = "download.adaptive_segments.shrink_missing_plan",
+                            %correlation_id,
+                            ?task_id,
+                            "adaptive shrink merge skipped: transfer plan disappeared"
+                        );
+                        continue;
+                    };
+                    let neighbour_control = worker_controls.get(&neighbour.index()).cloned();
+                    match merge_plan.merge_waiting_segment(segment.index(), neighbour.index()) {
+                        Ok(()) => {
+                            inner.persist_transfer_plan_change(task_id, &merge_plan)?;
+                            segment_count = segment_count.saturating_sub(1);
+                            info!(
+                                event = "download.adaptive_segments.shrink_merged",
+                                %correlation_id,
+                                ?task_id,
+                                cancelled_segment_index = segment.index(),
+                                merged_segment_index = neighbour.index(),
+                                current_segments = segment_count,
+                                "adaptive shrink merged the shed range into its neighbour"
+                            );
+                            if let Some(neighbour_control) = neighbour_control {
+                                neighbour_control.request_rebalance();
+                            }
+                            adaptive.record_completed_growth(
+                                u16::try_from(segment_count).unwrap_or(u16::MAX),
+                            );
+                        }
+                        Err(error) => {
+                            info!(
+                                event = "download.adaptive_segments.shrink_merge_failed",
+                                %correlation_id,
+                                ?task_id,
+                                error = %error,
+                                "adaptive shrink could not merge; keeping the segment"
+                            );
+                        }
+                    }
+                }
+            }
         }
         let mut released_slot = false;
         match outcome {

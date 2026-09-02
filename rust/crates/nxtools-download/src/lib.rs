@@ -537,6 +537,89 @@ impl TransferPlan {
         )?;
         Ok(())
     }
+
+    /// Merges the remaining range of `cancelled_segment_index` into
+    /// `absorbing_segment_index` and removes the cancelled segment from the
+    /// plan. Both segments must already be Waiting (the cancelled worker must
+    /// have checkpointed before exiting); the absorbing segment must sit
+    /// directly before or after the cancelled one so their ranges are
+    /// contiguous.
+    pub fn merge_waiting_segment(
+        &mut self,
+        cancelled_segment_index: u32,
+        absorbing_segment_index: u32,
+    ) -> Result<(), TransferPlanError> {
+        let cancelled_position = self
+            .segments
+            .iter()
+            .position(|segment| segment.index() == cancelled_segment_index)
+            .ok_or(TransferPlanError::SegmentNotFound {
+                segment_index: cancelled_segment_index,
+            })?;
+        let absorbing_position = self
+            .segments
+            .iter()
+            .position(|segment| segment.index() == absorbing_segment_index)
+            .ok_or(TransferPlanError::SegmentNotFound {
+                segment_index: absorbing_segment_index,
+            })?;
+        let cancelled = &self.segments[cancelled_position];
+        if cancelled.state != DownloadSegmentState::Waiting {
+            return Err(TransferPlanError::SegmentNotWaiting {
+                segment_index: cancelled_segment_index,
+            });
+        }
+        let absorbing = &self.segments[absorbing_position];
+        if absorbing.state != DownloadSegmentState::Waiting {
+            return Err(TransferPlanError::SegmentNotWaiting {
+                segment_index: absorbing_segment_index,
+            });
+        }
+        // Contiguity: cancelled must be the neighbour of the absorber.
+        let cancelled_start = cancelled.start_byte();
+        let cancelled_end = cancelled.end_byte();
+        let absorbing_start = absorbing.start_byte();
+        let absorbing_end = absorbing.end_byte();
+        let adjacent = (cancelled_end.saturating_add(1) == absorbing_start)
+            || (absorbing_end.saturating_add(1) == cancelled_start);
+        if !adjacent {
+            return Err(TransferPlanError::SegmentNotFound {
+                segment_index: cancelled_segment_index,
+            });
+        }
+        // The cancelled side must have checkpointed nothing back (its worker
+        // exited before consuming its range), otherwise progress would be
+        // lost by the merge; the absorbing segment keeps its own checkpoint.
+        if cancelled.downloaded_bytes() != 0 {
+            return Err(TransferPlanError::SegmentNotWaiting {
+                segment_index: cancelled_segment_index,
+            });
+        }
+        let merged_start = cancelled_start.min(absorbing_start);
+        let merged_end = cancelled_end.max(absorbing_end);
+        let merged = DownloadSegment::new(
+            absorbing_segment_index,
+            merged_start,
+            merged_end,
+            absorbing.downloaded_bytes(),
+            DownloadSegmentState::Waiting,
+        )?;
+        let mut segments = self.segments.clone();
+        let lower = cancelled_position.min(absorbing_position);
+        let higher = cancelled_position.max(absorbing_position);
+        segments[absorbing_position.min(higher).max(lower)] = merged;
+        segments.remove(cancelled_position.max(absorbing_position));
+        // Reindex remaining segments is unnecessary: indices stay unique.
+        *self = Self::new(
+            self.protocol,
+            self.final_url.clone(),
+            self.total_bytes,
+            self.supports_ranges,
+            self.validator.clone(),
+            segments,
+        )?;
+        Ok(())
+    }
 }
 
 impl<'de> Deserialize<'de> for TransferPlan {
