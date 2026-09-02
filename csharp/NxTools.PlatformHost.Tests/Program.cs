@@ -155,6 +155,7 @@ internal static class Program
         {
             try
             {
+                Console.WriteLine($"RUN {test.Name}");
                 await test.Run();
                 Console.WriteLine($"PASS {test.Name}");
             }
