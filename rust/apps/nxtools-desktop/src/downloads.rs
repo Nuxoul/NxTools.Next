@@ -11480,7 +11480,7 @@ mod tests {
 
         assert_eq!(
             (progress.width.as_f32(), progress.height.as_f32()),
-            (440.0, 176.0)
+            (440.0, 184.0)
         );
         assert_eq!(
             (failed.width.as_f32(), failed.height.as_f32()),
@@ -11497,7 +11497,7 @@ mod tests {
         let scale_factor = 1.5;
         let progress_size = download_task_window_size(DownloadWindowPhase::Progress);
         let progress_bounds = gpui::Bounds::new(gpui::point(px(100.0), px(200.0)), progress_size);
-        let expected_physical_center = (480.0, 432.0);
+        let expected_physical_center = (480.0, 438.0);
 
         for phase in [DownloadWindowPhase::Failed, DownloadWindowPhase::Completed] {
             let command = centered_task_window_bounds_command(

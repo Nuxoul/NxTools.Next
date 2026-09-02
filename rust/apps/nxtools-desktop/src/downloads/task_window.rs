@@ -10,7 +10,7 @@ pub(crate) fn download_task_window_phase_layout(
 ) -> DownloadTaskWindowPhaseLayout {
     match phase {
         DownloadWindowPhase::Progress => DownloadTaskWindowPhaseLayout {
-            size: size(px(440.0), px(176.0)),
+            size: size(px(440.0), px(184.0)),
             selector: "download-task-window-phase-progress",
         },
         DownloadWindowPhase::Failed => DownloadTaskWindowPhaseLayout {

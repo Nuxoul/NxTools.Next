@@ -88,7 +88,7 @@ Assert-SourceContains `
     -Pattern 'new_download_window_options(window_bounds)' `
     -Message "The add window must pass the tested compact minimum through the production GPUI window-open boundary."
 Assert-SourceContains `
-    -Pattern 'size: size(px(440.0), px(176.0))' `
+    -Pattern 'size: size(px(440.0), px(184.0))' `
     -Message "The progress window must remain compact and content-driven."
 Assert-SourceContains `
     -Pattern 'size: size(px(440.0), px(196.0))' `
