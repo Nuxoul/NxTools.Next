@@ -1753,6 +1753,13 @@
     let left;
     let top;
 
+    // While the panel is open, a fallback anchor (the media left the
+    // viewport between frames on video grids) must not re-anchor the open
+    // panel to the fallback corner - that is the top-right flash.
+    if (panel && panel.hidden === false && selected.rect.fallback) {
+      return;
+    }
+
     if (selected.rect.fallback) {
       left = innerWidth - buttonWidth - gap;
       top = Math.min(Math.max(72, gap), Math.max(gap, innerHeight - buttonHeight - gap));
