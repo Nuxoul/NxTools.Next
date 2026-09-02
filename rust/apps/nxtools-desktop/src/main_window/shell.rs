@@ -337,7 +337,7 @@ pub(crate) fn window_control(
         .text_color(theme.text_secondary)
         .hover(move |style| {
             if close {
-                style.bg(gpui::rgb(0xc42b1c)).text_color(gpui::white())
+                style.bg(theme.danger).text_color(gpui::white())
             } else {
                 style.bg(theme.surface_hover).text_color(theme.text)
             }

@@ -36,7 +36,9 @@ use crate::icons::MaterialIcon;
 use crate::theme::{Theme, UI_FONT_FAMILY};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::empty_state;
-use crate::ui::metrics::RADIUS_CONTROL;
+use crate::ui::metrics::{
+    BADGE_HEIGHT, GROUP_HEADER_HEIGHT, NOTIFICATION_META_BLOCK_HEIGHT, RADIUS_CONTROL,
+};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META};
 use history::{
     CategorySourceMenu, CategorySourceOption, ClipboardItemAction, HistoryRowHandlers, history_row,
@@ -1084,7 +1086,7 @@ impl Render for ClipboardPanel {
                 div()
                     .id("clipboard-panel-header")
                     .mt(px(PANEL_SECTION_GAP))
-                    .h(px(24.0))
+                    .h(px(BADGE_HEIGHT))
                     .flex()
                     .items_center()
                     .gap(px(6.0))
@@ -1116,7 +1118,7 @@ impl Render for ClipboardPanel {
                     .when_some(modifier_action, |header, (modifier, action)| {
                         header.child(
                             div()
-                                .h(px(21.0))
+                                .h(px(NOTIFICATION_META_BLOCK_HEIGHT))
                                 .px_2()
                                 .rounded(px(RADIUS_CONTROL))
                                 .border_1()
@@ -1133,7 +1135,7 @@ impl Render for ClipboardPanel {
                         header.child(
                             div()
                                 .max_w(px(150.0))
-                                .h(px(21.0))
+                                .h(px(NOTIFICATION_META_BLOCK_HEIGHT))
                                 .px_2()
                                 .rounded(px(RADIUS_CONTROL))
                                 .border_1()
@@ -1538,7 +1540,7 @@ impl Render for ClipboardPanel {
                                 .child(
                                     div()
                                         .id("undo-clipboard-delete")
-                                        .h(px(30.0))
+                                        .h(px(GROUP_HEADER_HEIGHT))
                                         .px_3()
                                         .rounded(px(RADIUS_CONTROL))
                                         .border_1()
@@ -1621,7 +1623,7 @@ impl Render for ClipboardPanel {
                         )
                         .child(
                             div()
-                                .h(px(30.0))
+                                .h(px(GROUP_HEADER_HEIGHT))
                                 .flex()
                                 .items_center()
                                 .gap_2()
@@ -1702,7 +1704,7 @@ impl Render for ClipboardPanel {
                         )
                         .child(
                             div()
-                                .h(px(30.0))
+                                .h(px(GROUP_HEADER_HEIGHT))
                                 .flex()
                                 .items_center()
                                 .gap_2()
@@ -1964,7 +1966,7 @@ fn category_tab(
     let is_custom = category.kind == ClipboardCategoryKind::Custom;
     let tab = div()
         .id(gpui::SharedString::from(format!("category-{category_id}")))
-        .h(px(24.0))
+        .h(px(BADGE_HEIGHT))
         .w(px(tab_width))
         .flex_none()
         .px(px(7.0))

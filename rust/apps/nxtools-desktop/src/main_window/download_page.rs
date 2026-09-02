@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::{DETAIL_TAB_HEIGHT, ICON_GLYPH_SMALL, PROGRESS_TRACK_HEIGHT};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum DownloadTaskFilter {
@@ -958,7 +959,7 @@ impl MainWindow {
                     .gap(px(SPACING_4))
                     .child(
                         Icon::new(MaterialIcon::Search)
-                            .size(px(13.0))
+                            .size(px(ICON_GLYPH_SMALL))
                             .text_color(theme.text_muted),
                     )
                     .child(
@@ -2022,7 +2023,7 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
             div()
                 .id(("download-detail-tab", tab as usize))
                 .debug_selector(move || format!("download-detail-tab-{}", tab.diagnostic_name()))
-                .h(px(29.0))
+                .h(px(DETAIL_TAB_HEIGHT))
                 .px(px(10.0))
                 .border_b_2()
                 .border_color(if active {
@@ -2292,7 +2293,7 @@ pub(crate) fn download_segment_detail(
         .map(DownloadSegment::downloaded_bytes)
         .sum::<u64>();
     let mut aggregate = div()
-        .h(px(5.0))
+        .h(px(PROGRESS_TRACK_HEIGHT))
         .w_full()
         .rounded(px(RADIUS_CONTROL))
         .overflow_hidden()
@@ -2310,7 +2311,7 @@ pub(crate) fn download_segment_detail(
         let percent = segment.downloaded_bytes().saturating_mul(100) / segment.len();
         rows = rows.child(
             div()
-                .h(px(24.0))
+                .h(px(BADGE_HEIGHT))
                 .border_b_1()
                 .border_color(theme.border_subtle)
                 .flex()
@@ -2470,7 +2471,7 @@ pub(crate) fn download_verification_detail(
     div()
         .flex()
         .flex_col()
-        .gap(px(5.0))
+        .gap(px(PROGRESS_TRACK_HEIGHT))
         .child(download_detail_line_with_color(
             theme,
             "状态",

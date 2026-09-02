@@ -355,7 +355,7 @@ pub(crate) fn schedule_trigger_row(
             div()
                 .id(id)
                 .debug_selector(move || id.into())
-                .h(px(24.0))
+                .h(px(BADGE_HEIGHT))
                 .w(px(50.0))
                 .mr(px(SPACING_8))
                 .rounded(px(RADIUS_CONTROL))

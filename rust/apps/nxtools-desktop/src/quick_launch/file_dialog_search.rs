@@ -27,7 +27,7 @@ use crate::theme::Theme;
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
-    SPACING_2, SPACING_8, SPACING_12,
+    ICON_GLYPH_SMALL, SPACING_2, SPACING_8, SPACING_12,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
@@ -711,7 +711,7 @@ impl Render for FileDialogSearchPanel {
                     .when(self.search_pending, |bar| {
                         bar.child(
                             gpui_component::Icon::new(MaterialIcon::ProgressActivity)
-                                .size(px(13.0))
+                                .size(px(ICON_GLYPH_SMALL))
                                 .text_color(theme.icon_muted),
                         )
                     }),

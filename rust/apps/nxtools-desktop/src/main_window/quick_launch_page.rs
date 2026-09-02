@@ -496,7 +496,7 @@ impl MainWindow {
             .compact()
             .xsmall()
             .h(px(26.0))
-            .px(px(9.0))
+            .px(px(PILL_PADDING_X))
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border_subtle)
@@ -1214,7 +1214,7 @@ pub(crate) fn compact_toggle(
 ) -> AnyElement {
     div()
         .id(id)
-        .h(px(24.0))
+        .h(px(BADGE_HEIGHT))
         .min_w(px(54.0))
         .px(px(7.0))
         .rounded(px(RADIUS_CONTROL))
@@ -1274,7 +1274,7 @@ pub(crate) fn compact_group(
         .pb(px(2.0))
         .child(
             div()
-                .h(px(30.0))
+                .h(px(GROUP_HEADER_HEIGHT))
                 .border_b_1()
                 .border_color(theme.border_subtle)
                 .flex()

@@ -83,8 +83,9 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,
-    SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
+    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, PILL_PADDING_X,
+    PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_2,
+    SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
@@ -8219,9 +8220,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn settings_general_page_mounts_the_double_click_action_control(
-        cx: &mut TestAppContext,
-    ) {
+    fn settings_general_page_mounts_the_double_click_action_control(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let (application, directory) =
             download_application_for_window_test(cx, "download-double-click-control");
@@ -8239,12 +8238,19 @@ mod tests {
         let carries_state = view.update(cx, |view, _| {
             view.double_click_action == DownloadRowDoubleClickActionSettings::OpenFile
         });
-        assert!(carries_state, "settings view must carry the double-click state");
+        assert!(
+            carries_state,
+            "settings view must carry the double-click state"
+        );
         let general_source = include_str!("downloads/settings_view.rs");
         let general_page = general_source
             .split("DownloadSettingsPage::General => div()")
             .nth(1)
-            .and_then(|source| source.split("DownloadSettingsPage::Request => div()").next())
+            .and_then(|source| {
+                source
+                    .split("DownloadSettingsPage::Request => div()")
+                    .next()
+            })
             .expect("general page render source");
         assert!(
             general_page.contains("double_click_action,"),

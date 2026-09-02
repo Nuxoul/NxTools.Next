@@ -8,12 +8,35 @@ pub(crate) const CONTROL_HEIGHT_DEFAULT: f32 = 22.0;
 pub(crate) const CONTROL_HEIGHT_ACTION: f32 = 28.0;
 pub(crate) const CONTROL_HEIGHT_INPUT: f32 = 32.0;
 pub(crate) const SETTINGS_ROW_MIN_HEIGHT: f32 = 42.0;
+/// Repeated non-control height roles (badges, list micro-rows, group
+/// headers). They sit outside the 18/22/28/32 control ladder on purpose:
+/// badges wrap text, micro-rows carry meta lines, group headers are labels.
+pub(crate) const BADGE_HEIGHT: f32 = 24.0;
+/// Small icon glyph size (close crosses, inline carets).
+pub(crate) const ICON_GLYPH_SMALL: f32 = 13.0;
+/// Progress track height and hairline separators between metric rows.
+pub(crate) const PROGRESS_TRACK_HEIGHT: f32 = 5.0;
+/// Horizontal padding for compact pill controls (26px badges).
+pub(crate) const PILL_PADDING_X: f32 = 9.0;
+/// Detail tab height including its 2px active underline (29 + 2 = 31 rhythm).
+pub(crate) const DETAIL_TAB_HEIGHT: f32 = 29.0;
+/// Notification card two-line meta block height.
+pub(crate) const NOTIFICATION_META_BLOCK_HEIGHT: f32 = 21.0;
+pub(crate) const GROUP_HEADER_HEIGHT: f32 = 30.0;
 pub(crate) const SETTINGS_FOOTER_HEIGHT: f32 = 48.0;
 
 pub(crate) const COMPACT_RESULT_ROW_HEIGHT: f32 = 40.0;
 pub(crate) const COMPACT_RESULT_ICON_RAIL_WIDTH: f32 = 26.0;
 pub(crate) const COMPACT_RESULT_TRAILING_RAIL_WIDTH: f32 = 48.0;
 
+/// Elevation contract (mirrors Zed's ElevationIndex). Every floating layer
+/// renders exactly one of these combinations on `surface_raised`:
+///
+/// - ElevatedSurface (hover cards, hint bars, tooltips): shadow_sm
+/// - ModalSurface (popovers, menus, inline dialogs): shadow_md
+/// - Transient modals (clipboard edit sheet, pinned overlays): shadow_lg
+///
+/// The ui-consistency architecture gate enforces the pairing.
 pub(crate) const RADIUS_NONE: f32 = 0.0;
 pub(crate) const RADIUS_CONTROL: f32 = 4.0;
 pub(crate) const RADIUS_FLOATING: f32 = 6.0;

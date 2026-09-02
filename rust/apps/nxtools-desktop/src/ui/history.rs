@@ -1,3 +1,4 @@
+use crate::ui::metrics::{ICON_GLYPH_SMALL, PROGRESS_TRACK_HEIGHT};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -166,7 +167,7 @@ pub fn history_row(
                     .h(px(METADATA_HEIGHT))
                     .flex()
                     .items_center()
-                    .gap(px(5.0))
+                    .gap(px(PROGRESS_TRACK_HEIGHT))
                     .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
                     .child(source_icon(theme, source, source_icon_path, index))
                     .child(time_label(theme, relative_time))
@@ -428,7 +429,7 @@ fn open_targets_button(
         })
         .icon(
             Icon::new(MaterialIcon::OpenInNew)
-                .size(px(13.0))
+                .size(px(ICON_GLYPH_SMALL))
                 .text_color(theme.text_secondary),
         );
     if targets.len() == 1 {
@@ -531,11 +532,15 @@ fn management_button(
         .justify_center()
         .hover(move |style| style.bg(theme.surface_raised))
         .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
-        .child(Icon::new(icon).size(px(13.0)).text_color(if active {
-            theme.accent
-        } else {
-            theme.text_secondary
-        }))
+        .child(
+            Icon::new(icon)
+                .size(px(ICON_GLYPH_SMALL))
+                .text_color(if active {
+                    theme.accent
+                } else {
+                    theme.text_secondary
+                }),
+        )
         .on_click(move |event, window, cx| {
             cx.stop_propagation();
             handler(action.clone(), event, window, cx);

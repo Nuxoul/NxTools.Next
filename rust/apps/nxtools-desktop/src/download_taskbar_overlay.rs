@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
-use crate::ui::metrics::{RADIUS_CONTROL, SPACING_2, SPACING_8};
+use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_2, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
@@ -772,7 +772,7 @@ impl Render for DownloadTaskbarOverlayView {
                                         .right(px(2.0))
                                         .bottom(px(2.0))
                                         .w(px(5.0))
-                                        .h(px(5.0))
+                                        .h(px(PROGRESS_TRACK_HEIGHT))
                                         .border_r_1()
                                         .border_b_1()
                                         .border_color(theme.text_muted),

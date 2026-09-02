@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::ICON_GLYPH_SMALL;
 
 #[derive(Clone)]
 pub(crate) enum NewDownloadInitialSource {
@@ -1486,7 +1487,7 @@ impl Render for NewDownloadView {
                             } else {
                                 MaterialIcon::Info
                             })
-                            .size(px(13.0))
+                            .size(px(ICON_GLYPH_SMALL))
                             .text_color(if probing {
                                 theme.accent
                             } else {

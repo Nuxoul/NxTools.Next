@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::ICON_GLYPH_SMALL;
 
 pub(crate) fn notification_transition(delta: f32, exiting: bool) -> (f32, f32) {
     if exiting {
@@ -207,7 +208,7 @@ impl MainWindow {
                                 "dismiss-notification-{}",
                                 notification_id
                             )))
-                            .icon(Icon::new(MaterialIcon::Close).size(px(13.0)))
+                            .icon(Icon::new(MaterialIcon::Close).size(px(ICON_GLYPH_SMALL)))
                             .tooltip("关闭通知")
                             .ghost()
                             .small()

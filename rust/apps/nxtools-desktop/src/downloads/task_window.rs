@@ -347,7 +347,7 @@ impl Render for DownloadTaskWindowView {
                     .child(
                         div()
                             .w_full()
-                            .px(px(9.0))
+                            .px(px(PILL_PADDING_X))
                             .py(px(7.0))
                             .rounded(px(RADIUS_CONTROL))
                             .bg(theme.danger_soft)
@@ -556,7 +556,7 @@ impl Render for DownloadTaskWindowView {
                 .child(
                     div()
                         .w_full()
-                        .h(px(5.0))
+                        .h(px(PROGRESS_TRACK_HEIGHT))
                         .rounded(px(RADIUS_CONTROL))
                         .bg(theme.surface_raised)
                         .when_some(ratio, |track, ratio| {
