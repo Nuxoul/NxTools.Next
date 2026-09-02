@@ -44,10 +44,11 @@ use nxtools_download::{DownloadCertificatePolicy, FfmpegInstallSource};
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
-    ExtractShellIconCommand, OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand,
-    PickProgramCommand, PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult,
-    PlatformEvent, SetTaskbarProgressCommand, SetWindowBoundsCommand, SetWindowTopmostCommand,
-    ShellOpenAction, ShutdownSystemCommand, TaskbarOverlayAnchor, TaskbarProgressState,
+    ExportBrowserExtensionCommand, ExtractShellIconCommand, OpenShellTargetCommand,
+    PasteTextCommand, PickDirectoryCommand, PickProgramCommand, PlaceTaskbarProgressOverlayCommand,
+    PlatformCommand, PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
+    SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction, ShutdownSystemCommand,
+    TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -115,6 +116,9 @@ pub(crate) enum DownloadApplicationEvent {
     },
     FfmpegInstallChanged {
         state: FfmpegInstallViewState,
+    },
+    BrowserExtensionExportCompleted {
+        status: String,
     },
     TaskbarOverlayEditChanged {
         settings: DownloadTaskbarProgressOverlaySettings,
@@ -299,6 +303,12 @@ impl DownloadSettingsPathAction {
             Self::Open => "open",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingExtensionExport {
+    format: &'static str,
+    started_at: Instant,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -592,6 +602,7 @@ pub(crate) struct DownloadApplication {
     show_completion_window: bool,
     pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
     pending_settings_path_actions: HashMap<uuid::Uuid, PendingDownloadSettingsPathAction>,
+    pending_extension_export: Option<PendingExtensionExport>,
     pending_ffmpeg_operations: HashMap<uuid::Uuid, PendingFfmpegPlatformOperation>,
     ffmpeg_install_state: FfmpegInstallViewState,
     pending_ffmpeg_install: Option<PendingFfmpegInstall>,
@@ -779,6 +790,7 @@ impl DownloadApplication {
             show_completion_window,
             pending_directory_picker: None,
             pending_settings_path_actions: HashMap::new(),
+            pending_extension_export: None,
             pending_ffmpeg_operations: HashMap::new(),
             ffmpeg_install_state: FfmpegInstallViewState::Idle,
             pending_ffmpeg_install: None,
@@ -1494,6 +1506,53 @@ impl DownloadApplication {
             DownloadCommandOutcome::Accepted { .. } => Ok(()),
             DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
             _ => Err("下载引擎返回了无效的任务操作结果".into()),
+        }
+    }
+
+    /// Publishes the export status into the settings view when it is open.
+    /// Safe cross-entity write: the result arrives on the app's own update
+    /// turn, never while the view itself is leased.
+    fn publish_extension_export_status(&self, status: String, cx: &mut Context<Self>) {
+        cx.emit(DownloadApplicationEvent::BrowserExtensionExportCompleted { status });
+    }
+
+    pub(crate) fn request_browser_extension_export(
+        &mut self,
+        format: &'static str,
+    ) -> Result<(), String> {
+        if self.pending_extension_export.is_some() {
+            return Err("已有导出任务在进行".into());
+        }
+        match self
+            .platform
+            .send_command(PlatformCommand::ExportBrowserExtension(
+                ExportBrowserExtensionCommand {
+                    format: format.into(),
+                    destination: String::new(),
+                },
+            )) {
+            Ok(command_id) => {
+                self.pending_extension_export = Some(PendingExtensionExport {
+                    format,
+                    started_at: Instant::now(),
+                });
+                info!(
+                    event = "download.browser_extension.export_accepted",
+                    %command_id,
+                    format,
+                    "browser extension export accepted"
+                );
+                Ok(())
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.browser_extension.export_rejected",
+                    %error,
+                    format,
+                    "browser extension export could not be queued"
+                );
+                Err(format!("导出失败:{error}"))
+            }
         }
     }
 
@@ -3838,6 +3897,45 @@ impl DownloadApplication {
         }
         if let Some(pending) = self.pending_settings_path_actions.remove(&correlation_id) {
             self.handle_download_settings_path_action_result(pending, result, cx);
+            return;
+        }
+        if let Some(pending) = self.pending_extension_export.take() {
+            let elapsed = pending.started_at.elapsed().as_millis();
+            if result.success {
+                let file_name = result
+                    .data
+                    .as_deref()
+                    .map(|path| {
+                        std::path::Path::new(path)
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.to_owned())
+                    })
+                    .unwrap_or_default();
+                let status = format!("已导出:{file_name}");
+                self.publish_extension_export_status(status, cx);
+                info!(
+                    event = "download.browser_extension.exported",
+                    format = pending.format,
+                    elapsed_ms = elapsed,
+                    "browser extension export completed"
+                );
+            } else {
+                let reason = result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Windows 未返回错误详情".into());
+                let status = format!("导出失败:{reason}");
+                self.publish_extension_export_status(status, cx);
+                warn!(
+                    event = "download.browser_extension.export_failed",
+                    format = pending.format,
+                    reason,
+                    elapsed_ms = elapsed,
+                    "browser extension export failed"
+                );
+            }
+            cx.notify();
             return;
         }
         if let Some(pending) = self.pending_ffmpeg_operations.remove(&correlation_id) {

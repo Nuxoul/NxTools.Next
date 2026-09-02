@@ -387,6 +387,7 @@ pub enum PlatformCommand {
     OpenShellTarget(OpenShellTargetCommand),
     PlaySystemNotificationSound,
     ShutdownSystem(ShutdownSystemCommand),
+    ExportBrowserExtension(ExportBrowserExtensionCommand),
     LaunchProcess(LaunchProcessCommand),
     NavigateDirectory(NavigateDirectoryCommand),
     OpenFileInDialog(OpenFileInDialogCommand),
@@ -645,6 +646,15 @@ pub struct OpenShellTargetCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShutdownSystemCommand {
     pub delay_seconds: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportBrowserExtensionCommand {
+    /// "chrome" packages a signed CRX3; "firefox" packages an XPI.
+    pub format: String,
+    /// Absolute output file path; the empty string asks the host to choose
+    /// the desktop with its timestamped default name.
+    pub destination: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1171,6 +1181,10 @@ mod tests {
             }),
             PlatformCommand::PlaySystemNotificationSound,
             PlatformCommand::ShutdownSystem(ShutdownSystemCommand { delay_seconds: 1 }),
+            PlatformCommand::ExportBrowserExtension(ExportBrowserExtensionCommand {
+                format: "chrome".into(),
+                destination: r"C:\Users\u\Desktop\ext.crx".into(),
+            }),
             PlatformCommand::NavigateDirectory(NavigateDirectoryCommand {
                 host: DirectoryNavigationHost::Explorer,
                 window_handle: 88,

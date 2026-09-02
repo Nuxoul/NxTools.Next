@@ -86,6 +86,7 @@ internal sealed record BeginWindowMoveCommand(long WindowHandle);
 internal sealed record BeginFileDragCommand(string Path, long SourceWindowHandle);
 internal sealed record OpenShellTargetCommand(string Target, string Action);
 internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
+internal sealed record ExportBrowserExtensionCommand(string Format, string Destination);
 internal sealed record LaunchProcessCommand(
     string Executable,
     IReadOnlyList<string> Arguments,
@@ -298,6 +299,12 @@ internal static class PlatformCommandParser
 
     public static ShutdownSystemCommand ParseShutdownSystem(ProtocolEnvelope envelope) =>
         Parse<ShutdownSystemCommand>(envelope, "shutdown_system", "Shutdown command payload was empty.");
+
+    public static ExportBrowserExtensionCommand ParseExportBrowserExtension(ProtocolEnvelope envelope) =>
+        Parse<ExportBrowserExtensionCommand>(
+            envelope,
+            "export_browser_extension",
+            "Browser extension export command payload was empty.");
 
     public static LaunchProcessCommand ParseLaunchProcess(ProtocolEnvelope envelope) =>
         Parse<LaunchProcessCommand>(

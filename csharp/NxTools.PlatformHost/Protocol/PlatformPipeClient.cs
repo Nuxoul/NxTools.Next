@@ -257,6 +257,8 @@ internal sealed class PlatformPipeClient(
                         "play_system_notification_sound" => platformAdapter.PlaySystemNotificationSound(),
                         "shutdown_system" => platformAdapter.ShutdownSystem(
                             PlatformCommandParser.ParseShutdownSystem(envelope)),
+                        "export_browser_extension" => platformAdapter.ExportBrowserExtension(
+                            PlatformCommandParser.ParseExportBrowserExtension(envelope)),
                         "launch_process" => platformAdapter.LaunchProcess(
                             PlatformCommandParser.ParseLaunchProcess(envelope)),
                         "navigate_directory" => platformAdapter.NavigateDirectory(

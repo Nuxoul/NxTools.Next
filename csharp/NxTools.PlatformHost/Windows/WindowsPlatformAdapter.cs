@@ -517,6 +517,46 @@ internal sealed class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult ShutdownSystem(ShutdownSystemCommand command) =>
         _completionSystemActions.RequestShutdown(command.DelaySeconds);
 
+    public WindowsCommandResult ExportBrowserExtension(ExportBrowserExtensionCommand command)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var format = string.Equals(
+            command.Format,
+            BrowserExtensionPackageService.FirefoxFormat,
+            StringComparison.OrdinalIgnoreCase)
+            ? BrowserExtensionPackageService.FirefoxFormat
+            : BrowserExtensionPackageService.ChromeFormat;
+        try
+        {
+            var actualPath = BrowserExtensionPackageService.Export(format, command.Destination);
+            _log.Write(
+                "info",
+                "browser_extension.exported",
+                null,
+                new Dictionary<string, object?>
+                {
+                    ["format"] = format,
+                    ["file_name"] = Path.GetFileName(actualPath),
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                });
+            return new WindowsCommandResult(true, Data: actualPath);
+        }
+        catch (Exception error)
+        {
+            _log.Write(
+                "error",
+                "browser_extension.export_failed",
+                null,
+                new Dictionary<string, object?>
+                {
+                    ["format"] = format,
+                    ["error"] = error.Message,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                });
+            return new WindowsCommandResult(false, error.Message);
+        }
+    }
+
     public WindowsCommandResult LaunchProcess(LaunchProcessCommand command)
     {
         try

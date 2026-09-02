@@ -137,6 +137,8 @@ internal static class Program
             ("bounded reader preserves adjacent frames", ReaderPreservesFrames),
             ("bounded reader rejects oversized frames", ReaderRejectsOversizedFrame),
             ("native file drag does not block later platform commands", FileDragDoesNotBlockLaterCommands),
+            ("browser extension export command parses format and destination", BrowserExtensionExportCommandParses),
+            ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
             ("indexer service command carries no caller-controlled path", IndexerServiceCommandHasNoPath),
             ("browser native messaging command preserves fixed extension identities", BrowserNativeMessagingCommandPreservesIdentities),
@@ -4137,6 +4139,78 @@ internal static class Program
         finally
         {
             File.Delete(report);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task BrowserExtensionExportCommandParses()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "export_browser_extension",
+            Data = new
+            {
+                Format = "firefox",
+                Destination = @"C:\Users\u\Desktop\NxTools_Firefox_Extension.xpi",
+            },
+        });
+        var command = PlatformCommandParser.ParseExportBrowserExtension(envelope);
+        Assert(command.Format == "firefox");
+        Assert(command.Destination.EndsWith(".xpi"));
+        return Task.CompletedTask;
+    }
+
+    private static Task BrowserExtensionPackagesProduceArtifacts()
+    {
+        var source = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"nxtools-extension-source-{Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(System.IO.Path.Combine(source, "icons"));
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(source, "manifest.json"),
+            "{\"manifest_version\":3,\"name\":\"t\",\"version\":\"0.0.1\",\"permissions\":[\"declarativeNetRequest\",\"storage\"]}");
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(source, "icons", "icon-16.png"),
+            "png");
+        try
+        {
+            var work = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"nxtools-extension-out-{Guid.NewGuid():N}");
+            System.IO.Directory.CreateDirectory(work);
+            var crx = BrowserExtensionPackageService.Export(
+                BrowserExtensionPackageService.ChromeFormat,
+                System.IO.Path.Combine(work, "ext.crx"),
+                source);
+            var crxBytes = System.IO.File.ReadAllBytes(crx);
+            Assert(crxBytes.Length > 4);
+            Assert(crxBytes[0] == (byte)'C' && crxBytes[1] == (byte)'r');
+            Assert(crxBytes[2] == (byte)'2' && crxBytes[3] == (byte)'4');
+            Assert(BitConverter.ToUInt32(crxBytes, 4) == 3);
+
+            var xpi = BrowserExtensionPackageService.Export(
+                BrowserExtensionPackageService.FirefoxFormat,
+                System.IO.Path.Combine(work, "ext.xpi"),
+                source);
+            string manifest;
+            using (var archive = new System.IO.Compression.ZipArchive(
+                System.IO.File.OpenRead(xpi),
+                System.IO.Compression.ZipArchiveMode.Read))
+            {
+                var manifestEntry = archive.GetEntry("manifest.json");
+                Assert(manifestEntry is not null);
+                using var reader = new System.IO.StreamReader(manifestEntry!.Open());
+                manifest = reader.ReadToEnd();
+            }
+            Assert(manifest.Contains("nxtools-download-interceptor@nxtools.local"));
+            Assert(!manifest.Contains("declarativeNetRequest"));
+            System.IO.File.Delete(crx);
+            System.IO.File.Delete(xpi);
+            System.IO.Directory.Delete(work, true);
+        }
+        finally
+        {
+            System.IO.Directory.Delete(source, true);
         }
         return Task.CompletedTask;
     }

@@ -296,6 +296,7 @@ pub(crate) enum DownloadSettingsPage {
 pub(crate) struct DownloadSettingsView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
+    pub(crate) browser_extension_export_status: Option<String>,
     pub(crate) directory: Entity<InputState>,
     pub(crate) ffmpeg_executable: Entity<InputState>,
     pub(crate) default_request_headers: Entity<InputState>,
@@ -519,6 +520,11 @@ impl DownloadSettingsView {
                         });
                         this.error = None;
                     }
+                    DownloadApplicationEvent::BrowserExtensionExportCompleted { status } => {
+                        this.browser_extension_export_status = Some(status.clone());
+                        this.error = None;
+                        cx.notify();
+                    }
                     DownloadApplicationEvent::FfmpegInstallChanged { state } => {
                         this.ffmpeg_install_state = state.clone();
                         this.error = match state {
@@ -588,6 +594,7 @@ impl DownloadSettingsView {
         Self {
             theme: Theme::zed_dark(),
             application,
+            browser_extension_export_status: None,
             directory,
             ffmpeg_executable,
             default_request_headers,
@@ -1830,6 +1837,72 @@ impl Render for DownloadSettingsView {
                             duplicate_strategy,
                         ),
                     ],
+                ))
+                .child(download_settings_section(
+                    theme,
+                    "浏览器扩展",
+                    vec![download_settings_stacked_row(
+                        theme,
+                        "下载拦截扩展",
+                        "Chrome / Edge 用开发者模式加载包内 browser_extension 目录，或导出签名安装包",
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(SPACING_4))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(px(SPACING_4))
+                                    .child(
+                                        action_button(
+                                            "download-settings-extension-export-chrome-button",
+                                            "导出 Chrome / Edge (.crx)",
+                                        )
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let outcome = this.application.update(
+                                                cx,
+                                                |application, _| {
+                                                    application
+                                                        .request_browser_extension_export("chrome")
+                                                },
+                                            );
+                                            this.browser_extension_export_status =
+                                                Some(match outcome {
+                                                    Ok(()) => "正在导出 Chrome / Edge 扩展…".into(),
+                                                    Err(error) => format!("导出失败:{error}"),
+                                                });
+                                            cx.notify();
+                                        })),
+                                    )
+                                    .child(
+                                        action_button(
+                                            "download-settings-extension-export-firefox-button",
+                                            "导出 Firefox (.xpi)",
+                                        )
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let outcome = this.application.update(
+                                                cx,
+                                                |application, _| {
+                                                    application
+                                                        .request_browser_extension_export("firefox")
+                                                },
+                                            );
+                                            this.browser_extension_export_status =
+                                                Some(match outcome {
+                                                    Ok(()) => "正在导出 Firefox 扩展…".into(),
+                                                    Err(error) => format!("导出失败:{error}"),
+                                                });
+                                            cx.notify();
+                                        })),
+                                    ),
+                            )
+                            .children(
+                                self.browser_extension_export_status
+                                    .clone()
+                                    .map(|status| div().child(status)),
+                            )
+                            .into_any_element(),
+                    )],
                 ))
                 .into_any_element(),
             DownloadSettingsPage::Request => div()
