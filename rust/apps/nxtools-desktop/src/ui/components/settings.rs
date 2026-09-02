@@ -192,15 +192,11 @@ pub(crate) fn settings_toggle(
         .p(px(2.0))
         .rounded(px(CONTROL_HEIGHT_DEFAULT / 2.0))
         .border_1()
-        .border_color(if enabled {
-            theme.border_active
-        } else {
-            theme.border_subtle
-        })
+        .border_color(theme.border_subtle)
         .bg(if enabled {
             theme.accent_soft
         } else {
-            theme.canvas
+            theme.surface
         })
         .cursor_pointer()
         .flex()
@@ -211,7 +207,7 @@ pub(crate) fn settings_toggle(
                 .size(px(TOGGLE_KNOB_SIZE))
                 .rounded(px(TOGGLE_KNOB_SIZE / 2.0))
                 .bg(if enabled {
-                    theme.accent
+                    theme.accent_text
                 } else {
                     theme.text_muted
                 }),

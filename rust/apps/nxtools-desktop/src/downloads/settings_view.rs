@@ -2565,24 +2565,18 @@ pub(crate) fn download_settings_section(
     title: &'static str,
     rows: Vec<AnyElement>,
 ) -> AnyElement {
+    // Zed settings grammar: sections are flat groups separated by hairline
+    // dividers, not boxed cards; the section title reads as a label above
+    // the rows.
     div()
         .debug_selector(move || format!("download-settings-section-{title}"))
         .w_full()
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
         .flex()
         .flex_col()
         .child(
             div()
-                .h(px(26.0))
-                .px(px(SPACING_8))
-                .border_b_1()
-                .border_color(theme.border_subtle)
-                .flex()
-                .items_center()
-                .debug_selector(move || format!("download-settings-section-{title}-title"))
+                .pb(px(SPACING_4))
+                .px(px(SPACING_12))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(FontWeight::SEMIBOLD)
@@ -2590,6 +2584,13 @@ pub(crate) fn download_settings_section(
                 .child(title),
         )
         .children(rows)
+        .child(
+            div()
+                .mt(px(SPACING_8))
+                .h(px(1.0))
+                .w_full()
+                .bg(theme.border_subtle),
+        )
         .into_any_element()
 }
 

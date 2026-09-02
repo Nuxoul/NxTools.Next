@@ -189,14 +189,12 @@ impl MainWindow {
                     .h(px(SIDEBAR_ROW_HEIGHT))
                     .px(px(10.0))
                     .rounded(px(RADIUS_CONTROL))
-                    .border_l_2()
-                    .border_color(if selected { theme.accent } else { theme.canvas })
                     .flex()
                     .items_center()
                     .gap(px(10.0))
                     .cursor_pointer()
                     .bg(if selected {
-                        theme.surface_raised
+                        theme.element_selected
                     } else {
                         theme.canvas
                     })

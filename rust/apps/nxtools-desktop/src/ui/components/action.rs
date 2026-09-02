@@ -31,11 +31,11 @@ impl SegmentedOption {
 
 pub(crate) fn primary_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
     ButtonCustomVariant::new(cx)
-        .color(theme.accent.into())
+        .color(theme.accent_soft.into())
         .foreground(theme.accent_text.into())
-        .border(theme.focus_ring.into())
+        .border(theme.border_subtle.into())
         .hover(theme.border_active.into())
-        .active(theme.accent.into())
+        .active(theme.accent_soft.into())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
