@@ -69,6 +69,15 @@ internal static partial class BrowserNativeMessagingRegistrar
                 }
             }
 
+            // Migration: the pre-0.7 extension generation registered its host
+            // under "com.nxtools.next"; machines upgraded from that era keep
+            // stale registrations pointing at dead paths, and browsers report
+            // "forbidden" on them. The current extension only speaks to
+            // "com.nxtools.next.browser", so retire the legacy keys.
+            RemoveRegistryManifest(@"Software\Google\Chrome\NativeMessagingHosts\com.nxtools.next");
+            RemoveRegistryManifest(@"Software\Microsoft\Edge\NativeMessagingHosts\com.nxtools.next");
+            RemoveRegistryManifest(@"Software\Mozilla\NativeMessagingHosts\com.nxtools.next");
+
             Directory.CreateDirectory(manifestDirectory);
             WriteManifestAtomically(chromiumManifestPath, new
             {
