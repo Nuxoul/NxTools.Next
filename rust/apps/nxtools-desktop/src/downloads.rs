@@ -8219,6 +8219,45 @@ mod tests {
     }
 
     #[gpui::test]
+    fn settings_general_page_mounts_the_double_click_action_control(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "download-double-click-control");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_settings_window(cx);
+            });
+        });
+        cx.run_until_parked();
+
+        let view = cx
+            .read(|cx| application.read(cx).settings_view.clone())
+            .expect("settings view handle");
+        let carries_state = view.update(cx, |view, _| {
+            view.double_click_action == DownloadRowDoubleClickActionSettings::OpenFile
+        });
+        assert!(carries_state, "settings view must carry the double-click state");
+        let general_source = include_str!("downloads/settings_view.rs");
+        let general_page = general_source
+            .split("DownloadSettingsPage::General => div()")
+            .nth(1)
+            .and_then(|source| source.split("DownloadSettingsPage::Request => div()").next())
+            .expect("general page render source");
+        assert!(
+            general_page.contains("double_click_action,"),
+            "the list double-click control must render on the general page"
+        );
+        assert!(
+            general_source.contains("download-settings-double-click-action"),
+            "the segmented control helper must expose stable debug ids"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
     fn download_settings_window_opens_without_reentering_download_application(
         cx: &mut TestAppContext,
     ) {

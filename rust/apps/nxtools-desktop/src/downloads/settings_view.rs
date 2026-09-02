@@ -324,6 +324,7 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) categories: Vec<DownloadCategoryEditor>,
     pub(crate) selected_category: Option<usize>,
     pub(crate) duplicate_strategy: DownloadDuplicateStrategySettings,
+    pub(crate) double_click_action: DownloadRowDoubleClickActionSettings,
     pub(crate) adaptive_segment_scaling_enabled: bool,
     pub(crate) accept_invalid_certificates: bool,
     pub(crate) taskbar_overlay_enabled: bool,
@@ -622,6 +623,7 @@ impl DownloadSettingsView {
             selected_category: (!categories.is_empty()).then_some(0),
             categories,
             duplicate_strategy: snapshot.duplicate_strategy,
+            double_click_action: snapshot.double_click_action,
             adaptive_segment_scaling_enabled: snapshot.adaptive_segment_scaling_enabled,
             accept_invalid_certificates: snapshot.accept_invalid_certificates,
             taskbar_overlay_enabled: snapshot.taskbar_progress_overlay.enabled,
@@ -734,6 +736,7 @@ impl DownloadSettingsView {
             .map(|category| category.settings(cx))
             .collect();
         draft.duplicate_strategy = self.duplicate_strategy;
+        draft.double_click_action = self.double_click_action;
         Ok(draft)
     }
 
@@ -934,6 +937,26 @@ impl Render for DownloadSettingsView {
                 this.error = None;
                 cx.notify();
             }),
+        );
+        let double_click_action = download_settings_double_click_action(
+            theme,
+            self.double_click_action,
+            cx.listener(|this, _, _, cx| {
+                this.double_click_action = DownloadRowDoubleClickActionSettings::OpenFile;
+                this.error = None;
+                cx.notify();
+            }),
+            cx.listener(|this, _, _, cx| {
+                this.double_click_action = DownloadRowDoubleClickActionSettings::OpenDirectory;
+                this.error = None;
+                cx.notify();
+            }),
+            cx.listener(|this, _, _, cx| {
+                this.double_click_action = DownloadRowDoubleClickActionSettings::OpenTaskWindow;
+                this.error = None;
+                cx.notify();
+            }),
+            cx,
         );
         let duplicate_strategy = download_settings_duplicate_strategy(
             theme,
@@ -1837,6 +1860,12 @@ impl Render for DownloadSettingsView {
                             "自动编号不会覆盖磁盘文件或活动任务产物；拒绝则不创建任务",
                             duplicate_strategy,
                         ),
+                        download_settings_row(
+                            theme,
+                            "列表双击",
+                            "双击下载列表行时的默认动作",
+                            double_click_action,
+                        ),
                     ],
                 ))
                 .child(download_settings_section(
@@ -2448,6 +2477,50 @@ pub(crate) fn download_settings_duplicate_strategy(
                 on_numbered,
             ),
             SegmentedOption::new("download-settings-duplicate-reject", "拒绝创建", on_reject),
+        ],
+        cx,
+    )
+}
+
+pub(crate) fn download_settings_double_click_action(
+    theme: Theme,
+    selected: DownloadRowDoubleClickActionSettings,
+    on_open_file: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_open_directory: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_task_window: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let selected_id = match selected {
+        DownloadRowDoubleClickActionSettings::OpenFile => {
+            "download-settings-double-click-open-file"
+        }
+        DownloadRowDoubleClickActionSettings::OpenDirectory => {
+            "download-settings-double-click-open-directory"
+        }
+        DownloadRowDoubleClickActionSettings::OpenTaskWindow => {
+            "download-settings-double-click-task-window"
+        }
+    };
+    segmented_control(
+        theme,
+        "download-settings-double-click-action",
+        selected_id,
+        vec![
+            SegmentedOption::new(
+                "download-settings-double-click-open-file",
+                "打开文件",
+                on_open_file,
+            ),
+            SegmentedOption::new(
+                "download-settings-double-click-open-directory",
+                "打开所在目录",
+                on_open_directory,
+            ),
+            SegmentedOption::new(
+                "download-settings-double-click-task-window",
+                "任务信息",
+                on_task_window,
+            ),
         ],
         cx,
     )
