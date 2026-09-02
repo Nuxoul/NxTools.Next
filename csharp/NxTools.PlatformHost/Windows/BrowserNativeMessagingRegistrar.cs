@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using NxTools.PlatformHost.Diagnostics;
@@ -12,6 +15,59 @@ namespace NxTools.PlatformHost.Windows;
 internal static partial class BrowserNativeMessagingRegistrar
 {
     private const string HostName = "com.nxtools.next.browser";
+
+
+    /// <summary>
+    /// Builds the allowed-origins list from the packaged extension's pinned
+    /// key (its stable extension id) merged with the command-provided id, so
+    /// unpacked loads whose manifest predates the key still connect.
+    /// </summary>
+    private static string[] ChromiumAllowedOrigins(string commandExtensionId)
+    {
+        var origins = new List<string> { $"chrome-extension://{commandExtensionId}/" };
+        try
+        {
+            var manifestPath = Path.Combine(
+                ResolveExtensionSourceDirectory(),
+                "manifest.json");
+            if (File.Exists(manifestPath))
+            {
+                var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))?.AsObject();
+                if (manifest?["key"] is JsonValue key &&
+                    key.GetValue<string>() is { Length: > 0 } keyText)
+                {
+                    var digest = SHA256.HashData(Convert.FromBase64String(keyText));
+                    var mapped = new StringBuilder();
+                    foreach (var digit in Convert.ToHexString(digest))
+                    {
+                        mapped.Append((char)('a' + byte.Parse(digit.ToString(), NumberStyles.HexNumber)));
+                    }
+
+                    var derived = mapped.ToString()[..32];
+                    if (!origins.Contains($"chrome-extension://{derived}/"))
+                    {
+                        origins.Add($"chrome-extension://{derived}/");
+                    }
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or FormatException or InvalidOperationException)
+        {
+            // A missing or malformed manifest keeps the command-provided id.
+        }
+        return origins.ToArray();
+    }
+
+    private static string ResolveExtensionSourceDirectory()
+    {
+        var root = AppContext.BaseDirectory;
+        var candidates = new[]
+        {
+            Path.Combine(root, "browser_extension", "nxtools-interceptor"),
+            Path.Combine(root, "..", "browser_extension", "nxtools-interceptor"),
+        };
+        return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
+    }
 
     public static WindowsCommandResult Ensure(
         EnsureBrowserNativeMessagingCommand command,
@@ -79,16 +135,14 @@ internal static partial class BrowserNativeMessagingRegistrar
             RemoveRegistryManifest(@"Software\Mozilla\NativeMessagingHosts\com.nxtools.next");
 
             Directory.CreateDirectory(manifestDirectory);
+            var chromiumOrigins = ChromiumAllowedOrigins(command.ChromiumExtensionId);
             WriteManifestAtomically(chromiumManifestPath, new
             {
                 name = HostName,
                 description = "NxTools.Next browser download bridge",
                 path = hostPath,
                 type = "stdio",
-                allowed_origins = new[]
-                {
-                    $"chrome-extension://{command.ChromiumExtensionId}/"
-                }
+                allowed_origins = chromiumOrigins
             });
             WriteManifestAtomically(firefoxManifestPath, new
             {
