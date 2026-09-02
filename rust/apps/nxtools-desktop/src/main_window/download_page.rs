@@ -1263,7 +1263,21 @@ pub(crate) fn download_task_row(
                 let application = row_open_application.clone();
                 cx.defer(move |cx| {
                     let _ = application.update(cx, |application, cx| {
-                        application.request_task_window(task_id, cx);
+                        match application.row_double_click_action() {
+                            nxtools_core::DownloadRowDoubleClickActionSettings::OpenFile => {
+                                application.open_task_artifact(task_id, ShellOpenAction::Open, cx);
+                            }
+                            nxtools_core::DownloadRowDoubleClickActionSettings::OpenDirectory => {
+                                application.open_task_artifact(
+                                    task_id,
+                                    ShellOpenAction::SelectInExplorer,
+                                    cx,
+                                );
+                            }
+                            nxtools_core::DownloadRowDoubleClickActionSettings::OpenTaskWindow => {
+                                application.request_task_window(task_id, cx);
+                            }
+                        }
                     });
                 });
             }

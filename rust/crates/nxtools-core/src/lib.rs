@@ -188,6 +188,8 @@ pub struct DownloadSettings {
     #[serde(default)]
     pub duplicate_strategy: DownloadDuplicateStrategySettings,
     #[serde(default)]
+    pub double_click_action: DownloadRowDoubleClickActionSettings,
+    #[serde(default)]
     pub ffmpeg_executable_path: String,
     #[serde(default)]
     pub default_request_headers: String,
@@ -235,6 +237,18 @@ pub enum DownloadDuplicateStrategySettings {
     #[default]
     AddNumbered,
     Reject,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadRowDoubleClickActionSettings {
+    /// Opens the finished artifact with the associated Windows program.
+    #[default]
+    OpenFile,
+    /// Reveals the finished artifact in Explorer.
+    OpenDirectory,
+    /// Opens the task window with progress, segments and diagnostics.
+    OpenTaskWindow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -311,6 +325,7 @@ impl Default for DownloadSettings {
             automatic_categories_enabled: false,
             categories: default_download_categories(),
             duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+            double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
             ffmpeg_executable_path: String::new(),
             default_request_headers: String::new(),
             default_cookie: String::new(),
@@ -1383,6 +1398,7 @@ mod tests {
                 automatic_categories_enabled: true,
                 categories: default_download_categories(),
                 duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+                double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
                 ffmpeg_executable_path: r"D:\Tools\ffmpeg.exe".into(),
                 default_request_headers: "X-Test: value".into(),
                 default_cookie: "session=test".into(),

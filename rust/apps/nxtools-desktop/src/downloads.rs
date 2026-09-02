@@ -22,6 +22,7 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
+use nxtools_core::DownloadRowDoubleClickActionSettings;
 use nxtools_core::{
     AppConfig, DownloadCategorySettings, DownloadDuplicateStrategySettings, DownloadSettings,
     DownloadTaskbarOverlayAnchor, DownloadTaskbarProgressMode,
@@ -192,6 +193,7 @@ struct DownloadSettingsDraft {
     automatic_categories_enabled: bool,
     categories: Vec<DownloadCategorySettings>,
     duplicate_strategy: DownloadDuplicateStrategySettings,
+    double_click_action: DownloadRowDoubleClickActionSettings,
     ffmpeg_executable_path: String,
     default_request_headers: String,
     default_cookie: String,
@@ -972,6 +974,7 @@ impl DownloadApplication {
             automatic_categories_enabled: self.config.download.automatic_categories_enabled,
             categories: self.config.download.categories.clone(),
             duplicate_strategy: self.config.download.duplicate_strategy,
+            double_click_action: self.config.download.double_click_action,
             ffmpeg_executable_path: self.config.download.ffmpeg_executable_path.clone(),
             default_request_headers: self.config.download.default_request_headers.clone(),
             default_cookie: self.config.download.default_cookie.clone(),
@@ -1514,6 +1517,10 @@ impl DownloadApplication {
     /// turn, never while the view itself is leased.
     fn publish_extension_export_status(&self, status: String, cx: &mut Context<Self>) {
         cx.emit(DownloadApplicationEvent::BrowserExtensionExportCompleted { status });
+    }
+
+    pub(crate) fn row_double_click_action(&self) -> DownloadRowDoubleClickActionSettings {
+        self.config.download.double_click_action
     }
 
     pub(crate) fn request_browser_extension_export(
@@ -3077,6 +3084,7 @@ impl DownloadApplication {
             automatic_categories_enabled: draft.automatic_categories_enabled,
             categories: draft.categories.clone(),
             duplicate_strategy: draft.duplicate_strategy,
+            double_click_action: draft.double_click_action,
             ffmpeg_executable_path: draft.ffmpeg_executable_path.clone(),
             default_request_headers: draft.default_request_headers.clone(),
             default_cookie: draft.default_cookie.clone(),
@@ -11177,6 +11185,7 @@ mod tests {
                         automatic_categories_enabled: true,
                         categories: DownloadSettings::default().categories,
                         duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+                        double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
                         ffmpeg_executable_path: String::new(),
                         default_request_headers: "X-NxTools-Policy: tentative".into(),
                         default_cookie: "tentative=1".into(),

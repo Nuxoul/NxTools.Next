@@ -150,6 +150,7 @@ pub(crate) fn parse_download_settings_draft(
         automatic_categories_enabled: false,
         categories: DownloadSettings::default().categories,
         duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+        double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
         ffmpeg_executable_path: String::new(),
         default_request_headers: String::new(),
         default_cookie: String::new(),

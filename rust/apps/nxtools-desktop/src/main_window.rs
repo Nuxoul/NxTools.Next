@@ -468,7 +468,10 @@ mod tests {
         TestAppContext, px, size,
     };
     use gpui_component::PixelsExt;
-    use nxtools_core::{AppConfig, ClipboardHotKeyModifier, CustomCommandSettings, SystemSettings};
+    use nxtools_core::{
+        AppConfig, ClipboardHotKeyModifier, CustomCommandSettings,
+        DownloadRowDoubleClickActionSettings, DownloadSettings, SystemSettings,
+    };
     use nxtools_download::{
         DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
         DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskId, RequestOrigin,
@@ -4228,9 +4231,9 @@ mod tests {
             .and_then(|source| source.split("fn download_popup_item(").next())
             .expect("download task row source");
         let icon_source = row_source
-            .split(".when_some(icon_path")
+            .split(".when_some(icon_path, |slot, path| {")
             .nth(1)
-            .and_then(|source| source.split(".child(\n                    div()\n                        .when(selected").next())
+            .and_then(|source| source.split(".when(!has_icon_path, |slot| {").next())
             .expect("resolved Shell icon slot source");
         assert!(icon_source.contains("img(path)"));
         assert!(
@@ -4981,7 +4984,14 @@ mod tests {
                     notifications.clone(),
                     DownloadRuntimeContext {
                         fallback_default_directory: r"C:\Downloads".into(),
-                        config: AppConfig::default(),
+                        config: AppConfig {
+                            download: DownloadSettings {
+                                double_click_action:
+                                    DownloadRowDoubleClickActionSettings::OpenTaskWindow,
+                                ..AppConfig::default().download
+                            },
+                            ..AppConfig::default()
+                        },
                         config_path: std::env::temp_dir().join("nxtools-test-config.json"),
                         log_directory: std::env::temp_dir(),
                         database_path: std::env::temp_dir().join("downloads.sqlite3"),
