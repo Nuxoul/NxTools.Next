@@ -3902,6 +3902,22 @@ impl DownloadApplication {
         if let Some(pending) = self.pending_extension_export.take() {
             let elapsed = pending.started_at.elapsed().as_millis();
             if result.success {
+                let cancelled = result
+                    .data
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty();
+                if cancelled {
+                    info!(
+                        event = "download.browser_extension.export_cancelled",
+                        format = pending.format,
+                        elapsed_ms = elapsed,
+                        "browser extension export cancelled in the save dialog"
+                    );
+                    self.publish_extension_export_status("已取消导出浏览器扩展".into(), cx);
+                    return;
+                }
                 let file_name = result
                     .data
                     .as_deref()

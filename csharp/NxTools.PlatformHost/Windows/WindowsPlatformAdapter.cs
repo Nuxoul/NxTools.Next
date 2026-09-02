@@ -526,9 +526,34 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             StringComparison.OrdinalIgnoreCase)
             ? BrowserExtensionPackageService.FirefoxFormat
             : BrowserExtensionPackageService.ChromeFormat;
+        var destination = command.Destination;
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            // Empty destination asks the host to show the save dialog; a
+            // cancelled dialog reports success with empty data.
+            var picked = BrowserExtensionExportDialog.PickDestination(format);
+            if (!picked.Success)
+            {
+                return picked;
+            }
+            destination = picked.Data ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(destination))
+            {
+                _log.Write(
+                    "info",
+                    "browser_extension.export_cancelled",
+                    null,
+                    new Dictionary<string, object?>
+                    {
+                        ["format"] = format,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    });
+                return new WindowsCommandResult(true, Data: string.Empty);
+            }
+        }
         try
         {
-            var actualPath = BrowserExtensionPackageService.Export(format, command.Destination);
+            var actualPath = BrowserExtensionPackageService.Export(format, destination);
             _log.Write(
                 "info",
                 "browser_extension.exported",
