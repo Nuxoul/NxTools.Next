@@ -136,6 +136,24 @@ Verified invariants:
 - The progress window contains Info, Speed and On Completion sections plus locate-in-list, folder,
   pause/resume and cancel actions.
 
+Reverified 2026-09-03 against `D:\Code\NxTools` after the user reported completion-window flash and
+stale open/reveal behavior (old `Views/DownloadCompletedWindow.axaml.cs` closes the window after the
+user confirms a post-completion action):
+
+- Old `DownloadCompletedWindow` treats "打开文件" / "打开文件夹" as terminal user intents: the Shell
+  open/reveal is dispatched and the completion window closes itself; the window has no purpose after
+  the artifact has been handed to the Shell. NxTools.Next must preserve this — the keyed GPUI
+  completion window releases its `DownloadWindowLifecycle` registration and removes itself in the
+  same deferred turn (`DownloadApplication::close_task_window`), never a bare `window.remove_window()`
+  that leaves a stale keyed registration behind.
+- A native close (title bar X, Alt+F4, taskbar close) must release the keyed lifecycle registration
+  through `on_window_should_close` + `handle_task_window_native_close`, matching the
+  delete-confirmation window pattern. Without it, the next task event targets the destroyed window,
+  fails `update_task_window`, and the recovery path re-creates the window — the visible flash the
+  user reported. After a native close of a progress window, a later progress event must NOT
+  resurrect it (`task_changed` returns `None` when nothing is registered); only a genuine terminal
+  transition may open the passive fallback.
+
 ### Legacy failure and migration invariants
 
 - Active transient states are restored as paused instead of automatically restarting unknown work.

@@ -265,11 +265,24 @@ pub(crate) fn match_ranges_for_pattern(text: &str, pattern: &str) -> Vec<std::op
     ranges
 }
 
+/// Local (instant-provider) results must publish immediately even when an
+/// indexed-file query is queued: the launcher's first visible list comes from
+/// the in-memory catalog in bounded microsecond time, and the merged list
+/// replaces it when the complete index batch arrives. Holding local rows until
+/// that round-trip completes is what made typing feel multi-second. `pending`
+/// only controls the bounded progress hint; it must never gate publication of
+/// results the panel already owns.
 pub(crate) fn should_publish_immediate_results(
-    indexer_connected: bool,
-    search_queued: bool,
+    _indexer_connected: bool,
+    _search_queued: bool,
 ) -> bool {
-    !indexer_connected || !search_queued
+    true
+}
+
+/// With queued index results the just-published local rows stay visible under
+/// the progress hint; without one, the panel is final for this generation.
+pub(crate) fn search_update_pending(search_queued: bool) -> bool {
+    search_queued
 }
 
 pub(crate) fn elapsed_microseconds(started: Instant) -> u64 {

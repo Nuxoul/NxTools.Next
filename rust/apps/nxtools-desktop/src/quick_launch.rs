@@ -1852,9 +1852,11 @@ impl QuickLaunchApplication {
         let results = self.combined_results(query);
         self.last_local_search_us = Some(elapsed_microseconds(local_search_started));
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
+        // Local rows publish immediately; `pending` keeps the bounded "正在搜索"
+        // hint alive until the complete index batch replaces this list.
         QuickLaunchSearchUpdate {
             results,
-            pending: false,
+            pending: search_update_pending(search_queued),
         }
     }
 
@@ -6334,13 +6336,15 @@ mod tests {
     }
 
     #[test]
-    fn connected_index_search_waits_for_the_combined_batch_before_first_publish() {
+    fn connected_index_search_publishes_local_rows_immediately_before_the_merged_batch() {
         assert!(!should_search_indexer(false, false));
         assert!(!should_search_indexer(true, false));
         assert!(should_search_indexer(true, true));
+        // Local instant results always publish; the pending flag only keeps the
+        // "正在搜索" hint alive while the index batch is in flight.
         assert!(should_publish_immediate_results(false, false));
         assert!(should_publish_immediate_results(true, false));
-        assert!(!should_publish_immediate_results(true, true));
+        assert!(should_publish_immediate_results(true, true));
     }
 
     #[test]

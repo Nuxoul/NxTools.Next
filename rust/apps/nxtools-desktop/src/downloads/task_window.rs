@@ -284,6 +284,12 @@ impl Render for DownloadTaskWindowView {
                                             cx,
                                         );
                                     });
+                                    // Open/reveal confirms the terminal feedback; the
+                                    // completed window has no further purpose after the
+                                    // Shell action leaves this process.
+                                    application.update(cx, |application, cx| {
+                                        application.close_task_window(task_id, cx);
+                                    });
                                 });
                             }),
                     )
@@ -298,6 +304,9 @@ impl Render for DownloadTaskWindowView {
                                             ShellOpenAction::Open,
                                             cx,
                                         );
+                                    });
+                                    application.update(cx, |application, cx| {
+                                        application.close_task_window(task_id, cx);
                                     });
                                 });
                             }),

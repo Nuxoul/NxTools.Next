@@ -552,6 +552,18 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     and write it back through `popup.panel.update`, re-entering the same panel lease and terminating
     the process with `double_lease_panic`. The presentation-range loader and hover retry therefore
     share the same deferred application boundary.
+45. Reverified 2026-09-03 after the user-reported "typing feels multi-second" reproduction: the
+    first visible result list is a local-provider product. When an indexed-file query was queued,
+    `search_and_request_icons` returned `pending=true` with **empty** results, withholding catalog,
+    instant-answer and command rows until the indexer round-trip completed. That violated the
+    recorded Listary behavior (invariant 38: the launcher replaces the committed collection only
+    after its providers complete, and a fresh query must not clear what is already visible) and the
+    phase-5 gate "应用目录首批结果 P95 ≤ 30 ms". The corrected contract: local rows always publish
+    in the same turn (`should_publish_immediate_results` is unconditionally true), `pending` only
+    keeps the bounded "正在搜索" hint alive (`search_update_pending(search_queued)`), and the
+    complete index batch still atomically replaces the list through `refresh_indexed_results` with
+    its generation check. Old generations are rejected exactly as before; only the withholding was
+    removed.
 
 ## Phase-1 implementation mapping
 

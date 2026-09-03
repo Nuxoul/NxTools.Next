@@ -3433,6 +3433,43 @@ impl DownloadApplication {
         self.task_windows.remove(&task_id)
     }
 
+    /// Releases the keyed task-window registration after a native (non-app-driven)
+    /// close. The window identity must still match so a replacement window opened
+    /// in between is never deregistered by a stale close notification.
+    fn handle_task_window_native_close(
+        &mut self,
+        task_id: DownloadTaskId,
+        closing_window: AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(entry) = self.task_windows.get(&task_id) else {
+            return;
+        };
+        if entry.window != closing_window {
+            return;
+        }
+        info!(
+            event = "download.task_window.native_close_accepted",
+            task_id = %task_id.as_uuid(),
+            window_generation = %entry.generation,
+            "download task window closed natively; lifecycle registration released"
+        );
+        self.clear_task_window_registration(task_id);
+        cx.notify();
+    }
+
+    /// Closes the keyed task window from inside the window itself (an action
+    /// click). Clearing the registration in the same turn keeps the lifecycle
+    /// authoritative; otherwise the next task event targets a destroyed window
+    /// and the recovery path produces a visible remove/re-create flash.
+    pub(crate) fn close_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if let Some(entry) = self.clear_task_window_registration(task_id) {
+            let _ = entry
+                .window
+                .update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
     fn open_task_window(
         &mut self,
         task_id: DownloadTaskId,
@@ -3477,6 +3514,24 @@ impl DownloadApplication {
                 #[cfg(not(test))]
                 let resolved_native_handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = resolved_native_handle;
+                // A native close (title bar X, Alt+F4, taskbar close) must release the keyed
+                // lifecycle registration in the same turn, or a later task event targets a
+                // destroyed window and produces a visible remove/re-create flash.
+                let close_application = application.clone();
+                let closing_window = window.window_handle();
+                window.on_window_should_close(cx, move |_, cx| {
+                    let application = close_application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, cx| {
+                            application.handle_task_window_native_close(
+                                task_id,
+                                closing_window,
+                                cx,
+                            );
+                        });
+                    });
+                    true
+                });
                 let view = cx.new(|_| {
                     DownloadTaskWindowView::new(
                         application,
@@ -8730,34 +8785,6 @@ mod tests {
             .is_ok()
         {}
 
-        window.simulate_click(reveal_action.center(), Modifiers::default());
-        window.run_until_parked();
-        assert_eq!(
-            platform_endpoint
-                .try_receive_command_for_contract_test()
-                .expect("completed reveal platform command")
-                .message,
-            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
-                OpenShellTargetCommand {
-                    target: directory.join("shared-skeleton.bin").display().to_string(),
-                    action: ShellOpenAction::SelectInExplorer,
-                }
-            ))
-        );
-        window.simulate_click(open_action.center(), Modifiers::default());
-        window.run_until_parked();
-        assert_eq!(
-            platform_endpoint
-                .try_receive_command_for_contract_test()
-                .expect("completed open platform command")
-                .message,
-            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
-                OpenShellTargetCommand {
-                    target: directory.join("shared-skeleton.bin").display().to_string(),
-                    action: ShellOpenAction::Open,
-                }
-            ))
-        );
         window.simulate_mouse_down(
             drag_action.center(),
             MouseButton::Left,
@@ -8777,18 +8804,81 @@ mod tests {
             directory.join("shared-skeleton.bin").display().to_string()
         );
         assert_eq!(command.source_window_handle, 42);
-        cx.read(|cx| {
-            let application = application.read(cx);
-            assert_eq!(application.task_windows.len(), 1);
-            assert_eq!(
-                application
-                    .task_windows
-                    .get(&task_id)
-                    .expect("same keyed task window")
-                    .generation,
-                generation
-            );
+        assert!(
+            cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+            "the native drag gesture must not close the completed window"
+        );
+
+        window.simulate_click(reveal_action.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("completed reveal platform command")
+                .message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                OpenShellTargetCommand {
+                    target: directory.join("shared-skeleton.bin").display().to_string(),
+                    action: ShellOpenAction::SelectInExplorer,
+                }
+            ))
+        );
+        assert!(
+            !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+            "opening the artifact from the completed window must close the terminal window"
+        );
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                let directive = application
+                    .task_window_lifecycle
+                    .request_window(task_id, DownloadWindowPhase::Completed);
+                assert_eq!(
+                    directive,
+                    DownloadWindowDirective::OpenAndFocus(DownloadWindowPhase::Completed),
+                    "after the completed window closes, a reopen request must open one fresh window"
+                );
+                application.apply_task_window_directive(task_id, directive, cx);
+            });
         });
+        cx.run_until_parked();
+        let reopened_handle = cx.read(|cx| {
+            application
+                .read(cx)
+                .task_windows
+                .get(&task_id)
+                .map(|entry| {
+                    assert_ne!(
+                        entry.generation, generation,
+                        "the artifact-open close must release the keyed registration so a reopen creates a fresh window"
+                    );
+                    entry.window
+                })
+                .expect("reopened completed task window")
+        });
+        let mut window = VisualTestContext::from_window(reopened_handle, cx);
+        window.refresh().expect("render reopened completed window");
+        while platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+        window.simulate_click(open_action.center(), Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(
+            platform_endpoint
+                .try_receive_command_for_contract_test()
+                .expect("completed open platform command")
+                .message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                OpenShellTargetCommand {
+                    target: directory.join("shared-skeleton.bin").display().to_string(),
+                    action: ShellOpenAction::Open,
+                }
+            ))
+        );
+        assert!(
+            !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+            "the Open action must also close the completed window"
+        );
 
         let _ = task_window_handle.update(cx, |_, window, _| window.remove_window());
         let _ = std::fs::remove_dir_all(directory);
@@ -8901,6 +8991,100 @@ mod tests {
                 && application.pending_shutdown_command.is_none()
         }));
         assert!(shutdown_window_handle.update(cx, |_, _, _| ()).is_err());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn a_native_task_window_close_releases_the_keyed_lifecycle_registration(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "native-close-lifecycle");
+        let task_id = cx.read(|cx| {
+            application
+                .read(cx)
+                .engine
+                .enqueue(
+                    DownloadRequest {
+                        source_url: "https://example.test/native-close.bin".into(),
+                        save_directory: directory.clone(),
+                        save_directory_explicit: false,
+                        file_name: Some("native-close.bin".into()),
+                        headers: Vec::new(),
+                        cookie: None,
+                        referrer: None,
+                        certificate_policy: Default::default(),
+                        connection_limit: Some(1),
+                        speed_limit_bytes_per_second: None,
+                        expected_total_bytes: None,
+                        scheduled_at_unix_ms: None,
+                        adaptive_segment_policy: None,
+                        media: None,
+                        category_id: None,
+                        category_name: None,
+                        duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                    },
+                    RequestOrigin::Internal,
+                )
+                .expect("enqueue native-close fixture")
+        });
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.refresh(cx);
+                application.open_task_window(task_id, DownloadWindowPhase::Progress, None, cx);
+            });
+        });
+        cx.run_until_parked();
+        let task_window = cx
+            .read(|cx| {
+                application
+                    .read(cx)
+                    .task_windows
+                    .get(&task_id)
+                    .map(|entry| entry.window)
+            })
+            .expect("production task window");
+        assert!(
+            task_window.update(cx, |_, _, _| ()).is_ok(),
+            "the keyed task window is alive before the native close"
+        );
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.handle_task_window_native_close(task_id, task_window, cx);
+            });
+            // GPUI consumes the WM_CLOSE that triggered the handler and destroys
+            // the platform window; mirror that in the test harness.
+            let _ = task_window.update(cx, |_, window, _| window.remove_window());
+        });
+        cx.run_until_parked();
+        assert!(
+            !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+            "the native close must release the keyed registration"
+        );
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                // The next progress event arrives after the user closed the window:
+                // the lifecycle must open one fresh window instead of targeting the
+                // destroyed one and replacing it (the visible flash).
+                let directive = application
+                    .task_window_lifecycle
+                    .task_changed(task_id, DownloadStatus::Downloading);
+                assert_eq!(
+                    directive,
+                    DownloadWindowDirective::None,
+                    "a task event after a native close must not resurrect the progress window"
+                );
+                application.apply_task_window_directive(task_id, directive, cx);
+            });
+        });
+        assert!(
+            task_window.update(cx, |_, _, _| ()).is_err(),
+            "the natively closed window stays gone"
+        );
+        assert!(cx.read(|cx| application.read(cx).task_windows.is_empty()));
+
         let _ = std::fs::remove_dir_all(directory);
     }
 
