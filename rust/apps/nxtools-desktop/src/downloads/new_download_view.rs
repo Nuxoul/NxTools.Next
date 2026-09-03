@@ -123,6 +123,7 @@ pub(crate) struct NewDownloadView {
     pub(crate) _directory_subscription: Subscription,
     pub(crate) _category_search_subscription: Subscription,
     pub(crate) _category_key_subscription: Subscription,
+    pub(crate) _enter_key_subscription: Subscription,
 }
 
 impl NewDownloadView {
@@ -247,6 +248,22 @@ impl NewDownloadView {
                 }
             });
         let category_key_subscription = cx.intercept_keystrokes(category_key_listener);
+        // Enter submits the dialog: probe first while the URL is unconfirmed,
+        // then start the download once a probe has been confirmed.
+        let enter_listener = cx.listener(|this, event: &gpui::KeystrokeEvent, window, cx| {
+            if event.keystroke.key.eq_ignore_ascii_case("enter")
+                && !event.keystroke.modifiers.modified()
+                && !this.submitting
+                && !this.probing
+            {
+                if this.probe.is_some() && this.confirmed_request.is_some() {
+                    this.submit(DownloadSubmitMode::StartNow, window, cx);
+                } else {
+                    this.begin_probe(window, cx);
+                }
+            }
+        });
+        let enter_subscription = cx.intercept_keystrokes(enter_listener);
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
         let scheduled_date = default_scheduled_at.date_naive();
         let scheduled_month = calendar_month_start(scheduled_date);
@@ -329,6 +346,7 @@ impl NewDownloadView {
             _directory_subscription: directory_subscription,
             _category_search_subscription: category_search_subscription,
             _category_key_subscription: category_key_subscription,
+            _enter_key_subscription: enter_subscription,
         }
     }
 
