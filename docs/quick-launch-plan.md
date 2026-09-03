@@ -19,6 +19,7 @@
 | `D:\Program Files\Listary` | 第一优先：核对成熟产品的呼出、焦点、动作和资源管理器/文件对话框交互 | 专有程序，仅做 clean-room 行为与调用链研究 |
 | `D:\Code\SwiftList-main` | 第二优先：补充查询语法、FZF 排序、USN/MFT、快搜窗口和服务拆分的源码参考 | MIT；阅读源码、测试和项目文档，但不覆盖 Listary 的用户行为基准 |
 | `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` | 只读查看 Listary 托管程序集的类型组织和功能调用链 | 不修改程序集，不绕过授权，不破解，不复制专有实现 |
+| `D:\Code\Wox-master` | 补充参考：原生 GPU 渲染启动器(Wox.core,Go)。观察其热键唤出、插件结果模型、密度设置与 ~150MB 常驻内存策略 | **GPL-3.0**;只做行为观察与架构对照，禁止复制或移植任何源码到 NxTools.Next |
 
 详细证据记录在 `docs/reference-code/quick-launch-research.md`。
 

@@ -1212,3 +1212,11 @@ Reverified on 2026-08-24 before the QL-12 diagnostics-page closure:
   内容时不会调用 GPUI/Windows resize；因此元数据、文本和图片不能采用不同窗口高度，否则先出现
   的小窗口会裁剪后续文本/图片。元数据只在固定窗口内部使用紧凑内容块。主速启与附着搜索只共享
   视觉标尺，不合并两个独立窗口的布局状态或生命周期。
+
+
+## Wox(新增参考,尚未细察)
+
+- 入口:`D:\Code\Wox-master`(Wox.core,Go,GPL-3.0)。
+- 许可约束:GPL-3.0 具有传染性——**只允许行为观察与架构对照**(热键注册、面板唤出、结果模型、密度/内存策略),禁止阅读后移植代码片段。
+- 与既有参考的关系:Listary 仍是用户行为基准;SwiftList 补充检索与窗口拆分;Wox 补充"原生 GPU 渲染 + 常驻轻量"的工程策略对照。
+- 状态:not inspected(仅完成目录级勘察:wox.core/{hotkey,ui,plugin,setting} 为主要模块)。
