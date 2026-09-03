@@ -131,6 +131,9 @@ pub(crate) struct DownloadContextCapabilities {
     pub(crate) queue_bottom: bool,
     pub(crate) can_remove: bool,
     pub(crate) single_artifact: Option<DownloadTaskId>,
+    /// True when every resume target has failed, so the resume action reads
+    /// as an explicit retry in the menu.
+    pub(crate) resume_all_failed: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -199,6 +202,12 @@ impl DownloadSortKey {
             Self::Status => "status",
             Self::Created => "created",
         }
+    }
+
+    pub(crate) fn from_diagnostic_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|key| key.diagnostic_name() == name)
     }
 
     pub(crate) const fn default_descending(self) -> bool {
@@ -609,6 +618,17 @@ pub(crate) fn download_context_capabilities(
             })
             .map(|task| task.task.id())
             .collect(),
+        resume_all_failed: !selected_tasks.is_empty()
+            && selected_tasks.iter().all(|task| {
+                matches!(task.task.status(), DownloadStatus::Failed)
+                    || !matches!(
+                        task.task.status(),
+                        DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
+                    )
+            })
+            && selected_tasks
+                .iter()
+                .any(|task| task.task.status() == DownloadStatus::Failed),
         pause_targets: selected_tasks
             .iter()
             .filter(|task| {
@@ -1115,6 +1135,38 @@ impl MainWindow {
                                                                                     0,
                                                                                     ScrollStrategy::Top,
                                                                                 );
+                                                                            // Persist the
+                                                                            // preference for the
+                                                                            // next launch.
+                                                                            let sort_application =
+                                                                                window
+                                                                                    .downloads
+                                                                                    .clone();
+                                                                            let sort_key = window
+                                                                                .download_sort
+                                                                                .key
+                                                                                .diagnostic_name()
+                                                                                .to_owned();
+                                                                            let sort_descending =
+                                                                                window
+                                                                                    .download_sort
+                                                                                    .descending;
+                                                                            cx.defer(move |cx| {
+                                                                                let _ =
+                                                                                    sort_application
+                                                                                        .update(
+                                                                                            cx,
+                                                                                            |application,
+                                                                                             cx| {
+                                                                                                application
+                                                                                                    .set_task_list_sort(
+                                                                                                        Some(sort_key),
+                                                                                                        Some(sort_descending),
+                                                                                                        cx,
+                                                                                                    );
+                                                                                            },
+                                                                                        );
+                                                                            });
                                                                             cx.notify();
                                                                         }
                                                                     },
@@ -1738,9 +1790,15 @@ pub(crate) fn download_task_context_menu(
             menu = menu.separator();
         }
         if plan.resume {
+            // When every resume target has failed, the same action reads as
+            // an explicit retry.
             menu = menu.item(batch_item(
                 "download-menu-resume",
-                "开始 / 继续",
+                if capabilities.resume_all_failed {
+                    "重试"
+                } else {
+                    "开始 / 继续"
+                },
                 DownloadBatchAction::Resume,
                 MaterialIcon::Download,
                 capabilities.resume_targets.clone(),

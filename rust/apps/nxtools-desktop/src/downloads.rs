@@ -195,6 +195,8 @@ struct DownloadSettingsDraft {
     categories: Vec<DownloadCategorySettings>,
     duplicate_strategy: DownloadDuplicateStrategySettings,
     double_click_action: DownloadRowDoubleClickActionSettings,
+    task_list_sort: Option<String>,
+    task_list_sort_descending: Option<bool>,
     ffmpeg_executable_path: String,
     default_request_headers: String,
     default_cookie: String,
@@ -976,6 +978,8 @@ impl DownloadApplication {
             categories: self.config.download.categories.clone(),
             duplicate_strategy: self.config.download.duplicate_strategy,
             double_click_action: self.config.download.double_click_action,
+            task_list_sort: self.config.download.task_list_sort.clone(),
+            task_list_sort_descending: self.config.download.task_list_sort_descending,
             ffmpeg_executable_path: self.config.download.ffmpeg_executable_path.clone(),
             default_request_headers: self.config.download.default_request_headers.clone(),
             default_cookie: self.config.download.default_cookie.clone(),
@@ -1562,6 +1566,43 @@ impl DownloadApplication {
 
     pub(crate) fn row_double_click_action(&self) -> DownloadRowDoubleClickActionSettings {
         self.config.download.double_click_action
+    }
+
+    pub(crate) fn task_list_sort(&self) -> (Option<String>, Option<bool>) {
+        (
+            self.config.download.task_list_sort.clone(),
+            self.config.download.task_list_sort_descending,
+        )
+    }
+
+    /// Persists the task-list sort preference. Sort changes are frequent, so
+    /// this only rewrites the two option fields through the standard config
+    /// update helper and keeps the in-memory copy in sync.
+    pub(crate) fn set_task_list_sort(
+        &mut self,
+        key: Option<String>,
+        descending: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.config.download.task_list_sort == key
+            && self.config.download.task_list_sort_descending == descending
+        {
+            return;
+        }
+        self.config.download.task_list_sort = key.clone();
+        self.config.download.task_list_sort_descending = descending;
+        let mut next = self.config.download.clone();
+        next.task_list_sort = key;
+        next.task_list_sort_descending = descending;
+        match AppConfig::update_download_settings(&self.config_path, next) {
+            Ok(_) => info!(event = "download.sort_preference_saved"),
+            Err(error) => warn!(
+                event = "download.sort_preference_save_failed",
+                %error,
+                "could not persist the task-list sort preference"
+            ),
+        }
+        cx.notify();
     }
 
     pub(crate) fn request_browser_extension_export(
@@ -3126,6 +3167,8 @@ impl DownloadApplication {
             categories: draft.categories.clone(),
             duplicate_strategy: draft.duplicate_strategy,
             double_click_action: draft.double_click_action,
+            task_list_sort: draft.task_list_sort.clone(),
+            task_list_sort_descending: draft.task_list_sort_descending,
             ffmpeg_executable_path: draft.ffmpeg_executable_path.clone(),
             default_request_headers: draft.default_request_headers.clone(),
             default_cookie: draft.default_cookie.clone(),
@@ -11268,6 +11311,8 @@ mod tests {
                         categories: DownloadSettings::default().categories,
                         duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
                         double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
+                        task_list_sort: None,
+                        task_list_sort_descending: None,
                         ffmpeg_executable_path: String::new(),
                         default_request_headers: "X-NxTools-Policy: tentative".into(),
                         default_cookie: "tentative=1".into(),

@@ -371,12 +371,27 @@ impl MainWindow {
         subscriptions.extend(quick_launch_event_subscription);
         subscriptions.push(notification_subscription);
         subscriptions.push(hotkey_focus_subscription);
+        let initial_download_sort = downloads
+            .clone()
+            .upgrade()
+            .map(|application| {
+                let (key, descending) = application.read(cx).task_list_sort();
+                let key = key
+                    .as_deref()
+                    .and_then(DownloadSortKey::from_diagnostic_name)
+                    .unwrap_or_default();
+                DownloadSortState {
+                    key,
+                    descending: descending.unwrap_or_else(|| key.default_descending()),
+                }
+            })
+            .unwrap_or_default();
         Self {
             theme: Theme::zed_dark(),
             shell: ShellState::default(),
             clipboard,
             quick_launch,
-            downloads,
+            downloads: downloads.clone(),
             network_settings: shell_context.settings,
             platform: shell_context.platform,
             native_window_handle: crate::ui::native_window_handle(window).unwrap_or_default(),
@@ -401,7 +416,7 @@ impl MainWindow {
             selected_download_tasks: HashSet::new(),
             download_selection_anchor: None,
             download_filter: DownloadTaskFilter::default(),
-            download_sort: DownloadSortState::default(),
+            download_sort: initial_download_sort,
             download_list_scroll: UniformListScrollHandle::new(),
             download_search_log_generation: 0,
             download_detail_tab: DownloadDetailTab::default(),

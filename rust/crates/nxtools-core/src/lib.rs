@@ -188,6 +188,10 @@ pub struct DownloadSettings {
     #[serde(default)]
     pub duplicate_strategy: DownloadDuplicateStrategySettings,
     #[serde(default)]
+    pub task_list_sort: Option<String>,
+    #[serde(default)]
+    pub task_list_sort_descending: Option<bool>,
+    #[serde(default)]
     pub double_click_action: DownloadRowDoubleClickActionSettings,
     #[serde(default)]
     pub ffmpeg_executable_path: String,
@@ -326,6 +330,8 @@ impl Default for DownloadSettings {
             categories: default_download_categories(),
             duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
             double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
+            task_list_sort: None,
+            task_list_sort_descending: None,
             ffmpeg_executable_path: String::new(),
             default_request_headers: String::new(),
             default_cookie: String::new(),
