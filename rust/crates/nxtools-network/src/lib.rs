@@ -1,4 +1,5 @@
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use nxtools_core::{NetworkProxyMode, NetworkSettings};
 use reqwest::{Client, ClientBuilder};
@@ -88,7 +89,15 @@ impl NetworkOperationSnapshot {
                 .no_proxy()
                 .proxy(reqwest::Proxy::all(endpoint).map_err(NetworkPolicyError::Client)?),
         };
-        builder.build().map_err(NetworkPolicyError::Client)
+        builder
+            // Multi-segment transfers hammer one host concurrently; keep idle
+            // connections alive so segment rebalances reuse TLS sessions
+            // instead of re-handshaking.
+            .pool_max_idle_per_host(16)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .tcp_nodelay(true)
+            .build()
+            .map_err(NetworkPolicyError::Client)
     }
 }
 

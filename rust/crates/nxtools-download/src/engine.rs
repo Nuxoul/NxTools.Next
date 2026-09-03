@@ -112,6 +112,9 @@ struct TransferRateSampler {
     last_rate: u64,
 }
 
+/// Progress events are coalesced to at most 10 Hz per task (the plan's
+/// 5-10 Hz band); terminal states always publish immediately.
+const PROGRESS_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
 const ADAPTIVE_SAMPLE_COUNT: usize = 5;
 const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
 const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
@@ -7025,7 +7028,7 @@ fn publish_transfer_progress(
         let now = Instant::now();
         let should_publish = state
             .last_progress_event
-            .is_none_or(|last| now.duration_since(last) >= Duration::from_millis(80))
+            .is_none_or(|last| now.duration_since(last) >= PROGRESS_EVENT_MIN_INTERVAL)
             || total_bytes == Some(downloaded_bytes);
         if should_publish {
             state.last_progress_event = Some(now);

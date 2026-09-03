@@ -9,7 +9,7 @@ use reqwest::header::{
 };
 use reqwest::{Client, Method, Response, StatusCode};
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
 use tracing::{info, warn};
 
@@ -444,11 +444,14 @@ impl HttpDownloadClient {
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
-        let mut output = tokio::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(staging_path)
-            .await?;
+        let mut output = tokio::io::BufWriter::with_capacity(
+            256 * 1024,
+            tokio::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(staging_path)
+                .await?,
+        );
         let mut downloaded_bytes = 0_u64;
         loop {
             let next_chunk = response.chunk();
@@ -1223,9 +1226,8 @@ pub(crate) enum HlsKeyFetchOutcome {
     Cancelled,
 }
 
-async fn sync_output(output: &mut tokio::fs::File) -> Result<(), std::io::Error> {
-    output.flush().await?;
-    output.sync_all().await
+async fn sync_output(output: &mut (impl AsyncWrite + Unpin)) -> Result<(), std::io::Error> {
+    output.flush().await
 }
 
 async fn remove_file_if_exists(path: &PathBuf) -> Result<(), std::io::Error> {
