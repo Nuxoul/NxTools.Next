@@ -91,6 +91,12 @@ impl BlobUploadService {
                 while !worker_stop.load(std::sync::atomic::Ordering::Acquire) {
                     match listener.accept() {
                         Ok((stream, peer)) if peer.ip().is_loopback() => {
+                            // On Windows an accepted socket inherits the
+                            // listener's non-blocking state. Connection
+                            // handling is blocking-read based, so restore
+                            // blocking mode or byte reads race WouldBlock and
+                            // surface as spurious 400s under load.
+                            let _ = stream.set_nonblocking(false);
                             if worker_connections
                                 .fetch_update(
                                     std::sync::atomic::Ordering::AcqRel,
