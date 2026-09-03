@@ -1428,6 +1428,8 @@ mod tests {
                 automatic_categories_enabled: true,
                 categories: default_download_categories(),
                 duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
+                task_list_sort: None,
+                task_list_sort_descending: None,
                 double_click_action: DownloadRowDoubleClickActionSettings::OpenFile,
                 ffmpeg_executable_path: r"D:\Tools\ffmpeg.exe".into(),
                 default_request_headers: "X-Test: value".into(),
