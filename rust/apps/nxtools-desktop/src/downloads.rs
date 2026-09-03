@@ -1520,6 +1520,46 @@ impl DownloadApplication {
         cx.emit(DownloadApplicationEvent::BrowserExtensionExportCompleted { status });
     }
 
+    /// Copies the source URLs of the given tasks to the clipboard (one per
+    /// line) through the platform paste channel with paste disabled.
+    pub(crate) fn copy_task_urls(&mut self, task_ids: &[DownloadTaskId], cx: &mut Context<Self>) {
+        let mut urls = Vec::new();
+        for task_id in task_ids {
+            if let Some(task) = self.task(*task_id) {
+                urls.push(task.task.request().source_url.clone());
+            }
+        }
+        if urls.is_empty() {
+            return;
+        }
+        let payload = urls.join(
+            "
+",
+        );
+        match self
+            .platform
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: payload,
+                paste_after_write: false,
+                target_window_handle: 0,
+                target_focus_window_handle: 0,
+            })) {
+            Ok(_) => {
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_success(
+                        format!("download-urls-copied-{}", uuid::Uuid::new_v4()),
+                        "链接已复制",
+                        format!("已复制 {} 条下载链接", urls.len()),
+                        cx,
+                    );
+                });
+            }
+            Err(error) => {
+                warn!(event = "download.urls.copy_failed", %error, "could not copy download urls");
+            }
+        }
+    }
+
     pub(crate) fn row_double_click_action(&self) -> DownloadRowDoubleClickActionSettings {
         self.config.download.double_click_action
     }

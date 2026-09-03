@@ -136,6 +136,7 @@ pub(crate) struct DownloadContextCapabilities {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DownloadContextMenuPlan {
     pub(crate) artifact: bool,
+    pub(crate) copy_url: bool,
     pub(crate) task_window: bool,
     pub(crate) resume: bool,
     pub(crate) pause: bool,
@@ -699,6 +700,7 @@ pub(crate) fn download_context_menu_plan(
     let artifact = capabilities.single_artifact.is_some();
     DownloadContextMenuPlan {
         artifact,
+        copy_url: selected_count == 1,
         task_window: selected_count == 1,
         resume: !capabilities.resume_targets.is_empty(),
         pause: !capabilities.pause_targets.is_empty(),
@@ -1664,6 +1666,29 @@ pub(crate) fn download_task_context_menu(
                 ShellOpenAction::SelectInExplorer,
                 MaterialIcon::Folder,
             ));
+        has_visible_items = true;
+    }
+    if plan.copy_url {
+        let copy_application = application.clone();
+        let copy_task_ids = task_ids.clone();
+        menu = menu.item(
+            download_popup_item(
+                theme,
+                "download-menu-copy-url",
+                "复制下载链接",
+                MaterialIcon::ContentCopy,
+                MenuTone::Normal,
+            )
+            .on_click(move |_event, _window, cx| {
+                let application = copy_application.clone();
+                let task_ids = copy_task_ids.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.copy_task_urls(&task_ids, cx);
+                    });
+                });
+            }),
+        );
         has_visible_items = true;
     }
     if plan.task_window {
