@@ -3586,6 +3586,7 @@ mod tests {
             download_context_menu_plan(&completed_capabilities, 1),
             DownloadContextMenuPlan {
                 artifact: true,
+                copy_url: true,
                 task_window: true,
                 resume: false,
                 pause: false,
@@ -3613,6 +3614,7 @@ mod tests {
         assert_eq!(
             download_context_menu_plan(&active, 1),
             DownloadContextMenuPlan {
+                copy_url: true,
                 task_window: true,
                 pause: true,
                 cancel: true,
@@ -3633,6 +3635,7 @@ mod tests {
         assert_eq!(
             download_context_menu_plan(&failed, 1),
             DownloadContextMenuPlan {
+                copy_url: true,
                 task_window: true,
                 resume: true,
                 remove: true,
@@ -3650,6 +3653,7 @@ mod tests {
         assert_eq!(
             download_context_menu_plan(&mixed_selection, 2),
             DownloadContextMenuPlan {
+                copy_url: true,
                 resume: true,
                 pause: true,
                 cancel: true,

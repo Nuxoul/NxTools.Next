@@ -700,7 +700,7 @@ pub(crate) fn download_context_menu_plan(
     let artifact = capabilities.single_artifact.is_some();
     DownloadContextMenuPlan {
         artifact,
-        copy_url: selected_count == 1,
+        copy_url: selected_count > 0,
         task_window: selected_count == 1,
         resume: !capabilities.resume_targets.is_empty(),
         pause: !capabilities.pause_targets.is_empty(),
