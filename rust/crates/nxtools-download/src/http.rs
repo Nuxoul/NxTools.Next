@@ -508,6 +508,10 @@ impl HttpDownloadClient {
                 () = &mut bandwidth => {}
             }
             output.write_all(&chunk).await?;
+            // Flush per chunk: cancellation and checkpoint cleanup observe the
+            // staging file on disk, so buffered bytes must reach the filesystem
+            // as they arrive rather than waiting for segment completion.
+            output.flush().await?;
             downloaded_bytes = downloaded_bytes
                 .checked_add(chunk_len)
                 .ok_or(HttpDownloadError::LengthOverflow)?;
