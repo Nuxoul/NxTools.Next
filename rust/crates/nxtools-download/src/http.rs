@@ -77,10 +77,15 @@ impl HttpDownloadClient {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
+        // Servers routinely reject non-browser clients and missing referrers
+        // (anti-hotlink CDNs, signed media URLs). Present as the reference
+        // implementation's Chrome UA by default; task-level headers can still
+        // override the agent explicitly.
         let builder = Client::builder()
-            .user_agent(concat!("NxTools.Next/", env!("CARGO_PKG_VERSION")))
+            .user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
             .redirect(reqwest::redirect::Policy::limited(10))
-            .referer(false)
             .read_timeout(stall_timeout)
             .connect_timeout(stall_timeout)
             .danger_accept_invalid_certs(

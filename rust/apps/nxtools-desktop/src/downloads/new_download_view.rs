@@ -5,16 +5,17 @@ use super::*;
 /// humanized.
 pub(crate) fn humanize_download_fault(message: &str) -> String {
     if message.contains("status 404") {
-        "服务器返回 404:该地址不存在或已过期。确认链接是否仍有效，或改用页面上的真实文件直链。"
-            .into()
+        "服务器返回 404:该地址不存在或已过期。链接可能需要登录后从页面重新获取。".into()
     } else if message.contains("status 403") {
-        "服务器返回 403:拒绝访问。这类直链通常只允许原来的浏览器会话下载(防盗链)，请从页面重新获取下载地址。".into()
+        "服务器返回 403:拒绝程序的下载请求。这类地址通常要求登录会话或来自特定地区；请尝试在下载设置的请求 Header 中加入 Cookie，或从浏览器另存。".into()
+    } else if message.contains("status 401") {
+        "服务器返回 401:需要登录。请在下载设置的请求 Header 中加入 Cookie 后重试。".into()
     } else if message.contains("status 4") || message.contains("status 5") {
-        format!("服务器返回错误({message})。地址可能已失效或需要登录，请在浏览器中确认后重试。")
+        format!("服务器返回错误({message})。地址可能需要登录或已限流，请在浏览器中打开确认。")
     } else if message.to_lowercase().contains("timed out")
         || message.to_lowercase().contains("timeout")
     {
-        "连接超时。检查网络与代理设置后重试；若使用系统代理，尝试切换为直连。".into()
+        "连接超时。检查网络与代理设置后重试。".into()
     } else if message.to_lowercase().contains("dns") {
         "域名解析失败。检查链接拼写与网络连接。".into()
     } else {

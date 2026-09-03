@@ -419,6 +419,9 @@ async fn run_ffmpeg_install_with_sources_and_network(
     let client = network
         .build_client(
             reqwest::Client::builder()
+                .user_agent(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                )
                 .timeout(NETWORK_TIMEOUT)
                 .read_timeout(STALL_TIMEOUT)
                 .redirect(Policy::custom(|attempt| {
