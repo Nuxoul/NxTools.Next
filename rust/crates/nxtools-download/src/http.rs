@@ -77,15 +77,24 @@ impl HttpDownloadClient {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
-        // Servers routinely reject non-browser clients and missing referrers
-        // (anti-hotlink CDNs, signed media URLs). Present as the reference
-        // implementation's Chrome UA by default; task-level headers can still
-        // override the agent explicitly.
+        // Servers routinely reject non-browser clients (anti-hotlink CDNs,
+        // UA-filtering servers), so present the reference implementation's
+        // Chrome UA by default; task-level headers can still override the agent.
+        // Autoref (`.referer(true)`) must stay off: it rewrites the task's
+        // explicit Referer on every redirect and would silently replace the
+        // request context the task was accepted with. Redirect bounds are
+        // enforced by the custom policy below, mirroring `Policy::limited(10)`.
         let builder = Client::builder()
             .user_agent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            .redirect(reqwest::redirect::Policy::limited(10))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() > 10 {
+                    return attempt.error(HttpDownloadError::RedirectLimitExceeded);
+                }
+                attempt.follow()
+            }))
+            .referer(false)
             .read_timeout(stall_timeout)
             .connect_timeout(stall_timeout)
             .danger_accept_invalid_certs(
@@ -2009,6 +2018,8 @@ pub enum HttpDownloadError {
     Client(#[from] reqwest::Error),
     #[error(transparent)]
     NetworkPolicy(#[from] NetworkPolicyError),
+    #[error("download followed more than 10 redirects")]
+    RedirectLimitExceeded,
     #[error("HTTP probe returned status {0}")]
     Status(u16),
     #[error("download request does not contain a safe file name")]
@@ -2142,6 +2153,7 @@ impl HttpDownloadError {
                 matches!(*status, 408 | 425 | 429 | 500..=599)
             }
             Self::LengthMismatch { .. } | Self::ResourceValidatorMismatch { .. } => true,
+            Self::RedirectLimitExceeded => false,
             Self::InvalidHlsKeyLength { .. }
             | Self::InvalidHlsCiphertextLength { .. }
             | Self::InvalidHlsPadding => true,
@@ -2184,6 +2196,7 @@ impl HttpDownloadError {
             Self::InvalidRequest(_) => "invalid_request",
             Self::Client(_) => "client",
             Self::NetworkPolicy(_) => "network_policy",
+            Self::RedirectLimitExceeded => "redirect_limit",
             Self::Status(_) => "status",
             Self::MissingFileName => "missing_file_name",
             Self::DestinationExists(_) => "destination_exists",
