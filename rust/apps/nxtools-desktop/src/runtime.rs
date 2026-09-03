@@ -18,10 +18,14 @@ use nxtools_download::{DownloadEngine, DownloadHttpPolicy};
 use nxtools_download_ipc::{DOWNLOAD_PIPE_NAME, DownloadHostActivity, run_download_host};
 use nxtools_finder::{FinderCatalog, default_application_roots};
 use nxtools_ipc::{
-    INDEXER_PIPE_NAME, connect_local_indexer_pipe, read_bounded_sync_frame, write_envelope_sync,
+    INDEXER_PIPE_NAME, connect_local_indexer_pipe, connect_local_pipe, read_bounded_sync_frame,
+    write_envelope_sync,
 };
 use nxtools_network::NetworkPolicy;
-use nxtools_protocol::{Envelope, Hello, IndexerCommand, IndexerEvent, Message};
+use nxtools_protocol::{
+    ActivateWindowCommand, DEFAULT_PLATFORM_PIPE_NAME, Envelope, Hello, IndexerCommand,
+    IndexerEvent, Message, PlatformCommand, SetWindowVisibilityCommand,
+};
 use tracing::{error, info, warn};
 
 pub(crate) struct IndexerBridge {
@@ -557,6 +561,53 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
         .args(["--parent-pid", &std::process::id().to_string()])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
+}
+
+/// Summons the main window of an already-running desktop instance. A second
+/// launch uses this instead of failing on the single-instance lock: it reads
+/// the recorded main-window handle, asks the running instance's platform
+/// host to reveal and focus that window, and reports whether a summon was
+/// attempted.
+pub(crate) fn summon_running_desktop() -> Result<bool> {
+    let paths = AppPaths::discover()?;
+    let main_window_handle = SingleInstanceGuard::read_main_window_handle(&paths, "desktop");
+    if main_window_handle == 0 {
+        return Ok(false);
+    }
+    let pipe_name = format!(r"\\.\pipe\{DEFAULT_PLATFORM_PIPE_NAME}");
+    let mut connection = connect_local_pipe(&pipe_name, Duration::from_millis(800))?;
+
+    let mut send = |envelope: Envelope| -> Result<()> {
+        write_envelope_sync(&mut connection.writer, &envelope)?;
+        // The server answers the hello synchronously; command frames do not
+        // produce a same-connection reply, so only the hello result is read.
+        if let Some(frame) = read_bounded_sync_frame(&mut connection.reader)? {
+            let ack = Envelope::decode_line(&frame)
+                .context("summon handshake returned an invalid frame")?;
+            if !matches!(ack.message, Message::HelloAck { .. }) {
+                anyhow::bail!("summon handshake did not return a hello ack");
+            }
+        }
+        Ok(())
+    };
+
+    send(Envelope::new(Message::Hello(Hello {
+        client_name: "nxtools-desktop-summon".into(),
+        client_version: env!("CARGO_PKG_VERSION").into(),
+        capabilities: vec!["desktop_shell".into()],
+    })))?;
+    send(Envelope::new(Message::PlatformCommand(
+        PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+            window_handle: main_window_handle,
+            visible: true,
+        }),
+    )))?;
+    send(Envelope::new(Message::PlatformCommand(
+        PlatformCommand::ActivateWindow(ActivateWindowCommand {
+            window_handle: main_window_handle,
+        }),
+    )))?;
+    Ok(true)
 }
 
 #[cfg(test)]

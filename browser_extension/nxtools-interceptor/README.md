@@ -21,7 +21,9 @@
 
 1. 启动一次 NxTools.Next，使 PlatformHost 为 Chrome、Edge、Firefox 注册 `com.nxtools.next.browser`。
 2. Chrome / Edge 开启开发者模式，选择“加载已解压的扩展程序”。
-3. 选择打包目录中的 `browser_extension/nxtools-interceptor`。
-4. Firefox 可从同一源码制作 XPI；固定扩展 ID 为 `nxtools-download-interceptor@nxtools.local`。
+3. 选择打包目录中的 `browser_extension
+xtools-interceptor`（或使用 NxTools 下载设置 → 常规 → 浏览器扩展导出的签名 .crx / .xpi 安装包）。
+4. Firefox 可从同一源码制作 XPI（或使用应用内“导出 Firefox (.xpi)”按钮）；固定扩展 ID 为 `nxtools-download-interceptor@nxtools.local`。
+5. 加载后若提示连接失败，先确认 NxTools 正在运行；升级安装后请对扩展点“重新加载”。
 
 普通 HTTP/HTTPS、批量队列和 Blob 已接入新引擎。Blob 字节使用一次性有界 loopback 数据面，不会塞入 Native Messaging；HLS/DASH 与媒体合并仍按下载计划后续阶段接入。

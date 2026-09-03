@@ -1052,6 +1052,30 @@ impl SingleInstanceGuard {
         Self::acquire_with_timeout(paths, process_name, Duration::ZERO)
     }
 
+    /// Persists a fresh hint file for this instance. Callers update the
+    /// window handle after the main window exists; a second launch reads it
+    /// to summon the running instance instead of failing.
+    pub fn capture_hints(paths: &AppPaths, process_name: &str) {
+        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
+        let _ = std::fs::write(hint_path, std::process::id().to_string());
+    }
+
+    /// Reads the running instance's main-window handle recorded by the
+    /// desktop at startup. Returns 0 when no valid hint exists.
+    pub fn read_main_window_handle(paths: &AppPaths, process_name: &str) -> i64 {
+        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
+        std::fs::read_to_string(hint_path)
+            .ok()
+            .and_then(|text| text.trim().parse::<i64>().ok())
+            .unwrap_or(0)
+    }
+
+    /// Records the main window handle into the hint file.
+    pub fn record_main_window_handle(paths: &AppPaths, process_name: &str, handle: i64) {
+        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
+        let _ = std::fs::write(hint_path, handle.to_string());
+    }
+
     pub fn acquire_with_timeout(
         paths: &AppPaths,
         process_name: &str,

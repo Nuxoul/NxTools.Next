@@ -33,7 +33,7 @@ use gpui_component::{Root, Theme, ThemeMode};
 use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
-use nxtools_core::{AppPaths, SystemSettings};
+use nxtools_core::{AppPaths, SingleInstanceGuard, SystemSettings};
 use platform_events::{
     BrowserStartupWindow, PlatformApplicationTargets, PlatformEventDispatcher,
     PlatformEventDispatcherGlobal,
@@ -370,6 +370,15 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                         .flatten()
                 })
                 .unwrap_or_default();
+            if main_window_handle != 0
+                && let Ok(paths) = AppPaths::discover()
+            {
+                SingleInstanceGuard::record_main_window_handle(
+                    &paths,
+                    "desktop",
+                    main_window_handle,
+                );
+            }
             let dispatcher = cx.new(|cx| {
                 PlatformEventDispatcher::new(
                     Rc::clone(&platform_bridge),
@@ -422,6 +431,13 @@ fn main() {
         Ok(false) => {}
         Err(error) => eprintln!("NxTools could not use the protected desktop copy: {error:#}"),
     }
+    // A second desktop launch while one is already running is not a failure:
+    // summon the running instance's main window and exit cleanly.
+    match runtime::summon_running_desktop() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => eprintln!("NxTools could not summon the running instance: {error:#}"),
+    }
     let result = match launch_mode {
         DesktopLaunchMode::Background => runtime::run_background_download_host(instance_wait)
             .context("background download host startup failed"),
@@ -432,6 +448,14 @@ fn main() {
         }
     };
     if let Err(error) = result {
+        // An instance conflict is not a product failure: the running instance
+        // owns the desktop, so leave quietly without polluting the failure
+        // report or raising a native dialog.
+        let error_text = format!("{error:#}");
+        if error_text.contains("another desktop instance is already running") {
+            eprintln!("NxTools is already running; the existing window was focused.");
+            std::process::exit(0);
+        }
         let log_dir = AppPaths::discover().ok().map(|paths| paths.log_dir);
         let platform_host = std::env::current_exe().ok().and_then(|executable| {
             let host = executable.parent()?.join("NxTools.PlatformHost.exe");
