@@ -1140,14 +1140,35 @@ impl MainWindow {
                     .child(download_table_header(theme, self.download_sort, main_window))
                     .child(if visible_count == 0 {
                         if total_count == 0 {
-                            empty_state(
+                            // Clickable guidance: when the application entity
+                            // is reachable, the whole empty state opens the
+                            // new-download dialog; detached render paths keep
+                            // the static empty state.
+                            let empty = empty_state(
                                 theme,
                                 "download-empty-state",
                                 MaterialIcon::Download,
                                 "还没有下载任务",
-                                "点击右上角新建下载，提交真实 HTTP 或 HTTPS 地址。",
-                            )
-                            .into_any_element()
+                                "点击右上角新建下载，提交真实 HTTP 或 HTTPS 地址；也可以从浏览器直接发起下载。",
+                            );
+                            match self.downloads.upgrade() {
+                                Some(open_application) => div()
+                                    .id("download-empty-state-action")
+                                    .size_full()
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let application = open_application.clone();
+                                        cx.defer(move |cx| {
+                                            application.update(cx, |application, cx| {
+                                                application.open_new_download_window(cx);
+                                            });
+                                        });
+                                        let _ = this;
+                                    }))
+                                    .child(empty)
+                                    .into_any_element(),
+                                None => empty.into_any_element(),
+                            }
                         } else if !search_query.is_empty() {
                             empty_state(
                                 theme,
@@ -1683,7 +1704,7 @@ pub(crate) fn download_task_context_menu(
                 let application = copy_application.clone();
                 let task_ids = copy_task_ids.clone();
                 cx.defer(move |cx| {
-                    application.update(cx, |application, cx| {
+                    let _ = application.update(cx, |application, cx| {
                         application.copy_task_urls(&task_ids, cx);
                     });
                 });
