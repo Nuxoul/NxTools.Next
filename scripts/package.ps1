@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$OutputPath = '',
@@ -193,6 +193,25 @@ finally {
 }
 
 Write-Host "Package created at $destination"
+
+# Build the user-facing installer when Inno Setup is available.
+$isccCandidates = @(
+    ${env:ProgramFiles(x86)},
+    $env:ProgramFiles
+) | ForEach-Object { Join-Path $_ 'Inno Setup 6\ISCC.exe' }
+$iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($iscc -and $Configuration -eq 'Release') {
+    $installerScript = Join-Path $root 'installer\nxtools-next.iss'
+    if (Test-Path $installerScript) {
+        & $iscc $installerScript | Write-Host
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Installer created at $(Join-Path $root 'artifacts\installer')"
+        }
+        else {
+            Write-Warning "Inno Setup compilation failed with exit code $LASTEXITCODE"
+        }
+    }
+}
 if ($restartIndexerServiceOnFailure -and $packageCompleted) {
     Write-Host 'The legacy writable-path indexer service remains stopped; the next desktop launch will request one-time migration to the protected service directory.'
 }
