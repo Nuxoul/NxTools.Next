@@ -2139,6 +2139,17 @@ impl QuickLaunchApplication {
                     && !application.preview.pointer_inside
                 {
                     application.animate_quick_launch_preview_exit(cx);
+                } else if application.preview.visible
+                    && application.preview.hovered_entry_id.is_none()
+                    && !application.preview.pointer_inside
+                {
+                    // A racing hover bumped the generation and cancelled this
+                    // timer, but the replacement preview never actually took
+                    // over (target switch rejected or staging dropped). Rearm
+                    // once more so a visible-but-unhovered preview cannot stay
+                    // on screen orphaned — the reported "preview never closes"
+                    // symptom.
+                    application.schedule_quick_launch_preview_hide(delay, cx);
                 }
             });
         })

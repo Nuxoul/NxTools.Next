@@ -39,23 +39,24 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
                 "Shell actions require a resolvable local file or directory.");
         }
 
-        var worker = new ShellContextMenuSessionWorker(shellTarget);
+        var worker = ShellContextMenuSessionWorker.Acquire(shellTarget);
         ShellContextMenuSessionWorker? previous;
         lock (_gate)
         {
             if (_disposed)
             {
-                worker.Dispose();
+                worker.Release();
                 return new WindowsCommandResult(false, "Shell action sessions are shutting down.");
             }
             previous = _current;
             _current = worker;
         }
-        previous?.Dispose();
+        previous?.Release();
 
         var result = worker.QueryActions(navigationDirectory);
         if (result.Success)
         {
+            worker.Release();
             return result;
         }
         lock (_gate)
@@ -65,7 +66,7 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
                 _current = null;
             }
         }
-        worker.Dispose();
+        worker.Release();
         return result;
     }
 
@@ -93,7 +94,7 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
         }
         finally
         {
-            worker.Dispose();
+            worker.Release();
         }
     }
 
@@ -136,6 +137,14 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
 internal sealed class ShellContextMenuSessionWorker : IDisposable
 {
     private const int RequestTimeoutMilliseconds = 5000;
+    // A warm session for the same target answers a repeat right-click without
+    // re-running the Shell COM handshake (SHParseDisplayName → GetUIObjectOf →
+    // QueryContextMenu), which measured 160–534 ms per cold query and is what
+    // the user perceives as the action menu "loading for seconds".
+    private const int CacheCapacity = 8;
+    private static readonly object CacheGate = new();
+    private static readonly Queue<(string Target, ShellContextMenuSessionWorker Worker)> Cache = new();
+
     private readonly BlockingCollection<Action> _requests = new();
     private readonly ManualResetEventSlim _started = new(false);
     private readonly Thread _thread;
@@ -143,6 +152,65 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
     private Exception? _startupError;
     private ShellContextMenuSession? _session;
     private int _disposed;
+    private int _leased;
+
+    public static ShellContextMenuSessionWorker Acquire(string target)
+    {
+        lock (CacheGate)
+        {
+            for (int i = 0; i < Cache.Count; i++)
+            {
+                var (cachedTarget, worker) = Cache.Dequeue();
+                if (string.Equals(cachedTarget, target, StringComparison.OrdinalIgnoreCase)
+                    && worker.TryAcquireFromCache())
+                {
+                    return worker;
+                }
+                Cache.Enqueue((cachedTarget, worker));
+            }
+        }
+        return new ShellContextMenuSessionWorker(target);
+    }
+
+    private bool TryAcquireFromCache()
+    {
+        if (Interlocked.Exchange(ref _leased, 1) != 0 || Volatile.Read(ref _disposed) != 0)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public void Release()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            Dispose();
+            return;
+        }
+        List<ShellContextMenuSessionWorker>? evicted = null;
+        lock (CacheGate)
+        {
+            Cache.Enqueue((_target, this));
+            while (Cache.Count > CacheCapacity)
+            {
+                var (_, evictedWorker) = Cache.Dequeue();
+                if (ReferenceEquals(evictedWorker, this))
+                {
+                    continue;
+                }
+                evicted ??= new List<ShellContextMenuSessionWorker>();
+                evicted.Add(evictedWorker);
+            }
+        }
+        if (evicted is not null)
+        {
+            foreach (var worker in evicted)
+            {
+                worker.Dispose();
+            }
+        }
+    }
 
     public ShellContextMenuSessionWorker(string target)
     {

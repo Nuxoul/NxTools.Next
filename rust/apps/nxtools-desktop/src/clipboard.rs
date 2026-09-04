@@ -1301,6 +1301,18 @@ impl ClipboardApplication {
                     && !this.preview.pointer_inside
                 {
                     this.dismiss_preview(cx);
+                } else if this.preview.visible
+                    && this.preview.hovered_item_id.is_none()
+                    && !this.preview.pointer_inside
+                {
+                    // A racing hover bumped the generation and cancelled this
+                    // timer, but the replacement preview never became visible
+                    // (the target switched away or staging was dropped). The
+                    // window would otherwise stay on screen orphaned until an
+                    // unrelated hover event arrived — the reported "preview
+                    // never auto-closes" symptom. Re-arm once more so the
+                    // visible-but-unhovered window always terminates.
+                    this.schedule_preview_hide(PREVIEW_LEAVE_DELAY, cx);
                 }
             });
         })
