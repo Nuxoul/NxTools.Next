@@ -255,6 +255,14 @@ pub(crate) struct ClipboardPanel {
 }
 
 impl ClipboardPanel {
+    /// Puts keyboard focus into the clipboard search box so typed text lands
+    /// there by default, even when the panel window was re-shown after the OS
+    /// handed focus elsewhere.
+    pub(crate) fn focus_search_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_input.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
     pub(crate) fn new(
         page: ClipboardHistoryPage,
         categories: Vec<ClipboardCategory>,

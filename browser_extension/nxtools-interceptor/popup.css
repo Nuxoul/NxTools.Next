@@ -118,16 +118,21 @@ p {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.brand-lockup,
-.connection,
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+}
+
 .brand-mark {
   display: block;
   width: 27px;
   height: 27px;
-}
-
-.brand-lockup {
-  gap: 9px;
 }
 
 .brand-lockup h1 {
@@ -145,6 +150,8 @@ p {
 }
 
 .connection {
+  display: flex;
+  align-items: center;
   max-width: 232px;
   gap: 7px;
   color: var(--text-dim);

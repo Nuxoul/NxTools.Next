@@ -274,7 +274,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let startup_started_at = Instant::now();
             let window = cx.open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::centered(size(px(1060.0), px(500.0)), cx)),
+                    window_bounds: Some(WindowBounds::centered(size(px(1060.0), px(650.0)), cx)),
                     titlebar: Some(TitlebarOptions {
                         title: Some("NxTools".into()),
                         appears_transparent: true,

@@ -2200,11 +2200,13 @@ impl ClipboardApplication {
                     return;
                 };
                 let native_window_handle = native_window_slot.borrow_mut().take().unwrap_or(0);
+                let panel_for_focus = panel.clone();
                 let popup = PopupWindow {
                     window: window.into(),
-                    panel,
+                    panel: panel.clone(),
                     native_window_handle,
                 };
+                let focus_window = popup.window;
                 let topmost_result = if should_request_popup_topmost(true, native_window_handle) {
                     self.platform
                         .send_command(PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
@@ -2246,6 +2248,18 @@ impl ClipboardApplication {
                     height = panel_size.height,
                     "clipboard popup opened"
                 );
+                // The ctor focuses the search input while the native window is
+                // still being shown; the OS can hand focus back to the caller
+                // after the window appears, leaving typed text going nowhere.
+                // Re-focus one frame later once the window is actually on
+                // screen so typing lands in the search box by default.
+                cx.defer(move |cx| {
+                    let _ = focus_window.update(cx, |_, window, app| {
+                        panel_for_focus.update(app, |panel, cx| {
+                            panel.focus_search_input(window, cx);
+                        });
+                    });
+                });
             }
             Err(error) => error!(%error, "failed to open clipboard popup"),
         }

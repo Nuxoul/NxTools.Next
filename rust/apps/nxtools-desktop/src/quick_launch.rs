@@ -2807,6 +2807,7 @@ impl QuickLaunchApplication {
     ) {
         let started_at = Instant::now();
         let action_correlation_id = uuid::Uuid::new_v4();
+        let execute_session_id = self.popup_session_id;
         let owner_window_handle = self
             .popup
             .as_ref()
@@ -2856,6 +2857,13 @@ impl QuickLaunchApplication {
                     source = result.entry.source.label(),
                     "quick-launch action accepted"
                 );
+                // Hide immediately after dispatch: waiting for the completion
+                // result made Enter feel slow on slow shell launches (measured
+                // 1-2s). The completion handler still records activation and
+                // shows errors — the panel just isn't visible for it.
+                if execute_session_id == self.popup_session_id {
+                    self.hide_popup(cx);
+                }
                 self.pending_actions.insert(
                     command_id,
                     PendingQuickLaunchAction {
