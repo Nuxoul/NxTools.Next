@@ -14,7 +14,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::clipboard::ClipboardApplication;
 use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 use crate::ui::metrics::RADIUS_CONTROL;
-use crate::ui::typography::TEXT_META;
+use crate::ui::typography::{TEXT_BODY, TEXT_META};
 
 const TEXT_LINE_HEIGHT: f32 = 20.0;
 const META_LINE_HEIGHT: f32 = 16.0;
@@ -106,7 +106,7 @@ impl Render for ClipboardPreview {
                     .flex_none()
                     .overflow_hidden()
                     .font_family(UI_MONO_FONT_FAMILY)
-                    .text_size(px(TEXT_META))
+                    .text_size(px(TEXT_BODY))
                     .line_height(px(TEXT_LINE_HEIGHT))
                     .whitespace_normal()
                     .child(preview_body(&self.item));

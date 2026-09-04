@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
 namespace NxTools.PlatformHost.Windows;
@@ -145,7 +146,21 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                 startInfo = new ProcessStartInfo(Target) { UseShellExecute = true };
                 break;
         }
-        _ = Process.Start(startInfo);
+        var process = Process.Start(startInfo);
+        // Explorer windows launched from a background service process inherit
+        // its lack of foreground rights and open behind the app. A short
+        // foreground restore makes the new Explorer window take z-order top.
+        if (process is not null && Kind is ShellTargetKind.SelectInExplorer or ShellTargetKind.Open)
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(600);
+                if (!process.HasExited)
+                {
+                    _ = NativeMethods.SetForegroundWindow(process.MainWindowHandle);
+                }
+            });
+        }
     }
 
     internal static string BuildRegistryLastKey(string target, string? existingLastKey)
@@ -158,4 +173,12 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
             : "Computer";
         return $"{computerRoot}\\{target}";
     }
+}
+
+
+internal static class NativeMethods
+{
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetForegroundWindow(IntPtr hWnd);
 }
