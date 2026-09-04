@@ -1165,14 +1165,14 @@ impl DownloadEngine {
                     .lock()
                     .map_err(|_| DownloadEngineError::LockPoisoned)?;
                 let mut order = self.inner.store.load_queue_order(&queue_id)?;
-                let eligible = self
-                    .inner
-                    .store
-                    .load_eligible_queue_order(&queue_id)?
-                    .into_iter()
-                    .collect::<HashSet<_>>();
+                // Manual ordering covers every task in the queue (completed,
+                // failed, paused, active): the user-arranged order is a
+                // persisted preference, not an admission decision. Gating it
+                // on admission eligibility made moves on finished tasks fail
+                // silently, so the order never stuck across restarts.
+                let known: HashSet<_> = order.iter().copied().collect();
                 for task_id in &task_ids {
-                    if !eligible.contains(task_id) {
+                    if !known.contains(task_id) {
                         return Err(DownloadEngineError::InvalidQueueMove(*task_id));
                     }
                 }
