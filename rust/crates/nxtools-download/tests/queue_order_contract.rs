@@ -4,7 +4,7 @@
 use nxtools_download::{
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadEngine, DownloadQueueAction, DownloadQueuePlacement,
-    DownloadRequest, DownloadStatus, DownloadTaskAction, DownloadTaskId, RequestOrigin,
+    DownloadRequest, DownloadStatus, DownloadTaskAction, RequestOrigin,
 };
 
 fn envelope(command: DownloadCommand) -> DownloadCommandEnvelope {
@@ -51,12 +51,10 @@ fn moving_finished_tasks_persists_the_user_order() {
             .expect("enqueue fixture");
         // Drive every task to the cancelled terminal state the way a finished
         // download lands in the real queue table (non-eligible).
-        engine
-            .handle_command(envelope(DownloadCommand::Task {
-                task_id,
-                action: DownloadTaskAction::Cancel,
-            }))
-            .outcome;
+        engine.handle_command(envelope(DownloadCommand::Task {
+            task_id,
+            action: DownloadTaskAction::Cancel,
+        }));
         let snapshot = engine
             .task(task_id)
             .expect("fixture task lookup succeeds")
