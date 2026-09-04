@@ -564,6 +564,19 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     complete index batch still atomically replaces the list through `refresh_indexed_results` with
     its generation check. Old generations are rejected exactly as before; only the withholding was
     removed.
+46. Reverified 2026-09-04 after the user reported "right-click action mode still waits ~5 s" with a
+    screenshot of the bounded "正在加载 Windows 操作" state: the C# pipe read loop executed
+    `query_shell_actions` inline, and the command creates a fresh STA worker per query that runs the
+    full Shell COM session (SHParseDisplayName → GetUIObjectOf → QueryContextMenu) synchronously.
+    While that native work ran, the read loop could not accept or answer any other command, so icon
+    extraction and even unrelated commands queued behind one slow Shell extension — the whole pipe
+    appeared stalled for up to the 5 s timeout. The corrected contract: the
+    `PlatformCommandSequenceDispatcher` detaches every known-blocking Win32/Shell command
+    (`query_shell_actions`, `query_shell_submenu`, `invoke_shell_action`, `extract_shell_icon`,
+    the four pickers, `export_browser_extension`) alongside `begin_file_drag`; the read loop
+    returns immediately and results flow back per correlation id. The lazy per-session enumeration
+    itself is unchanged — only the pipe head-of-line blocking was removed. Rust keeps its bounded
+    pending shell queries and timeout paths unchanged.
 
 ## Phase-1 implementation mapping
 

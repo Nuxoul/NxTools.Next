@@ -137,6 +137,7 @@ internal static class Program
             ("bounded reader preserves adjacent frames", ReaderPreservesFrames),
             ("bounded reader rejects oversized frames", ReaderRejectsOversizedFrame),
             ("native file drag does not block later platform commands", FileDragDoesNotBlockLaterCommands),
+            ("shell enumeration does not block later platform commands", ShellEnumerationDoesNotBlockLaterCommands),
             ("browser extension export command parses format and destination", BrowserExtensionExportCommandParses),
             ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
@@ -4083,6 +4084,53 @@ internal static class Program
         finally
         {
             releaseDrag.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private static async Task ShellEnumerationDoesNotBlockLaterCommands()
+    {
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var shellStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseShell = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var followUpRan = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processing = Task.Run(async () =>
+        {
+            await dispatcher.DispatchAsync(
+                "query_shell_actions",
+                async () =>
+                {
+                    shellStarted.TrySetResult();
+                    await releaseShell.Task;
+                });
+            await dispatcher.DispatchAsync(
+                "open_shell_target",
+                () =>
+                {
+                    followUpRan.TrySetResult();
+                    return Task.CompletedTask;
+                });
+        });
+
+        await shellStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        try
+        {
+            // While the Shell enumeration is still running, the next command
+            // must already have executed — this is the pipe-read-loop liveness
+            // contract that keeps the quick-launch action mode responsive.
+            var completed = await Task.WhenAny(
+                followUpRan.Task,
+                Task.Delay(TimeSpan.FromMilliseconds(250)));
+            Assert(completed == followUpRan.Task);
+        }
+        finally
+        {
+            releaseShell.TrySetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(1));
             await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
         }

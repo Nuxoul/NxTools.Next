@@ -3,6 +3,25 @@ namespace NxTools.PlatformHost.Protocol;
 internal sealed class PlatformCommandSequenceDispatcher
 {
     private const string NativeFileDragCommand = "begin_file_drag";
+
+    // Win32/Shell commands whose native work blocks for unbounded time (Shell
+    // extension enumeration, icon extraction, dialog pickers). Running them
+    // inline stalls the pipe read loop, delaying every later command —
+    // including the quick-launch results these commands are meant to feed.
+    private static readonly HashSet<string> DetachedCommands = new(StringComparer.Ordinal)
+    {
+        NativeFileDragCommand,
+        "query_shell_actions",
+        "query_shell_submenu",
+        "invoke_shell_action",
+        "extract_shell_icon",
+        "pick_clipboard_archive_path",
+        "pick_clipboard_storage_directory",
+        "pick_directory",
+        "pick_program",
+        "export_browser_extension",
+    };
+
     private readonly object _gate = new();
     private readonly HashSet<Task> _detachedCommands = [];
     private readonly Action<Exception>? _onDetachedFailure;
@@ -19,10 +38,7 @@ internal sealed class PlatformCommandSequenceDispatcher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         ArgumentNullException.ThrowIfNull(executeAsync);
-        if (!string.Equals(
-                commandName,
-                NativeFileDragCommand,
-                StringComparison.Ordinal))
+        if (!DetachedCommands.Contains(commandName))
         {
             return executeAsync();
         }
