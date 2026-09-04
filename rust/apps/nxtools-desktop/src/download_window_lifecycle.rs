@@ -75,6 +75,18 @@ impl DownloadWindowLifecycle {
         task_id: DownloadTaskId,
         status: DownloadStatus,
     ) -> DownloadWindowDirective {
+        // Cancellation is an explicit user action: the open task window served
+        // its purpose and must close instead of lingering in the progress view
+        // with stale speed/ETA metrics. It is not a passive terminal phase
+        // (no completed/failed fallback window is opened for it).
+        if status == DownloadStatus::Cancelled {
+            self.handled_terminal
+                .retain(|(candidate, _)| *candidate != task_id);
+            return match self.open.remove(&task_id) {
+                Some(_) => DownloadWindowDirective::CloseExisting,
+                None => DownloadWindowDirective::None,
+            };
+        }
         let terminal_phase = match status {
             DownloadStatus::Completed => Some(DownloadWindowPhase::Completed),
             DownloadStatus::Failed => Some(DownloadWindowPhase::Failed),
@@ -199,6 +211,29 @@ mod tests {
         assert_eq!(
             lifecycle.task_removed(task_id),
             DownloadWindowDirective::None
+        );
+    }
+
+    #[test]
+    fn cancelling_a_task_closes_its_open_window_instead_of_lingering() {
+        let task_id = DownloadTaskId::new();
+        let mut lifecycle = DownloadWindowLifecycle::default();
+        lifecycle.request_progress(task_id);
+
+        assert_eq!(
+            lifecycle.task_changed(task_id, DownloadStatus::Cancelled),
+            DownloadWindowDirective::CloseExisting,
+            "cancellation must close the open progress window"
+        );
+        assert_eq!(
+            lifecycle.task_changed(task_id, DownloadStatus::Cancelled),
+            DownloadWindowDirective::None,
+            "a second cancellation event must be a no-op"
+        );
+        assert_eq!(
+            lifecycle.task_changed(task_id, DownloadStatus::Downloading),
+            DownloadWindowDirective::None,
+            "a stale in-progress event after cancellation must not reopen the window"
         );
     }
 
