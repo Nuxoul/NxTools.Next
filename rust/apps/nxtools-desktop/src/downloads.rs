@@ -9008,8 +9008,11 @@ mod tests {
             .refresh()
             .expect("render production task window");
         let arm = task_window
-            .debug_bounds("download-window-shutdown-arm")
+            .debug_bounds("download-window-shutdown-arm-button")
             .expect("task-local shutdown arm");
+        // Every task-window footer button shares one height; a drift here is
+        // the "buttons don't match" regression the user reported.
+        assert_eq!(arm.size.height, px(CONTROL_HEIGHT_ACTION));
         task_window.simulate_click(arm.center(), Modifiers::default());
         task_window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)));

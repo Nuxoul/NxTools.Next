@@ -382,6 +382,7 @@ impl Render for DownloadTaskWindowView {
                         Button::new("download-window-failed-cancel")
                             .label("取消任务")
                             .small()
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .outline()
                             .on_click(move |_, _, cx| {
                                 let application = cancel_application.clone();
@@ -397,6 +398,7 @@ impl Render for DownloadTaskWindowView {
                             .icon(Icon::new(MaterialIcon::Download))
                             .label("重试")
                             .small()
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .custom(download_primary_button_variant(theme, cx))
                             .on_click(move |_, _, cx| {
                                 let application = retry_application.clone();
@@ -496,6 +498,7 @@ impl Render for DownloadTaskWindowView {
                         Button::new("download-window-cancel-active")
                             .label("取消")
                             .small()
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .outline()
                             .on_click(move |_, _, cx| {
                                 let application = secondary_application.clone();
@@ -510,6 +513,7 @@ impl Render for DownloadTaskWindowView {
                         Button::new("download-window-pause")
                             .label("暂停")
                             .small()
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .custom(download_primary_button_variant(theme, cx))
                             .on_click(move |_, _, cx| {
                                 let application = action_application.clone();
@@ -622,13 +626,16 @@ impl Render for DownloadTaskWindowView {
                                 .debug_selector(|| "download-window-shutdown-arm".into())
                                 .child(
                                     Button::new("download-window-shutdown-arm-button")
+                                        .debug_selector(|| {
+                                            "download-window-shutdown-arm-button".into()
+                                        })
                                         .label(if shutdown_armed {
                                             "已计划关机"
                                         } else {
                                             "完成后关机"
                                         })
                                         .small()
-                                        .h(px(28.0))
+                                        .h(px(CONTROL_HEIGHT_ACTION))
                                         .px(px(10.0))
                                         .rounded(px(RADIUS_CONTROL))
                                         .when(shutdown_armed, |button| {
