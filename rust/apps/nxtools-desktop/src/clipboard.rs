@@ -2255,7 +2255,7 @@ impl ClipboardApplication {
                 // screen so typing lands in the search box by default.
                 cx.defer(move |cx| {
                     let _ = focus_window.update(cx, |_, window, app| {
-                        panel_for_focus.update(app, |panel, cx| {
+                        let _ = panel_for_focus.update(app, |panel, cx| {
                             panel.focus_search_input(window, cx);
                         });
                     });
