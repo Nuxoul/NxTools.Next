@@ -6894,10 +6894,14 @@ mod tests {
                 .update(cx, |_, window, _| window.bounds().size.height.as_f32())
                 .expect("read browser download window bounds")
         });
+        // The auto-probe of the browser handoff URL fails fast (nothing listens
+        // on port 9), which surfaces the inline error strip. The dialog must
+        // grow by exactly the error reserve instead of squeezing the footer.
+        let compact = new_download_window_size(false).height.as_f32();
         assert_eq!(
             height,
-            new_download_window_size(false).height.as_f32(),
-            "an unconfirmed browser probe must not retain the full confirmed-form height"
+            compact + f32::from(NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT),
+            "a failed browser probe must reserve the inline error row, not the confirmed form"
         );
 
         let _ = std::fs::remove_dir_all(directory);
@@ -7034,6 +7038,72 @@ mod tests {
             .debug_bounds("download-new-footer")
             .expect("confirmed new-download footer");
         assert!(inspector.bottom() <= confirmed_footer.top());
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui::test]
+    fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let (application, directory) =
+            download_application_for_window_test(cx, "new-download-error-reserve");
+
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.open_new_download_window(cx);
+            });
+        });
+        cx.run_until_parked();
+
+        let new_download_window = cx
+            .read(|cx| application.read(cx).new_download_window)
+            .expect("production new-download window");
+        let mut window = VisualTestContext::from_window(new_download_window, cx);
+        window.refresh().expect("render compact dialog");
+
+        let footer_before = window
+            .debug_bounds("download-new-footer")
+            .expect("compact footer");
+        let view = cx
+            .read(|cx| application.read(cx).new_download_view.clone())
+            .expect("production new-download view");
+        new_download_window
+            .update(cx, move |_, window, cx| {
+                // An invalid URL is the same begin_probe failure path the user
+                // hits; it sets the error and reserves the row.
+                view.update(cx, |view, cx| {
+                    view.url.update(cx, |input, cx| {
+                        input.set_value("not a valid url", window, cx);
+                    });
+                    view.begin_probe(window, cx);
+                });
+            })
+            .expect("run failing probe");
+        window.run_until_parked();
+        window.refresh().expect("render error reserve");
+
+        let base = new_download_window_size(false);
+        let error_size = new_download_window
+            .update(cx, |_, native_window, _| native_window.bounds().size)
+            .expect("read error reserve bounds");
+        assert_eq!(
+            error_size,
+            size(base.width, base.height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT),
+            "a probe error must grow the fixed-height dialog instead of squeezing the footer"
+        );
+        let footer_after = window
+            .debug_bounds("download-new-footer")
+            .expect("footer with error");
+        assert_eq!(
+            footer_after.size, footer_before.size,
+            "footer geometry must not change when an error appears"
+        );
+        assert!(
+            window.debug_bounds("download-inline-error").is_some(),
+            "the inline error must render inside the grown dialog"
+        );
 
         let _ = std::fs::remove_dir_all(directory);
     }

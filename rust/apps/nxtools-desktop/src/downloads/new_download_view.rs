@@ -119,6 +119,7 @@ pub(crate) struct NewDownloadView {
     pub(crate) submitting: bool,
     pub(crate) probe_generation: u64,
     pub(crate) error: Option<String>,
+    error_window_reserve_armed: bool,
     pub(crate) _subscription: Subscription,
     pub(crate) _directory_subscription: Subscription,
     pub(crate) _category_search_subscription: Subscription,
@@ -342,6 +343,7 @@ impl NewDownloadView {
             submitting: false,
             probe_generation: 0,
             error: None,
+            error_window_reserve_armed: false,
             _subscription: subscription,
             _directory_subscription: directory_subscription,
             _category_search_subscription: category_search_subscription,
@@ -437,6 +439,10 @@ impl NewDownloadView {
                 self.error = Some(humanize_download_fault(&error));
                 self.confirmed_request = None;
                 self.probe = None;
+                window.resize(size(
+                    px(560.0),
+                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+                ));
                 cx.notify();
                 return;
             }
@@ -531,7 +537,9 @@ impl NewDownloadView {
                     .probe
                     .as_ref()
                     .map(new_download_window_size_for_probe)
-                    .unwrap_or_else(|| new_download_window_size(false));
+                    .unwrap_or_else(|| {
+                        size(px(560.0), px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT)
+                    });
                 Some((
                     this.file_name.clone(),
                     resolved_file_name,
@@ -600,6 +608,12 @@ impl NewDownloadView {
                         });
                     }
                     Err(message) => {
+                        let _ = source_window.update(cx, |_, window, _| {
+                            window.resize(size(
+                                px(560.0),
+                                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+                            ));
+                        });
                         let _ = view.update(cx, |view, cx| {
                             view.submitting = false;
                             view.error = Some(humanize_download_fault(&message));
@@ -614,12 +628,20 @@ impl NewDownloadView {
             Ok(request) => request,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
+                window.resize(size(
+                    px(560.0),
+                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+                ));
                 cx.notify();
                 return;
             }
         };
         let Some(confirmed) = self.confirmed_request.clone() else {
             self.error = Some("请先探测链接并确认文件信息".into());
+            window.resize(size(
+                px(560.0),
+                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+            ));
             cx.notify();
             return;
         };
@@ -632,6 +654,10 @@ impl NewDownloadView {
             Ok(media) => media,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
+                window.resize(size(
+                    px(560.0),
+                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+                ));
                 cx.notify();
                 return;
             }
@@ -640,17 +666,29 @@ impl NewDownloadView {
             self.confirmed_request = None;
             self.probe = None;
             self.error = Some("下载地址已变更，请重新探测".into());
+            window.resize(size(
+                px(560.0),
+                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+            ));
             cx.notify();
             return;
         };
         request.media = media;
         if let Err(error) = request.validate() {
             self.error = Some(error.to_string());
+            window.resize(size(
+                px(560.0),
+                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+            ));
             cx.notify();
             return;
         }
         if request.save_directory.exists() && !request.save_directory.is_dir() {
             self.error = Some("保存位置不是文件夹，请重新选择".into());
+            window.resize(size(
+                px(560.0),
+                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+            ));
             cx.notify();
             return;
         }
@@ -689,6 +727,12 @@ impl NewDownloadView {
                 }
                 Err(message) => {
                     error!(error = %message, ?mode, "download task submission rejected");
+                    let _ = source_window.update(cx, |_, window, _| {
+                        window.resize(size(
+                            px(560.0),
+                            px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+                        ));
+                    });
                     let _ = view.update(cx, |view, cx| {
                         view.submitting = false;
                         view.error = Some(message);
@@ -783,6 +827,10 @@ impl Render for NewDownloadView {
         let probing = self.probing;
         let submitting = self.submitting;
         let confirmed = probe.is_some();
+        // The unconfirmed dialog is a fixed-height window; an inline probe
+        // error adds one bounded error row. The window reserves that row via
+        // `set_error`/`clear_error` so the footer buttons keep their position
+        // instead of being squeezed off the dialog.
         let schedule_label = if let Some(selection) = self.committed_schedule {
             format!(
                 "{} {:02}:{:02}",
@@ -1503,6 +1551,8 @@ impl Render for NewDownloadView {
         } else {
             div()
                 .flex_1()
+                .min_h_0()
+                .overflow_hidden()
                 .px(px(16.0))
                 .py(px(10.0))
                 .flex()
@@ -2181,6 +2231,11 @@ pub(crate) fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixe
         size(px(560.0), px(176.0))
     }
 }
+
+/// Height reserved for one bounded inline error row (two Chinese lines plus
+/// padding and the form gap) so the footer buttons never get squeezed off the
+/// fixed-height unconfirmed dialog when a probe error appears.
+pub(crate) const NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT: gpui::Pixels = px(38.0);
 
 pub(crate) fn new_download_window_size_for_probe(
     probe: &DownloadProbe,

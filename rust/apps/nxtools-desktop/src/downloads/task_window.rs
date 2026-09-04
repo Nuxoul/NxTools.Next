@@ -382,7 +382,7 @@ impl Render for DownloadTaskWindowView {
                         Button::new("download-window-failed-cancel")
                             .label("取消任务")
                             .small()
-                            .ghost()
+                            .outline()
                             .on_click(move |_, _, cx| {
                                 let application = cancel_application.clone();
                                 cx.defer(move |cx| {
@@ -457,7 +457,7 @@ impl Render for DownloadTaskWindowView {
                     Button::new("download-window-cancel")
                         .label("取消任务")
                         .small()
-                        .ghost()
+                        .outline()
                         .on_click(move |_, _, cx| {
                             let application = secondary_application.clone();
                             cx.defer(move |cx| {
@@ -496,7 +496,7 @@ impl Render for DownloadTaskWindowView {
                         Button::new("download-window-cancel-active")
                             .label("取消")
                             .small()
-                            .ghost()
+                            .outline()
                             .on_click(move |_, _, cx| {
                                 let application = secondary_application.clone();
                                 cx.defer(move |cx| {
