@@ -164,6 +164,7 @@ internal static class IndexerServiceInstaller
                 desktopSource,
                 protectedDirectory,
                 "NxTools.exe");
+            CopyBrowserExtensionInto(protectedDirectory);
             protectedBrowserHostPath = DeployProtectedBinary(
                 browserHostSource,
                 protectedDirectory,
@@ -397,6 +398,38 @@ internal static class IndexerServiceInstaller
             System.Security.SecurityException)
         {
             return false;
+        }
+    }
+
+
+    private static void CopyBrowserExtensionInto(string protectedDirectory)
+    {
+        var sourceRoot = AppContext.BaseDirectory;
+        var candidates = new[]
+        {
+            Path.Combine(sourceRoot, "browser_extension"),
+            Path.Combine(sourceRoot, "..", "browser_extension"),
+            Path.Combine(Directory.GetCurrentDirectory(), "browser_extension"),
+        };
+        var source = candidates.FirstOrDefault(Directory.Exists);
+        if (source is null)
+        {
+            return;
+        }
+
+        var destination = Path.Combine(protectedDirectory, "browser_extension");
+        if (Directory.Exists(destination))
+        {
+            Directory.Delete(destination, recursive: true);
+        }
+        foreach (var directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+        {
+            Directory.CreateDirectory(
+                directory.Replace(source, destination, StringComparison.OrdinalIgnoreCase));
+        }
+        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            File.Copy(file, file.Replace(source, destination, StringComparison.OrdinalIgnoreCase), overwrite: true);
         }
     }
 
