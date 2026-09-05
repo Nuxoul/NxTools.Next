@@ -187,6 +187,7 @@ pub(crate) struct QuickLaunchApplication {
     active_summon: Option<(i64, i64)>,
     pending_shell_queries: HashMap<uuid::Uuid, PendingShellQuery>,
     pending_window_activation: HashMap<uuid::Uuid, PendingWindowActivation>,
+    pending_panel_hides: HashMap<uuid::Uuid, PendingPanelHide>,
     icon_resources: IconResourceCache,
     pending_icons: HashMap<uuid::Uuid, PendingIconResource>,
     pending_icon_resources: HashMap<String, uuid::Uuid>,
@@ -254,6 +255,7 @@ impl QuickLaunchApplication {
             active_summon: None,
             pending_shell_queries: HashMap::new(),
             pending_window_activation: HashMap::new(),
+            pending_panel_hides: HashMap::new(),
             icon_resources: IconResourceCache::bounded(ICON_RESOURCE_CACHE_LIMIT),
             pending_icons: HashMap::new(),
             pending_icon_resources: HashMap::new(),
@@ -1169,6 +1171,35 @@ impl QuickLaunchApplication {
         result: PlatformCommandResult,
         cx: &mut Context<Self>,
     ) {
+        if let Some(pending) = self.pending_panel_hides.remove(&correlation_id) {
+            let elapsed_ms = pending.requested_at.elapsed().as_millis() as u64;
+            if result.success {
+                info!(
+                    event = "quick_launch.panel.hide_applied",
+                    popup_window_handle = pending.popup_window_handle,
+                    attempt = pending.attempt,
+                    elapsed_ms,
+                    "quick-launch panel hide confirmed by Windows"
+                );
+            } else if pending.attempt < PANEL_HIDE_RETRY_LIMIT {
+                warn!(
+                    event = "quick_launch.panel.hide_rejected",
+                    popup_window_handle = pending.popup_window_handle,
+                    reason = result.error.as_deref().unwrap_or("unknown Windows error"),
+                    "quick-launch panel hide rejected; retrying once"
+                );
+                self.resend_panel_hide(pending);
+            } else {
+                error!(
+                    event = "quick_launch.panel.hide_failed",
+                    popup_window_handle = pending.popup_window_handle,
+                    attempt = pending.attempt,
+                    reason = result.error.as_deref().unwrap_or("unknown Windows error"),
+                    "quick-launch panel hide failed after retry"
+                );
+            }
+            return;
+        }
         if self.handle_quick_launch_preview_stage_result(
             correlation_id,
             result.success,
@@ -3168,11 +3199,132 @@ impl QuickLaunchApplication {
             restore_window_handle = ?restore_window_handle,
             "quick-launch hide commands queued"
         );
-        for command in
-            quick_launch_dismiss_commands(popup.native_window_handle, restore_window_handle)
-        {
-            let _ = self.platform.send_command(command);
+        let commands = quick_launch_dismiss_commands(
+            popup.native_window_handle,
+            restore_window_handle,
+        );
+        for (index, command) in commands.into_iter().enumerate() {
+            if index == 0 {
+                // The visibility hide is the one command whose loss makes the
+                // panel stick on screen forever. Send it correlated, track the
+                // result and re-send once when it is lost or rejected.
+                let guard = PendingPanelHide {
+                    popup_window_handle: popup.native_window_handle,
+                    attempt: 0,
+                    session_id: self.popup_session_id,
+                    requested_at: Instant::now(),
+                };
+                match self
+                    .platform
+                    .send_command_correlated(command, guard.correlation_id())
+                {
+                    Ok(command_id) => {
+                        self.pending_panel_hides
+                            .insert(command_id, guard);
+                        self.schedule_panel_hide_recheck(guard, cx);
+                    }
+                    Err(error) => {
+                        error!(
+                            event = "quick_launch.panel.hide_send_failed",
+                            popup_window_handle = popup.native_window_handle,
+                            %error,
+                            "quick-launch hide command could not be queued"
+                        );
+                    }
+                }
+            } else {
+                let _ = self.platform.send_command(command);
+            }
         }
+    }
+
+    /// Re-sends the panel-hide visibility command for a guard whose original
+    /// command was rejected or never confirmed. Capped at one retry.
+    fn resend_panel_hide(&mut self, mut pending: PendingPanelHide) {
+        pending.attempt += 1;
+        pending.requested_at = Instant::now();
+        let command = PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+            window_handle: pending.popup_window_handle,
+            visible: false,
+        });
+        match self
+            .platform
+            .send_command_correlated(command, pending.correlation_id())
+        {
+            Ok(command_id) => {
+                info!(
+                    event = "quick_launch.panel.hide_retry",
+                    popup_window_handle = pending.popup_window_handle,
+                    attempt = pending.attempt,
+                    "quick-launch panel hide re-sent"
+                );
+                self.pending_panel_hides.insert(command_id, pending);
+            }
+            Err(error) => {
+                error!(
+                    event = "quick_launch.panel.hide_send_failed",
+                    popup_window_handle = pending.popup_window_handle,
+                    attempt = pending.attempt,
+                    %error,
+                    "quick-launch panel hide retry could not be queued"
+                );
+            }
+        }
+    }
+
+    /// The user report: the panel sometimes never disappears. A lost command
+    /// result must not leave that state undetected, so one bounded recheck
+    /// re-sends the hide when no confirmation arrived in time.
+    fn schedule_panel_hide_recheck(
+        &mut self,
+        guard: PendingPanelHide,
+        cx: &mut Context<Self>,
+    ) {
+        let session_id = guard.session_id;
+        let popup_window_handle = guard.popup_window_handle;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(PANEL_HIDE_RECHECK_DELAY_MS))
+                .await;
+            let _ = this.update(cx, |this, _cx| {
+                if this.popup_session_id != session_id {
+                    return;
+                }
+                let unconfirmed = this
+                    .pending_panel_hides
+                    .values()
+                    .any(|pending| pending.session_id == session_id);
+                if !unconfirmed {
+                    return;
+                }
+                warn!(
+                    event = "quick_launch.panel.hide_unconfirmed",
+                    popup_window_handle,
+                    "panel hide was not confirmed in time; re-sending"
+                );
+                let stale: Vec<uuid::Uuid> = this
+                    .pending_panel_hides
+                    .iter()
+                    .filter(|(_, pending)| pending.session_id == session_id)
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in stale {
+                    if let Some(pending) = this.pending_panel_hides.remove(&id) {
+                        if pending.attempt < PANEL_HIDE_RETRY_LIMIT {
+                            this.resend_panel_hide(pending);
+                        } else {
+                            error!(
+                                event = "quick_launch.panel.hide_failed",
+                                popup_window_handle = pending.popup_window_handle,
+                                attempt = pending.attempt,
+                                "quick-launch panel hide failed after retry"
+                            );
+                        }
+                    }
+                }
+            });
+        })
+        .detach();
     }
 }
 

@@ -323,6 +323,28 @@ pub(crate) fn quick_launch_escape_action(
     }
 }
 
+/// One attempt to hide the quick-launch panel, tracked until Windows
+/// confirms it. The user report of a panel that never disappears maps to a
+/// lost or rejected visibility command, which this guard makes visible.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PendingPanelHide {
+    pub(crate) popup_window_handle: i64,
+    pub(crate) attempt: u8,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) requested_at: std::time::Instant,
+}
+
+impl PendingPanelHide {
+    pub(crate) fn correlation_id(&self) -> uuid::Uuid {
+        uuid::Uuid::new_v4()
+    }
+}
+
+/// Result-wait before the orphan recheck re-sends the hide command.
+pub(crate) const PANEL_HIDE_RECHECK_DELAY_MS: u64 = 400;
+/// Total hide attempts: the original command plus one self-healing retry.
+pub(crate) const PANEL_HIDE_RETRY_LIMIT: u8 = 1;
+
 pub(crate) fn quick_launch_dismiss_commands(
     popup_window_handle: i64,
     restore_window_handle: Option<i64>,

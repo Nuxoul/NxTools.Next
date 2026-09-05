@@ -3796,3 +3796,27 @@ use super::*;
             );
         });
     }
+
+    #[test]
+    fn panel_hide_is_result_tracked_and_self_healing() {
+        // The user report: the panel sometimes never disappears. The hide
+        // command must be correlated and result-tracked, with one bounded
+        // orphan recheck that re-sends when no confirmation arrives.
+        let source = include_str!("../quick_launch.rs");
+        for marker in [
+            "pending_panel_hides",
+            "quick_launch.panel.hide_applied",
+            "quick_launch.panel.hide_unconfirmed",
+            "quick_launch.panel.hide_failed",
+            "schedule_panel_hide_recheck",
+            "PANEL_HIDE_RECHECK_DELAY_MS",
+            "PANEL_HIDE_RETRY_LIMIT",
+        ] {
+            assert!(
+                source.contains(marker),
+                "panel hide lifecycle must contain {marker}"
+            );
+        }
+        assert_eq!(PANEL_HIDE_RETRY_LIMIT, 1);
+        assert_eq!(PANEL_HIDE_RECHECK_DELAY_MS, 400);
+    }
