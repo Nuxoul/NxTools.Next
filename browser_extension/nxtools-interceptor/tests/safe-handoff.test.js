@@ -115,3 +115,34 @@ test("an acceptance for a different handoff never cancels the browser download",
   assert.match(result.error, /identity mismatch/);
   assert.deepEqual(calls, []);
 });
+
+test("interception holds the browser save dialog until the handoff resolves", () => {
+  // Resolving onDeterminingFilename eagerly lets Chrome open its own Save As
+  // dialog before the intercepted download is canceled. The listener must
+  // forward suggest into the handoff and only resolve it on terminal paths.
+  const source = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "background.js"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /determiningFilenameEvent\.addListener\(\(downloadItem, suggest\) => \{\s*void interceptBrowserDownload\(downloadItem, \{ suggest \}\);/,
+    "the listener forwards suggest instead of resolving it eagerly",
+  );
+  assert.match(
+    source,
+    /const yieldToBrowser = \(\) => \{/,
+    "every hand-back path resolves the pending suggestion",
+  );
+  const handoffBody = source.slice(
+    source.indexOf("async function interceptBrowserDownload"),
+    source.indexOf("function createContextMenus"),
+  );
+  const handoffResolves = [...handoffBody.matchAll(/yieldToBrowser\(\);/g)].length;
+  assert.equal(
+    handoffResolves,
+    5,
+    "disabled, site-disabled, preempted, accepted and rejected paths all yield once",
+  );
+});

@@ -3908,7 +3908,20 @@ async function mergeResources(resourceIds) {
 async function interceptBrowserDownload(downloadItem, options = {}) {
   const settings = await getSettings();
   const url = downloadItem.finalUrl || downloadItem.url;
+  // The onDeterminingFilename listener must resolve the filename exactly once.
+  // While the desktop handoff is in flight we deliberately hold the suggestion
+  // back: resolving it early lets Chrome proceed to its own Save As dialog
+  // before the browser download is canceled. Every path that hands the
+  // download back to the browser resolves with the default suggestion.
+  const yieldToBrowser = () => {
+    try {
+      options.suggest?.();
+    } catch (error) {
+      console.debug("NxTools default download suggestion was not accepted.", error);
+    }
+  };
   if (!settings.interceptDownloads || !isHttpUrl(url)) {
+    yieldToBrowser();
     return;
   }
   if (!isSiteEnabled(downloadItem.referrer, url)) {
@@ -3916,12 +3929,14 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
       url,
       pageUrl: downloadItem.referrer || ""
     }, 15000);
+    yieldToBrowser();
     return;
   }
   if (wasPreemptedBrowserDownload(url)) {
     sendExtensionLog("info", "browser_download_already_preempted", "浏览器下载项已由响应头阶段接管，跳过二次处理", {
       url
     }, 15000);
+    yieldToBrowser();
     return;
   }
 
@@ -3945,9 +3960,11 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
     if (!handoff.transferred) {
       throw new Error(handoff.error || "NxTools 未接受下载任务");
     }
+    yieldToBrowser();
     setBadge("OK", "#138a72");
     setTimeout(() => setBadge("", "#138a72"), 1600);
   } catch (error) {
+    yieldToBrowser();
     console.warn("NxTools handoff failed.", error);
     setBadge("!", "#9a3412");
   }
@@ -4303,8 +4320,7 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
 const determiningFilenameEvent = chrome.downloads?.["onDetermining" + "Filename"];
 if (determiningFilenameEvent?.addListener) {
   determiningFilenameEvent.addListener((downloadItem, suggest) => {
-    suggest();
-    void interceptBrowserDownload(downloadItem);
+    void interceptBrowserDownload(downloadItem, { suggest });
   });
 } else if (chrome.downloads.onCreated?.addListener) {
   chrome.downloads.onCreated.addListener((downloadItem) => {
