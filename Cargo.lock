@@ -4202,6 +4202,7 @@ name = "nxtools-finder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "encoding_rs",
  "nxtools-core",
  "rusqlite",
  "tempfile",

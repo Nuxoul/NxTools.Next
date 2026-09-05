@@ -366,6 +366,7 @@ impl IndexerService {
         self.snapshots = Arc::new(snapshots);
         if !missing && !self.status.drives.is_empty() {
             self.status.phase = IndexPhase::Ready;
+            trim_working_set_after_snapshot_restore();
         }
     }
 
@@ -2007,6 +2008,23 @@ fn schedule_snapshot_compactions(
         }
     }
     earliest_retry
+}
+
+/// Trims the process working set after a snapshot restore or rebuild. The
+/// MFT snapshot is a memory-mapped file: search faults every touched page
+/// into the working set and Windows never returns them on its own, so Task
+/// Manager shows the whole snapshot (~1 GB for C:+D:) as resident. Trimming
+/// moves those pages to the standby list — the mapping stays valid and
+/// subsequent searches fault pages back in on demand.
+#[allow(unsafe_code)] // Windows process working-set control has no safe wrapper.
+fn trim_working_set_after_snapshot_restore() {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, SetProcessWorkingSetSize,
+    };
+    // (-1, -1) empties the working set to the minimum allowed.
+    unsafe {
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
 }
 
 fn spawn_snapshot_compaction(snapshot: MftSnapshot, events: mpsc::SyncSender<RuntimeEvent>) {

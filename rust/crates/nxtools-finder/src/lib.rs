@@ -9,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 mod calculator;
 mod custom_command;
 mod environment_variable;
+mod pinyin;
 mod query;
 mod web_url;
 
@@ -435,11 +436,18 @@ impl FinderCatalog {
         let mut matches = command_results;
         matches.extend(self.entries.iter().filter_map(|entry| {
             let initialism = application_initialism(&entry.name);
-            let textual_score = file_query
+            let pinyin_initials = pinyin::pinyin_initials(&entry.name);
+            let direct_score = file_query
                 .score(&entry.name, &entry.target)
                 .into_iter()
                 .chain(file_query.score(&initialism, &entry.target))
-                .max()?;
+                .max();
+            // The pinyin channel only contributes below the direct tiers so a
+            // one-letter query cannot fuzzy-match the initials of an ASCII
+            // name that already matched directly.
+            let textual_score = direct_score
+                .filter(|score| *score >= 2_000)
+                .or_else(|| file_query.score(&pinyin_initials, &entry.target))?;
             let usage = self.usage_for(&entry.id, &query);
             Some(SearchResult {
                 entry: entry.clone(),

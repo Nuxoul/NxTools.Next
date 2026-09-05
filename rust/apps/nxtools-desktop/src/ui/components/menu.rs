@@ -54,9 +54,6 @@ pub(crate) fn context_menu_item(
             .text_size(px(TEXT_BODY))
             .line_height(px(LINE_HEIGHT_BODY))
             .text_color(foreground)
-            .when(tone == MenuTone::Danger, |row| {
-                row.hover(move |style| style.bg(theme.danger_soft))
-            })
             .child(
                 div()
                     .w(px(MENU_ICON_SLOT_WIDTH))

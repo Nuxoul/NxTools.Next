@@ -1,8 +1,6 @@
 use std::rc::Rc;
 
 use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
-use gpui_component::checkbox::Checkbox;
-use gpui_component::{Sizable, Size};
 
 use crate::theme::Theme;
 use crate::ui::metrics::{RADIUS_CONTROL, SPACING_2, SPACING_8, SPACING_12};
@@ -10,6 +8,8 @@ use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT
 
 const VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT: f32 = 48.0;
 const VOLUME_SCOPE_ROW_HEIGHT: f32 = 40.0;
+const CHECKBOX_GLYPH_SIZE: f32 = 14.0;
+const CHECKBOX_GLYPH_TEXT: f32 = 10.0;
 
 pub(crate) fn volume_scope_setting(
     theme: Theme,
@@ -68,7 +68,6 @@ pub(crate) fn automatic_volume_scope_row(
     on_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let on_click = Rc::new(on_click);
-    let checkbox_on_click = Rc::clone(&on_click);
     let state_selector = format!(
         "quick-launch-volume-scope-automatic-{}",
         if checked { "checked" } else { "unchecked" }
@@ -89,42 +88,50 @@ pub(crate) fn automatic_volume_scope_row(
             div()
                 .debug_selector(move || state_selector.clone())
                 .size_full()
+                .px(px(SPACING_12))
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
                 .child(
-                    Checkbox::new("quick-launch-volume-scope-automatic-checkbox")
-                        .checked(checked)
-                        .with_size(Size::Small)
-                        .w_full()
-                        .h_full()
-                        .px(px(SPACING_12))
+                    div()
+                        .id("quick-launch-volume-scope-automatic-checkbox")
+                        .size(px(CHECKBOX_GLYPH_SIZE))
+                        .flex_none()
+                        .rounded(px(RADIUS_CONTROL))
+                        .border_1()
+                        .border_color(if checked { theme.accent } else { theme.border })
+                        .bg(if checked { theme.accent } else { theme.canvas })
+                        .flex()
                         .items_center()
+                        .justify_center()
+                        .text_color(theme.canvas)
+                        .text_size(px(CHECKBOX_GLYPH_TEXT))
+                        .child(if checked { "✓" } else { "" }),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .gap(px(SPACING_2))
                         .child(
                             div()
-                                .min_w_0()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .gap(px(SPACING_2))
-                                .child(
-                                    div()
-                                        .h(px(LINE_HEIGHT_BODY))
-                                        .text_size(px(TEXT_BODY))
-                                        .line_height(px(LINE_HEIGHT_BODY))
-                                        .text_color(theme.text)
-                                        .child("自动包含全部 NTFS 卷"),
-                                )
-                                .child(
-                                    div()
-                                        .h(px(LINE_HEIGHT_LABEL))
-                                        .text_size(px(TEXT_LABEL))
-                                        .line_height(px(LINE_HEIGHT_LABEL))
-                                        .text_color(theme.text_muted)
-                                        .child("新发现的卷会自动加入索引范围"),
-                                ),
+                                .h(px(LINE_HEIGHT_BODY))
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
+                                .text_color(theme.text)
+                                .child("自动包含全部 NTFS 卷"),
                         )
-                        .on_click(move |checked, window, cx| {
-                            cx.stop_propagation();
-                            checkbox_on_click(checked, window, cx);
-                        }),
+                        .child(
+                            div()
+                                .h(px(LINE_HEIGHT_LABEL))
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_color(theme.text_muted)
+                                .child("新发现的卷会自动加入索引范围"),
+                        ),
                 ),
         )
         .into_any_element()
@@ -140,7 +147,6 @@ pub(crate) fn volume_scope_row(
     on_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let on_click = Rc::new(on_click);
-    let checkbox_on_click = Rc::clone(&on_click);
     let selector = selector.into();
     let title_selector = format!("{selector}-title");
     let metadata_selector = format!("{selector}-metadata");
@@ -167,48 +173,47 @@ pub(crate) fn volume_scope_row(
             div()
                 .debug_selector(move || state_selector.clone())
                 .size_full()
+                .px(px(SPACING_12))
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
                 .child(
-                    Checkbox::new(checkbox_id)
-                        .checked(checked)
-                        .with_size(Size::Small)
-                        .w_full()
-                        .h_full()
-                        .px(px(SPACING_12))
+                    div()
+                        .id(checkbox_id)
+                        .size(px(CHECKBOX_GLYPH_SIZE))
+                        .flex_none()
+                        .rounded(px(RADIUS_CONTROL))
+                        .border_1()
+                        .border_color(if checked { theme.accent } else { theme.border })
+                        .bg(if checked { theme.accent } else { theme.canvas })
+                        .flex()
                         .items_center()
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .flex()
-                                .items_center()
-                                .gap(px(SPACING_12))
-                                .child(
-                                    div()
-                                        .debug_selector(move || title_selector.clone())
-                                        .h(px(LINE_HEIGHT_BODY))
-                                        .min_w_0()
-                                        .flex_1()
-                                        .truncate()
-                                        .text_size(px(TEXT_BODY))
-                                        .line_height(px(LINE_HEIGHT_BODY))
-                                        .text_color(theme.text)
-                                        .child(title.into()),
-                                )
-                                .child(
-                                    div()
-                                        .debug_selector(move || metadata_selector.clone())
-                                        .h(px(LINE_HEIGHT_LABEL))
-                                        .flex_none()
-                                        .text_size(px(TEXT_LABEL))
-                                        .line_height(px(LINE_HEIGHT_LABEL))
-                                        .text_color(theme.text_muted)
-                                        .child(metadata.into()),
-                                ),
-                        )
-                        .on_click(move |checked, window, cx| {
-                            cx.stop_propagation();
-                            checkbox_on_click(checked, window, cx);
-                        }),
+                        .justify_center()
+                        .text_color(theme.canvas)
+                        .text_size(px(CHECKBOX_GLYPH_TEXT))
+                        .child(if checked { "✓" } else { "" }),
+                )
+                .child(
+                    div()
+                        .debug_selector(move || title_selector.clone())
+                        .h(px(LINE_HEIGHT_BODY))
+                        .min_w_0()
+                        .flex_1()
+                        .truncate()
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .text_color(theme.text)
+                        .child(title.into()),
+                )
+                .child(
+                    div()
+                        .debug_selector(move || metadata_selector.clone())
+                        .h(px(LINE_HEIGHT_LABEL))
+                        .flex_none()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child(metadata.into()),
                 ),
         )
         .into_any_element()
