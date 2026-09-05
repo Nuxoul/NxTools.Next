@@ -212,6 +212,7 @@ struct DownloadSettingsDraft {
     show_completion_window: bool,
     completion_sound_enabled: bool,
     open_directory_on_completion: bool,
+    task_removal_deletes_file: bool,
     taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
 }
 
@@ -998,6 +999,7 @@ impl DownloadApplication {
             show_completion_window: self.show_completion_window,
             completion_sound_enabled: self.config.download.completion_sound_enabled,
             open_directory_on_completion: self.config.download.open_directory_on_completion,
+            task_removal_deletes_file: self.config.download.task_removal_deletes_file,
             taskbar_progress_overlay: self.config.download.taskbar_progress_overlay.clone(),
         }
     }
@@ -1380,6 +1382,12 @@ impl DownloadApplication {
         task_id: DownloadTaskId,
         cx: &mut Context<Self>,
     ) {
+        // The user-configurable contract for "删除文件": when the file delete
+        // is disabled, the menu item degenerates to a list-only removal.
+        if !self.config.download.task_removal_deletes_file {
+            let _ = self.remove(task_id, false, cx);
+            return;
+        }
         if let Some(window) = self.delete_confirmation_windows.get(&task_id).cloned() {
             if window
                 .update(cx, |_, window, _| window.activate_window())
@@ -3193,6 +3201,7 @@ impl DownloadApplication {
             show_completion_window: draft.show_completion_window,
             completion_sound_enabled: draft.completion_sound_enabled,
             open_directory_on_completion: draft.open_directory_on_completion,
+            task_removal_deletes_file: draft.task_removal_deletes_file,
             taskbar_progress_overlay: draft.taskbar_progress_overlay.clone(),
         };
         if let Err(error) =

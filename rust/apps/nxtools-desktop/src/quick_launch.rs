@@ -3162,6 +3162,12 @@ impl QuickLaunchApplication {
             panel.is_open = false;
             cx.notify();
         });
+        info!(
+            event = "quick_launch.popup.hide_requested",
+            popup_window_handle = popup.native_window_handle,
+            restore_window_handle = ?restore_window_handle,
+            "quick-launch hide commands queued"
+        );
         for command in
             quick_launch_dismiss_commands(popup.native_window_handle, restore_window_handle)
         {

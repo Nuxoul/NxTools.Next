@@ -79,6 +79,7 @@ pub(crate) fn automatic_volume_scope_row(
         .w_full()
         .h(px(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))
         .cursor_pointer()
+        .hover(move |style| style.bg(theme.surface_hover))
         .border_b_1()
         .border_color(theme.border_subtle)
         .on_click(move |_event, window, cx| {
@@ -96,7 +97,6 @@ pub(crate) fn automatic_volume_scope_row(
                         .h_full()
                         .px(px(SPACING_12))
                         .items_center()
-                        .hover(move |style| style.bg(theme.surface_hover))
                         .child(
                             div()
                                 .min_w_0()
@@ -156,6 +156,7 @@ pub(crate) fn volume_scope_row(
         .w_full()
         .h(px(VOLUME_SCOPE_ROW_HEIGHT))
         .cursor_pointer()
+        .hover(move |style| style.bg(theme.surface_hover))
         .when(show_divider, |row| {
             row.border_b_1().border_color(theme.border_subtle)
         })
@@ -174,7 +175,6 @@ pub(crate) fn volume_scope_row(
                         .h_full()
                         .px(px(SPACING_12))
                         .items_center()
-                        .hover(move |style| style.bg(theme.surface_hover))
                         .child(
                             div()
                                 .min_w_0()

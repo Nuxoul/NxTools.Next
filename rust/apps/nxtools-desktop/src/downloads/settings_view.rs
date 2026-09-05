@@ -12,6 +12,7 @@ pub(crate) struct DownloadSettingsInput<'a> {
     pub(crate) show_completion_window: bool,
     pub(crate) completion_sound_enabled: bool,
     pub(crate) open_directory_on_completion: bool,
+    pub(crate) task_removal_deletes_file: bool,
     pub(crate) taskbar_overlay_enabled: bool,
     pub(crate) taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
     pub(crate) taskbar_overlay_offset_x: &'a str,
@@ -42,6 +43,7 @@ pub(crate) fn parse_download_settings_draft(
         show_completion_window,
         completion_sound_enabled,
         open_directory_on_completion,
+        task_removal_deletes_file,
         taskbar_overlay_enabled,
         taskbar_overlay_anchor,
         taskbar_overlay_offset_x,
@@ -167,6 +169,7 @@ pub(crate) fn parse_download_settings_draft(
         show_completion_window,
         completion_sound_enabled,
         open_directory_on_completion,
+        task_removal_deletes_file,
         taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings {
             enabled: taskbar_overlay_enabled,
             anchor: taskbar_overlay_anchor,
@@ -322,6 +325,7 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) show_completion_window: bool,
     pub(crate) completion_sound_enabled: bool,
     pub(crate) open_directory_on_completion: bool,
+    pub(crate) task_removal_deletes_file: bool,
     pub(crate) automatic_categories_enabled: bool,
     pub(crate) categories: Vec<DownloadCategoryEditor>,
     pub(crate) selected_category: Option<usize>,
@@ -620,6 +624,7 @@ impl DownloadSettingsView {
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
             completion_sound_enabled: snapshot.completion_sound_enabled,
+            task_removal_deletes_file: snapshot.task_removal_deletes_file,
             open_directory_on_completion: snapshot.open_directory_on_completion,
             automatic_categories_enabled: snapshot.automatic_categories_enabled,
             selected_category: (!categories.is_empty()).then_some(0),
@@ -708,6 +713,7 @@ impl DownloadSettingsView {
             show_completion_window: self.show_completion_window,
             completion_sound_enabled: self.completion_sound_enabled,
             open_directory_on_completion: self.open_directory_on_completion,
+            task_removal_deletes_file: self.task_removal_deletes_file,
             taskbar_overlay_enabled: self.taskbar_overlay_enabled,
             taskbar_overlay_anchor: self.taskbar_overlay_anchor,
             taskbar_overlay_offset_x: &self.taskbar_overlay_offset_x.read(cx).value(),
@@ -1654,6 +1660,16 @@ impl Render for DownloadSettingsView {
                 cx.notify();
             }),
         );
+        let task_removal_toggle = settings_toggle(
+            theme,
+            "download-settings-task-removal-delete-file",
+            self.task_removal_deletes_file,
+            cx.listener(|this, _, _, cx| {
+                this.task_removal_deletes_file = !this.task_removal_deletes_file;
+                this.error = None;
+                cx.notify();
+            }),
+        );
         let taskbar_overlay_toggle = settings_toggle(
             theme,
             "download-settings-taskbar-overlay",
@@ -2098,6 +2114,15 @@ impl Render for DownloadSettingsView {
                                 "每批最多打开三个目录，避免窗口风暴",
                                 completion_directory_toggle,
                             ),
+                        ),
+                        (
+                            download_settings_row(
+                                theme,
+                                "删除任务时删除本地文件",
+                                "关闭后，删除文件只从列表移除任务记录",
+                                task_removal_toggle,
+                            ),
+                            div().into_any_element(),
                         ),
                     ],
                 ))

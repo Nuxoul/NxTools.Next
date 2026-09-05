@@ -217,6 +217,8 @@ pub struct DownloadSettings {
     pub completion_sound_enabled: bool,
     #[serde(default)]
     pub open_directory_on_completion: bool,
+    #[serde(default = "default_true")]
+    pub task_removal_deletes_file: bool,
     #[serde(default)]
     pub taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
 }
@@ -344,6 +346,7 @@ impl Default for DownloadSettings {
             show_completion_window: true,
             completion_sound_enabled: true,
             open_directory_on_completion: false,
+            task_removal_deletes_file: true,
             taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
         }
     }
@@ -1443,6 +1446,7 @@ mod tests {
                 show_completion_window: false,
                 completion_sound_enabled: false,
                 open_directory_on_completion: true,
+                task_removal_deletes_file: true,
                 taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
             },
         )

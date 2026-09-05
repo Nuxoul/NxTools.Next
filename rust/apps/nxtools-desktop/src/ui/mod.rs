@@ -1862,12 +1862,15 @@ fn is_transient_foreground_host(process_name: &str) -> bool {
 fn should_hide_for_pointer_press(
     dismiss: PopupDismissContext,
     pressed_root_window_handle: i64,
-    pressed_process_id: u32,
+    _pressed_process_id: u32,
 ) -> bool {
+    // Presses anywhere outside the panel and its preview dismiss the panel —
+    // including presses inside THIS application's other windows (the user
+    // report: clicking elsewhere in the app left the panel stuck on top).
     dismiss.is_open
         && !dismiss.paste_pending
         && dismiss.popup_window_handle != 0
-        && pressed_process_id != dismiss.current_process_id
+        && pressed_root_window_handle != 0
         && pressed_root_window_handle != dismiss.popup_window_handle
         && pressed_root_window_handle != dismiss.preview_window_handle
 }
@@ -2691,12 +2694,15 @@ mod tests {
     }
 
     #[test]
-    fn only_an_external_pointer_press_hides_the_open_panel() {
+    fn pointer_press_outside_the_panel_dismisses_it_even_in_the_app() {
         let open = dismiss_context(10, 30, false, true);
         assert!(should_hide_for_pointer_press(open, 20, 200));
+        // The user report: clicking elsewhere inside this app left the panel
+        // stuck. Same-process presses on other windows must dismiss too.
+        assert!(should_hide_for_pointer_press(open, 40, 100));
         assert!(!should_hide_for_pointer_press(open, 10, 200,));
         assert!(!should_hide_for_pointer_press(open, 30, 200,));
-        assert!(!should_hide_for_pointer_press(open, 40, 100,));
+        assert!(!should_hide_for_pointer_press(open, 0, 200,));
         assert!(!should_hide_for_pointer_press(
             dismiss_context(10, 30, true, true),
             20,

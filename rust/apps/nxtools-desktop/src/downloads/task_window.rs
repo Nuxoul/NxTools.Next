@@ -421,11 +421,18 @@ impl Render for DownloadTaskWindowView {
                 )
             },
         );
-        let eta = total
-            .zip((speed > 0).then_some(speed))
-            .map(|(total, speed)| total.saturating_sub(downloaded) / speed)
-            .map(format_download_eta)
-            .unwrap_or_else(|| "—".into());
+        // A paused/probing task keeps the last progress event's sampler
+        // value; showing it as live speed reads like the transfer still runs.
+        let transferring = status == DownloadStatus::Downloading;
+        let eta = if transferring {
+            total
+                .zip((speed > 0).then_some(speed))
+                .map(|(total, speed)| total.saturating_sub(downloaded) / speed)
+                .map(format_download_eta)
+                .unwrap_or_else(|| "—".into())
+        } else {
+            "—".into()
+        };
         let (status_label, status_color) = download_task_status(status);
         let progress_badge = ratio
             .map(|ratio| format!("{:.0}%", ratio * 100.0))
@@ -639,7 +646,11 @@ impl Render for DownloadTaskWindowView {
                         .child(download_window_metric(
                             theme,
                             "速度",
-                            format!("{} /s", format_download_size(speed)),
+                            if transferring {
+                                format!("{} /s", format_download_size(speed))
+                            } else {
+                                "—".into()
+                            },
                         ))
                         .child(download_window_metric(theme, "剩余", eta))
                         .child(download_window_metric(theme, thread_label, thread_value)),
