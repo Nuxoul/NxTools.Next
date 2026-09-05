@@ -196,6 +196,31 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             command.Width,
             command.Height);
 
+    public WindowsCommandResult SetWindowBoundsCentered(SetWindowBoundsCenteredCommand command) =>
+        NativeMethods.SetWindowBoundsCentered(
+            new IntPtr(command.WindowHandle),
+            command.Width,
+            command.Height);
+
+    public WindowsCommandResult MoveWindowCenteredOver(MoveWindowCenteredOverCommand command) =>
+        NativeMethods.MoveWindowCenteredOver(
+            new IntPtr(command.WindowHandle),
+            new IntPtr(command.AnchorWindowHandle),
+            command.Width,
+            command.Height);
+
+    public WindowsCommandResult StashWindowBounds(StashWindowBoundsCommand command) =>
+        NativeMethods.StashWindowBounds(
+            new IntPtr(command.WindowHandle),
+            command.Key);
+
+    public WindowsCommandResult MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand command) =>
+        NativeMethods.MoveWindowCenteredOverKey(
+            new IntPtr(command.WindowHandle),
+            command.Key,
+            command.Width,
+            command.Height);
+
     public WindowsCommandResult SetTaskbarProgress(
         SetTaskbarProgressCommand command,
         Guid correlationId)
@@ -428,6 +453,12 @@ internal sealed class WindowsPlatformAdapter : IDisposable
 
     internal static WindowsCommandResult BeginNativeWindowMoveForTest(long windowHandle) =>
         NativeMethods.BeginWindowMove(new IntPtr(windowHandle));
+
+    internal static NativeWindowRectangle CenteredRectangleForTest(
+        NativeWindowRectangle anchor,
+        int width,
+        int height)
+        => NativeMethods.CenteredRectangle(anchor, width, height);
 
     private void LogWindowPresentation(
         string eventName,
@@ -3458,6 +3489,179 @@ internal sealed class WindowsPlatformAdapter : IDisposable
                 : new WindowsCommandResult(
                     false,
                     $"SetWindowPos(bounds) failed with Win32={Marshal.GetLastWin32Error()}.");
+        }
+
+        /// <summary>
+        /// Resizes the window while preserving its real current visual center.
+        /// GPUI's cached window origin never follows a user drag, so the center
+        /// must come from the native rectangle, not from the Rust side.
+        /// </summary>
+        internal static WindowsCommandResult SetWindowBoundsCentered(
+            IntPtr window,
+            int width,
+            int height)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            if (width <= 0 || height <= 0)
+            {
+                return new WindowsCommandResult(false, "Window bounds must have a positive size.");
+            }
+            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var current))
+            {
+                return new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+
+            var centered = CenteredRectangle(current, width, height);
+            return SetWindowPos(
+                window,
+                IntPtr.Zero,
+                centered.Left,
+                centered.Top,
+                width,
+                height,
+                SwpNoZOrder | SwpNoActivate)
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(
+                    false,
+                    $"SetWindowPos(centered) failed with Win32={Marshal.GetLastWin32Error()}.");
+        }
+
+        /// <summary>
+        /// Places the window centered over the anchor window's real rectangle,
+        /// preserving the anchor's visual center across a window replacement.
+        /// A missing anchor falls back to resizing in place at the current
+        /// position so the handoff never teleports the window.
+        /// </summary>
+        internal static WindowsCommandResult MoveWindowCenteredOver(
+            IntPtr window,
+            IntPtr anchorWindow,
+            int width,
+            int height)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            if (width <= 0 || height <= 0)
+            {
+                return new WindowsCommandResult(false, "Window bounds must have a positive size.");
+            }
+            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var target))
+            {
+                return new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+
+            NativeWindowRectangle anchorRect = default;
+            var anchorAvailable = anchorWindow != IntPtr.Zero &&
+                IsWindow(anchorWindow) &&
+                AnchoredWindowPlacement.TryGetVisibleBounds(anchorWindow, out anchorRect);
+            var centered = anchorAvailable
+                ? CenteredRectangle(anchorRect, width, height)
+                : CenteredRectangle(target, width, height);
+            return SetWindowPos(
+                window,
+                IntPtr.Zero,
+                centered.Left,
+                centered.Top,
+                width,
+                height,
+                SwpNoZOrder | SwpNoActivate)
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(
+                    false,
+                    $"SetWindowPos(centered-over) failed with Win32={Marshal.GetLastWin32Error()}.");
+        }
+
+        internal static NativeWindowRectangle CenteredRectangle(
+            NativeWindowRectangle anchor,
+            int width,
+            int height)
+        {
+            var centerX = anchor.Left + (anchor.Right - anchor.Left) / 2.0;
+            var centerY = anchor.Top + (anchor.Bottom - anchor.Top) / 2.0;
+            var left = (int)Math.Round(centerX - width / 2.0);
+            var top = (int)Math.Round(centerY - height / 2.0);
+            return new NativeWindowRectangle(left, top, left + width, top + height);
+        }
+
+        private const int WindowCenterStashCapacity = 16;
+        private static readonly ConcurrentDictionary<string, NativeWindowRectangle>
+            WindowCenterStash = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Captures a window's real visible rectangle under a correlation key so
+        /// a replacement window can later inherit that position after this
+        /// window is destroyed. GPUI's cached origin never follows user drags,
+        /// which is why the geometry is captured here, natively.
+        /// </summary>
+        internal static WindowsCommandResult StashWindowBounds(IntPtr window, string key)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return new WindowsCommandResult(false, "The window stash key is empty.");
+            }
+            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var bounds))
+            {
+                return new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+
+            if (WindowCenterStash.Count >= WindowCenterStashCapacity)
+            {
+                WindowCenterStash.Clear();
+            }
+            WindowCenterStash[key] = bounds;
+            return new WindowsCommandResult(true);
+        }
+
+        /// <summary>
+        /// Places the window centered over a stashed anchor rectangle and
+        /// consumes it. A missing stash entry falls back to an in-place resize
+        /// at the current position so the placement never teleports the window.
+        /// </summary>
+        internal static WindowsCommandResult MoveWindowCenteredOverKey(
+            IntPtr window,
+            string key,
+            int width,
+            int height)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            if (width <= 0 || height <= 0)
+            {
+                return new WindowsCommandResult(false, "Window bounds must have a positive size.");
+            }
+            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var target))
+            {
+                return new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+
+            NativeWindowRectangle anchorRect = default;
+            var stashHit = !string.IsNullOrWhiteSpace(key) &&
+                WindowCenterStash.TryRemove(key, out anchorRect);
+            var centered = stashHit
+                ? CenteredRectangle(anchorRect, width, height)
+                : CenteredRectangle(target, width, height);
+            return SetWindowPos(
+                window,
+                IntPtr.Zero,
+                centered.Left,
+                centered.Top,
+                width,
+                height,
+                SwpNoZOrder | SwpNoActivate)
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(
+                    false,
+                    $"SetWindowPos(stash-centered) failed with Win32={Marshal.GetLastWin32Error()}.");
         }
 
         internal static WindowsCommandResult SetWindowPosition(IntPtr window, int x, int y)

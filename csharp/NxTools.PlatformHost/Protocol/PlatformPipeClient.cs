@@ -217,6 +217,14 @@ internal sealed class PlatformPipeClient(
                             PlatformCommandParser.ParseSetWindowNoActivate(envelope)),
                         "set_window_bounds" => platformAdapter.SetWindowBounds(
                             PlatformCommandParser.ParseSetWindowBounds(envelope)),
+                        "set_window_bounds_centered" => platformAdapter.SetWindowBoundsCentered(
+                            PlatformCommandParser.ParseSetWindowBoundsCentered(envelope)),
+                        "move_window_centered_over" => platformAdapter.MoveWindowCenteredOver(
+                            PlatformCommandParser.ParseMoveWindowCenteredOver(envelope)),
+                        "stash_window_bounds" => platformAdapter.StashWindowBounds(
+                            PlatformCommandParser.ParseStashWindowBounds(envelope)),
+                        "move_window_centered_over_key" => platformAdapter.MoveWindowCenteredOverKey(
+                            PlatformCommandParser.ParseMoveWindowCenteredOverKey(envelope)),
                         "set_taskbar_progress" => platformAdapter.SetTaskbarProgress(
                             PlatformCommandParser.ParseSetTaskbarProgress(envelope),
                             envelope.Id),

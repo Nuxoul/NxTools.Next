@@ -45,11 +45,12 @@ use nxtools_download::{DownloadCertificatePolicy, FfmpegInstallSource};
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
-    ExportBrowserExtensionCommand, ExtractShellIconCommand, OpenShellTargetCommand,
-    PasteTextCommand, PickDirectoryCommand, PickProgramCommand, PlaceTaskbarProgressOverlayCommand,
-    PlatformCommand, PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
-    SetWindowBoundsCommand, SetWindowTopmostCommand, ShellOpenAction, ShutdownSystemCommand,
-    TaskbarOverlayAnchor, TaskbarProgressState,
+    ExportBrowserExtensionCommand, ExtractShellIconCommand, MoveWindowCenteredOverKeyCommand,
+    OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
+    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
+    SetTaskbarProgressCommand, SetWindowBoundsCenteredCommand, SetWindowTopmostCommand,
+    ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand, TaskbarOverlayAnchor,
+    TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -3430,7 +3431,33 @@ impl DownloadApplication {
             &mut self.pending_task_window_replacements,
         );
         self.task_window_lifecycle.window_closed(task_id);
-        self.task_windows.remove(&task_id)
+        let entry = self.task_windows.remove(&task_id);
+        // Preserve the real closing position so a later reopen for the same
+        // task inherits it. GPUI's cached origin does not follow user drags,
+        // so the geometry is captured natively before the window is destroyed.
+        if let Some(entry) = entry.as_ref() {
+            self.stash_task_window_anchor(task_id, entry.native_window_handle);
+        }
+        entry
+    }
+
+    /// Captures a window's real native rectangle under the task's correlation
+    /// key so the task window opened next for this task can inherit that
+    /// position. Cheap, bounded, and ordered through the shared command pipe.
+    pub(crate) fn stash_task_window_anchor(
+        &self,
+        task_id: DownloadTaskId,
+        native_window_handle: i64,
+    ) {
+        if native_window_handle == 0 {
+            return;
+        }
+        let _ = self.platform.send_command(PlatformCommand::StashWindowBounds(
+            StashWindowBoundsCommand {
+                window_handle: native_window_handle,
+                key: task_id.as_uuid().to_string(),
+            },
+        ));
     }
 
     /// Releases the keyed task-window registration after a native (non-app-driven)
@@ -3488,6 +3515,8 @@ impl DownloadApplication {
         let opened_native_slot = Rc::clone(&native_slot);
         let view_slot = Rc::new(RefCell::new(None));
         let opened_view_slot = Rc::clone(&view_slot);
+        let scale_slot = Rc::new(RefCell::new(1.0_f32));
+        let opened_scale_slot = Rc::clone(&scale_slot);
         #[cfg(test)]
         let native_window_handle_override = self.task_window_native_handle_override;
         let opened = cx.open_window(
@@ -3514,6 +3543,7 @@ impl DownloadApplication {
                 #[cfg(not(test))]
                 let resolved_native_handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = resolved_native_handle;
+                *opened_scale_slot.borrow_mut() = window.scale_factor();
                 // A native close (title bar X, Alt+F4, taskbar close) must release the keyed
                 // lifecycle registration in the same turn, or a later task event targets a
                 // destroyed window and produces a visible remove/re-create flash.
@@ -3561,6 +3591,21 @@ impl DownloadApplication {
                         generation: window_generation,
                     },
                 );
+                // Inherit the stashed predecessor position (the replaced dialog
+                // or the last closed window for this task) in the same command
+                // batch; a stash miss keeps the centered creation position.
+                let native_handle = *native_slot.borrow();
+                if native_handle != 0 {
+                    let scale = *scale_slot.borrow();
+                    let _ = self.platform.send_command(PlatformCommand::MoveWindowCenteredOverKey(
+                        MoveWindowCenteredOverKeyCommand {
+                            window_handle: native_handle,
+                            key: task_id.as_uuid().to_string(),
+                            width: (window_size.width.as_f32() * scale).round() as i32,
+                            height: (window_size.height.as_f32() * scale).round() as i32,
+                        },
+                    ));
+                }
                 if activation.is_none()
                     && matches!(
                         phase,
@@ -3616,16 +3661,16 @@ impl DownloadApplication {
             .update(cx, move |_, window, _| {
                 if let Some(phase) = resize_for {
                     let new_size = download_task_window_size(phase);
-                    let bounds = window.bounds();
                     let scale = window.scale_factor();
                     if native_window_handle != 0 {
-                        let _ = platform.send_command(PlatformCommand::SetWindowBounds(
-                            centered_task_window_bounds_command(
-                                native_window_handle,
-                                bounds,
-                                new_size,
-                                scale,
-                            ),
+                        // GPUI's cached window origin never follows a user drag, so the
+                        // centered geometry is computed from the native rectangle in C#.
+                        let _ = platform.send_command(PlatformCommand::SetWindowBoundsCentered(
+                            SetWindowBoundsCenteredCommand {
+                                window_handle: native_window_handle,
+                                width: (new_size.width.as_f32() * scale).round() as i32,
+                                height: (new_size.height.as_f32() * scale).round() as i32,
+                            },
                         ));
                     } else {
                         window.resize(new_size);
@@ -8691,7 +8736,7 @@ mod tests {
                 application.task(task_id).cloned().expect("task snapshot"),
             )
         });
-        let (progress_bounds, progress_scale) = task_window_handle
+        let (_progress_bounds, progress_scale) = task_window_handle
             .update(cx, |_, window, _| (window.bounds(), window.scale_factor()))
             .expect("read progress window geometry");
         let mut window = VisualTestContext::from_window(task_window_handle, cx);
@@ -8747,26 +8792,27 @@ mod tests {
         });
         cx.run_until_parked();
         window.refresh().expect("render failed task skeleton");
+        let failed_size = download_task_window_size(DownloadWindowPhase::Failed);
         let failed_resize = std::iter::from_fn(|| {
             platform_endpoint
                 .try_receive_command_for_contract_test()
                 .ok()
         })
         .find_map(|envelope| match envelope.message {
-            nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowBounds(
-                command,
-            )) => Some(command),
+            nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::SetWindowBoundsCentered(command),
+            ) => Some(command),
             _ => None,
         })
         .expect("failed phase crosses the native resize boundary");
         assert_eq!(
             failed_resize,
-            centered_task_window_bounds_command(
-                42,
-                progress_bounds,
-                download_task_window_size(DownloadWindowPhase::Failed),
-                progress_scale,
-            )
+            SetWindowBoundsCenteredCommand {
+                window_handle: 42,
+                width: (failed_size.width.as_f32() * progress_scale).round() as i32,
+                height: (failed_size.height.as_f32() * progress_scale).round() as i32,
+            },
+            "the centered transform must delegate geometry to the native side"
         );
         assert_eq!(
             window
@@ -11851,6 +11897,49 @@ mod tests {
     }
 
     #[test]
+    fn task_window_handoff_inherits_the_predecessor_position_natively() {
+        // The user report: probe window → downloading → completed transitions
+        // lose the window position because GPUI's cached origin never follows a
+        // user drag. The replacement window must consume a native stash of the
+        // predecessor's real rectangle, and every closing window must stash it.
+        let source = include_str!("downloads.rs");
+        let open_body = source
+            .split("    fn open_task_window(")
+            .nth(1)
+            .and_then(|body| body.split("\n    fn update_task_window").next())
+            .expect("open_task_window body");
+        assert!(
+            open_body.contains("MoveWindowCenteredOverKey"),
+            "a newly opened task window must inherit the stashed predecessor position"
+        );
+
+        let clear_body = source
+            .split("    fn clear_task_window_registration(")
+            .nth(1)
+            .and_then(|body| body.split("\n    pub(crate) fn request_task_window").next())
+            .expect("clear_task_window_registration body");
+        assert!(
+            clear_body.contains("stash_task_window_anchor"),
+            "a closing task window must stash its real position for the next reopen"
+        );
+
+        let dialog_source = include_str!("downloads/new_download_view.rs");
+        let submit_body = dialog_source
+            .split("    pub(crate) fn submit(")
+            .nth(1)
+            .and_then(|body| body.split("\nimpl Render for NewDownloadView").next())
+            .expect("NewDownloadView::submit body");
+        let stash = submit_body.find("stash_task_window_anchor");
+        let close = submit_body.find("plan.close_source_window");
+        assert!(stash.is_some(), "dialog submission must stash its position");
+        assert!(close.is_some(), "dialog submission closes the source window");
+        assert!(
+            stash < close,
+            "the dialog position must be stashed before the dialog is destroyed"
+        );
+    }
+
+    #[test]
     fn task_window_render_never_reads_the_parent_download_application() {
         let source = include_str!("downloads/task_window.rs");
         let task_window_render = source
@@ -11886,28 +11975,70 @@ mod tests {
     }
 
     #[test]
-    fn task_window_phase_resize_preserves_the_physical_window_center() {
-        let scale_factor = 1.5;
-        let progress_size = download_task_window_size(DownloadWindowPhase::Progress);
-        let progress_bounds = gpui::Bounds::new(gpui::point(px(100.0), px(200.0)), progress_size);
-        let expected_physical_center = (480.0, 438.0);
+    fn task_window_phase_resize_delegates_geometry_to_the_native_side() {
+        // GPUI's cached window origin never follows a user drag, so the phase
+        // transform must not compute centered geometry from `window.bounds()`.
+        // The C# side derives the real center and applies one atomic
+        // SetWindowPos; the Rust boundary only carries the physical size.
+        let source = include_str!("downloads.rs");
+        let update_body = source
+            .split("fn update_task_window")
+            .nth(1)
+            .and_then(|body| body.split("\n    fn queue_task_window_activation").next())
+            .expect("update_task_window body");
 
-        for phase in [DownloadWindowPhase::Failed, DownloadWindowPhase::Completed] {
-            let command = centered_task_window_bounds_command(
-                42,
-                progress_bounds,
-                download_task_window_size(phase),
-                scale_factor,
-            );
-            assert_eq!(command.window_handle, 42);
-            assert_eq!(
-                (
-                    f64::from(command.x) + f64::from(command.width) / 2.0,
-                    f64::from(command.y) + f64::from(command.height) / 2.0,
-                ),
-                expected_physical_center
+        assert!(
+            update_body.contains("SetWindowBoundsCentered"),
+            "phase resize must use the native centered-bounds command"
+        );
+        assert!(
+            !update_body.contains("window.bounds()"),
+            "phase resize must not trust GPUI's stale window origin"
+        );
+    }
+
+    #[test]
+    fn progress_window_exposes_expandable_segment_details() {
+        // The user report: the second-level window had no way to inspect the
+        // dynamic split state. The progress view must carry an expand toggle,
+        // a details panel and old-NxTools-style per-segment dots, and the
+        // thread metric must follow the live segment count instead of the
+        // static connection budget.
+        let source = include_str!("downloads/task_window.rs");
+        for marker in [
+            "download-window-details-toggle",
+            "download-window-details",
+            "download-window-segment-dots",
+            "TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT",
+            "\"分段\"",
+        ] {
+            assert!(
+                source.contains(marker),
+                "progress window render must contain {marker}"
             );
         }
+    }
+
+    #[test]
+    fn segment_dot_ratio_bounds_each_segment_progress() {
+        let segment = |downloaded: u64, total: Option<u64>| {
+            nxtools_download::DownloadSegmentProgress {
+                segment_index: 0,
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+            }
+        };
+        assert_eq!(segment_dot_ratio(&segment(0, Some(100))), 0.0);
+        assert_eq!(segment_dot_ratio(&segment(50, Some(100))), 0.5);
+        assert_eq!(segment_dot_ratio(&segment(150, Some(100))), 1.0);
+        assert_eq!(segment_dot_ratio(&segment(10, None)), 1.0);
+        assert_eq!(segment_dot_ratio(&segment(0, None)), 0.0);
+        assert_eq!(segment_dot_ratio(&segment(0, Some(0))), 0.0);
+        assert_eq!(
+            segment_progress_summary(&[]),
+            "尚未分段",
+            "an unsegmented transfer explains its single-connection mode"
+        );
     }
 
     #[test]

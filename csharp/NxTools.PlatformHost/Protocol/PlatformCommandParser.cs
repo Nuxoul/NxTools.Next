@@ -51,6 +51,18 @@ internal sealed record ConfigureDesktopShellCommand(
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
+internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
+internal sealed record MoveWindowCenteredOverCommand(
+    long WindowHandle,
+    long AnchorWindowHandle,
+    int Width,
+    int Height);
+internal sealed record StashWindowBoundsCommand(long WindowHandle, string Key);
+internal sealed record MoveWindowCenteredOverKeyCommand(
+    long WindowHandle,
+    string Key,
+    int Width,
+    int Height);
 internal sealed record SetTaskbarProgressCommand(
     long WindowHandle,
     string State,
@@ -230,6 +242,33 @@ internal static class PlatformCommandParser
             envelope,
             "set_window_bounds",
             "Window-bounds command payload was empty.");
+
+    public static SetWindowBoundsCenteredCommand ParseSetWindowBoundsCentered(
+        ProtocolEnvelope envelope) =>
+        Parse<SetWindowBoundsCenteredCommand>(
+            envelope,
+            "set_window_bounds_centered",
+            "Centered window-bounds command payload was empty.");
+
+    public static MoveWindowCenteredOverCommand ParseMoveWindowCenteredOver(
+        ProtocolEnvelope envelope) =>
+        Parse<MoveWindowCenteredOverCommand>(
+            envelope,
+            "move_window_centered_over",
+            "Window-anchor placement payload was empty.");
+
+    public static StashWindowBoundsCommand ParseStashWindowBounds(ProtocolEnvelope envelope) =>
+        Parse<StashWindowBoundsCommand>(
+            envelope,
+            "stash_window_bounds",
+            "Window-stash command payload was empty.");
+
+    public static MoveWindowCenteredOverKeyCommand ParseMoveWindowCenteredOverKey(
+        ProtocolEnvelope envelope) =>
+        Parse<MoveWindowCenteredOverKeyCommand>(
+            envelope,
+            "move_window_centered_over_key",
+            "Stash-anchored placement payload was empty.");
 
     public static SetTaskbarProgressCommand ParseSetTaskbarProgress(ProtocolEnvelope envelope) =>
         Parse<SetTaskbarProgressCommand>(

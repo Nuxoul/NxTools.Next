@@ -584,6 +584,7 @@ impl NewDownloadView {
             let category_id = self.selected_category_id.clone();
             let save_directory_explicit = self.save_directory_explicit;
             let source_window = window.window_handle();
+            let source_native_handle = native_window_handle(window).unwrap_or_default();
             let view = cx.entity().downgrade();
             cx.defer(move |cx| {
                 match application.update(cx, |application, cx| {
@@ -597,6 +598,11 @@ impl NewDownloadView {
                     )
                 }) {
                     Ok(task_id) => {
+                        // Preserve the dialog's real position for the progress
+                        // window before this window is destroyed.
+                        application.update(cx, |application, _cx| {
+                            application.stash_task_window_anchor(task_id, source_native_handle);
+                        });
                         let _ = source_window.update(cx, |_, window, _| window.remove_window());
                         let application = application.clone();
                         cx.defer(move |cx| {
@@ -696,6 +702,7 @@ impl NewDownloadView {
 
         let application = self.application.clone();
         let source_window = window.window_handle();
+        let source_native_handle = native_window_handle(window).unwrap_or_default();
         let view = cx.entity().downgrade();
         info!(?mode, "scheduling download task submission");
         cx.defer(move |cx| {
@@ -707,6 +714,13 @@ impl NewDownloadView {
                     let show_progress_window = application.read(cx).show_progress_window;
                     let plan =
                         submit_presentation_plan(mode, task_id, delayed, show_progress_window);
+                    if plan.deferred_task_window.is_some() {
+                        // Preserve the dialog's real position for the progress
+                        // window before this window is destroyed.
+                        application.update(cx, |application, _cx| {
+                            application.stash_task_window_anchor(task_id, source_native_handle);
+                        });
+                    }
                     if plan.close_source_window {
                         let _ = source_window.update(cx, |_, window, _| window.remove_window());
                     }

@@ -28,25 +28,6 @@ pub(crate) fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Siz
     download_task_window_phase_layout(phase).size
 }
 
-pub(crate) fn centered_task_window_bounds_command(
-    window_handle: i64,
-    current_bounds: gpui::Bounds<gpui::Pixels>,
-    new_size: gpui::Size<gpui::Pixels>,
-    scale_factor: f32,
-) -> SetWindowBoundsCommand {
-    let centered_x = current_bounds.origin.x.as_f32()
-        + (current_bounds.size.width.as_f32() - new_size.width.as_f32()) / 2.0;
-    let centered_y = current_bounds.origin.y.as_f32()
-        + (current_bounds.size.height.as_f32() - new_size.height.as_f32()) / 2.0;
-    SetWindowBoundsCommand {
-        window_handle,
-        x: (centered_x * scale_factor).round() as i32,
-        y: (centered_y * scale_factor).round() as i32,
-        width: (new_size.width.as_f32() * scale_factor).round() as i32,
-        height: (new_size.height.as_f32() * scale_factor).round() as i32,
-    }
-}
-
 pub(crate) fn download_task_window_shell(
     theme: Theme,
     phase: DownloadWindowPhase,
@@ -102,6 +83,7 @@ pub(crate) struct DownloadTaskWindowView {
     pub(crate) snapshot: Option<DownloadEngineTask>,
     pub(crate) progress: Option<DownloadProgress>,
     pub(crate) shutdown_armed: bool,
+    pub(crate) details_expanded: bool,
 }
 
 impl DownloadTaskWindowView {
@@ -121,6 +103,7 @@ impl DownloadTaskWindowView {
             snapshot,
             progress,
             shutdown_armed,
+            details_expanded: false,
         }
     }
 
@@ -529,6 +512,22 @@ impl Render for DownloadTaskWindowView {
             _ => div().into_any_element(),
         };
 
+        let segments = progress_event
+            .as_ref()
+            .map(|progress| progress.segments.clone())
+            .unwrap_or_default();
+        let thread_label = if segments.is_empty() {
+            "连接"
+        } else {
+            "分段"
+        };
+        let thread_value = if segments.is_empty() {
+            connections.to_string()
+        } else {
+            segments.len().to_string()
+        };
+        let view_handle = cx.entity().downgrade();
+        let details_expanded = self.details_expanded;
         download_task_window_shell(
             theme,
             DownloadWindowPhase::Progress,
@@ -569,18 +568,66 @@ impl Render for DownloadTaskWindowView {
                 .child(
                     div()
                         .w_full()
-                        .h(px(PROGRESS_TRACK_HEIGHT))
-                        .rounded(px(RADIUS_CONTROL))
-                        .bg(theme.surface_raised)
-                        .when_some(ratio, |track, ratio| {
-                            track.child(
-                                div()
-                                    .h_full()
-                                    .w(px(408.0 * ratio))
-                                    .rounded(px(RADIUS_CONTROL))
-                                    .bg(status_color),
-                            )
-                        }),
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .flex_1()
+                                .h(px(PROGRESS_TRACK_HEIGHT))
+                                .rounded(px(RADIUS_CONTROL))
+                                .bg(theme.surface_raised)
+                                .when_some(ratio, |track, ratio| {
+                                    track.child(
+                                        div()
+                                            .h_full()
+                                            .w(gpui::relative(ratio))
+                                            .rounded(px(RADIUS_CONTROL))
+                                            .bg(status_color),
+                                    )
+                                }),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "download-window-details-toggle".into())
+                                .id("download-window-details-toggle")
+                                .size(px(20.0))
+                                .rounded(px(RADIUS_CONTROL))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(theme.text_muted)
+                                .hover(|style| style.bg(theme.surface_raised))
+                                .child(
+                                    Icon::new(if details_expanded {
+                                        MaterialIcon::ExpandLess
+                                    } else {
+                                        MaterialIcon::ExpandMore
+                                    })
+                                    .size(px(16.0)),
+                                )
+                                .on_click({
+                                    let view_handle = view_handle.clone();
+                                    move |_, window, cx| {
+                                        let Some(view) = view_handle.upgrade() else {
+                                            return;
+                                        };
+                                        let expanded = view.read(cx).details_expanded;
+                                        view.update(cx, |view, cx| {
+                                            view.details_expanded = !view.details_expanded;
+                                            cx.notify();
+                                        });
+                                        window.resize(size(
+                                            px(440.0),
+                                            px(if expanded {
+                                                TASK_WINDOW_PROGRESS_HEIGHT
+                                            } else {
+                                                TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT
+                                            }),
+                                        ));
+                                    }
+                                }),
+                        ),
                 )
                 .child(
                     div()
@@ -595,19 +642,64 @@ impl Render for DownloadTaskWindowView {
                             format!("{} /s", format_download_size(speed)),
                         ))
                         .child(download_window_metric(theme, "剩余", eta))
-                        .child(download_window_metric(
-                            theme,
-                            "连接",
-                            connections.to_string(),
-                        )),
+                        .child(download_window_metric(theme, thread_label, thread_value)),
                 )
-                .child(
-                    div()
-                        .text_size(px(TEXT_META))
-                        .text_color(theme.text_muted)
-                        .truncate()
-                        .child(final_path),
-                ),
+                .when(!details_expanded, |body| {
+                    body.child(
+                        div()
+                            .text_size(px(TEXT_META))
+                            .text_color(theme.text_muted)
+                            .truncate()
+                            .child(final_path.clone()),
+                    )
+                })
+                .when(details_expanded, |body| {
+                    body.child(
+                        div()
+                            .debug_selector(|| "download-window-details".into())
+                            .w_full()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .pt(px(8.0))
+                            .border_t_1()
+                            .border_color(theme.border_subtle)
+                            .child(
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_META))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child("分段进度"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_META))
+                                            .text_color(theme.text_muted)
+                                            .child(segment_progress_summary(&segments)),
+                                    ),
+                            )
+                            .child(segment_progress_dots(theme, &segments, status_color))
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_META))
+                                    .text_color(theme.text_muted)
+                                    .truncate()
+                                    .child(task.task.request().source_url.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_META))
+                                    .text_color(theme.text_muted)
+                                    .truncate()
+                                    .child(final_path),
+                            ),
+                    )
+                }),
             div()
                 .size_full()
                 .flex()
@@ -658,5 +750,100 @@ impl Render for DownloadTaskWindowView {
                 .child(actions),
         )
         .into_any_element()
+    }
+}
+
+/// The collapsed progress window height (34 titlebar + 106 body + 44 footer).
+pub(crate) const TASK_WINDOW_PROGRESS_HEIGHT: f32 = 184.0;
+/// The expanded height adds the segment-dots panel plus source/destination lines.
+pub(crate) const TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT: f32 = 280.0;
+/// Bounded dot rendering: a dynamic split can reach 256 segments, which would
+/// never fit the fixed-size task window even when expanded.
+const SEGMENT_DOT_LIMIT: usize = 64;
+const SEGMENT_DOT_SIZE: f32 = 9.0;
+
+pub(crate) fn segment_dot_ratio(segment: &nxtools_download::DownloadSegmentProgress) -> f32 {
+    match segment.total_bytes {
+        Some(total) if total > 0 => {
+            (segment.downloaded_bytes as f32 / total as f32).clamp(0.0, 1.0)
+        }
+        Some(_) => 0.0,
+        None => {
+            if segment.downloaded_bytes > 0 {
+                1.0
+            } else {
+                0.0
+            }
+        }
+    }
+}
+
+pub(crate) fn segment_progress_summary(
+    segments: &[nxtools_download::DownloadSegmentProgress],
+) -> String {
+    if segments.is_empty() {
+        return "尚未分段".into();
+    }
+    let finished = segments
+        .iter()
+        .filter(|segment| segment_dot_ratio(segment) >= 1.0)
+        .count();
+    format!("{finished}/{} 段完成", segments.len())
+}
+
+/// Renders one dot per segment in the old NxTools style: hollow while pending,
+/// filling left-to-right with the segment's byte ratio, solid when complete.
+fn segment_progress_dots(
+    theme: Theme,
+    segments: &[nxtools_download::DownloadSegmentProgress],
+    active_color: gpui::Rgba,
+) -> AnyElement {
+    if segments.is_empty() {
+        return div()
+            .text_size(px(TEXT_META))
+            .text_color(theme.text_muted)
+            .child("该任务为单连接传输")
+            .into_any_element();
+    }
+    let row = div()
+        .debug_selector(|| "download-window-segment-dots".into())
+        .w_full()
+        .flex()
+        .flex_wrap()
+        .gap(px(3.0));
+    let dots = segments.iter().take(SEGMENT_DOT_LIMIT).fold(row, |row, segment| {
+        let ratio = segment_dot_ratio(segment);
+        row.child(
+            div()
+                .size(px(SEGMENT_DOT_SIZE))
+                .rounded_full()
+                .bg(theme.surface_raised)
+                .border_1()
+                .border_color(theme.border_subtle)
+                .overflow_hidden()
+                .when(ratio > 0.0, |dot| {
+                    dot.child(
+                        div()
+                            .h_full()
+                            .w(gpui::relative(ratio))
+                            .bg(if ratio >= 1.0 {
+                                theme.success
+                            } else {
+                                active_color
+                            }),
+                    )
+                }),
+        )
+    });
+    if segments.len() > SEGMENT_DOT_LIMIT {
+        dots.child(
+            div()
+                .text_size(px(TEXT_META))
+                .text_color(theme.text_muted)
+                .child(format!("+{} 段", segments.len() - SEGMENT_DOT_LIMIT)),
+        )
+        .into_any_element()
+    } else {
+        dots.into_any_element()
     }
 }

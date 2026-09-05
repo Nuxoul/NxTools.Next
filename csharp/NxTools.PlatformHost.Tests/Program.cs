@@ -72,6 +72,7 @@ internal static class Program
             ("minimized command shows a hidden native window minimized without focus", MinimizedCommandUsesRealNativeWindow),
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
+            ("centered rectangle preserves the anchor visual center", CenteredRectanglePreservesAnchorCenter),
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
             ("taskbar overlay placement preserves anchor and logical offsets", TaskbarOverlayPlacementPreservesPayload),
             ("taskbar overlay visibility preserves its native target", TaskbarOverlayVisibilityPreservesPayload),
@@ -2986,6 +2987,23 @@ internal static class Program
         Assert(command.WindowHandle == 780L);
         Assert(command.X == 120 && command.Y == 240);
         Assert(command.Width == 400 && command.Height == 410);
+        return Task.CompletedTask;
+    }
+
+    private static Task CenteredRectanglePreservesAnchorCenter()
+    {
+        // The download task window phases resize in place; the new rectangle
+        // must keep the anchor's visual center stable across transitions.
+        var anchor = new NativeWindowRectangle(100, 200, 560, 676);
+        var centered = WindowsPlatformAdapter.CenteredRectangleForTest(anchor, 440, 196);
+        Assert(centered.Left == 110 && centered.Top == 340);
+        Assert(centered.Width == 440 && centered.Height == 196);
+        Assert((centered.Left + centered.Right) / 2 == (anchor.Left + anchor.Right) / 2);
+        Assert((centered.Top + centered.Bottom) / 2 == (anchor.Top + anchor.Bottom) / 2);
+
+        var odd = WindowsPlatformAdapter.CenteredRectangleForTest(
+            new NativeWindowRectangle(0, 0, 101, 51), 20, 10);
+        Assert(odd.Left == 40 && odd.Top == 20);
         return Task.CompletedTask;
     }
 

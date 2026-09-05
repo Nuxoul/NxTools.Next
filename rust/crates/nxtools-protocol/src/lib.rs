@@ -371,6 +371,9 @@ pub enum PlatformCommand {
     SetWindowTopmost(SetWindowTopmostCommand),
     SetWindowNoActivate(SetWindowNoActivateCommand),
     SetWindowBounds(SetWindowBoundsCommand),
+    SetWindowBoundsCentered(SetWindowBoundsCenteredCommand),
+    StashWindowBounds(StashWindowBoundsCommand),
+    MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand),
     SetTaskbarProgress(SetTaskbarProgressCommand),
     PlaceTaskbarProgressOverlay(PlaceTaskbarProgressOverlayCommand),
     SetTaskbarProgressOverlayVisibility(SetTaskbarProgressOverlayVisibilityCommand),
@@ -529,6 +532,34 @@ pub struct SetWindowBoundsCommand {
     pub window_handle: i64,
     pub x: i32,
     pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Resizes the window while keeping its real current visual center. GPUI's
+/// cached window origin never follows a user drag, so the centered geometry
+/// must be computed from the native rectangle on the C# side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetWindowBoundsCenteredCommand {
+    pub window_handle: i64,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Captures a window's real native rectangle under a key before it is
+/// destroyed, so a replacement window can inherit that position.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StashWindowBoundsCommand {
+    pub window_handle: i64,
+    pub key: String,
+}
+
+/// Places the window centered over the stashed anchor rectangle (consumed on
+/// use). A missing stash entry resizes in place instead of teleporting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveWindowCenteredOverKeyCommand {
+    pub window_handle: i64,
+    pub key: String,
     pub width: i32,
     pub height: i32,
 }

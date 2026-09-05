@@ -103,6 +103,8 @@ material_icons! {
     Info => "material-symbols/info.svg",
     ProgressActivity => "material-symbols/progress-activity.svg",
     CalendarMonth => "material-symbols/calendar-month.svg",
+    ExpandMore => "material-symbols/expand-more.svg",
+    ExpandLess => "material-symbols/expand-less.svg",
     ChevronLeft => "material-symbols/chevron-left.svg",
     ChevronRight => "material-symbols/chevron-right.svg",
     Cancel => "material-symbols/cancel.svg",
