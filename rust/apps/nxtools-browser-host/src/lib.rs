@@ -232,12 +232,14 @@ const fn browser_protocol_version() -> u16 {
 pub fn run() -> Result<()> {
     let paths = AppPaths::discover()?;
     let _log_guard = nxtools_core::init_file_logging(&paths, "browser-host")?;
-    let registrar_manifest = paths
-        .data_dir
-        .parent()
-        .map(|root| root.join("browser-native-host").join("chromium-host.json"))
-        .unwrap_or_else(|| PathBuf::from("chromium-host.json"));
+    let registrar_manifest = registrar_manifest_path(&paths);
     let registered_origins = registered_allowed_origins(&registrar_manifest);
+    info!(
+        event = "browser_native_host.registrar_origins_loaded",
+        manifest = %registrar_manifest.display(),
+        origin_count = registered_origins.len(),
+        "native messaging registrar origins loaded"
+    );
     validate_browser_origin(std::env::args().skip(1), &registered_origins)?;
     info!(
         event = "browser_native_host.started",
@@ -316,6 +318,19 @@ fn validate_browser_origin(
         "browser origin argument is not allowed by the pinned identities or the registrar manifest"
     );
     bail!("browser origin is not allowed")
+}
+
+/// Locates the registrar manifest the PlatformHost writes. The registrar uses
+/// the LOCAL app root (`%LOCALAPPDATA%\NxTools\NxTools.Next`), while
+/// `AppPaths::data_dir` is the ROAMING data directory — deriving the root from
+/// the local log directory is what keeps the two sides on the same file.
+fn registrar_manifest_path(paths: &AppPaths) -> PathBuf {
+    paths
+        .log_dir
+        .parent()
+        .and_then(|data| data.parent())
+        .map(|root| root.join("browser-native-host").join("chromium-host.json"))
+        .unwrap_or_else(|| PathBuf::from("chromium-host.json"))
 }
 
 /// Reads the allowed origins the PlatformHost registrar persisted next to the
@@ -1505,6 +1520,25 @@ mod tests {
             &registered
         )
         .is_err());
+    }
+
+    #[test]
+    fn registrar_manifest_path_resolves_the_local_app_root_not_roaming() {
+        // The registrar writes browser-native-host under
+        // %LOCALAPPDATA%\NxTools\NxTools.Next, but AppPaths::data_dir is the
+        // ROAMING data directory. Deriving from the roaming root made the host
+        // read a nonexistent manifest and reject the exported extension's ID
+        // with a generic Chrome communication failure.
+        let paths = AppPaths {
+            config_dir: PathBuf::from(r"C:\Roaming\NxTools\NxTools.Next\config"),
+            data_dir: PathBuf::from(r"C:\Roaming\NxTools\NxTools.Next\data"),
+            cache_dir: PathBuf::from(r"C:\Local\NxTools\NxTools.Next\cache"),
+            log_dir: PathBuf::from(r"C:\Local\NxTools\NxTools.Next\data\logs"),
+        };
+        assert_eq!(
+            registrar_manifest_path(&paths),
+            PathBuf::from(r"C:\Local\NxTools\NxTools.Next\browser-native-host\chromium-host.json")
+        );
     }
 
     #[test]
