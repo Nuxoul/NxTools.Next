@@ -3515,13 +3515,25 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             }
 
             var centered = CenteredRectangle(current, width, height);
+            var applied = ToOuterRectangle(
+                window,
+                current,
+                centered,
+                width,
+                height,
+                out var failure);
+            if (applied == null)
+            {
+                return failure ?? new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+            var (x, y, outerWidth, outerHeight) = applied.Value;
             return SetWindowPos(
                 window,
                 IntPtr.Zero,
-                centered.Left,
-                centered.Top,
-                width,
-                height,
+                x,
+                y,
+                outerWidth,
+                outerHeight,
                 SwpNoZOrder | SwpNoActivate)
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(
@@ -3561,18 +3573,58 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             var centered = anchorAvailable
                 ? CenteredRectangle(anchorRect, width, height)
                 : CenteredRectangle(target, width, height);
+            var applied = ToOuterRectangle(
+                window,
+                target,
+                centered,
+                width,
+                height,
+                out var failure);
+            if (applied == null)
+            {
+                return failure ?? new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+            var (x, y, outerWidth, outerHeight) = applied.Value;
             return SetWindowPos(
                 window,
                 IntPtr.Zero,
-                centered.Left,
-                centered.Top,
-                width,
-                height,
+                x,
+                y,
+                outerWidth,
+                outerHeight,
                 SwpNoZOrder | SwpNoActivate)
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(
                     false,
                     $"SetWindowPos(centered-over) failed with Win32={Marshal.GetLastWin32Error()}.");
+        }
+
+        /// <summary>
+        /// Converts a desired VISIBLE rectangle into the OUTER rectangle
+        /// SetWindowPos applies. DWM shadows make the outer frame larger than
+        /// the visible bounds; ignoring the insets displaced every phase
+        /// transition by the shadow border and shrank the client area.
+        /// </summary>
+        private static (int Left, int Top, int Width, int Height)? ToOuterRectangle(
+            IntPtr window,
+            NativeWindowRectangle currentVisible,
+            NativeWindowRectangle centeredVisible,
+            int visibleWidth,
+            int visibleHeight,
+            out WindowsCommandResult? failure)
+        {
+            failure = null;
+            if (!AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer))
+            {
+                failure = new WindowsCommandResult(false, "The window rectangle is unavailable.");
+                return null;
+            }
+            var insets = NativeWindowInsets.From(outer, currentVisible);
+            return (
+                centeredVisible.Left - insets.Left,
+                centeredVisible.Top - insets.Top,
+                visibleWidth + insets.Left + insets.Right,
+                visibleHeight + insets.Top + insets.Bottom);
         }
 
         internal static NativeWindowRectangle CenteredRectangle(
@@ -3650,13 +3702,25 @@ internal sealed class WindowsPlatformAdapter : IDisposable
             var centered = stashHit
                 ? CenteredRectangle(anchorRect, width, height)
                 : CenteredRectangle(target, width, height);
+            var applied = ToOuterRectangle(
+                window,
+                target,
+                centered,
+                width,
+                height,
+                out var stashFailure);
+            if (applied == null)
+            {
+                return stashFailure ?? new WindowsCommandResult(false, "The window rectangle is unavailable.");
+            }
+            var (stashX, stashY, stashOuterWidth, stashOuterHeight) = applied.Value;
             return SetWindowPos(
                 window,
                 IntPtr.Zero,
-                centered.Left,
-                centered.Top,
-                width,
-                height,
+                stashX,
+                stashY,
+                stashOuterWidth,
+                stashOuterHeight,
                 SwpNoZOrder | SwpNoActivate)
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(

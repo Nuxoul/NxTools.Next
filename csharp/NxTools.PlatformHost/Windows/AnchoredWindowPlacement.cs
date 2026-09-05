@@ -272,6 +272,17 @@ internal static class AnchoredWindowPlacement
         return GetWindowRect(window, out bounds);
     }
 
+    /// <summary>
+    /// Exposes the OUTER window rectangle (including invisible DWM frame
+    /// margins). Centered placement must convert a desired visible rectangle
+    /// into outer coordinates via these frame insets or every transition
+    /// shifts the window by the shadow border and shrinks its client area.
+    /// </summary>
+    internal static bool TryGetWindowRectangle(
+        IntPtr window,
+        out NativeWindowRectangle bounds)
+        => GetWindowRect(window, out bounds);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindow(IntPtr window);

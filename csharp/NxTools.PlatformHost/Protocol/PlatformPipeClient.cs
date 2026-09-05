@@ -14,6 +14,9 @@ internal sealed class PlatformPipeClient(
     IPlatformLog log)
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ReconnectLogInterval = TimeSpan.FromSeconds(30);
+    private long consecutiveDisconnects;
+    private DateTimeOffset lastDisconnectLogAt = DateTimeOffset.MinValue;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -22,6 +25,7 @@ internal sealed class PlatformPipeClient(
             try
             {
                 await RunSessionAsync(cancellationToken);
+                Interlocked.Exchange(ref consecutiveDisconnects, 0);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -30,20 +34,34 @@ internal sealed class PlatformPipeClient(
             catch (Exception error)
             {
                 var level = DisconnectLogLevel(error);
-                if (level == "error")
+                var consecutive = Interlocked.Increment(ref consecutiveDisconnects);
+                // A dead desktop turns this loop into a retry storm; logging
+                // every attempt buried the diagnostic sink in 700+ identical
+                // error records within an hour. Log the first failure and
+                // rate-limit the repeats to one bounded record per interval.
+                var sinceLastLog = DateTimeOffset.UtcNow - lastDisconnectLogAt;
+                if (ShouldLogDisconnect(consecutive, sinceLastLog))
                 {
-                    Console.Error.WriteLine($"PlatformHost disconnected: {error.Message}");
+                    lastDisconnectLogAt = DateTimeOffset.UtcNow;
+                    if (level == "error")
+                    {
+                        Console.Error.WriteLine($"PlatformHost disconnected: {error.Message}");
+                    }
+                    log.Write(level, "ipc.disconnected", fields: new Dictionary<string, object?>
+                    {
+                        ["exception_type"] = error.GetType().FullName,
+                        ["message"] = error.Message,
+                        ["stack_trace"] = error.StackTrace,
+                        ["consecutive_failures"] = consecutive
+                    });
                 }
-                log.Write(level, "ipc.disconnected", fields: new Dictionary<string, object?>
-                {
-                    ["exception_type"] = error.GetType().FullName,
-                    ["message"] = error.Message,
-                    ["stack_trace"] = error.StackTrace
-                });
                 await Task.Delay(ReconnectDelay, cancellationToken);
             }
         }
     }
+
+    internal static bool ShouldLogDisconnect(long consecutiveFailures, TimeSpan sinceLastLog) =>
+        consecutiveFailures == 1 || sinceLastLog >= ReconnectLogInterval;
 
     internal static string DisconnectLogLevel(Exception error) =>
         error is EndOfStreamException ? "info" : "error";

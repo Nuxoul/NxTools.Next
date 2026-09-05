@@ -5018,7 +5018,10 @@ async fn concatenate_dash_fragments(
         .await?;
     for fragment in fragments {
         let mut input = tokio::fs::File::open(fragment).await?;
-        let mut buffer = vec![0_u8; 64 * 1024];
+        // Every tokio::fs read/write hops to the blocking pool; a 64 KiB
+        // buffer made finalize-merge crawl on large media. 1 MiB keeps the
+        // same per-chunk stop-directive responsiveness at 1/16th of the hops.
+        let mut buffer = vec![0_u8; 1024 * 1024];
         loop {
             if let Some(directive) = hls_stop_directive(control) {
                 drop(output);

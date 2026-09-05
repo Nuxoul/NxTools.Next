@@ -427,6 +427,13 @@ impl NewDownloadView {
         });
     }
 
+    /// Focuses the URL input one frame after the dialog opens; focusing in the
+    /// constructor races the native window's first show, like every GPUI popup.
+    pub(crate) fn focus_url_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.url.focus_handle(cx).focus(window);
+        cx.notify();
+    }
+
     pub(crate) fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.external_blob.is_some() {
             return;
@@ -1444,11 +1451,51 @@ impl Render for NewDownloadView {
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
-                .child(labeled_field(
+                .child(labeled_control(
                     theme,
                     "下载地址",
                     None,
-                    &self.url,
+                    path_picker_shell(
+                        "download-new-url-control",
+                        field_shell(
+                            theme,
+                            "download-new-url-field-input",
+                            Input::new(&self.url)
+                                .appearance(false)
+                                .bordered(false)
+                                .focus_bordered(false),
+                        ),
+                        div()
+                            .id("download-new-url-paste-wrapper")
+                            .debug_selector(|| "download-new-url-paste".into())
+                            .size(px(CONTROL_HEIGHT_ACTION))
+                            .tooltip(|window, cx| Tooltip::new("粘贴下载地址").build(window, cx))
+                            .child(
+                                Button::new("download-paste-url")
+                                    .icon(Icon::new(MaterialIcon::ContentPaste))
+                                    .small()
+                                    .outline()
+                                    .size(px(CONTROL_HEIGHT_ACTION))
+                                    .px(px(0.0))
+                                    .rounded(px(RADIUS_CONTROL))
+                                    .on_click({
+                                        let url = self.url.clone();
+                                        move |_, window, cx| {
+                                            let text = cx
+                                                .read_from_clipboard()
+                                                .and_then(|item| item.text())
+                                                .unwrap_or_default();
+                                            let text = text.trim().to_owned();
+                                            if !text.is_empty() {
+                                                url.update(cx, |state, cx| {
+                                                    state.set_value(text, window, cx);
+                                                });
+                                            }
+                                        }
+                                    }),
+                            )
+                            .into_any_element(),
+                    ),
                     "download-new-url-field",
                 ))
                 .child(
@@ -1570,11 +1617,51 @@ impl Render for NewDownloadView {
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
-                .child(labeled_field(
+                .child(labeled_control(
                     theme,
                     "下载地址",
                     None,
-                    &self.url,
+                    path_picker_shell(
+                        "download-new-url-control",
+                        field_shell(
+                            theme,
+                            "download-new-url-field-input",
+                            Input::new(&self.url)
+                                .appearance(false)
+                                .bordered(false)
+                                .focus_bordered(false),
+                        ),
+                        div()
+                            .id("download-new-url-paste-wrapper")
+                            .debug_selector(|| "download-new-url-paste".into())
+                            .size(px(CONTROL_HEIGHT_ACTION))
+                            .tooltip(|window, cx| Tooltip::new("粘贴下载地址").build(window, cx))
+                            .child(
+                                Button::new("download-paste-url")
+                                    .icon(Icon::new(MaterialIcon::ContentPaste))
+                                    .small()
+                                    .outline()
+                                    .size(px(CONTROL_HEIGHT_ACTION))
+                                    .px(px(0.0))
+                                    .rounded(px(RADIUS_CONTROL))
+                                    .on_click({
+                                        let url = self.url.clone();
+                                        move |_, window, cx| {
+                                            let text = cx
+                                                .read_from_clipboard()
+                                                .and_then(|item| item.text())
+                                                .unwrap_or_default();
+                                            let text = text.trim().to_owned();
+                                            if !text.is_empty() {
+                                                url.update(cx, |state, cx| {
+                                                    state.set_value(text, window, cx);
+                                                });
+                                            }
+                                        }
+                                    }),
+                            )
+                            .into_any_element(),
+                    ),
                     "download-new-url-field",
                 ))
                 .child(

@@ -73,6 +73,7 @@ internal static class Program
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
             ("centered rectangle preserves the anchor visual center", CenteredRectanglePreservesAnchorCenter),
+            ("reconnect failure logging is rate limited", ReconnectFailureLoggingIsRateLimited),
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
             ("taskbar overlay placement preserves anchor and logical offsets", TaskbarOverlayPlacementPreservesPayload),
             ("taskbar overlay visibility preserves its native target", TaskbarOverlayVisibilityPreservesPayload),
@@ -4160,6 +4161,17 @@ internal static class Program
             new EndOfStreamException("Desktop closed the platform pipe.")) == "info");
         Assert(PlatformPipeClient.DisconnectLogLevel(
             new InvalidDataException("bad frame")) == "error");
+        return Task.CompletedTask;
+    }
+
+    private static Task ReconnectFailureLoggingIsRateLimited()
+    {
+        // A dead desktop turns the reconnect loop into a retry storm; the
+        // diagnostic sink must keep one full record plus bounded repeats.
+        Assert(PlatformPipeClient.ShouldLogDisconnect(1, TimeSpan.FromDays(1)));
+        Assert(!PlatformPipeClient.ShouldLogDisconnect(2, TimeSpan.FromSeconds(1)));
+        Assert(!PlatformPipeClient.ShouldLogDisconnect(745, TimeSpan.FromSeconds(29)));
+        Assert(PlatformPipeClient.ShouldLogDisconnect(746, TimeSpan.FromSeconds(30)));
         return Task.CompletedTask;
     }
 

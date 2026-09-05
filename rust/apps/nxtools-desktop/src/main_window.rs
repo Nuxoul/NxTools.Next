@@ -490,7 +490,7 @@ mod tests {
     };
     use nxtools_download::{
         DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
-        DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTaskId, RequestOrigin,
+        DownloadStatus, DownloadTaskId, RequestOrigin,
     };
     use nxtools_finder::FinderCatalog;
     use nxtools_network::NetworkPolicy;
@@ -3202,7 +3202,7 @@ mod tests {
         DownloadContextMenuPlan, DownloadDetailTab, DownloadSortKey, DownloadSortState,
         DownloadTaskFilter, MainWindow, MainWindowShellContext, QuickLaunchSettingsPage,
         download_context_capabilities, download_context_menu_plan, download_filter_counts,
-        download_queue_placement_capabilities, download_segment_strip_cells,
+        download_queue_placement_capabilities,
         download_tasks_for_view, file_index_summary, format_query_elapsed, hotkey_from_key_down,
         masked_request_header_value, prepare_download_context_selection, quick_find_scroll_step,
         quick_find_scroll_target, reconcile_download_selection, set_download_sort,
@@ -3264,41 +3264,6 @@ mod tests {
         assert_eq!(
             masked_request_header_value("User-Agent", "NxTools-Test"),
             "NxTools-Test"
-        );
-    }
-
-    #[test]
-    fn download_segment_strip_is_proportional_and_shows_partial_progress() {
-        let segments = vec![
-            DownloadSegment::new(0, 0, 74, 38, DownloadSegmentState::Active)
-                .expect("first segment"),
-            DownloadSegment::new(1, 75, 99, 25, DownloadSegmentState::Completed)
-                .expect("second segment"),
-        ];
-
-        let cells = download_segment_strip_cells(&segments, 40);
-
-        assert_eq!(cells.len(), 40);
-        assert_eq!(
-            cells.iter().filter(|cell| cell.segment_index == 0).count(),
-            30
-        );
-        assert_eq!(
-            cells.iter().filter(|cell| cell.segment_index == 1).count(),
-            10
-        );
-        assert_eq!(
-            cells
-                .iter()
-                .filter(|cell| cell.segment_index == 0 && cell.downloaded)
-                .count(),
-            15
-        );
-        assert!(
-            cells
-                .iter()
-                .filter(|cell| cell.segment_index == 1)
-                .all(|cell| cell.downloaded && cell.state == DownloadSegmentState::Completed)
         );
     }
 
@@ -4076,6 +4041,22 @@ mod tests {
         assert_eq!(
             cx.read(|cx| main_window.read(cx).selected_download_task),
             None
+        );
+    }
+
+    #[test]
+    fn download_table_header_clicks_persist_the_sort_preference() {
+        // The user report: header-click sorts were not restored after a
+        // restart because only the context-menu path persisted the choice.
+        let source = include_str!("main_window/download_page.rs");
+        let header_body = source
+            .split("fn download_sort_header_cell")
+            .nth(1)
+            .and_then(|body| body.split("\npub(crate) fn persist_download_sort").next())
+            .expect("download_sort_header_cell body");
+        assert!(
+            header_body.contains("persist_download_sort(window, cx)"),
+            "header clicks must persist the sort like the context menu does"
         );
     }
 

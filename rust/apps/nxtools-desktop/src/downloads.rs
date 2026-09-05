@@ -2514,6 +2514,17 @@ impl DownloadApplication {
                 {
                     *opened_view_slot.borrow_mut() = Some(view.clone());
                 }
+                // Focus the URL input one frame after the dialog is actually
+                // on screen; the constructor races the native first show.
+                let focus_view = view.downgrade();
+                let focus_window = window.window_handle();
+                cx.defer(move |cx| {
+                    let _ = focus_window.update(cx, |_, window, cx| {
+                        if let Some(view) = focus_view.upgrade() {
+                            view.update(cx, |view, cx| view.focus_url_input(window, cx));
+                        }
+                    });
+                });
                 if auto_probe {
                     let view = view.clone();
                     let source_window = window.window_handle();
@@ -6353,8 +6364,8 @@ mod tests {
             .debug_bounds("download-new-url-field-label")
             .expect("production URL label");
         let url_control = window
-            .debug_bounds("download-new-url-field")
-            .expect("production URL control");
+            .debug_bounds("download-new-url-control")
+            .expect("production URL control row");
         let form_grid = window
             .debug_bounds("download-new-form-grid")
             .expect("production new-download form grid");
@@ -6407,11 +6418,19 @@ mod tests {
             );
         }
         assert_eq!(directory_picker.size, gpui::size(px(28.0), px(28.0)));
+        let url_paste = window
+            .debug_bounds("download-new-url-paste")
+            .expect("production URL paste button");
+        assert_eq!(url_paste.size, gpui::size(px(28.0), px(28.0)));
+        assert!(
+            (url_paste.right().as_f32() - (form_grid.right().as_f32() - 16.0)).abs() <= 1.0,
+            "the URL paste button sits at the right edge of the form width"
+        );
         assert!(
             (url_control.left().as_f32() - (form_grid.left().as_f32() + 16.0)).abs() <= 1.0
                 && (url_control.right().as_f32() - (form_grid.right().as_f32() - 16.0)).abs()
                     <= 1.0,
-            "URL control must fill the padded form width"
+            "URL control row must fill the padded form width"
         );
         assert!(
             (directory_row.left().as_f32() - file_name_field.left().as_f32()).abs() <= 1.0

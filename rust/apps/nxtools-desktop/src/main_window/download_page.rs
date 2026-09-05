@@ -1138,35 +1138,10 @@ impl MainWindow {
                                                                             // Persist the
                                                                             // preference for the
                                                                             // next launch.
-                                                                            let sort_application =
-                                                                                window
-                                                                                    .downloads
-                                                                                    .clone();
-                                                                            let sort_key = window
-                                                                                .download_sort
-                                                                                .key
-                                                                                .diagnostic_name()
-                                                                                .to_owned();
-                                                                            let sort_descending =
-                                                                                window
-                                                                                    .download_sort
-                                                                                    .descending;
-                                                                            cx.defer(move |cx| {
-                                                                                let _ =
-                                                                                    sort_application
-                                                                                        .update(
-                                                                                            cx,
-                                                                                            |application,
-                                                                                             cx| {
-                                                                                                application
-                                                                                                    .set_task_list_sort(
-                                                                                                        Some(sort_key),
-                                                                                                        Some(sort_descending),
-                                                                                                        cx,
-                                                                                                    );
-                                                                                            },
-                                                                                        );
-                                                                            });
+                                                                            persist_download_sort(
+                                                                                window,
+                                                                                cx,
+                                                                            );
                                                                             cx.notify();
                                                                         }
                                                                     },
@@ -2396,19 +2371,31 @@ pub(crate) fn download_segment_detail(
         .iter()
         .map(DownloadSegment::downloaded_bytes)
         .sum::<u64>();
-    let mut aggregate = div()
-        .h(px(PROGRESS_TRACK_HEIGHT))
+    let mut dots = div()
+        .debug_selector(|| "download-detail-segment-dots".into())
         .w_full()
-        .rounded(px(RADIUS_CONTROL))
-        .overflow_hidden()
-        .bg(theme.surface_raised)
-        .flex();
-    for cell in download_segment_strip_cells(&detail.segments, 96) {
-        aggregate = aggregate.child(div().flex_1().h_full().bg(if cell.downloaded {
-            download_segment_color(theme, cell.state)
-        } else {
-            theme.surface_hover
-        }));
+        .flex()
+        .flex_wrap()
+        .gap(px(3.0));
+    for segment in &detail.segments {
+        let ratio = (segment.downloaded_bytes() as f32 / segment.len().max(1) as f32)
+            .clamp(0.0, 1.0);
+        let mut dot = div()
+            .size(px(9.0))
+            .rounded_full()
+            .bg(theme.surface_raised)
+            .border_1()
+            .border_color(theme.border_subtle)
+            .overflow_hidden();
+        if ratio > 0.0 {
+            dot = dot.child(
+                div()
+                    .h_full()
+                    .w(gpui::relative(ratio))
+                    .bg(download_segment_color(theme, segment.state)),
+            );
+        }
+        dots = dots.child(dot);
     }
     let mut rows = div().flex().flex_col();
     for segment in &detail.segments {
@@ -2472,7 +2459,7 @@ pub(crate) fn download_segment_detail(
                     format_download_bytes(total_bytes)
                 )),
         )
-        .child(aggregate)
+        .child(dots)
         .child(rows)
         .into_any_element()
 }
@@ -2841,43 +2828,6 @@ pub(crate) fn download_segment_color(theme: Theme, state: DownloadSegmentState) 
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct DownloadSegmentStripCell {
-    pub(crate) segment_index: u32,
-    pub(crate) state: DownloadSegmentState,
-    pub(crate) downloaded: bool,
-}
-
-pub(crate) fn download_segment_strip_cells(
-    segments: &[DownloadSegment],
-    cell_count: usize,
-) -> Vec<DownloadSegmentStripCell> {
-    let total_bytes = segments.iter().map(DownloadSegment::len).sum::<u64>();
-    if total_bytes == 0 || cell_count == 0 {
-        return Vec::new();
-    }
-    let mut cells = Vec::with_capacity(cell_count);
-    for cell_index in 0..cell_count {
-        let midpoint = (u128::from(total_bytes)
-            * u128::try_from(cell_index.saturating_mul(2).saturating_add(1)).unwrap_or(u128::MAX)
-            / u128::try_from(cell_count.saturating_mul(2)).unwrap_or(1))
-        .min(u128::from(total_bytes.saturating_sub(1))) as u64;
-        let mut preceding_bytes = 0_u64;
-        if let Some(segment) = segments.iter().find(|segment| {
-            preceding_bytes = preceding_bytes.saturating_add(segment.len());
-            midpoint < preceding_bytes
-        }) {
-            let segment_start = preceding_bytes.saturating_sub(segment.len());
-            cells.push(DownloadSegmentStripCell {
-                segment_index: segment.index(),
-                state: segment.state,
-                downloaded: midpoint.saturating_sub(segment_start) < segment.downloaded_bytes(),
-            });
-        }
-    }
-    cells
-}
-
 pub(crate) fn download_timeline_label(entry: &DownloadTaskTimelineEntry) -> String {
     match entry.event {
         DownloadTaskTimelineEvent::TaskCreated => "任务已创建".into(),
@@ -3171,8 +3121,23 @@ pub(crate) fn download_sort_header_cell(
                     window
                         .download_list_scroll
                         .scroll_to_item(0, ScrollStrategy::Top);
+                    persist_download_sort(window, cx);
                     cx.notify();
                 }
             });
         })
+}
+
+/// Persists the current task-list sort so the next launch restores it. Both
+/// the context-menu sort and the table-header sort must route through this —
+/// a header-only click used to change the view without persisting.
+pub(crate) fn persist_download_sort(window: &mut MainWindow, cx: &mut Context<MainWindow>) {
+    let application = window.downloads.clone();
+    let sort_key = window.download_sort.key.diagnostic_name().to_owned();
+    let sort_descending = window.download_sort.descending;
+    cx.defer(move |cx| {
+        let _ = application.update(cx, |application, cx| {
+            application.set_task_list_sort(Some(sort_key), Some(sort_descending), cx);
+        });
+    });
 }
