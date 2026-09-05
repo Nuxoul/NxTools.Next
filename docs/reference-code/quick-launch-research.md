@@ -456,11 +456,15 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
 27. Incremental compaction retries are isolated per volume with bounded exponential backoff. The
     retry timer never postpones the shared USN poll; successful rebuild/compaction or new USN
     progress clears that volume's compaction fault.
-28. Launcher merging keeps query-specific history first, then gives strong launchable candidates a
-    bounded advantage over ordinary indexed paths without promoting weak incidental app matches over
-    every strong file match. After user testing showed the 50-row presentation cap hid too many
-    otherwise valid matches, the virtualized product list retains up to 200 merged rows; final
-    cross-source ranking and truncation happen only in `nxtools-finder`.
+28. Launcher merging keeps query-specific history first, then gives launchable candidates an
+    advantage that covers the whole non-launchable prefix tier (6_500 over the shared query
+    language), so a program matched across characters still outranks every name-prefix directory —
+    the user-reported "hum" query must surface the installed Helium program above the hume and
+    Humanoid directories. The earlier weaker 2_500 boost, which deliberately avoided promoting weak
+    incidental app matches over strong file matches, was replaced on 2026-09-05 after the user
+    explicitly requested Listary-style program priority. After user testing showed the 50-row
+    presentation cap hid too many otherwise valid matches, the virtualized product list retains up
+    to 200 merged rows; final cross-source ranking and truncation happen only in `nxtools-finder`.
 29. The result viewport and Up/Down navigation share the same GPUI `ScrollHandle`. Pointer movement
     may change selection after the movement gate opens, but it never rewinds the viewport to the top.
 30. The observed Listary `gram` result keeps the launchable `AyuGram.exe` and its clean, shallow

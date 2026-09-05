@@ -26,7 +26,12 @@ const APPLICATION_EXTENSIONS: [&str; 3] = ["lnk", "url", "exe"];
 type UsageRecord = (u64, Option<i64>);
 type UsageHistory = HashMap<String, UsageRecord>;
 type QueryUsageHistory = HashMap<(String, String), UsageRecord>;
-const LAUNCHABLE_MATCH_BOOST: i64 = 2_500;
+// A launchable program must outrank every name-prefix directory match even
+// when the program only matched across characters (fuzzy subsequence tier,
+// score < 2_000), because the launcher's primary job is surfacing programs —
+// the user-reported "hum" query must put Helium above the hume/Humanoid
+// directories. 6_500 covers the whole non-launchable prefix tier (6_000).
+const LAUNCHABLE_MATCH_BOOST: i64 = 6_500;
 const GENERATED_PATH_PENALTY: i64 = 2_500;
 const MAX_RECENT_DIRECTORIES: usize = 64;
 
@@ -1270,6 +1275,37 @@ mod tests {
         assert_eq!(
             results.first().map(|item| item.entry.name.as_str()),
             Some("Vivid Screen Capture")
+        );
+    }
+
+    #[test]
+    fn a_cross_character_program_match_precedes_prefix_matched_directories() {
+        // The user's reported case: typing "hum" must surface the installed
+        // Helium program — matched across characters H..u..m — above every
+        // directory whose name merely starts with "hum".
+        let (_directory, catalog) = catalog_with_files(&["Helium.lnk"]);
+        let external = [
+            ExternalSearchEntry {
+                id: "indexed:hume".into(),
+                name: "hume".into(),
+                target: r"D:\Code\heybox-src\sources\com\bytedance\hume".into(),
+                source: ApplicationSource::IndexedDirectory,
+            },
+            ExternalSearchEntry {
+                id: "indexed:humanoid".into(),
+                name: "Humanoid".into(),
+                target: r"D:\Roblox\New\src\Workspace\Frost King Bee\Humanoid".into(),
+                source: ApplicationSource::IndexedDirectory,
+            },
+        ];
+
+        let results = catalog
+            .search_with_external("hum", &external, 10)
+            .expect("unified search");
+
+        assert_eq!(
+            results.first().map(|result| result.entry.name.as_str()),
+            Some("Helium")
         );
     }
 
