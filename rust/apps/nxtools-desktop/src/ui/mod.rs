@@ -938,8 +938,7 @@ impl ClipboardPanel {
         &mut self,
         popup_window_handle: i64,
         preview_window_handle: i64,
-        foreground_window_handle: i64,
-        foreground_process_id: u32,
+        foreground: &nxtools_protocol::ForegroundContext,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -952,11 +951,31 @@ impl ClipboardPanel {
         };
         if should_hide_for_foreground_change(
             dismiss,
-            foreground_window_handle,
-            foreground_process_id,
+            foreground.window_handle,
+            foreground.process_id,
+            &foreground.process_name,
             Instant::now() < self.hide_suppressed_until,
         ) {
             self.close(window, cx);
+            return;
+        }
+        if foreground_kept_panel_without_focus(
+            dismiss,
+            foreground.window_handle,
+            foreground.process_id,
+            &foreground.process_name,
+        ) {
+            // A transient text-services host took the foreground while the user
+            // keeps interacting with the panel. Re-assert topmost without
+            // activation so the panel cannot sink below the new foreground.
+            let application = self.application.clone();
+            schedule_entity_update(
+                application,
+                move |application, _cx| {
+                    application.reassert_popup_topmost(popup_window_handle);
+                },
+                cx,
+            );
         }
     }
 
@@ -1797,6 +1816,7 @@ fn should_hide_for_foreground_change(
     dismiss: PopupDismissContext,
     foreground_window_handle: i64,
     foreground_process_id: u32,
+    foreground_process_name: &str,
     within_open_grace: bool,
 ) -> bool {
     dismiss.is_open
@@ -1807,6 +1827,36 @@ fn should_hide_for_foreground_change(
         && foreground_process_id != dismiss.current_process_id
         && foreground_window_handle != dismiss.popup_window_handle
         && foreground_window_handle != dismiss.preview_window_handle
+        && !is_transient_foreground_host(foreground_process_name)
+}
+
+/// True when a foreground change kept the panel open but moved the OS focus to
+/// another window: a transient system host or a pending paste. The panel then
+/// needs a topmost re-assertion so it cannot sink behind the new foreground.
+fn foreground_kept_panel_without_focus(
+    dismiss: PopupDismissContext,
+    foreground_window_handle: i64,
+    foreground_process_id: u32,
+    foreground_process_name: &str,
+) -> bool {
+    dismiss.is_open
+        && !dismiss.paste_pending
+        && foreground_window_handle != 0
+        && foreground_process_id != dismiss.current_process_id
+        && foreground_window_handle != dismiss.popup_window_handle
+        && foreground_window_handle != dismiss.preview_window_handle
+        && is_transient_foreground_host(foreground_process_name)
+}
+
+/// Windows text-services hosts transiently take the foreground while the user
+/// types with an IME inside the panel's search box; treating them as a real
+/// foreground change hid the panel mid-typing.
+fn is_transient_foreground_host(process_name: &str) -> bool {
+    const TRANSIENT_HOSTS: [&str; 2] = ["textinputhost.exe", "ctfmon.exe"];
+    let name = process_name.rsplit(['\\', '/']).next().unwrap_or(process_name);
+    TRANSIENT_HOSTS
+        .iter()
+        .any(|host| name.eq_ignore_ascii_case(host))
 }
 
 fn should_hide_for_pointer_press(
@@ -2537,25 +2587,74 @@ mod tests {
             dismiss_context(10, 0, false, true),
             20,
             200,
+            "explorer.exe",
             false,
         ));
         assert!(!should_hide_for_foreground_change(
             dismiss_context(10, 0, true, true),
             20,
             200,
+            "explorer.exe",
             false,
         ));
         assert!(!should_hide_for_foreground_change(
             dismiss_context(10, 0, false, true),
             10,
             200,
+            "explorer.exe",
             false,
         ));
         assert!(!should_hide_for_foreground_change(
             dismiss_context(10, 0, false, false),
             20,
             200,
+            "explorer.exe",
             false,
+        ));
+    }
+
+    #[test]
+    fn transient_text_services_hosts_never_hide_the_panel() {
+        let dismiss = dismiss_context(10, 0, false, true);
+        assert!(!should_hide_for_foreground_change(
+            dismiss,
+            20,
+            200,
+            "textinputhost.exe",
+            false,
+        ));
+        assert!(!should_hide_for_foreground_change(
+            dismiss,
+            20,
+            200,
+            "C:\\Windows\\System32\\ctfmon.exe",
+            false,
+        ));
+        assert!(!should_hide_for_foreground_change(
+            dismiss,
+            20,
+            200,
+            "TextInputHost.EXE",
+            true,
+        ));
+        // The kept-open panel re-asserts topmost for transient hosts only.
+        assert!(foreground_kept_panel_without_focus(
+            dismiss,
+            20,
+            200,
+            "textinputhost.exe"
+        ));
+        assert!(!foreground_kept_panel_without_focus(
+            dismiss,
+            20,
+            200,
+            "explorer.exe"
+        ));
+        assert!(!foreground_kept_panel_without_focus(
+            dismiss_context(10, 0, true, true),
+            20,
+            200,
+            "textinputhost.exe",
         ));
     }
 
@@ -2565,24 +2664,28 @@ mod tests {
             dismiss_context(10, 30, false, true),
             30,
             100,
+            "explorer.exe",
             false,
         ));
         assert!(!should_hide_for_foreground_change(
             dismiss_context(10, 30, false, true),
             40,
             100,
+            "explorer.exe",
             false,
         ));
         assert!(!should_hide_for_foreground_change(
             dismiss_context(10, 30, false, true),
             20,
             200,
+            "explorer.exe",
             true,
         ));
         assert!(should_hide_for_foreground_change(
             dismiss_context(10, 30, false, true),
             20,
             200,
+            "explorer.exe",
             false,
         ));
     }

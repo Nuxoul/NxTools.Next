@@ -92,6 +92,12 @@ impl AssetSource for NxToolsAssets {
             "material-symbols/calendar-month.svg" => Some(include_bytes!(
                 "../assets/material-symbols/calendar-month.svg"
             )),
+            "material-symbols/expand-more.svg" => Some(include_bytes!(
+                "../assets/material-symbols/expand-more.svg"
+            )),
+            "material-symbols/expand-less.svg" => Some(include_bytes!(
+                "../assets/material-symbols/expand-less.svg"
+            )),
             "material-symbols/chevron-left.svg" => Some(include_bytes!(
                 "../assets/material-symbols/chevron-left.svg"
             )),

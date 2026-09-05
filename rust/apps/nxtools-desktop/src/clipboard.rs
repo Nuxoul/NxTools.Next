@@ -1130,6 +1130,24 @@ impl ClipboardApplication {
         Ok(command_id)
     }
 
+    /// Re-asserts the open panel's topmost band after a transient foreground
+    /// host took the OS focus. SetWindowPos runs with SWP_NOACTIVATE, so the
+    /// re-assertion never steals focus back from the user's window.
+    pub(crate) fn reassert_popup_topmost(&self, native_window_handle: i64) {
+        if native_window_handle == 0 {
+            return;
+        }
+        if let Err(error) = self
+            .platform
+            .send_command(PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
+                window_handle: native_window_handle,
+                enabled: true,
+            }))
+        {
+            error!(%error, window_handle = native_window_handle, "failed to re-assert clipboard popup topmost");
+        }
+    }
+
     pub(crate) fn begin_window_resize(&self, window_handle: i64) {
         if let Err(error) = self
             .platform
@@ -2015,8 +2033,7 @@ impl ClipboardApplication {
                         panel.handle_foreground_changed(
                             popup.native_window_handle,
                             preview_window_handle,
-                            foreground.window_handle,
-                            foreground.process_id,
+                            &foreground,
                             window,
                             cx,
                         );
