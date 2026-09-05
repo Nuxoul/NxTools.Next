@@ -6591,12 +6591,12 @@ use super::*;
 
     #[test]
     fn download_titlebars_close_through_an_explicit_gpui_action() {
-        let source = include_str!("../downloads.rs");
+        let source = include_str!("../downloads/window_support.rs");
         let helper_marker = ["fn download_window_", "close_button"].concat();
         let close_button = source
             .split(&helper_marker)
             .nth(1)
-            .and_then(|body| body.split("\nfn download_task_status").next())
+            .and_then(|body| body.split("\npub(crate) fn download_task_status").next())
             .expect("shared download close button");
 
         assert!(
