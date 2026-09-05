@@ -373,13 +373,11 @@ fn parse_term(raw: &str, force_exact: bool, force_word_boundary_exact: bool) -> 
     } else {
         (MatchKind::Fuzzy, raw)
     };
-    let case_sensitive = text.chars().any(char::is_uppercase);
+    // Quick launch queries are always case insensitive — an uppercase letter in
+    // the query must not switch the matcher into case sensitive mode (user report).
+    let case_sensitive = false;
     (!text.is_empty()).then(|| QueryTerm {
-        text: if case_sensitive {
-            text.to_owned()
-        } else {
-            text.to_lowercase()
-        },
+        text: text.to_lowercase(),
         kind,
         excluded,
         case_sensitive,
@@ -445,5 +443,17 @@ mod tests {
         assert!(normal.score_name("AyuGram.exe").is_some());
         assert!(!scoped.is_name_only());
         assert!(scoped.score_name("AyuGram.exe").is_none());
+    }
+
+    #[test]
+    fn uppercase_queries_stay_case_insensitive() {
+        // The user's report: quick launch must never become case sensitive,
+        // including when the query itself contains uppercase letters.
+        let query = FileQuery::parse("HUM");
+
+        assert!(query.score_name("hume").is_some());
+        assert!(query.score_name("Humanoid").is_some());
+        assert!(query.score_name("Helium").is_some());
+        assert!(FileQuery::parse("HeLiUm").score_name("helium.exe").is_some());
     }
 }
