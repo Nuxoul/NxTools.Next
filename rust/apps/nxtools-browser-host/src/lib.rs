@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
+use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -231,7 +232,13 @@ const fn browser_protocol_version() -> u16 {
 pub fn run() -> Result<()> {
     let paths = AppPaths::discover()?;
     let _log_guard = nxtools_core::init_file_logging(&paths, "browser-host")?;
-    validate_browser_origin(std::env::args().skip(1))?;
+    let registrar_manifest = paths
+        .data_dir
+        .parent()
+        .map(|root| root.join("browser-native-host").join("chromium-host.json"))
+        .unwrap_or_else(|| PathBuf::from("chromium-host.json"));
+    let registered_origins = registered_allowed_origins(&registrar_manifest);
+    validate_browser_origin(std::env::args().skip(1), &registered_origins)?;
     info!(
         event = "browser_native_host.started",
         "browser native messaging host started"
@@ -284,20 +291,60 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn validate_browser_origin(arguments: impl IntoIterator<Item = String>) -> Result<()> {
+const PINNED_CHROMIUM_ORIGIN: &str = "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/";
+const FIREFOX_EXTENSION_ID: &str = "nxtools-download-interceptor@nxtools.local";
+
+fn validate_browser_origin(
+    arguments: impl IntoIterator<Item = String>,
+    registered_origins: &[String],
+) -> Result<()> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
     if arguments.is_empty() {
         bail!("browser origin argument is missing");
     }
-    let allowed_chromium_origin = "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/";
-    let allowed_firefox_id = "nxtools-download-interceptor@nxtools.local";
-    if arguments
-        .iter()
-        .any(|argument| argument == allowed_chromium_origin || argument == allowed_firefox_id)
-    {
-        return Ok(());
+    for argument in &arguments {
+        if argument == PINNED_CHROMIUM_ORIGIN || argument == FIREFOX_EXTENSION_ID {
+            return Ok(());
+        }
+        if registered_origins.iter().any(|origin| origin == argument) {
+            return Ok(());
+        }
     }
+    warn!(
+        event = "browser_native_host.origin_rejected",
+        origin_count = arguments.len(),
+        "browser origin argument is not allowed by the pinned identities or the registrar manifest"
+    );
     bail!("browser origin is not allowed")
+}
+
+/// Reads the allowed origins the PlatformHost registrar persisted next to the
+/// registry manifest. Exported CRX packages are signed with a per-machine key,
+/// so the re-imported extension's ID only appears here; a missing or malformed
+/// manifest degrades to the pinned identities.
+fn registered_allowed_origins(manifest_path: &Path) -> Vec<String> {
+    match fs::read_to_string(manifest_path) {
+        Ok(text) => parse_registered_allowed_origins(&text),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn parse_registered_allowed_origins(manifest_text: &str) -> Vec<String> {
+    let Ok(manifest) = serde_json::from_str::<Value>(manifest_text) else {
+        return Vec::new();
+    };
+    manifest
+        .get("allowed_origins")
+        .and_then(Value::as_array)
+        .map(|origins| {
+            origins
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|origin| origin.starts_with("chrome-extension://"))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn handle_request(
@@ -1418,22 +1465,68 @@ mod tests {
 
     #[test]
     fn native_host_accepts_only_the_preserved_extension_identities() {
+        let registered = [];
         assert!(
-            validate_browser_origin([String::from(
-                "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/"
-            )])
+            validate_browser_origin(
+                [String::from(
+                    "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/"
+                )],
+                &registered
+            )
             .is_ok()
         );
-        assert!(
-            validate_browser_origin([String::from("nxtools-download-interceptor@nxtools.local")])
-                .is_ok()
+        assert!(validate_browser_origin(
+            [String::from("nxtools-download-interceptor@nxtools.local")],
+            &registered
+        )
+        .is_ok());
+        assert!(validate_browser_origin(
+            [String::from("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/")],
+            &registered
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn native_host_accepts_the_registrar_registered_exporter_origin() {
+        // Exported CRX packages are signed with a per-machine key, so a
+        // re-imported extension carries an ID derived from that key. The
+        // registrar writes the accepted origin into chromium-host.json; the
+        // host must honor it or Chrome reports a communication failure
+        // because this process exits before the first response frame.
+        let registered = [String::from("chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/")];
+        assert!(validate_browser_origin(
+            [String::from("chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/")],
+            &registered
+        )
+        .is_ok());
+        assert!(validate_browser_origin(
+            [String::from("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/")],
+            &registered
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn registrar_origins_parser_keeps_only_chromium_origins() {
+        let origins = parse_registered_allowed_origins(
+            r#"{
+                "name": "com.nxtools.next.browser",
+                "allowed_origins": [
+                    "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/",
+                    "chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/"
+                ]
+            }"#,
         );
-        assert!(
-            validate_browser_origin([String::from(
-                "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
-            )])
-            .is_err()
+        assert_eq!(
+            origins,
+            vec![
+                "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/",
+                "chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/"
+            ]
         );
+        assert!(parse_registered_allowed_origins("not json").is_empty());
+        assert!(parse_registered_allowed_origins(r#"{"allowed_origins": ["https://evil.example/"]}"#).is_empty());
     }
 
     #[test]
