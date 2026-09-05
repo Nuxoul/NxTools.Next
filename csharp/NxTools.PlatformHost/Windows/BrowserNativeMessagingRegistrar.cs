@@ -53,6 +53,42 @@ internal static partial class BrowserNativeMessagingRegistrar
         }
         catch (Exception error) when (error is IOException or FormatException or InvalidOperationException)
         {
+            // No pinned key in the manifest — fall through to the exporter-key origin below.
+        }
+
+        // Exported CRX packages are signed with the per-machine key persisted at
+        // LocalApplicationData/NxTools/browser_extension_key.pem. Chrome derives the
+        // installed extension's ID from that signature, so a user who re-imports the
+        // exported package on this machine gets an ID that differs from the pinned one.
+        // Trust it as well, or the imported extension is locked out with
+        // "Access to the specified native messaging host" errors.
+        try
+        {
+            var keyPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "NxTools",
+                "browser_extension_key.pem");
+            if (File.Exists(keyPath))
+            {
+                using var rsa = System.Security.Cryptography.RSA.Create();
+                rsa.ImportFromPem(File.ReadAllText(keyPath));
+                var spki = rsa.ExportSubjectPublicKeyInfo();
+                var digest = SHA256.HashData(spki);
+                var mapped = new StringBuilder();
+                foreach (var digit in Convert.ToHexString(digest))
+                {
+                    mapped.Append((char)('a' + byte.Parse(digit.ToString(), NumberStyles.HexNumber)));
+                }
+
+                var exportedOrigin = $"chrome-extension://{mapped.ToString()[..32]}/";
+                if (!origins.Contains(exportedOrigin))
+                {
+                    origins.Add(exportedOrigin);
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or FormatException)
+        {
             // A missing or malformed manifest keeps the command-provided id.
         }
         return origins.ToArray();
