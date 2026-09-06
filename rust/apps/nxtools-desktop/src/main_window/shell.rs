@@ -236,8 +236,14 @@ impl MainWindow {
                                     .child(module.description()),
                             ),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
                         this.shell.activate(module);
+                        // Switching pages unmounts the outgoing page, but an
+                        // open context menu's PopupMenu entity keeps keyboard
+                        // focus — hotkeys then die until Escape. Blur clears
+                        // focus out of the orphaned menu scope; the menu
+                        // visual goes with its page.
+                        window.blur();
                         cx.notify();
                     })),
             );

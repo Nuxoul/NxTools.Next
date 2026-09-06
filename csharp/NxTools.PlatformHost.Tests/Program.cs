@@ -2662,7 +2662,7 @@ internal static class Program
 
     private static Task DoubleControlGestureRequiresTwoReleasedTaps()
     {
-        var detector = new ModifierDoubleTapDetector(0xA2, 100, 500);
+        var detector = new ModifierDoubleTapDetector(0xA2, 60, 800);
 
         Assert(!detector.OnKeyDown(0xA2, 1_000));
         Assert(!detector.OnKeyUp(0xA2));
@@ -2672,13 +2672,13 @@ internal static class Program
         detector.Reset();
         Assert(!detector.OnKeyDown(0xA2, 2_000));
         Assert(!detector.OnKeyUp(0xA2));
-        Assert(!detector.OnKeyDown(0xA2, 2_600));
+        Assert(!detector.OnKeyDown(0xA2, 3_100));
         return Task.CompletedTask;
     }
 
     private static Task DoubleControlGestureRejectsRepeatAndInterveningKeys()
     {
-        var detector = new ModifierDoubleTapDetector(0xA2, 100, 500);
+        var detector = new ModifierDoubleTapDetector(0xA2, 60, 800);
 
         Assert(!detector.OnKeyDown(0xA2, 1_000));
         Assert(!detector.OnKeyDown(0xA2, 1_200));

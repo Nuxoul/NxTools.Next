@@ -148,33 +148,30 @@ impl HttpDownloadClient {
     ) -> Result<DownloadProbe, HttpDownloadError> {
         request.validate()?;
 
-        let head = self.send(Method::HEAD, request, false).await;
-        let head = match head {
+        // Probe latency: HEAD and the Range GET run CONCURRENTLY. The old
+        // sequential ladder (HEAD → maybe Range → maybe full GET) paid one to
+        // three full round trips before the dialog could show file info — the
+        // user-visible "前摇". The Range GET alone decides resumability, so
+        // racing both costs one round trip total; the full GET only runs when
+        // both racing probes failed outright.
+        let head_task = self.send(Method::HEAD, request, false);
+        let ranged_task = self.send(Method::GET, request, true);
+        let (head_result, ranged_result) = tokio::join!(head_task, ranged_task);
+        let head = match head_result {
             Ok(response) if response.status().is_success() => Some(response),
-            Ok(_) | Err(_) => None,
+            _ => None,
         };
-
-        let head_metadata = head.as_ref().map(ProbeMetadata::from_response);
-        let needs_range_probe = head_metadata
-            .as_ref()
-            .is_none_or(|metadata| metadata.content_length.is_none() || metadata.advertises_ranges);
         let mut ranged_failure = None;
-        let ranged = if needs_range_probe {
-            let ranged = self.send(Method::GET, request, true).await;
-            match ranged {
-                Ok(response) if response.status().is_success() => Some(response),
-                Ok(response) if head.is_none() => {
-                    ranged_failure = Some(HttpDownloadError::Status(response.status().as_u16()));
-                    None
-                }
-                Err(error) if head.is_none() => {
-                    ranged_failure = Some(error);
-                    None
-                }
-                Ok(_) | Err(_) => None,
+        let ranged = match ranged_result {
+            Ok(response) if response.status().is_success() => Some(response),
+            Ok(response) => {
+                ranged_failure = Some(HttpDownloadError::Status(response.status().as_u16()));
+                None
             }
-        } else {
-            None
+            Err(error) => {
+                ranged_failure = Some(error);
+                None
+            }
         };
         let fallback = if head.is_none() && ranged.is_none() {
             match self.send(Method::GET, request, false).await {

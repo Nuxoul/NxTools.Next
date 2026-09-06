@@ -97,10 +97,14 @@ internal sealed partial class WindowsPlatformAdapter
         private int _fileDialogStructureRetryPosted;
         private ClipboardHotKeyRegistration _hotKeyRegistration = null!;
         private ClipboardHotKeyRegistration _quickLaunchHotKeyRegistration = null!;
+        // The measured interval spans FIRST press to SECOND press, which
+        // includes how long the first Ctrl is held. A deliberate user tap
+        // easily exceeds 500 ms of combined hold+gap, so use Listary-grade
+        // bounds: relaxed minimum for distinct presses, generous maximum.
         private readonly ModifierDoubleTapDetector _leftControlDoubleTap =
-            new(VkLeftControl, 100, 500);
+            new(VkLeftControl, 60, 800);
         private readonly ModifierDoubleTapDetector _rightControlDoubleTap =
-            new(VkRightControl, 100, 500);
+            new(VkRightControl, 60, 800);
         private LowLevelKeyboardMonitor? _quickLaunchKeyboardMonitor;
         private QuickLaunchTriggerBinding _quickLaunchTrigger = new(
             QuickLaunchTriggerKind.DoubleControl,

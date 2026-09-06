@@ -524,28 +524,48 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         {
             return new WindowsCommandResult(false, validationError);
         }
-        var started = Stopwatch.GetTimestamp();
-        try
+        // ShellExecute for a .lnk can block for seconds (measured 1978 ms).
+        // It must never run on the pipe reader thread: dispatch detaches only
+        // after executeAsync() returns, and a synchronous lambda stalls the
+        // reader until then — the quick-launch panel hide queued behind it
+        // was the visible "panel won't close" bug. A dedicated STA thread
+        // also matches the apartment .lnk resolution wants.
+        var launchThread = new Thread(() =>
         {
-            target.Launch();
-            _log.Write("info", "shell_target.launched", fields: new Dictionary<string, object?>
+            var started = Stopwatch.GetTimestamp();
+            WindowsCommandResult result;
+            try
+            {
+                target.Launch();
+                result = new WindowsCommandResult(true);
+                _log.Write("info", "shell_target.launched", fields: new Dictionary<string, object?>
+                {
+                    ["action"] = command.Action,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                });
+            }
+            catch (Win32Exception error)
+            {
+                result = new WindowsCommandResult(
+                    false,
+                    error.Message,
+                    NativeErrorCode: error.NativeErrorCode);
+            }
+            catch (InvalidOperationException error)
+            {
+                result = new WindowsCommandResult(false, error.Message);
+            }
+            _log.Write("info", "shell_target.dispatch_completed", fields: new Dictionary<string, object?>
             {
                 ["action"] = command.Action,
+                ["success"] = result.Success,
                 ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
             });
-            return new WindowsCommandResult(true);
-        }
-        catch (Win32Exception error)
-        {
-            return new WindowsCommandResult(
-                false,
-                error.Message,
-                NativeErrorCode: error.NativeErrorCode);
-        }
-        catch (InvalidOperationException error)
-        {
-            return new WindowsCommandResult(false, error.Message);
-        }
+        });
+        launchThread.SetApartmentState(ApartmentState.STA);
+        launchThread.IsBackground = true;
+        launchThread.Start();
+        return new WindowsCommandResult(true);
     }
 
     public WindowsCommandResult PlaySystemNotificationSound() =>
