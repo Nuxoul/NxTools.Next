@@ -6286,11 +6286,11 @@ use super::*;
         // lose the window position because GPUI's cached origin never follows a
         // user drag. The replacement window must consume a native stash of the
         // predecessor's real rectangle, and every closing window must stash it.
-        let source = include_str!("../downloads.rs");
+        let source = include_str!("../downloads/task_windows_impl.rs");
         let open_body = source
-            .split("    fn open_task_window(")
+            .split("    pub(crate) fn open_task_window(")
             .nth(1)
-            .and_then(|body| body.split("\n    fn update_task_window").next())
+            .and_then(|body| body.split("\n    pub(crate) fn update_task_window").next())
             .expect("open_task_window body");
         assert!(
             open_body.contains("MoveWindowCenteredOverKey"),
@@ -6298,7 +6298,7 @@ use super::*;
         );
 
         let clear_body = source
-            .split("    fn clear_task_window_registration(")
+            .split("    pub(crate) fn clear_task_window_registration(")
             .nth(1)
             .and_then(|body| body.split("\n    pub(crate) fn request_task_window").next())
             .expect("clear_task_window_registration body");
@@ -6364,7 +6364,7 @@ use super::*;
         // transform must not compute centered geometry from `window.bounds()`.
         // The C# side derives the real center and applies one atomic
         // SetWindowPos; the Rust boundary only carries the physical size.
-        let source = include_str!("../downloads.rs");
+        let source = include_str!("../downloads/task_windows_impl.rs");
         let update_body = source
             .split("fn update_task_window")
             .nth(1)
@@ -6427,9 +6427,9 @@ use super::*;
 
     #[test]
     fn reopening_a_task_window_uses_the_native_restore_and_foreground_boundary() {
-        let source = include_str!("../downloads.rs");
+        let source = include_str!("../downloads/task_windows_impl.rs");
         let update_task_window = source
-            .split("    fn update_task_window(")
+            .split("    pub(crate) fn update_task_window(")
             .nth(1)
             .and_then(|body| {
                 body.split("    pub(crate) fn handle_platform_notification")
