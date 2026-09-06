@@ -6662,3 +6662,21 @@ use super::*;
             "a user-edited manifest-looking name must remain user-owned"
         );
     }
+
+    #[test]
+    fn settings_save_preserves_the_task_list_sort_preference() {
+        // The user report: clicking a table header persisted the sort, but
+        // saving ANY download setting later wiped it because the settings
+        // draft hardcodes task_list_sort: None. current_draft must restore
+        // the view-open-time preference into the saved config.
+        let source = include_str!("settings_view.rs");
+        let draft_body = source
+            .split("pub(crate) fn current_draft")
+            .nth(1)
+            .and_then(|body| body.split("pub(crate) fn toggle_taskbar_overlay_edit").next())
+            .expect("current_draft body");
+        assert!(
+            draft_body.contains("draft.task_list_sort = self.task_list_sort.clone();"),
+            "settings save must carry the task-list sort preference through"
+        );
+    }

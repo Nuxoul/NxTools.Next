@@ -326,6 +326,8 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) completion_sound_enabled: bool,
     pub(crate) open_directory_on_completion: bool,
     pub(crate) task_removal_deletes_file: bool,
+    pub(crate) task_list_sort: Option<String>,
+    pub(crate) task_list_sort_descending: Option<bool>,
     pub(crate) automatic_categories_enabled: bool,
     pub(crate) categories: Vec<DownloadCategoryEditor>,
     pub(crate) selected_category: Option<usize>,
@@ -625,6 +627,8 @@ impl DownloadSettingsView {
             show_completion_window: snapshot.show_completion_window,
             completion_sound_enabled: snapshot.completion_sound_enabled,
             task_removal_deletes_file: snapshot.task_removal_deletes_file,
+            task_list_sort: snapshot.task_list_sort.clone(),
+            task_list_sort_descending: snapshot.task_list_sort_descending,
             open_directory_on_completion: snapshot.open_directory_on_completion,
             automatic_categories_enabled: snapshot.automatic_categories_enabled,
             selected_category: (!categories.is_empty()).then_some(0),
@@ -745,6 +749,11 @@ impl DownloadSettingsView {
             .collect();
         draft.duplicate_strategy = self.duplicate_strategy;
         draft.double_click_action = self.double_click_action;
+        // Saving any setting must not wipe the task-list sort preference the
+        // user set through the table header or the sort menu; the draft parse
+        // hardcodes None, so restore the view-open-time values here.
+        draft.task_list_sort = self.task_list_sort.clone();
+        draft.task_list_sort_descending = self.task_list_sort_descending;
         Ok(draft)
     }
 
