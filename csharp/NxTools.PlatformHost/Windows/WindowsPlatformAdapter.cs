@@ -524,9 +524,15 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         {
             return new WindowsCommandResult(false, validationError);
         }
+        var started = Stopwatch.GetTimestamp();
         try
         {
             target.Launch();
+            _log.Write("info", "shell_target.launched", fields: new Dictionary<string, object?>
+            {
+                ["action"] = command.Action,
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
             return new WindowsCommandResult(true);
         }
         catch (Win32Exception error)
