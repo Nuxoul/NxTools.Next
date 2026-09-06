@@ -20,6 +20,12 @@ internal sealed class PlatformCommandSequenceDispatcher
         "pick_directory",
         "pick_program",
         "export_browser_extension",
+        // Launching a Shell target waits on process start and can take
+        // seconds. Measured incident: the quick-launch panel hide that follows
+        // an Enter-launch was stuck behind it in the pipe read loop, and even
+        // the self-healing retry queued behind the same stall — the panel
+        // stayed on screen until the launch finished.
+        "open_shell_target",
     };
 
     private readonly object _gate = new();

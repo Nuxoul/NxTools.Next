@@ -140,6 +140,7 @@ internal static class Program
             ("bounded reader rejects oversized frames", ReaderRejectsOversizedFrame),
             ("native file drag does not block later platform commands", FileDragDoesNotBlockLaterCommands),
             ("shell enumeration does not block later platform commands", ShellEnumerationDoesNotBlockLaterCommands),
+            ("shell target launch does not block later platform commands", ShellTargetLaunchDoesNotBlockLaterCommands),
             ("browser extension export command parses format and destination", BrowserExtensionExportCommandParses),
             ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
@@ -4150,6 +4151,55 @@ internal static class Program
         finally
         {
             releaseShell.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private static async Task ShellTargetLaunchDoesNotBlockLaterCommands()
+    {
+        // Measured incident: launching a program via the quick launcher
+        // (open_shell_target) stalled the pipe read loop for seconds, and the
+        // panel-hide visibility command queued behind it never ran — even the
+        // self-healing retry queued behind the same stall. The launch must be
+        // a detached command so follow-ups execute immediately.
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var launchStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLaunch = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var hideRan = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processing = Task.Run(async () =>
+        {
+            await dispatcher.DispatchAsync(
+                "open_shell_target",
+                async () =>
+                {
+                    launchStarted.TrySetResult();
+                    await releaseLaunch.Task;
+                });
+            await dispatcher.DispatchAsync(
+                "set_window_visibility",
+                () =>
+                {
+                    hideRan.TrySetResult();
+                    return Task.CompletedTask;
+                });
+        });
+
+        await launchStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        try
+        {
+            var completed = await Task.WhenAny(
+                hideRan.Task,
+                Task.Delay(TimeSpan.FromMilliseconds(250)));
+            Assert(completed == hideRan.Task);
+        }
+        finally
+        {
+            releaseLaunch.TrySetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(1));
             await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
         }
