@@ -172,7 +172,14 @@ internal sealed class Win32DirectoryOpusWindowOperations :
                 (container == focused || IsChild(container, focused)));
         if (selected == IntPtr.Zero)
         {
-            return false;
+            // Focus on the lister frame (tab switches land here) must not
+            // break directory tracking: keep serving the last active pane,
+            // matching the SwiftList reference behavior.
+            selected = LastActivePane(paneState, containers);
+            if (selected == IntPtr.Zero)
+            {
+                return false;
+            }
         }
 
         var candidate = GetContainerPath(selected);
@@ -181,10 +188,48 @@ internal sealed class Win32DirectoryOpusWindowOperations :
             return false;
         }
         currentDirectory = candidate;
+        RememberActivePane(new IntPtr(windowHandle), selected);
         paneState = new DirectoryOpusPaneState(
             selected.ToInt64(),
             focusWindowHandle);
         return true;
+    }
+
+    // Per-lister last-active pane. Tab switches move OS focus to the lister
+    // frame; the remembered pane plus the container caption (which DOpus
+    // updates to the active tab's path) keep the directory current.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        IntPtr,
+        IntPtr> LastActivePaneByLister = new();
+
+    private static IntPtr LastActivePane(
+        DirectoryOpusPaneState? paneState,
+        List<IntPtr> containers)
+    {
+        if (paneState is not null)
+        {
+            var remembered = new IntPtr(paneState.ContainerWindowHandle);
+            if (remembered != IntPtr.Zero &&
+                IsWindow(remembered) &&
+                IsWindowVisible(remembered) &&
+                containers.Contains(remembered))
+            {
+                return remembered;
+            }
+        }
+        return LastActivePaneByLister.TryGetValue(
+            containers.Count > 0 ? GetListerKey(containers) : IntPtr.Zero,
+            out var cached) &&
+            containers.Contains(cached)
+                ? cached
+                : IntPtr.Zero;
+    }
+
+    private static IntPtr GetListerKey(List<IntPtr> containers) => containers[0];
+
+    private static void RememberActivePane(IntPtr lister, IntPtr container)
+    {
+        LastActivePaneByLister[new IntPtr(lister)] = container;
     }
 
     public bool IsPaneAvailable(

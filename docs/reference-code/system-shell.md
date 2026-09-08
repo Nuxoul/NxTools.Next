@@ -109,13 +109,20 @@ tray Exit
 
 ### Open questions carried from user reports (2026-09-08)
 
-- **DOpus multi-tab directory**: the user reports the quick-launch/clipboard
-  target directory does not follow the ACTIVE TAB in Directory Opus. The
-  verified note above only records single-lister detection
-  (`dopus.filedisplaycontainer` / `dopus.ctl.treepath` of the active panel).
-  Next verification pass must enumerate the lister's tab controls
-  (`dopus.listertabs`?) and pick the foreground tab's path; Listary's own
-  source was NOT available — only its managed boundary was observed.
+- **DOpus multi-tab directory** (RESOLVED 2026-09-08): the user reported the
+  captured directory not following the active tab. Corrections: (1) Listary
+  source IS available — `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` decompiles
+  `D:\Program Files\Listary\Listary.exe` (obfuscated class names, 1146 files)
+  — but an exhaustive byte scan shows this install contains NO dopus/lister
+  strings at all, so Listary's DOpus support on this machine is not in the
+  managed layer; (2) the behavioral source of truth is SwiftList
+  (`D:\Code\SwiftList-main\Plugins\DirectoryOpus\`), which handles dual-pane
+  via lister-title/geometry matching and remembers the last active side.
+  Ported to DirectoryOpusFileManagerOperations: when OS focus sits on the
+  lister frame (tab switches), fall back to the per-lister remembered pane;
+  the container caption — which DOpus updates to the active tab's path —
+  keeps the directory current through GetContainerPath's caption-first
+  read.
 - **hydra (D:\Code\hydra-main)** is a new GPL/MIT dual-licensed Rust
   multi-source download engine reference (crates: hydra-core/net/stream/
   host/gui). Behaviorally interesting for NxTools.Next: multi-source
