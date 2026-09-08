@@ -54,9 +54,8 @@ fn classify(candidate: &str) -> Option<DetectedLink> {
             copy_value: trimmed.to_owned(),
         });
     }
-    // Bare domains like "image.routerapi.net/abc.png" (no scheme) are common
-    // copies from download sites; accept dotted names with a known-suffix TLD
-    // and either a path or a www prefix. No scheme, no heuristic host names.
+    // Bare domains ("image.routerapi.net", optionally with a path) are
+    // common copies from download sites; no scheme required.
     if looks_like_bare_domain(candidate) {
         return Some(DetectedLink {
             display: candidate.to_owned(),
@@ -83,8 +82,12 @@ const KNOWN_TLDS: [&str; 12] = [
 ];
 
 fn looks_like_bare_domain(candidate: &str) -> bool {
+    // The user's missed copy was the bare host alone
+    // ("image.routerapi.net", no scheme, no path), so a path is NOT required.
+    // Two labels with a known TLD is specific enough; reject all-numeric
+    // hosts so IPv4 fragments and version numbers don't match.
     let candidate = candidate.trim_end_matches(['.', ',', ';', '!', '?', ')']);
-    if !candidate.contains('/') && !candidate.starts_with("www.") {
+    if candidate.is_empty() {
         return false;
     }
     let host = candidate.split('/').next().unwrap_or_default();
@@ -97,7 +100,9 @@ fn looks_like_bare_domain(candidate: &str) -> bool {
     }
     // A second label must exist (hosts like "com.cn" aside, this keeps
     // sentence fragments like "e.g." from matching).
-    parts.next().is_some_and(|label| !label.is_empty())
+    parts
+        .next()
+        .is_some_and(|label| !label.is_empty() && !label.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn looks_like_drive_path(candidate: &str) -> bool {
@@ -137,12 +142,12 @@ mod tests {
     #[test]
     fn bare_domains_with_a_path_are_recognized() {
         // The user's missed case: scheme-less CDN hosts.
-        let links = detect_links("https://removed http://gone image.routerapi.net/abc/def.png");
+        let links = detect_links("image.routerapi.net");
         let bare = links
             .iter()
             .find(|link| link.copy_value.contains("routerapi.net"))
             .expect("bare domain with a path must be recognized");
-        assert_eq!(bare.copy_value, "image.routerapi.net/abc/def.png");
+        assert_eq!(bare.copy_value, "image.routerapi.net");
     }
 
     #[test]

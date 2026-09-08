@@ -797,6 +797,7 @@ impl ClipboardApplication {
 
     pub(crate) fn show_link_panel(&mut self, links: Vec<crate::tools::link_panel::DetectedLinkRow>, cx: &mut Context<Self>) {
         let application = cx.entity().downgrade();
+        let platform = Rc::clone(&self.platform);
         let panel_size = size(
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
             px(crate::tools::link_panel::link_panel_height(links.len())),
@@ -835,12 +836,21 @@ impl ClipboardApplication {
             },
             move |window, cx| {
                 let native = native_window_handle(window);
+                // PopUp windows are not topmost by default; the panel must
+                // float above every app window while it's visible.
+                if let Some(handle) = native {
+                    let _ = platform.send_command(PlatformCommand::SetWindowTopmost(
+                        SetWindowTopmostCommand {
+                            window_handle: handle,
+                            enabled: true,
+                        },
+                    ));
+                }
                 let panel = cx.new(|_| crate::tools::link_panel::LinkPanelView {
                     links,
                     application,
                     expanded: false,
                 });
-                let _ = native;
                 cx.new(|cx| Root::new(panel, window, cx))
             },
         );
