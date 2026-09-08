@@ -32,7 +32,7 @@ use nxtools_protocol::{
     PasteImageCommand, PasteNativeFormatsCommand, PasteTextCommand,
     PickClipboardArchivePathCommand, PickClipboardStorageDirectoryCommand, PlatformCommand,
     PlatformEvent, SetClipboardHotKeyRecordingCommand, SetWindowPositionCommand,
-    SetWindowTopmostCommand, SetWindowVisibilityCommand, ShellOpenAction,
+    SetWindowShadowCommand, SetWindowTopmostCommand, SetWindowVisibilityCommand, ShellOpenAction,
 };
 use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
@@ -795,28 +795,68 @@ impl ClipboardApplication {
         self.link_panel.generation += 1;
     }
 
-    pub(crate) fn show_link_panel(&mut self, links: Vec<crate::tools::link_panel::DetectedLinkRow>, cx: &mut Context<Self>) {
+    pub(crate) fn show_link_panel(
+        &mut self,
+        links: Vec<crate::tools::link_panel::DetectedLinkRow>,
+        cx: &mut Context<Self>,
+    ) {
         let application = cx.entity().downgrade();
         let platform = Rc::clone(&self.platform);
         let panel_size = size(
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
             px(crate::tools::link_panel::link_panel_height(links.len())),
         );
-        // Center the panel on the primary display; pointer tracking would
-        // need a new IPC field on the capture event (follow-up).
+        // Center the panel on the primary display.
         let screen = cx
             .primary_display()
             .map(|display| display.bounds())
-            .unwrap_or_else(|| Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0))));
+            .unwrap_or_else(|| {
+                Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0)))
+            });
         let bounds = Bounds::new(
             point(
-                screen.origin.x
-                    + (screen.size.width - panel_size.width) / 2.0,
-                screen.origin.y
-                    + (screen.size.height - panel_size.height) / 2.0,
+                screen.origin.x + (screen.size.width - panel_size.width) / 2.0,
+                screen.origin.y + (screen.size.height - panel_size.height) / 2.0,
             ),
             panel_size,
         );
+        // One persistent panel window per app: a new capture RESTAGES the
+        // existing window (move offscreen → swap content → move into place
+        // → show), mirroring the clipboard preview lifecycle. Opening a new
+        // window per capture leaked a ghost per copy — stale stacked popups
+        // ate every click and none ever closed.
+        if let Some(existing) = self.link_panel.window {
+            if existing
+                .update(cx, |view, window, cx| {
+                    match view.downcast::<crate::tools::link_panel::LinkPanelView>() {
+                        Ok(view) => {
+                            view.update(cx, |view, _cx| view.swap_links(links.clone()));
+                        }
+                        Err(_) => {
+                            window.remove_window();
+                        }
+                    }
+                })
+                .is_ok()
+            {
+                let generation = self.link_panel.generation.wrapping_add(1);
+                self.link_panel.generation = generation;
+                let platform = Rc::clone(&self.platform);
+                let _ = platform.send_command(PlatformCommand::SetWindowPosition(
+                    SetWindowPositionCommand {
+                        window_handle: self.link_panel.native_window_handle,
+                        x: bounds.origin.x.to_f64() as i32,
+                        y: bounds.origin.y.to_f64() as i32,
+                    },
+                ));
+                self.schedule_link_panel_hide(generation, cx);
+                return;
+            }
+            let _ = existing.update(cx, |_, window, _| window.remove_window());
+            self.link_panel.window = None;
+        }
+        let native_slot = Rc::new(RefCell::new(0_i64));
+        let opened_native_slot = Rc::clone(&native_slot);
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -835,48 +875,72 @@ impl ClipboardApplication {
                 tabbing_identifier: None,
             },
             move |window, cx| {
-                let native = native_window_handle(window);
+                let handle = native_window_handle(window).unwrap_or_default();
+                *opened_native_slot.borrow_mut() = handle;
                 // PopUp windows are not topmost by default; the panel must
                 // float above every app window while it's visible.
-                if let Some(handle) = native {
+                if handle != 0 {
                     let _ = platform.send_command(PlatformCommand::SetWindowTopmost(
                         SetWindowTopmostCommand {
                             window_handle: handle,
                             enabled: true,
                         },
                     ));
+                    // The system drop shadow reads as a dirty smudge behind a
+                    // small floating hint card; render it flat.
+                    let _ = platform.send_command(PlatformCommand::SetWindowShadow(
+                        SetWindowShadowCommand {
+                            window_handle: handle,
+                            enabled: false,
+                        },
+                    ));
                 }
-                let panel = cx.new(|_| crate::tools::link_panel::LinkPanelView {
-                    links,
-                    application,
-                    expanded: false,
+                let panel = cx.new(|_| {
+                    crate::tools::link_panel::LinkPanelView {
+                        links,
+                        application,
+                        expanded: false,
+                    }
                 });
                 cx.new(|cx| Root::new(panel, window, cx))
             },
         );
         if let Ok(window) = opened {
+            self.link_panel.native_window_handle = *native_slot.borrow();
             self.link_panel.window = Some(window.into());
-            // Auto-hide: the panel always dismisses after the dwell time; a
-            // fresh capture replaces the window wholesale.
             let generation = self.link_panel.generation.wrapping_add(1);
             self.link_panel.generation = generation;
-            cx.spawn(async move |this, cx| {
+            self.schedule_link_panel_hide(generation, cx);
+        }
+    }
+
+    /// The auto-hide closer RETRIES: a single fire-and-forget timer left
+    /// ghost panels behind whenever its one removal attempt hit a busy
+    /// entity (the leaked popups then ate clicks and never disappeared).
+    fn schedule_link_panel_hide(&mut self, generation: u64, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            for attempt in 0..3u32 {
                 cx.background_executor()
                     .timer(Duration::from_millis(
                         crate::tools::link_panel::LINK_PANEL_AUTO_HIDE_MS,
                     ))
                     .await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.link_panel.generation != generation {
-                        return;
-                    }
-                    if let Some(window) = this.link_panel.window.take() {
-                        let _ = window.update(cx, |_, window, _| window.remove_window());
-                    }
-                });
-            })
-            .detach();
-        }
+                let closed = this
+                    .update(cx, |this, cx| {
+                        if this.link_panel.generation != generation {
+                            return true;
+                        }
+                        this.close_link_panel(cx);
+                        this.link_panel.window.is_none()
+                    })
+                    .unwrap_or(false);
+                if closed {
+                    return;
+                }
+                let _ = attempt;
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn set_link_detector_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {

@@ -23,6 +23,7 @@ pub(crate) const fn link_panel_height(rows: usize) -> f32 {
 #[derive(Default)]
 pub(crate) struct LinkPanelSession {
     pub(crate) window: Option<AnyWindowHandle>,
+    pub(crate) native_window_handle: i64,
     pub(crate) generation: u64,
 }
 
@@ -30,6 +31,14 @@ pub(crate) struct LinkPanelView {
     pub(crate) links: Vec<DetectedLinkRow>,
     pub(crate) application: WeakEntity<ClipboardApplication>,
     pub(crate) expanded: bool,
+}
+
+impl LinkPanelView {
+    /// Restages the reused panel window with a fresh capture's links.
+    pub(crate) fn swap_links(&mut self, links: Vec<DetectedLinkRow>) {
+        self.links = links;
+        self.expanded = false;
+    }
 }
 
 impl Render for LinkPanelView {

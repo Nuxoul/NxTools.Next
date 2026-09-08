@@ -231,6 +231,8 @@ internal sealed class PlatformPipeClient(
                             cancellationToken),
                         "set_window_topmost" => platformAdapter.SetWindowTopmost(
                             PlatformCommandParser.ParseSetWindowTopmost(envelope)),
+                        "set_window_shadow" => platformAdapter.SetWindowShadow(
+                            PlatformCommandParser.ParseSetWindowShadow(envelope)),
                         "set_window_no_activate" => platformAdapter.SetWindowNoActivate(
                             PlatformCommandParser.ParseSetWindowNoActivate(envelope)),
                         "set_window_bounds" => platformAdapter.SetWindowBounds(

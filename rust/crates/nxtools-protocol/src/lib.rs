@@ -369,6 +369,7 @@ pub enum PlatformCommand {
     SetClipboardHotKeyRecording(SetClipboardHotKeyRecordingCommand),
     SetQuickLaunchHotKeyRecording(SetQuickLaunchHotKeyRecordingCommand),
     SetWindowTopmost(SetWindowTopmostCommand),
+    SetWindowShadow(SetWindowShadowCommand),
     SetWindowNoActivate(SetWindowNoActivateCommand),
     SetWindowBounds(SetWindowBoundsCommand),
     SetWindowBoundsCentered(SetWindowBoundsCenteredCommand),
@@ -527,6 +528,14 @@ pub struct SetWindowNoActivateCommand {
     pub enabled: bool,
 }
 
+
+/// Toggles the DWM drop shadow on one window. The 链接识别 panel turns it
+/// off: a floating hint card reads cleaner without the system shadow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetWindowShadowCommand {
+    pub window_handle: i64,
+    pub enabled: bool,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetWindowBoundsCommand {
     pub window_handle: i64,

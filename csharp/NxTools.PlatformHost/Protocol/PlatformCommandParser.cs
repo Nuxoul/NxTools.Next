@@ -50,6 +50,7 @@ internal sealed record ConfigureDesktopShellCommand(
 
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
+internal sealed record SetWindowShadowCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
 internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
 internal sealed record MoveWindowCenteredOverCommand(
@@ -237,6 +238,11 @@ internal static class PlatformCommandParser
             "set_window_no_activate",
             "No-activate command payload was empty.");
 
+public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envelope) =>
+        Parse<SetWindowShadowCommand>(
+            envelope,
+            "set_window_shadow",
+            "Window-shadow command payload was empty.");
     public static SetWindowBoundsCommand ParseSetWindowBounds(ProtocolEnvelope envelope) =>
         Parse<SetWindowBoundsCommand>(
             envelope,

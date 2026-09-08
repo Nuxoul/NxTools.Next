@@ -67,7 +67,13 @@ internal sealed partial class WindowsPlatformAdapter
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool AddClipboardFormatListener(IntPtr window);
 
-        [DllImport("dwmapi.dll")]
+                [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(
+            IntPtr hwnd,
+            int attribute,
+            ref int attributeValue,
+            int attributeSize);
+[DllImport("dwmapi.dll")]
         private static extern int DwmGetWindowAttribute(
             IntPtr window,
             int attribute,
@@ -485,6 +491,21 @@ internal sealed partial class WindowsPlatformAdapter
             return applied == enabled
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(false, "Windows did not apply the requested no-activate state.");
+        }
+        internal static WindowsCommandResult SetWindowShadow(IntPtr window, bool enabled)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window))
+            {
+                return new WindowsCommandResult(false, "The GPUI window handle is invalid.");
+            }
+            // DWMWA_NCRENDERING_POLICY = 2; DWMNCRP_DISABLED = 1 kills the
+            // system drop shadow. The floating hint card reads cleaner flat.
+            const int dwmwaNcRenderingPolicy = 2;
+            int policy = enabled ? 2 : 1;
+            var hr = DwmSetWindowAttribute(window, dwmwaNcRenderingPolicy, ref policy, sizeof(int));
+            return hr == 0
+                ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(false, $"DwmSetWindowAttribute failed HResult={hr}.");
         }
 
         internal static WindowsCommandResult SetWindowVisibility(IntPtr window, bool visible)

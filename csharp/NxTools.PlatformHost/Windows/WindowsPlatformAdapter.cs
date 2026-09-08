@@ -185,6 +185,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         return result;
     }
 
+    public WindowsCommandResult SetWindowShadow(SetWindowShadowCommand command) =>
+        NativeMethods.SetWindowShadow(
+            new IntPtr(command.WindowHandle),
+            command.Enabled);
     public WindowsCommandResult SetWindowNoActivate(SetWindowNoActivateCommand command) =>
         NativeMethods.SetWindowNoActivate(new IntPtr(command.WindowHandle), command.Enabled);
 
