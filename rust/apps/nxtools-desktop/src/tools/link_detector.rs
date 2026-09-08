@@ -54,6 +54,15 @@ fn classify(candidate: &str) -> Option<DetectedLink> {
             copy_value: trimmed.to_owned(),
         });
     }
+    // Bare domains like "image.routerapi.net/abc.png" (no scheme) are common
+    // copies from download sites; accept dotted names with a known-suffix TLD
+    // and either a path or a www prefix. No scheme, no heuristic host names.
+    if looks_like_bare_domain(candidate) {
+        return Some(DetectedLink {
+            display: candidate.to_owned(),
+            copy_value: candidate.to_owned(),
+        });
+    }
     if looks_like_drive_path(candidate) && std::path::Path::new(candidate).exists() {
         return Some(DetectedLink {
             display: candidate.to_owned(),
@@ -67,6 +76,28 @@ fn classify(candidate: &str) -> Option<DetectedLink> {
         });
     }
     None
+}
+
+const KNOWN_TLDS: [&str; 12] = [
+    "com", "net", "org", "io", "dev", "app", "cn", "me", "tv", "cc", "xyz", "info",
+];
+
+fn looks_like_bare_domain(candidate: &str) -> bool {
+    let candidate = candidate.trim_end_matches(['.', ',', ';', '!', '?', ')']);
+    if !candidate.contains('/') && !candidate.starts_with("www.") {
+        return false;
+    }
+    let host = candidate.split('/').next().unwrap_or_default();
+    let mut parts = host.rsplit('.');
+    let Some(tld) = parts.next() else {
+        return false;
+    };
+    if !KNOWN_TLDS.contains(&tld.to_ascii_lowercase().as_str()) {
+        return false;
+    }
+    // A second label must exist (hosts like "com.cn" aside, this keeps
+    // sentence fragments like "e.g." from matching).
+    parts.next().is_some_and(|label| !label.is_empty())
 }
 
 fn looks_like_drive_path(candidate: &str) -> bool {
@@ -101,6 +132,17 @@ mod tests {
         println!("SCRATCH path={}", path);
         println!("SCRATCH exists={}", std::path::Path::new(&path).exists());
         println!("SCRATCH links={:?}", detect_links(&format!("文件在 {}", path)));
+    }
+
+    #[test]
+    fn bare_domains_with_a_path_are_recognized() {
+        // The user's missed case: scheme-less CDN hosts.
+        let links = detect_links("https://removed http://gone image.routerapi.net/abc/def.png");
+        let bare = links
+            .iter()
+            .find(|link| link.copy_value.contains("routerapi.net"))
+            .expect("bare domain with a path must be recognized");
+        assert_eq!(bare.copy_value, "image.routerapi.net/abc/def.png");
     }
 
     #[test]

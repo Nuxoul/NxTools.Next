@@ -801,19 +801,33 @@ impl ClipboardApplication {
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
             px(crate::tools::link_panel::link_panel_height(links.len())),
         );
-        let bounds = Bounds::new(point(px(120.0), px(120.0)), panel_size);
+        // Center the panel on the primary display; pointer tracking would
+        // need a new IPC field on the capture event (follow-up).
+        let screen = cx
+            .primary_display()
+            .map(|display| display.bounds())
+            .unwrap_or_else(|| Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0))));
+        let bounds = Bounds::new(
+            point(
+                screen.origin.x
+                    + (screen.size.width - panel_size.width) / 2.0,
+                screen.origin.y
+                    + (screen.size.height - panel_size.height) / 2.0,
+            ),
+            panel_size,
+        );
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: None,
-                focus: false,
+                focus: true,
                 show: true,
                 kind: WindowKind::PopUp,
                 is_movable: false,
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.LinkPanel".into()),
                 window_min_size: None,
                 window_decorations: Some(WindowDecorations::Client),

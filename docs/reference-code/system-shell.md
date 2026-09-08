@@ -106,3 +106,19 @@ tray Exit
 - The product-global settings surface consumes shared setting section, row, toggle and action
   primitives rather than importing helpers named for the download module. Its Apply path and
   PlatformHost confirmation lifecycle remain unchanged.
+
+### Open questions carried from user reports (2026-09-08)
+
+- **DOpus multi-tab directory**: the user reports the quick-launch/clipboard
+  target directory does not follow the ACTIVE TAB in Directory Opus. The
+  verified note above only records single-lister detection
+  (`dopus.filedisplaycontainer` / `dopus.ctl.treepath` of the active panel).
+  Next verification pass must enumerate the lister's tab controls
+  (`dopus.listertabs`?) and pick the foreground tab's path; Listary's own
+  source was NOT available — only its managed boundary was observed.
+- **hydra (D:\Code\hydra-main)** is a new GPL/MIT dual-licensed Rust
+  multi-source download engine reference (crates: hydra-core/net/stream/
+  host/gui). Behaviorally interesting for NxTools.Next: multi-source
+  (mirror) fetching, per-file segment scheduling and its updater design.
+  License: GPL-3.0-or-later OR MIT — inspect per-file before copying ANY
+  code; treat as clean-room behavioral reference like FluxDown.

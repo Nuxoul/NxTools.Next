@@ -50,6 +50,7 @@ impl Render for LinkPanelView {
             .border_1()
             .border_color(theme.border_subtle)
             .rounded(px(8.0))
+            .overflow_hidden()
             .p(px(6.0))
             .flex()
             .flex_col()
