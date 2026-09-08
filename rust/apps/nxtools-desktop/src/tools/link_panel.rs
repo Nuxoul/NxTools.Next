@@ -25,6 +25,8 @@ pub(crate) struct LinkPanelSession {
     pub(crate) window: Option<AnyWindowHandle>,
     pub(crate) native_window_handle: i64,
     pub(crate) generation: u64,
+    pub(crate) last_fingerprint: Option<(bool, String)>,
+    pub(crate) last_fingerprint_at_unix_ms: i64,
 }
 
 pub(crate) struct LinkPanelView {

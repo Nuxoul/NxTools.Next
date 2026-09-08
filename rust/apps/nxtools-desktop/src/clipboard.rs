@@ -776,6 +776,17 @@ impl ClipboardApplication {
         if !self.config.clipboard.link_detector_enabled {
             return;
         }
+        // One capture is delivered on TWO platform connections ~40ms apart;
+        // without this guard the second delivery raced the just-opened
+        // panel and gpui killed it with "window not found".
+        let fingerprint = (self.config.clipboard.link_detector_enabled, text.to_owned());
+        if self.link_panel.last_fingerprint.as_ref() == Some(&fingerprint)
+            && nxtools_ipc::unix_time_ms() - self.link_panel.last_fingerprint_at_unix_ms < 500
+        {
+            return;
+        }
+        self.link_panel.last_fingerprint = Some(fingerprint);
+        self.link_panel.last_fingerprint_at_unix_ms = nxtools_ipc::unix_time_ms();
         let links = crate::tools::link_detector::detect_links(text);
         if links.is_empty() {
             return;
@@ -905,13 +916,18 @@ impl ClipboardApplication {
                 cx.new(|cx| Root::new(panel, window, cx))
             },
         );
-        if let Ok(window) = opened {
-            self.link_panel.native_window_handle = *native_slot.borrow();
-            self.link_panel.window = Some(window.into());
-            let generation = self.link_panel.generation.wrapping_add(1);
-            self.link_panel.generation = generation;
-            self.schedule_link_panel_hide(generation, cx);
-        }
+        let window = match opened {
+            Ok(window) => window,
+            Err(error) => {
+                error!(%error, "failed to open the link detector panel window");
+                return;
+            }
+        };
+        self.link_panel.native_window_handle = *native_slot.borrow();
+        self.link_panel.window = Some(window.into());
+        let generation = self.link_panel.generation.wrapping_add(1);
+        self.link_panel.generation = generation;
+        self.schedule_link_panel_hide(generation, cx);
     }
 
     /// The auto-hide closer RETRIES: a single fire-and-forget timer left
