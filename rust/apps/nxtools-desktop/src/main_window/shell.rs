@@ -6,6 +6,7 @@ impl MainWindow {
             MainModule::Downloads => MaterialIcon::Download,
             MainModule::QuickFind => MaterialIcon::Search,
             MainModule::Clipboard => MaterialIcon::ContentPaste,
+            MainModule::Tools => MaterialIcon::Dashboard,
         }
     }
 

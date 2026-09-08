@@ -4,16 +4,23 @@ pub(crate) enum MainModule {
     Downloads,
     QuickFind,
     Clipboard,
+    Tools,
 }
 
 impl MainModule {
-    pub(crate) const ALL: [Self; 3] = [Self::Downloads, Self::QuickFind, Self::Clipboard];
+    pub(crate) const ALL: [Self; 4] = [
+        Self::Downloads,
+        Self::QuickFind,
+        Self::Clipboard,
+        Self::Tools,
+    ];
 
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Downloads => "下载",
             Self::QuickFind => "速启",
             Self::Clipboard => "剪贴板",
+            Self::Tools => "其他工具",
         }
     }
 
@@ -22,6 +29,7 @@ impl MainModule {
             Self::Downloads => "多线程下载与任务调度",
             Self::QuickFind => "文件、应用与命令快速检索",
             Self::Clipboard => "历史、分类与粘贴行为管理",
+            Self::Tools => "链接识别等扩展小工具",
         }
     }
 }
@@ -53,9 +61,11 @@ mod tests {
                 MainModule::Downloads,
                 MainModule::QuickFind,
                 MainModule::Clipboard,
+                MainModule::Tools,
             ]
         );
         assert_eq!(MainModule::Downloads.label(), "下载");
+        assert_eq!(MainModule::Tools.label(), "其他工具");
         assert_eq!(MainModule::QuickFind.label(), "速启");
         assert_eq!(MainModule::Clipboard.label(), "剪贴板");
     }

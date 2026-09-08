@@ -605,6 +605,8 @@ pub struct ClipboardSettings {
     pub enabled: bool,
     pub capture_images: bool,
     pub capture_files: bool,
+    #[serde(default = "default_true")]
+    pub link_detector_enabled: bool,
     #[serde(default)]
     pub hotkey: ClipboardHotKey,
     #[serde(default = "default_clipboard_max_items")]
@@ -625,6 +627,7 @@ impl Default for ClipboardSettings {
             enabled: true,
             capture_images: true,
             capture_files: true,
+            link_detector_enabled: true,
             hotkey: ClipboardHotKey::default(),
             max_items: default_clipboard_max_items(),
             retention_days: default_clipboard_retention_days(),

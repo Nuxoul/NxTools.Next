@@ -118,6 +118,7 @@ pub struct ClipboardApplication {
     deferred_captures: Vec<ClipboardCapture>,
     popup: PopupSession,
     preview: PreviewSession,
+    link_panel: crate::tools::link_panel::LinkPanelSession,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,6 +292,7 @@ impl ClipboardApplication {
             deferred_captures: Vec::new(),
             popup: PopupSession::default(),
             preview: PreviewSession::default(),
+            link_panel: crate::tools::link_panel::LinkPanelSession::default(),
         };
         application.apply_retention(nxtools_ipc::unix_time_ms());
         application
@@ -761,6 +763,109 @@ impl ClipboardApplication {
         self.hotkey_recording_active
             || self.hotkey_recording_desired
             || self.pending_hotkey_recording.is_some()
+    }
+
+    pub(crate) fn link_detector_enabled(&self) -> bool {
+        self.config.clipboard.link_detector_enabled
+    }
+
+    /// 链接识别: after each text capture, extract links and show the floating
+    /// panel near the pointer. Reuses the preview window lifecycle pattern:
+    /// show at computed bounds, one auto-hide timer, generation-guarded.
+    pub(crate) fn handle_link_detector_capture(&mut self, text: &str, cx: &mut Context<Self>) {
+        if !self.config.clipboard.link_detector_enabled {
+            return;
+        }
+        let links = crate::tools::link_detector::detect_links(text);
+        if links.is_empty() {
+            return;
+        }
+        info!(
+            event = "tools.link_detector.matches_found",
+            count = links.len(),
+            "link detector recognized clipboard targets"
+        );
+        self.show_link_panel(links, cx);
+    }
+
+    pub(crate) fn close_link_panel(&mut self, cx: &mut Context<Self>) {
+        if let Some(window) = self.link_panel.window.take() {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
+        self.link_panel.generation += 1;
+    }
+
+    pub(crate) fn show_link_panel(&mut self, links: Vec<crate::tools::link_panel::DetectedLinkRow>, cx: &mut Context<Self>) {
+        let application = cx.entity().downgrade();
+        let panel_size = size(
+            px(crate::tools::link_panel::LINK_PANEL_WIDTH),
+            px(crate::tools::link_panel::link_panel_height(links.len())),
+        );
+        let bounds = Bounds::new(point(px(120.0), px(120.0)), panel_size);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: None,
+                focus: false,
+                show: true,
+                kind: WindowKind::PopUp,
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                display_id: None,
+                window_background: WindowBackgroundAppearance::Opaque,
+                app_id: Some("NxTools.LinkPanel".into()),
+                window_min_size: None,
+                window_decorations: Some(WindowDecorations::Client),
+                tabbing_identifier: None,
+            },
+            move |window, cx| {
+                let native = native_window_handle(window);
+                let panel = cx.new(|_| crate::tools::link_panel::LinkPanelView {
+                    links,
+                    application,
+                    expanded: false,
+                });
+                let _ = native;
+                cx.new(|cx| Root::new(panel, window, cx))
+            },
+        );
+        if let Ok(window) = opened {
+            self.link_panel.window = Some(window.into());
+            // Auto-hide: the panel always dismisses after the dwell time; a
+            // fresh capture replaces the window wholesale.
+            let generation = self.link_panel.generation.wrapping_add(1);
+            self.link_panel.generation = generation;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(
+                        crate::tools::link_panel::LINK_PANEL_AUTO_HIDE_MS,
+                    ))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.link_panel.generation != generation {
+                        return;
+                    }
+                    if let Some(window) = this.link_panel.window.take() {
+                        let _ = window.update(cx, |_, window, _| window.remove_window());
+                    }
+                });
+            })
+            .detach();
+        }
+    }
+
+    pub(crate) fn set_link_detector_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.config.clipboard.link_detector_enabled == enabled {
+            return;
+        }
+        self.config.clipboard.link_detector_enabled = enabled;
+        if let Err(error) = self.config.save_to(&self.config_path) {
+            error!(%error, "could not persist the link detector preference");
+            return;
+        }
+        info!(event = "tools.link_detector_preference_saved", enabled);
+        cx.notify();
     }
 
     pub(crate) fn set_clipboard_hotkey_recording(&mut self, recording: bool) {
@@ -1991,14 +2096,18 @@ impl ClipboardApplication {
                     }
                 } else if let Some(text) = capture.text
                     && !text.is_empty()
-                    && let Err(error) = self.history.borrow_mut().capture(TextCapture {
-                        text,
+                {
+                    if let Err(error) = self.history.borrow_mut().capture(TextCapture {
+                        text: text.clone(),
                         native_formats,
                         source,
                         captured_at_unix_ms: capture.captured_at_unix_ms,
-                    })
-                {
-                    error!(%error, "failed to persist clipboard capture");
+                    }) {
+                        error!(%error, "failed to persist clipboard capture");
+                    }
+                    // 链接识别 runs on every text capture while enabled; a
+                    // capture without recognized targets is a no-op.
+                    self.handle_link_detector_capture(&text, cx);
                 }
                 if captured_at_unix_ms.saturating_sub(self.last_cleanup_at_unix_ms)
                     >= RETENTION_INTERVAL_MS

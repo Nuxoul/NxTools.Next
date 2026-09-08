@@ -82,6 +82,7 @@ mod download_page;
 mod notifications;
 mod quick_launch_page;
 mod shell;
+mod tools_page;
 
 use self::clipboard_page::*;
 use self::download_page::*;
@@ -151,6 +152,8 @@ pub(crate) struct MainWindow {
     download_filter: DownloadTaskFilter,
     download_sort: DownloadSortState,
     download_list_scroll: UniformListScrollHandle,
+    tools_scroll: ScrollHandle,
+    tools_open_tool: Option<&'static str>,
     download_search_log_generation: u64,
     download_detail_tab: DownloadDetailTab,
     download_detail_scroll: ScrollHandle,
@@ -168,6 +171,10 @@ pub(crate) struct MainWindowShellContext {
     pub(crate) system_settings: Rc<RefCell<SystemSettings>>,
 }
 impl MainWindow {
+    pub(crate) fn render_tools(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        tools_page::render_tools(self, cx)
+    }
+
     pub(crate) fn new(
         clipboard: gpui::WeakEntity<ClipboardApplication>,
         quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
@@ -418,6 +425,8 @@ impl MainWindow {
             download_filter: DownloadTaskFilter::default(),
             download_sort: initial_download_sort,
             download_list_scroll: UniformListScrollHandle::new(),
+            tools_scroll: ScrollHandle::new(),
+            tools_open_tool: None,
             download_search_log_generation: 0,
             download_detail_tab: DownloadDetailTab::default(),
             download_detail_scroll: ScrollHandle::new(),
@@ -440,6 +449,7 @@ impl Render for MainWindow {
             MainModule::Downloads => self.render_downloads(cx),
             MainModule::QuickFind => self.render_quick_find(cx),
             MainModule::Clipboard => self.render_clipboard(cx),
+            MainModule::Tools => self.render_tools(cx),
         };
         div()
             .id("nxtools-main-window")

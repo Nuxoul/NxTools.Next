@@ -10,6 +10,7 @@ mod icons;
 mod main_window;
 mod network_settings;
 mod notifications;
+mod tools;
 mod platform_events;
 mod popup_lifecycle;
 mod quick_launch;
