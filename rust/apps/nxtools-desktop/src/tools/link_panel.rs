@@ -120,6 +120,11 @@ impl Render for LinkPanelView {
                     .cursor_pointer()
                     .hover(move |style| style.bg(rgb(0x3f3f46)))
                     .on_click(move |_event, window, cx| {
+                        tracing::info!(
+                            event = "tools.link_panel.row_clicked",
+                            %copy_value,
+                            "link panel row clicked; writing to clipboard"
+                        );
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                             copy_value.clone(),
                         ));
@@ -127,6 +132,11 @@ impl Render for LinkPanelView {
                             application.update(cx, |application, cx| {
                                 application.close_link_panel(cx);
                             });
+                        } else {
+                            tracing::warn!(
+                                event = "tools.link_panel.app_gone",
+                                "clipboard application entity unavailable at click"
+                            );
                         }
                         window.refresh();
                     })

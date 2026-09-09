@@ -20,6 +20,7 @@ nxtools-ipc = { path = "../../crates/nxtools-ipc" }
 nxtools-network = { path = "../../crates/nxtools-network" }
 nxtools-protocol = { path = "../../crates/nxtools-protocol" }
 raw-window-handle.workspace = true
+windows-sys.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true

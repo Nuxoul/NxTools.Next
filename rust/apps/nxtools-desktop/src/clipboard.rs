@@ -976,6 +976,7 @@ impl ClipboardApplication {
         .detach();
     }
 
+    #[allow(dead_code)] // wired to the tools settings window
     pub(crate) fn set_link_detector_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self.config.clipboard.link_detector_enabled == enabled {
             return;

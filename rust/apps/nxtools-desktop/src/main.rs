@@ -275,7 +275,17 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let startup_started_at = Instant::now();
             let window = cx.open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::centered(size(px(1060.0), px(650.0)), cx)),
+                    // Boot DPI race: gpui's monitor-check multiplies our
+                    // logical center by the primary display's scale factor.
+                    // When that read races the session DPI settle it fails
+                    // and gpui falls back to its full default bounds
+                    // (1536x864), which the user sees as a giant window.
+                    // Pre-scale the logical bounds so the physical center is
+                    // exact and the monitor check succeeds.
+                    window_bounds: Some(WindowBounds::centered(
+                        boot_dpi_compensated_size(cx),
+                        cx,
+                    )),
                     titlebar: Some(TitlebarOptions {
                         title: Some("NxTools".into()),
                         appears_transparent: true,
@@ -416,6 +426,36 @@ fn install_panic_logging() {
             default_hook(panic_info);
         }));
     });
+}
+
+/// Boot DPI race: gpui's monitor-check multiplies our logical center by the
+/// display's scale factor; when that read races the session DPI settle at
+/// login it fails and gpui falls back to its full default bounds
+/// (1536x864), which reads as a giant main window. Pre-scale the logical
+/// size with the current system DPI so the physical center is exact and the
+/// monitor check succeeds.
+    #[allow(unsafe_code)] // GetDeviceCaps DPI read has no safe wrapper.
+fn boot_dpi_compensated_size(cx: &App) -> gpui::Size<gpui::Pixels> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Gdi::{
+            GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX,
+        };
+        let hdc = unsafe { GetDC(std::ptr::null_mut()) };
+        if !hdc.is_null() {
+            let dpi = unsafe { GetDeviceCaps(hdc, LOGPIXELSX as i32) } as u32;
+            unsafe { ReleaseDC(std::ptr::null_mut(), hdc) };
+            if dpi > 0 && dpi != 96 {
+                let scale = dpi as f32 / 96.0;
+                return gpui::size(
+                    gpui::px(1060.0 / scale),
+                    gpui::px(650.0 / scale),
+                );
+            }
+        }
+    }
+    let _ = cx;
+    gpui::size(gpui::px(1060.0), gpui::px(650.0))
 }
 
 fn main() {
