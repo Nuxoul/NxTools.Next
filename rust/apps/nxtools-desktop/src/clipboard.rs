@@ -845,7 +845,13 @@ impl ClipboardApplication {
                 .update(cx, |view, window, cx| {
                     match view.downcast::<crate::tools::link_panel::LinkPanelView>() {
                         Ok(view) => {
-                            view.update(cx, |view, cx| view.swap_links(links.clone(), window_handle_for_swap.unwrap(), cx));
+                            view.update(cx, |view, cx| {
+                        if let Some(handle) = window_handle_for_swap {
+                            view.swap_links(links.clone(), handle, cx);
+                        } else {
+                            window.remove_window();
+                        }
+                    });
                         }
                         Err(_) => {
                             window.remove_window();
@@ -935,7 +941,7 @@ impl ClipboardApplication {
         };
         self.link_panel.native_window_handle = *native_slot.borrow();
         self.link_panel.window = Some(window.into());
-        self.link_panel.window_handle = any_handle_slot.borrow().clone();
+        self.link_panel.window_handle = *any_handle_slot.borrow();
         let generation = self.link_panel.generation.wrapping_add(1);
         self.link_panel.generation = generation;
         self.schedule_link_panel_hide(generation, cx);
