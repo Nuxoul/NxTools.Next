@@ -834,7 +834,14 @@ impl ClipboardApplication {
 
     pub(crate) fn close_link_panel(&mut self, cx: &mut Context<Self>) {
         if let Some(window) = self.link_panel.window.take() {
-            let _ = window.update(cx, |_, window, _| window.remove_window());
+            let closed = window
+                .update(cx, |_, window, _| window.remove_window())
+                .is_ok();
+            tracing::info!(
+                event = "tools.link_panel.close_requested",
+                closed,
+                "link panel close requested"
+            );
         }
         self.link_panel.generation += 1;
     }
@@ -858,13 +865,14 @@ impl ClipboardApplication {
             .unwrap_or_else(|| {
                 Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0)))
             });
-        // Horizontal center; vertical center at the 3/4 height line (the
-        // user's requested position).
+        // Horizontal center; vertical center at one quarter down from the
+        // top — the upper 3/4 area of the screen (the user's requested
+        // position, clarified 2026-09-09).
         let bounds = Bounds::new(
             point(
                 screen.origin.x + (screen.size.width - panel_size.width) / 2.0,
                 screen.origin.y
-                    + (screen.size.height * 3.0 / 4.0 - panel_size.height / 2.0),
+                    + (screen.size.height / 4.0 - panel_size.height / 2.0),
             ),
             panel_size,
         );

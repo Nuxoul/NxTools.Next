@@ -3,7 +3,7 @@
 
 use super::*;
 use gpui::rgb;
-use gpui::{point, size, Bounds, WindowOptions, WindowBackgroundAppearance, WindowDecorations, WindowKind, WindowBounds};
+use gpui::{size, WindowOptions, WindowBackgroundAppearance, WindowDecorations, WindowKind, WindowBounds};
 use crate::ui::metrics::{RADIUS_CONTROL, SPACING_6, SPACING_8, SPACING_12};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META};
 
@@ -334,9 +334,10 @@ fn open_tool_settings_window(
         .unwrap_or((false, 6, false, true));
     let clipboard = this.clipboard.clone();
     let window_size = size(px(460.0), px(320.0));
+    let window_bounds = WindowBounds::centered(window_size, cx);
     let opened = cx.open_window(
         WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.0), px(0.0)), window_size))),
+            window_bounds: Some(window_bounds),
             titlebar: None,
             focus: true,
             show: true,
