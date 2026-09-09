@@ -779,6 +779,16 @@ impl ClipboardApplication {
         // One capture is delivered on TWO platform connections ~40ms apart;
         // without this guard the second delivery raced the just-opened
         // panel and gpui killed it with "window not found".
+        if let Some((copied, at_ms)) = &self.link_panel.last_panel_copied
+            && copied == text
+            && nxtools_ipc::unix_time_ms() - at_ms < 1_000
+        {
+            info!(
+                event = "tools.link_detector.echo_ignored",
+                "ignored the panel's own clipboard write"
+            );
+            return;
+        }
         let fingerprint = (self.config.clipboard.link_detector_enabled, text.to_owned());
         if self.link_panel.last_fingerprint.as_ref() == Some(&fingerprint)
             && nxtools_ipc::unix_time_ms() - self.link_panel.last_fingerprint_at_unix_ms < 500
@@ -797,6 +807,13 @@ impl ClipboardApplication {
             "link detector recognized clipboard targets"
         );
         self.show_link_panel(links, cx);
+    }
+
+    /// Records the text the panel is about to write so the resulting echo
+    /// capture does not reopen the panel (clicks looked like no-ops).
+    pub(crate) fn note_panel_copied(&mut self, value: String) {
+        self.link_panel.last_panel_copied =
+            Some((value, nxtools_ipc::unix_time_ms()));
     }
 
     pub(crate) fn close_link_panel(&mut self, cx: &mut Context<Self>) {
@@ -824,13 +841,11 @@ impl ClipboardApplication {
             .unwrap_or_else(|| {
                 Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0)))
             });
-        // Horizontal center; vertical center sits at the upper quarter of
-        // the screen (the user's requested 中上 3/4 position).
+        // Centered on the primary display.
         let bounds = Bounds::new(
             point(
                 screen.origin.x + (screen.size.width - panel_size.width) / 2.0,
-                screen.origin.y
-                    + (screen.size.height * 0.25 - panel_size.height / 2.0),
+                screen.origin.y + (screen.size.height - panel_size.height) / 2.0,
             ),
             panel_size,
         );

@@ -28,6 +28,9 @@ pub(crate) struct LinkPanelSession {
     pub(crate) generation: u64,
     pub(crate) last_fingerprint: Option<(bool, String)>,
     pub(crate) last_fingerprint_at_unix_ms: i64,
+    /// Text the panel itself just put on the clipboard; captures carrying
+    /// this value are the panel's own echo and must not reopen it.
+    pub(crate) last_panel_copied: Option<(String, i64)>,
 }
 
 pub(crate) struct LinkPanelView {
@@ -123,13 +126,15 @@ impl Render for LinkPanelView {
                         tracing::info!(
                             event = "tools.link_panel.row_clicked",
                             %copy_value,
-                            "link panel row clicked; writing to clipboard"
+                            "link panel row clicked"
                         );
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                            copy_value.clone(),
-                        ));
+                        // Close FIRST. Writing the link to the clipboard
+                        // raises a fresh capture; if the panel is still open
+                        // the echo capture restages it and the click looks
+                        // like a no-op.
                         if let Some(application) = application.upgrade() {
                             application.update(cx, |application, cx| {
+                                application.note_panel_copied(copy_value.clone());
                                 application.close_link_panel(cx);
                             });
                         } else {
@@ -138,6 +143,9 @@ impl Render for LinkPanelView {
                                 "clipboard application entity unavailable at click"
                             );
                         }
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                            copy_value.clone(),
+                        ));
                         window.refresh();
                     })
                     .child(

@@ -242,7 +242,9 @@ fn open_tool_settings_window(
             cx.new(|cx| gpui_component::Root::new(body, window, cx))
         },
     );
-    if let Err(error) = opened {
-        tracing::error!(%error, tool = card.id, "failed to open tool settings window");
+    if let Ok(window) = opened {
+        this.tool_settings_window = Some(window.into());
+    } else {
+        tracing::error!(tool = card.id, "failed to open tool settings window");
     }
 }
