@@ -14,7 +14,6 @@ pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
 pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
 const LINK_PANEL_ROW_HEIGHT: f32 = 30.0;
 const LINK_PANEL_VERTICAL_PADDING: f32 = 12.0;
-pub(crate) const LINK_PANEL_AUTO_HIDE_MS: u64 = 6_000;
 
 pub(crate) const fn link_panel_height(rows: usize) -> f32 {
     LINK_PANEL_VERTICAL_PADDING * 2.0 + rows as f32 * LINK_PANEL_ROW_HEIGHT
@@ -37,6 +36,7 @@ pub(crate) struct LinkPanelView {
     pub(crate) links: Vec<DetectedLinkRow>,
     pub(crate) application: WeakEntity<ClipboardApplication>,
     pub(crate) expanded: bool,
+    pub(crate) auto_hide_ms: u64,
 }
 
 impl LinkPanelView {
@@ -61,10 +61,9 @@ impl LinkPanelView {
     /// owning Window (Context cannot reach it), so construction sites pass
     /// it in.
     pub(crate) fn arm_auto_hide(&mut self, window_handle: AnyWindowHandle, cx: &mut Context<Self>) {
+        let dwell = std::time::Duration::from_millis(self.auto_hide_ms);
         cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(LINK_PANEL_AUTO_HIDE_MS))
-                .await;
+            cx.background_executor().timer(dwell).await;
             // Closing through the captured handle is immune to stale
             // app-entity state, which is what leaked windows before.
             let _ = window_handle.update(cx, |_, window, _| window.remove_window());
@@ -136,6 +135,18 @@ impl Render for LinkPanelView {
                             application.update(cx, |application, cx| {
                                 application.note_panel_copied(copy_value.clone());
                                 application.close_link_panel(cx);
+                                if application.link_panel_should_open_browser() {
+                                    let url = if copy_value.contains("://") {
+                                        copy_value.clone()
+                                    } else {
+                                        format!("https://{}", copy_value)
+                                    };
+                                    use std::os::windows::process::CommandExt as _;
+                                    let _ = std::process::Command::new("cmd")
+                                        .args(["/C", "start", "", &url])
+                                        .creation_flags(0x0800_0000)
+                                        .spawn();
+                                }
                             });
                         } else {
                             tracing::warn!(

@@ -128,12 +128,15 @@ pub(crate) fn render_tools(window: &mut MainWindow, cx: &mut Context<MainWindow>
         .into_any_element()
 }
 
-/// Inline settings for the tool selected from the grid.
+/// Settings for the tool opened from the grid card.
 pub(crate) struct ToolSettingsWindowBody {
     title: &'static str,
     description: &'static str,
     enabled: bool,
-    toggle_clicked: bool,
+    auto_hide_seconds: u64,
+    auto_open_browser: bool,
+    copy_only: bool,
+    clipboard: gpui::WeakEntity<ClipboardApplication>,
 }
 
 impl Render for ToolSettingsWindowBody {
@@ -142,6 +145,7 @@ impl Render for ToolSettingsWindowBody {
         let text_secondary = rgb(0xa1a1aa);
         let success = rgb(0x10b981);
         let text_muted = rgb(0x71717a);
+        let text_primary = rgb(0xf4f4f5);
         div()
             .size_full()
             .bg(theme.canvas)
@@ -175,7 +179,11 @@ impl Render for ToolSettingsWindowBody {
                             .outline()
                             .on_click(cx.listener(move |this, _event, _window, cx| {
                                 this.enabled = !this.enabled;
-                                this.toggle_clicked = true;
+                                if let Some(clipboard) = this.clipboard.upgrade() {
+                                    clipboard.update(cx, |clipboard, cx| {
+                                        clipboard.set_link_detector_enabled(this.enabled, cx);
+                                    });
+                                }
                                 cx.notify();
                             })),
                     )
@@ -186,14 +194,124 @@ impl Render for ToolSettingsWindowBody {
                             .child(if self.enabled { "运行中" } else { "已停用" }),
                     ),
             )
-            .when(self.toggle_clicked, |body| {
-                body.child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(text_secondary)
-                        .child("设置已更新；关闭此窗口即可。"),
-                )
-            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(text_secondary)
+                            .child("面板消失时间(秒)"),
+                    )
+                    .child(
+                        Button::new("tool-settings-dwell-minus")
+                            .label("-")
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.auto_hide_seconds =
+                                    this.auto_hide_seconds.saturating_sub(2).max(2);
+                                if let Some(clipboard) = this.clipboard.upgrade() {
+                                    clipboard.update(cx, |clipboard, cx| {
+                                        clipboard.set_link_panel_auto_hide_ms(
+                                            this.auto_hide_seconds * 1_000,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(text_primary)
+                            .child(format!("{}", self.auto_hide_seconds)),
+                    )
+                    .child(
+                        Button::new("tool-settings-dwell-plus")
+                            .label("+")
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.auto_hide_seconds = (this.auto_hide_seconds + 2).min(60);
+                                if let Some(clipboard) = this.clipboard.upgrade() {
+                                    clipboard.update(cx, |clipboard, cx| {
+                                        clipboard.set_link_panel_auto_hide_ms(
+                                            this.auto_hide_seconds * 1_000,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        Button::new("tool-settings-open-browser")
+                            .label(if self.auto_open_browser { "✓" } else { " " })
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.auto_open_browser = !this.auto_open_browser;
+                                if this.auto_open_browser {
+                                    this.copy_only = false;
+                                }
+                                if let Some(clipboard) = this.clipboard.upgrade() {
+                                    clipboard.update(cx, |clipboard, cx| {
+                                        clipboard.set_link_panel_auto_open_browser(
+                                            this.auto_open_browser,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(text_secondary)
+                            .child("点击后自动在浏览器打开"),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        Button::new("tool-settings-copy-only")
+                            .label(if self.copy_only { "✓" } else { " " })
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.copy_only = !this.copy_only;
+                                if this.copy_only {
+                                    this.auto_open_browser = false;
+                                }
+                                if let Some(clipboard) = this.clipboard.upgrade() {
+                                    clipboard.update(cx, |clipboard, cx| {
+                                        clipboard.set_link_panel_copy_only(this.copy_only, cx);
+                                    });
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(text_secondary)
+                            .child("仅复制到剪贴板"),
+                    ),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -209,12 +327,13 @@ fn open_tool_settings_window(
     card: ToolCard,
     cx: &mut Context<MainWindow>,
 ) {
-    let enabled = this
+    let (enabled, auto_hide_seconds, auto_open_browser, copy_only) = this
         .clipboard
         .upgrade()
-        .map(|application| application.read(cx).link_detector_enabled())
-        .unwrap_or_default();
-    let window_size = size(px(460.0), px(190.0));
+        .map(|application| application.read(cx).link_panel_settings())
+        .unwrap_or((false, 6, false, true));
+    let clipboard = this.clipboard.clone();
+    let window_size = size(px(460.0), px(320.0));
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.0), px(0.0)), window_size))),
@@ -237,7 +356,10 @@ fn open_tool_settings_window(
                 title: "链接识别",
                 description: "复制的内容包含网址（http/https）或存在的本地路径时，在屏幕上方浮出识别面板；点击条目复制，面板稍后自动消失。",
                 enabled,
-                toggle_clicked: false,
+                auto_hide_seconds,
+                auto_open_browser,
+                copy_only,
+                clipboard: clipboard.clone(),
             });
             cx.new(|cx| gpui_component::Root::new(body, window, cx))
         },

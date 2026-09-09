@@ -816,6 +816,22 @@ impl ClipboardApplication {
             Some((value, nxtools_ipc::unix_time_ms()));
     }
 
+    /// The panel's requested post-click action, from user settings.
+    pub(crate) fn link_panel_should_open_browser(&self) -> bool {
+        self.config.clipboard.link_panel_auto_open_browser
+            && !self.config.clipboard.link_panel_copy_only
+    }
+
+    /// Snapshot of the link panel user settings for the settings window.
+    pub(crate) fn link_panel_settings(&self) -> (bool, u64, bool, bool) {
+        (
+            self.config.clipboard.link_detector_enabled,
+            self.config.clipboard.link_panel_auto_hide_ms.saturating_div(1_000),
+            self.config.clipboard.link_panel_auto_open_browser,
+            self.config.clipboard.link_panel_copy_only,
+        )
+    }
+
     pub(crate) fn close_link_panel(&mut self, cx: &mut Context<Self>) {
         if let Some(window) = self.link_panel.window.take() {
             let _ = window.update(cx, |_, window, _| window.remove_window());
@@ -830,6 +846,7 @@ impl ClipboardApplication {
     ) {
         let application = cx.entity().downgrade();
         let platform = Rc::clone(&self.platform);
+        let link_panel_auto_hide_ms = self.config.clipboard.link_panel_auto_hide_ms;
         let panel_size = size(
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
             px(crate::tools::link_panel::link_panel_height(links.len())),
@@ -841,11 +858,13 @@ impl ClipboardApplication {
             .unwrap_or_else(|| {
                 Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0)))
             });
-        // Centered on the primary display.
+        // Horizontal center; vertical center at the 3/4 height line (the
+        // user's requested position).
         let bounds = Bounds::new(
             point(
                 screen.origin.x + (screen.size.width - panel_size.width) / 2.0,
-                screen.origin.y + (screen.size.height - panel_size.height) / 2.0,
+                screen.origin.y
+                    + (screen.size.height * 3.0 / 4.0 - panel_size.height / 2.0),
             ),
             panel_size,
         );
@@ -885,8 +904,7 @@ impl ClipboardApplication {
                         y: bounds.origin.y.to_f64() as i32,
                     },
                 ));
-                self.schedule_link_panel_hide(generation, cx);
-                return;
+                    return;
             }
             let _ = existing.update(cx, |_, window, _| window.remove_window());
             self.link_panel.window = None;
@@ -934,14 +952,15 @@ impl ClipboardApplication {
                         },
                     ));
                 }
-                let window_handle = window.window_handle();
+                let _window_handle = window.window_handle();
                 let panel = cx.new(|cx| {
                     let mut view = crate::tools::link_panel::LinkPanelView {
                         links,
                         application,
                         expanded: false,
+                        auto_hide_ms: link_panel_auto_hide_ms,
                     };
-                    view.arm_auto_hide(window_handle, cx);
+                    view.arm_auto_hide(window.window_handle(), cx);
                     view
                 });
                 cx.new(|cx| Root::new(panel, window, cx))
@@ -959,49 +978,38 @@ impl ClipboardApplication {
         self.link_panel.window_handle = *any_handle_slot.borrow();
         let generation = self.link_panel.generation.wrapping_add(1);
         self.link_panel.generation = generation;
-        self.schedule_link_panel_hide(generation, cx);
-    }
-
-    /// The auto-hide closer RETRIES: a single fire-and-forget timer left
-    /// ghost panels behind whenever its one removal attempt hit a busy
-    /// entity (the leaked popups then ate clicks and never disappeared).
-    fn schedule_link_panel_hide(&mut self, generation: u64, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            for attempt in 0..3u32 {
-                cx.background_executor()
-                    .timer(Duration::from_millis(
-                        crate::tools::link_panel::LINK_PANEL_AUTO_HIDE_MS,
-                    ))
-                    .await;
-                let closed = this
-                    .update(cx, |this, cx| {
-                        if this.link_panel.generation != generation {
-                            return true;
-                        }
-                        this.close_link_panel(cx);
-                        this.link_panel.window.is_none()
-                    })
-                    .unwrap_or(false);
-                if closed {
-                    return;
-                }
-                let _ = attempt;
-            }
-        })
-        .detach();
     }
 
     #[allow(dead_code)] // wired to the tools settings window
     pub(crate) fn set_link_detector_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.config.clipboard.link_detector_enabled == enabled {
-            return;
-        }
         self.config.clipboard.link_detector_enabled = enabled;
+        self.persist_clipboard_config(cx);
+    }
+
+    #[allow(dead_code)] // wired to the tools settings window
+    pub(crate) fn set_link_panel_auto_hide_ms(&mut self, ms: u64, cx: &mut Context<Self>) {
+        self.config.clipboard.link_panel_auto_hide_ms = ms.clamp(2_000, 60_000);
+        self.persist_clipboard_config(cx);
+    }
+
+    #[allow(dead_code)] // wired to the tools settings window
+    pub(crate) fn set_link_panel_auto_open_browser(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.config.clipboard.link_panel_auto_open_browser = enabled;
+        self.persist_clipboard_config(cx);
+    }
+
+    #[allow(dead_code)] // wired to the tools settings window
+    pub(crate) fn set_link_panel_copy_only(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.config.clipboard.link_panel_copy_only = enabled;
+        self.persist_clipboard_config(cx);
+    }
+
+    fn persist_clipboard_config(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = self.config.save_to(&self.config_path) {
-            error!(%error, "could not persist the link detector preference");
+            error!(%error, "could not persist clipboard tool preferences");
             return;
         }
-        info!(event = "tools.link_detector_preference_saved", enabled);
+        info!(event = "tools.clipboard_preferences_saved");
         cx.notify();
     }
 

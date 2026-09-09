@@ -607,6 +607,12 @@ pub struct ClipboardSettings {
     pub capture_files: bool,
     #[serde(default = "default_true")]
     pub link_detector_enabled: bool,
+    #[serde(default = "default_link_panel_auto_hide_ms")]
+    pub link_panel_auto_hide_ms: u64,
+    #[serde(default)]
+    pub link_panel_auto_open_browser: bool,
+    #[serde(default = "default_true")]
+    pub link_panel_copy_only: bool,
     #[serde(default)]
     pub hotkey: ClipboardHotKey,
     #[serde(default = "default_clipboard_max_items")]
@@ -628,6 +634,9 @@ impl Default for ClipboardSettings {
             capture_images: true,
             capture_files: true,
             link_detector_enabled: true,
+            link_panel_auto_hide_ms: 6_000,
+            link_panel_auto_open_browser: false,
+            link_panel_copy_only: true,
             hotkey: ClipboardHotKey::default(),
             max_items: default_clipboard_max_items(),
             retention_days: default_clipboard_retention_days(),
@@ -738,6 +747,10 @@ pub fn clipboard_image_paste_profile(process_name: &str) -> ClipboardImagePasteP
     } else {
         ClipboardImagePasteProfile::NativeImage
     }
+}
+
+fn default_link_panel_auto_hide_ms() -> u64 {
+    6_000
 }
 
 fn default_clipboard_max_items() -> usize {
