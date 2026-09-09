@@ -23,6 +23,7 @@ pub(crate) const fn link_panel_height(rows: usize) -> f32 {
 #[derive(Default)]
 pub(crate) struct LinkPanelSession {
     pub(crate) window: Option<AnyWindowHandle>,
+    pub(crate) window_handle: Option<AnyWindowHandle>,
     pub(crate) native_window_handle: i64,
     pub(crate) generation: u64,
     pub(crate) last_fingerprint: Option<(bool, String)>,
@@ -36,10 +37,37 @@ pub(crate) struct LinkPanelView {
 }
 
 impl LinkPanelView {
-    /// Restages the reused panel window with a fresh capture's links.
-    pub(crate) fn swap_links(&mut self, links: Vec<DetectedLinkRow>) {
+    /// Restages the reused panel window with a fresh capture's links and
+    /// re-arms the window-scoped auto-hide.
+    pub(crate) fn swap_links(
+        &mut self,
+        links: Vec<DetectedLinkRow>,
+        window_handle: AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
         self.links = links;
         self.expanded = false;
+        self.arm_auto_hide(window_handle, cx);
+    }
+
+    /// The window closes ITSELF after the dwell time. Every app-side close
+    /// went through an entity update; when the stored handle went stale the
+    /// removal silently failed and the visible window leaked forever — the
+    /// reported "never disappears". A window-scoped timer needs no entity.
+    /// Arms the window-scoped auto-hide. The handle must come from the
+    /// owning Window (Context cannot reach it), so construction sites pass
+    /// it in.
+    pub(crate) fn arm_auto_hide(&mut self, window_handle: AnyWindowHandle, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(LINK_PANEL_AUTO_HIDE_MS))
+                .await;
+            // Closing through the captured handle is immune to stale
+            // app-entity state, which is what leaked windows before.
+            let _ = window_handle.update(cx, |_, window, _| window.remove_window());
+            let _ = this;
+        })
+        .detach();
     }
 }
 

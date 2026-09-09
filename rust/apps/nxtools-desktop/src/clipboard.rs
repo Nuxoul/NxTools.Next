@@ -824,10 +824,13 @@ impl ClipboardApplication {
             .unwrap_or_else(|| {
                 Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0)))
             });
+        // Horizontal center; vertical center sits at the upper quarter of
+        // the screen (the user's requested 中上 3/4 position).
         let bounds = Bounds::new(
             point(
                 screen.origin.x + (screen.size.width - panel_size.width) / 2.0,
-                screen.origin.y + (screen.size.height - panel_size.height) / 2.0,
+                screen.origin.y
+                    + (screen.size.height * 0.25 - panel_size.height / 2.0),
             ),
             panel_size,
         );
@@ -837,11 +840,12 @@ impl ClipboardApplication {
         // window per capture leaked a ghost per copy — stale stacked popups
         // ate every click and none ever closed.
         if let Some(existing) = self.link_panel.window {
+            let window_handle_for_swap = self.link_panel.window_handle;
             if existing
                 .update(cx, |view, window, cx| {
                     match view.downcast::<crate::tools::link_panel::LinkPanelView>() {
                         Ok(view) => {
-                            view.update(cx, |view, _cx| view.swap_links(links.clone()));
+                            view.update(cx, |view, cx| view.swap_links(links.clone(), window_handle_for_swap.unwrap(), cx));
                         }
                         Err(_) => {
                             window.remove_window();
@@ -868,6 +872,8 @@ impl ClipboardApplication {
         }
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
+        let any_handle_slot = Rc::new(RefCell::new(None));
+        let opened_any_handle_slot = Rc::clone(&any_handle_slot);
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -888,6 +894,7 @@ impl ClipboardApplication {
             move |window, cx| {
                 let handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = handle;
+                *opened_any_handle_slot.borrow_mut() = Some(window.window_handle());
                 // PopUp windows are not topmost by default; the panel must
                 // float above every app window while it's visible.
                 if handle != 0 {
@@ -906,12 +913,15 @@ impl ClipboardApplication {
                         },
                     ));
                 }
-                let panel = cx.new(|_| {
-                    crate::tools::link_panel::LinkPanelView {
+                let window_handle = window.window_handle();
+                let panel = cx.new(|cx| {
+                    let mut view = crate::tools::link_panel::LinkPanelView {
                         links,
                         application,
                         expanded: false,
-                    }
+                    };
+                    view.arm_auto_hide(window_handle, cx);
+                    view
                 });
                 cx.new(|cx| Root::new(panel, window, cx))
             },
@@ -925,6 +935,7 @@ impl ClipboardApplication {
         };
         self.link_panel.native_window_handle = *native_slot.borrow();
         self.link_panel.window = Some(window.into());
+        self.link_panel.window_handle = any_handle_slot.borrow().clone();
         let generation = self.link_panel.generation.wrapping_add(1);
         self.link_panel.generation = generation;
         self.schedule_link_panel_hide(generation, cx);
