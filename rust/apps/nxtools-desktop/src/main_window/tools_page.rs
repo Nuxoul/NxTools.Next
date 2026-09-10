@@ -315,9 +315,24 @@ impl Render for ToolSettingsWindowBody {
             .child(div().flex_1())
             .child(
                 div()
-                    .text_size(px(10.0))
-                    .text_color(text_muted)
-                    .child("其他工具 / 链接识别"),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(text_muted)
+                            .child("其他工具 / 链接识别"),
+                    )
+                    .child(
+                        Button::new("tool-settings-close")
+                            .label("关闭")
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(|_this, _event, window, _cx| {
+                                window.remove_window();
+                            })),
+                    ),
             )
     }
 }

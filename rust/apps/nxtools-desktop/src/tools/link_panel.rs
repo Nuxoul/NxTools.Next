@@ -16,6 +16,7 @@ const LINK_PANEL_ROW_HEIGHT: f32 = 30.0;
 const LINK_PANEL_VERTICAL_PADDING: f32 = 12.0;
 
 pub(crate) const fn link_panel_height(rows: usize) -> f32 {
+    // +1 row slot for the expander when multiple links collapse the panel.
     LINK_PANEL_VERTICAL_PADDING * 2.0 + rows as f32 * LINK_PANEL_ROW_HEIGHT
 }
 
@@ -37,6 +38,7 @@ pub(crate) struct LinkPanelView {
     pub(crate) application: WeakEntity<ClipboardApplication>,
     pub(crate) expanded: bool,
     pub(crate) auto_hide_ms: u64,
+    pub(crate) window_handle: Option<AnyWindowHandle>,
 }
 
 impl LinkPanelView {
@@ -198,6 +200,16 @@ impl Render for LinkPanelView {
                     .hover(move |style| style.bg(rgb(0x3f3f46)))
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.expanded = true;
+                        // Grow the window to fit every row plus the footer.
+                        if let Some(handle) = this.window_handle {
+                            let new_height = link_panel_height(this.links.len())
+                                + 22.0; // footer
+                            let _ = handle.update(cx, |_, window, _| {
+                                let mut bounds = window.window_bounds().get_bounds();
+                                bounds.size.height = px(new_height);
+                                window.resize(bounds.size);
+                            });
+                        }
                         cx.notify();
                     }))
                     .child(format!(

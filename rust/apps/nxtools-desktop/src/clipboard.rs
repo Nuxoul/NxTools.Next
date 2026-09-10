@@ -960,15 +960,16 @@ impl ClipboardApplication {
                         },
                     ));
                 }
-                let _window_handle = window.window_handle();
+                let window_handle = window.window_handle();
                 let panel = cx.new(|cx| {
                     let mut view = crate::tools::link_panel::LinkPanelView {
                         links,
                         application,
                         expanded: false,
                         auto_hide_ms: link_panel_auto_hide_ms,
+                        window_handle: Some(window_handle),
                     };
-                    view.arm_auto_hide(window.window_handle(), cx);
+                    view.arm_auto_hide(window_handle, cx);
                     view
                 });
                 cx.new(|cx| Root::new(panel, window, cx))
