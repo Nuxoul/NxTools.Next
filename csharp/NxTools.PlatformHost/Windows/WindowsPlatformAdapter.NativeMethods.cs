@@ -67,7 +67,30 @@ internal sealed partial class WindowsPlatformAdapter
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool AddClipboardFormatListener(IntPtr window);
 
-                [DllImport("dwmapi.dll")]
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr processId);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct GUITHREADINFO
+        {
+            public uint cbSize;
+            public uint flags;
+            public IntPtr hwndActive;
+            public IntPtr hwndCapture;
+            public IntPtr hwndMenuOwner;
+            public IntPtr hwndMoveSize;
+            public IntPtr hwndCaret;
+            public NativeWindowRectangle rcCaret;
+        }
+
+        private const uint GUI_INMOVESIZE = 0x00000002;
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetGUIThreadInfo(uint threadId, ref GUITHREADINFO info);
+
+        [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(
             IntPtr hwnd,
             int attribute,
@@ -136,14 +159,14 @@ internal sealed partial class WindowsPlatformAdapter
         private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
-        private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+        internal static extern IntPtr GetAncestor(IntPtr window, uint flags);
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKey);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetWindowPos(
+        internal static extern bool SetWindowPos(
             IntPtr window,
             IntPtr insertAfter,
             int x,
@@ -662,19 +685,60 @@ internal sealed partial class WindowsPlatformAdapter
                 return failure ?? new WindowsCommandResult(false, "The window rectangle is unavailable.");
             }
             var (x, y, outerWidth, outerHeight) = applied.Value;
-            return SetWindowPos(
+            var appliedOk = SetWindowPos(
                 window,
                 IntPtr.Zero,
                 x,
                 y,
                 outerWidth,
                 outerHeight,
-                SwpNoZOrder | SwpNoActivate)
+                SwpNoZOrder | SwpNoActivate);
+            // A drag/size modal loop swallows SetWindowPos (the classic
+            // lost-resize): park the rect; WM_EXITSIZEMOVE re-applies it.
+            if (appliedOk && IsDraggingOrSizing(window))
+            {
+                PendingCenteredResizes[GetAncestorOrSelf(window)] =
+                    (x, y, outerWidth, outerHeight);
+            }
+            return appliedOk
                 ? new WindowsCommandResult(true)
                 : new WindowsCommandResult(
                     false,
                     $"SetWindowPos(centered) failed with Win32={Marshal.GetLastWin32Error()}.");
         }
+
+        internal static IntPtr GetAncestorOrSelf(IntPtr window)
+        {
+            var root = GetAncestor(window, 2 /* GA_ROOT */);
+            return root == IntPtr.Zero ? window : root;
+        }
+
+        internal static bool IsDraggingOrSizing(IntPtr window)
+        {
+            var threadId = GetWindowThreadProcessId(window, IntPtr.Zero);
+            var info = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
+            return GetGUIThreadInfo(threadId, ref info)
+                && (info.flags & GUI_INMOVESIZE) != 0;
+        }
+
+        internal static void ReapplyPendingCenteredResizeFor(IntPtr rootWindow)
+        {
+            if (PendingCenteredResizes.TryRemove(rootWindow, out var rect))
+            {
+                _ = SetWindowPos(
+                    rootWindow,
+                    IntPtr.Zero,
+                    rect.X,
+                    rect.Y,
+                    rect.Width,
+                    rect.Height,
+                    SwpNoZOrder | SwpNoActivate);
+            }
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+            IntPtr,
+            (int X, int Y, int Width, int Height)> PendingCenteredResizes = new();
 
         /// <summary>
         /// Places the window centered over the anchor window's real rectangle,

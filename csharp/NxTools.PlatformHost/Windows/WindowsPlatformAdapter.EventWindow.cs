@@ -15,6 +15,7 @@ internal sealed partial class WindowsPlatformAdapter
     private sealed class EventWindow : NativeWindow, IWindowsPasteOperations
     {
         private const int WmClipboardUpdate = 0x031D;
+        private const int WmExitSizeMove = 0x0232;
         private const int WmHotKey = 0x0312;
         private const int WmClose = 0x0010;
         private const int WmTimer = 0x0113;
@@ -91,6 +92,10 @@ internal sealed partial class WindowsPlatformAdapter
         private ForegroundContext? _pendingClipboardSource;
         private Task _capturePublishTail = Task.CompletedTask;
         private int _clipboardReadAttempts;
+        // A centered resize requested while the window is inside a drag/size
+        // modal loop: SetWindowPos is swallowed (or misapplied) during the
+        // loop, so it is remembered and re-applied on WM_EXITSIZEMOVE.
+        private (int X, int Y, int Width, int Height)? _pendingCenteredResize;
         private bool _suppressNextClipboardUpdate;
         private bool _primaryPointerDown;
         private bool _secondaryPointerDown;
@@ -364,6 +369,10 @@ internal sealed partial class WindowsPlatformAdapter
         {
             switch (message.Msg)
             {
+                case WmExitSizeMove:
+                    var rootWindow = NativeMethods.GetAncestor(Handle, 2 /* GA_ROOT */);
+                    WindowsPlatformAdapter.ReapplyPendingCenteredResizeFor(rootWindow);
+                    return;
                 case WmClipboardUpdate:
                     if (_suppressNextClipboardUpdate)
                     {
@@ -1547,6 +1556,27 @@ internal sealed partial class WindowsPlatformAdapter
         {
             _leftControlDoubleTap.Reset();
             _rightControlDoubleTap.Reset();
+        }
+
+        /// Re-applies a centered resize that was swallowed by a drag/size
+        /// modal loop (the confirmed-download window grow during a drag).
+        public void ReapplyPendingCenteredResize()
+        {
+            var pending = _pendingCenteredResize;
+            if (pending is null)
+            {
+                return;
+            }
+            _pendingCenteredResize = null;
+            var (x, y, width, height) = pending.Value;
+            _ = NativeMethods.SetWindowPos(
+                Handle,
+                IntPtr.Zero,
+                x,
+                y,
+                width,
+                height,
+                0x0004 | 0x0010); // SWP_NOZORDER | SWP_NOACTIVATE
         }
 
         private void DrainPasteRequests()

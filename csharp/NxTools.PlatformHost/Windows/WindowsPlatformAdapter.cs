@@ -189,6 +189,9 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         NativeMethods.SetWindowShadow(
             new IntPtr(command.WindowHandle),
             command.Enabled);
+
+    internal static void ReapplyPendingCenteredResizeFor(IntPtr rootWindow) =>
+        NativeMethods.ReapplyPendingCenteredResizeFor(rootWindow);
     public WindowsCommandResult SetWindowNoActivate(SetWindowNoActivateCommand command) =>
         NativeMethods.SetWindowNoActivate(new IntPtr(command.WindowHandle), command.Enabled);
 
