@@ -142,6 +142,11 @@ impl Render for LinkPanelView {
                                         format!("https://{}", copy_value)
                                     };
                                     use std::os::windows::process::CommandExt as _;
+                                    tracing::info!(
+                                        event = "tools.link_panel.browser_opened",
+                                        %url,
+                                        "opening the clicked link in the browser"
+                                    );
                                     let _ = std::process::Command::new("cmd")
                                         .args(["/C", "start", "", &url])
                                         .creation_flags(0x0800_0000)
