@@ -133,10 +133,14 @@ impl Render for LinkPanelView {
                         // raises a fresh capture; if the panel is still open
                         // the echo capture restages it and the click looks
                         // like a no-op.
+                        // Close via the window's own remove_window: bouncing
+                        // through the app entity re-enters THIS window's update
+                        // context, which errors and left the panel on screen.
+                        window.remove_window();
                         if let Some(application) = application.upgrade() {
-                            application.update(cx, |application, cx| {
+                            application.update(cx, |application, _cx| {
                                 application.note_panel_copied(copy_value.clone());
-                                application.close_link_panel(cx);
+                                application.forget_link_panel();
                                 if application.link_panel_should_open_browser() {
                                     let url = if copy_value.contains("://") {
                                         copy_value.clone()
@@ -155,11 +159,6 @@ impl Render for LinkPanelView {
                                         .spawn();
                                 }
                             });
-                        } else {
-                            tracing::warn!(
-                                event = "tools.link_panel.app_gone",
-                                "clipboard application entity unavailable at click"
-                            );
                         }
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                             copy_value.clone(),

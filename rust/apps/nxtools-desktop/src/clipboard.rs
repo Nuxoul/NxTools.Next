@@ -816,6 +816,14 @@ impl ClipboardApplication {
             Some((value, nxtools_ipc::unix_time_ms()));
     }
 
+    /// Clears panel session state after the window removed itself. The
+    /// window-side close must not bounce through close_link_panel: updating
+    /// this same window re-entrantly errors and left the panel on screen.
+    pub(crate) fn forget_link_panel(&mut self) {
+        self.link_panel.window = None;
+        self.link_panel.generation += 1;
+    }
+
     /// The panel's requested post-click action, from user settings.
     pub(crate) fn link_panel_should_open_browser(&self) -> bool {
         self.config.clipboard.link_panel_auto_open_browser
@@ -832,19 +840,6 @@ impl ClipboardApplication {
         )
     }
 
-    pub(crate) fn close_link_panel(&mut self, cx: &mut Context<Self>) {
-        if let Some(window) = self.link_panel.window.take() {
-            let closed = window
-                .update(cx, |_, window, _| window.remove_window())
-                .is_ok();
-            tracing::info!(
-                event = "tools.link_panel.close_requested",
-                closed,
-                "link panel close requested"
-            );
-        }
-        self.link_panel.generation += 1;
-    }
 
     pub(crate) fn show_link_panel(
         &mut self,
