@@ -372,6 +372,11 @@ internal sealed partial class WindowsPlatformAdapter
                 case WmExitSizeMove:
                     var rootWindow = NativeMethods.GetAncestor(Handle, 2 /* GA_ROOT */);
                     WindowsPlatformAdapter.ReapplyPendingCenteredResizeFor(rootWindow);
+                    break;
+                case WmTimer when message.WParam.ToInt64() == NativeMethods.CenteredResizeRetryTimerId:
+                    NativeMethods.KillTimer(Handle, NativeMethods.CenteredResizeRetryTimerId);
+                    var retryRoot = NativeMethods.GetAncestor(Handle, 2 /* GA_ROOT */);
+                    WindowsPlatformAdapter.RetryPendingCenteredResize(retryRoot);
                     return;
                 case WmClipboardUpdate:
                     if (_suppressNextClipboardUpdate)

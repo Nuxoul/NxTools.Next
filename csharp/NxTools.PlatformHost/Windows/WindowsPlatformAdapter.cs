@@ -192,6 +192,9 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     internal static void ReapplyPendingCenteredResizeFor(IntPtr rootWindow) =>
         NativeMethods.ReapplyPendingCenteredResizeFor(rootWindow);
+
+    internal static void RetryPendingCenteredResize(IntPtr rootWindow) =>
+        NativeMethods.RetryPendingCenteredResize(rootWindow);
     public WindowsCommandResult SetWindowNoActivate(SetWindowNoActivateCommand command) =>
         NativeMethods.SetWindowNoActivate(new IntPtr(command.WindowHandle), command.Enabled);
 

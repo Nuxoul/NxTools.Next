@@ -695,10 +695,17 @@ internal sealed partial class WindowsPlatformAdapter
                 SwpNoZOrder | SwpNoActivate);
             // A drag/size modal loop swallows SetWindowPos (the classic
             // lost-resize): park the rect; WM_EXITSIZEMOVE re-applies it.
-            if (appliedOk && IsDraggingOrSizing(window))
+            if (!AppliedSizeTookEffect(window, x, y, outerWidth, outerHeight)
+                || IsDraggingOrSizing(window))
             {
                 PendingCenteredResizes[GetAncestorOrSelf(window)] =
                     (x, y, outerWidth, outerHeight);
+                StartCenteredResizeRetry(GetAncestorOrSelf(window));
+                _ = SetTimer(
+                    GetAncestorOrSelf(window),
+                    CenteredResizeRetryTimerId,
+                    CenteredResizeRetryMs,
+                    IntPtr.Zero);
             }
             return appliedOk
                 ? new WindowsCommandResult(true)
@@ -707,6 +714,49 @@ internal sealed partial class WindowsPlatformAdapter
                     $"SetWindowPos(centered) failed with Win32={Marshal.GetLastWin32Error()}.");
         }
 
+        internal const int CenteredResizeRetryTimerId = 0x4E52;
+        private const int CenteredResizeRetryMs = 250;
+
+        internal static void StartCenteredResizeRetry(IntPtr rootWindow)
+        {
+            _ = SetTimer(
+                rootWindow,
+                new UIntPtr((uint)CenteredResizeRetryTimerId),
+                CenteredResizeRetryMs,
+                IntPtr.Zero);
+        }
+
+        internal static void RetryPendingCenteredResize(IntPtr rootWindow)
+        {
+            if (PendingCenteredResizes.TryRemove(rootWindow, out var rect))
+            {
+                _ = SetWindowPos(
+                    rootWindow,
+                    IntPtr.Zero,
+                    rect.X,
+                    rect.Y,
+                    rect.Width,
+                    rect.Height,
+                    SwpNoZOrder | SwpNoActivate);
+            }
+        }
+
+        private static bool AppliedSizeTookEffect(
+            IntPtr window,
+            int x,
+            int y,
+            int width,
+            int height)
+        {
+            if (!AnchoredWindowPlacement.TryGetWindowRectangle(window, out var rect))
+            {
+                return false;
+            }
+            return Math.Abs(rect.Left - x) <= 2
+                && Math.Abs(rect.Top - y) <= 2
+                && Math.Abs(rect.Right - rect.Left - width) <= 2
+                && Math.Abs(rect.Bottom - rect.Top - height) <= 2;
+        }
         internal static IntPtr GetAncestorOrSelf(IntPtr window)
         {
             var root = GetAncestor(window, 2 /* GA_ROOT */);
