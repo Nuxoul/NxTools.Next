@@ -31,7 +31,7 @@ use nxtools_protocol::{
     ConfigureClipboardCommand, ForegroundContext, OpenShellTargetCommand, PasteFilesCommand,
     PasteImageCommand, PasteNativeFormatsCommand, PasteTextCommand,
     PickClipboardArchivePathCommand, PickClipboardStorageDirectoryCommand, PlatformCommand,
-    PlatformEvent, SetClipboardHotKeyRecordingCommand, SetWindowPositionCommand,
+    PlatformEvent, SetClipboardHotKeyRecordingCommand, SetWindowBoundsCommand, SetWindowPositionCommand,
     SetWindowShadowCommand, SetWindowTopmostCommand, SetWindowVisibilityCommand, ShellOpenAction,
 };
 use sha2::{Digest, Sha256};
@@ -910,6 +910,18 @@ impl ClipboardApplication {
                         window_handle: self.link_panel.native_window_handle,
                         x: bounds.origin.x.to_f64() as i32,
                         y: bounds.origin.y.to_f64() as i32,
+                    },
+                ));
+                // The reused window keeps its OLD size from the previous
+                // capture; resize it to match the new capture's collapsed
+                // height, otherwise dead empty space sits below the footer.
+                let _ = platform.send_command(PlatformCommand::SetWindowBounds(
+                    SetWindowBoundsCommand {
+                        window_handle: self.link_panel.native_window_handle,
+                        x: bounds.origin.x.to_f64() as i32,
+                        y: bounds.origin.y.to_f64() as i32,
+                        width: panel_size.width.to_f64() as i32,
+                        height: panel_size.height.to_f64() as i32,
                     },
                 ));
                     return;
