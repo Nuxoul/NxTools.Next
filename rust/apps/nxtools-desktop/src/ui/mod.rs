@@ -55,7 +55,10 @@ const CATEGORY_HORIZONTAL_PADDING: f32 = 14.0;
 const CATEGORY_TEXT_CELL_WIDTH: f32 = 7.0;
 const PANEL_CONTENT_INSET: f32 = 8.0;
 const PANEL_SECTION_GAP: f32 = 6.0;
-const POPUP_OPEN_GRACE: Duration = Duration::from_millis(180);
+// 180 ms lost the race against the OS returning focus to the summoning
+// app after a hotkey summon: the foreground-changed dismissal fired before
+// the user could move the mouse in, so the panel opened and instantly hid.
+const POPUP_OPEN_GRACE: Duration = Duration::from_millis(900);
 const HISTORY_PAGE_PREFETCH_ITEMS: usize = 8;
 const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;
 

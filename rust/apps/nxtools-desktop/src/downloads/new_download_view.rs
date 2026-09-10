@@ -1,4 +1,5 @@
 use super::*;
+use nxtools_protocol::SetWindowBoundsCenteredCommand;
 
 /// Translates raw engine failure text into guidance the user can act on.
 /// The engine strings stay canonical for logs; only the surfaced message is
@@ -463,6 +464,10 @@ impl NewDownloadView {
         let engine = self.application.read(cx).engine.clone();
         let background = cx.background_executor().clone();
         let source_window = window.window_handle();
+        let platform_for_resize = self
+            .application
+            .read(cx)
+            .platform_bridge();
         cx.spawn(async move |this, cx| {
             let request_for_probe = request.clone();
             let outcome = background
@@ -559,7 +564,26 @@ impl NewDownloadView {
                             input.set_value(resolved_file_name, window, cx);
                         });
                     }
-                    window.resize(window_size);
+                    // Resize through the native centered command: gpui's own
+                    // resize uses the stale-cached origin and misplaces or
+                    // clips the window when the user dragged it mid-probe.
+                    if let Some(handle) = crate::ui::native_window_handle(window) {
+                        let _ = platform_for_resize.send_command(
+                            PlatformCommand::SetWindowBoundsCentered(
+                                SetWindowBoundsCenteredCommand {
+                                    window_handle: handle,
+                                    width: (window_size.width.as_f32()
+                                        * window.scale_factor())
+                                    .round() as i32,
+                                    height: (window_size.height.as_f32()
+                                        * window.scale_factor())
+                                    .round() as i32,
+                                },
+                            ),
+                        );
+                    } else {
+                        window.resize(window_size);
+                    }
                 });
             }
         })

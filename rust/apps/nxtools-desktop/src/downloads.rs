@@ -1512,6 +1512,10 @@ impl DownloadApplication {
         self.config.download.double_click_action
     }
 
+    pub(crate) fn platform_bridge(&self) -> Rc<PlatformBridge> {
+        Rc::clone(&self.platform)
+    }
+
     pub(crate) fn task_list_sort(&self) -> (Option<String>, Option<bool>) {
         (
             self.config.download.task_list_sort.clone(),
