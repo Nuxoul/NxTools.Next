@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/nxtools-download/backend/index.md", "reason": "Download engine snapshot/detail ownership and backend contract"}
+{"file": ".trellis/spec/nxtools-download-ipc/backend/index.md", "reason": "Typed IPC snapshot/detail transport boundary"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Snapshot data flow across engine, IPC, desktop, and CLI"}
