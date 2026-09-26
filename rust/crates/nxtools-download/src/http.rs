@@ -2147,7 +2147,11 @@ impl HttpDownloadError {
     pub(crate) fn is_retryable_transfer(&self) -> bool {
         match self {
             Self::Client(error) => {
-                error.is_timeout() || error.is_connect() || error.is_body() || error.is_request()
+                error.is_timeout()
+                    || error.is_connect()
+                    || error.is_body()
+                    || error.is_request()
+                    || error.is_decode()
             }
             Self::NetworkPolicy(_) => false,
             Self::Status(status) | Self::RangeNotHonored { status } => {

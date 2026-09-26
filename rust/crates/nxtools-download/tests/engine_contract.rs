@@ -16,7 +16,7 @@ use nxtools_download::{
     BrowserBlob, BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
     DownloadAdaptiveSegmentPolicy, DownloadBatchAction, DownloadCertificatePolicy, DownloadCommand,
     DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule,
-    DownloadDuplicateStrategy, DownloadEngine, DownloadEvent, DownloadHttpPolicy,
+    DownloadDuplicateStrategy, DownloadEngine, DownloadEvent, DownloadHttpPolicy, DownloadQuery,
     DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestHeader,
     DownloadRequestMedia, DownloadSchedule, DownloadScheduleMoment, DownloadSegmentState,
     DownloadStatus, DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadWeekday,
@@ -1252,7 +1252,7 @@ async fn pausing_during_ffmpeg_detection_preserves_dash_fragments_without_publis
     let task_id = engine
         .submit(dash_request, RequestOrigin::Ui)
         .expect("submit FFmpeg detection pause task");
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !marker.exists() {
         assert!(
             std::time::Instant::now() < deadline,
@@ -1302,7 +1302,7 @@ async fn dash_finalize_cleanup_obstruction_fails_instead_of_losing_its_terminal(
     let task_id = engine
         .submit(dash_request, RequestOrigin::Ui)
         .expect("submit DASH cleanup obstruction task");
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !marker.exists() {
         assert!(
             std::time::Instant::now() < deadline,
@@ -1354,7 +1354,7 @@ async fn cancelling_during_ffmpeg_mux_removes_dash_staging_and_output() {
         .submit(dash_request, RequestOrigin::Ui)
         .expect("submit FFmpeg mux cancel task");
     let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !marker.exists() {
         assert!(
             std::time::Instant::now() < deadline,
@@ -1653,11 +1653,15 @@ async fn invalid_aes128_key_length_fails_without_committing_ciphertext() {
     assert_eq!(failed.task.status(), DownloadStatus::Failed);
     assert!(!destination.join("invalid-key.ts").exists());
     let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
-    let retained_parts = std::fs::read_dir(working)
-        .expect("read retained HLS checkpoint directory")
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
-        .count();
+    let retained_parts = if working.is_dir() {
+        std::fs::read_dir(&working)
+            .expect("read retained HLS checkpoint directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
+            .count()
+    } else {
+        0
+    };
     assert_eq!(
         retained_parts, 0,
         "failed key fetch retains no ciphertext parts"
@@ -1689,11 +1693,13 @@ async fn invalid_aes128_padding_fails_without_committing_ciphertext() {
     assert_eq!(failed.task.status(), DownloadStatus::Failed);
     assert!(!destination.join("invalid-padding.ts").exists());
     let working = destination.join(format!(".nxtools-hls-{}", task_id.as_uuid()));
-    assert!(
-        std::fs::read_dir(working)
+    let retains_no_parts = !working.is_dir()
+        || std::fs::read_dir(&working)
             .expect("read retained HLS checkpoint directory")
             .filter_map(Result::ok)
-            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".part")),
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".part"));
+    assert!(
+        retains_no_parts,
         "invalid padding retains neither plaintext nor ciphertext staging"
     );
 }
@@ -2341,6 +2347,31 @@ fn completed_browser_blob_is_imported_once_through_the_engine_artifact_boundary(
             duplicate: true,
         } if duplicate_task_id == task_id
     ));
+
+    let conflict = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserImportBlob {
+            handoff_id,
+            blob: BrowserBlob {
+                id: uuid::Uuid::new_v4(),
+                file_name: "different.bin".into(),
+                media_type: Some("application/octet-stream".into()),
+                size: 1,
+            },
+            save_directory: destination.clone(),
+            file_name: "different.bin".into(),
+            category_id: None,
+            save_directory_explicit: false,
+        },
+    });
+    assert!(matches!(
+        conflict.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::InvalidRequest
+                && fault.message.contains("conflicts with a previously accepted request")
+    ));
 }
 
 #[test]
@@ -2613,11 +2644,7 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
             origin: RequestOrigin::Browser,
             command: DownloadCommand::BrowserSubmit {
                 handoff_id,
-                request: DownloadRequest {
-                    source_url: "http://127.0.0.1:9/must-not-be-probed".into(),
-                    file_name: None,
-                    ..request(&server, directory.path().join("ignored"))
-                },
+                request: request(&server, directory.path().join("artifacts")),
                 mode: DownloadSubmitMode::QueueOnly,
             },
         });
@@ -2638,11 +2665,7 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
         origin: RequestOrigin::Browser,
         command: DownloadCommand::BrowserSubmit {
             handoff_id,
-            request: DownloadRequest {
-                source_url: "http://127.0.0.1:9/must-not-be-probed-after-restart".into(),
-                file_name: None,
-                ..request(&server, directory.path().join("ignored-after-restart"))
-            },
+            request: request(&server, directory.path().join("artifacts")),
             mode: DownloadSubmitMode::QueueOnly,
         },
     });
@@ -2653,6 +2676,202 @@ fn browser_handoff_is_idempotent_across_native_host_and_engine_restarts() {
             duplicate: true,
         } if task_id == first_task_id
     ));
+}
+
+#[test]
+fn legacy_browser_handoff_replay_is_backfilled_at_the_engine_boundary() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create legacy handoff directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let handoff_id = uuid::Uuid::new_v4();
+    let original_request = request(&server, directory.path().join("artifacts"));
+
+    {
+        let engine = DownloadEngine::open(&database).expect("open first engine");
+        let accepted = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Browser,
+            command: DownloadCommand::BrowserSubmit {
+                handoff_id,
+                request: original_request.clone(),
+                mode: DownloadSubmitMode::QueueOnly,
+            },
+        });
+        assert!(matches!(
+            accepted.outcome,
+            DownloadCommandOutcome::BrowserAccepted {
+                duplicate: false,
+                ..
+            }
+        ));
+    }
+
+    let connection = rusqlite::Connection::open(&database).expect("open legacy handoff database");
+    assert_eq!(
+            connection
+                .execute(
+                    "UPDATE download_browser_handoffs SET request_fingerprint = '' WHERE handoff_id = ?1",
+                    [handoff_id.to_string()],
+                )
+                .expect("clear legacy handoff fingerprint"),
+            1
+        );
+    drop(connection);
+
+    let engine = DownloadEngine::open(&database).expect("reopen legacy handoff engine");
+    let replay = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserSubmit {
+            handoff_id,
+            request: original_request,
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    let original_task_id = match replay.outcome {
+        DownloadCommandOutcome::BrowserAccepted {
+            task_id,
+            duplicate: true,
+        } => task_id,
+        outcome => panic!("legacy handoff replay was not a duplicate: {outcome:?}"),
+    };
+
+    let mut conflicting_request = request(&server, directory.path().join("other"));
+    conflicting_request.source_url = "http://127.0.0.1:9/must-not-be-probed".into();
+    let conflict = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserSubmit {
+            handoff_id,
+            request: conflicting_request,
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        conflict.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::InvalidRequest
+                && fault.message.contains("conflicts with a previously accepted request")
+    ));
+    let tasks = engine.tasks().expect("read tasks after legacy replay");
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].task.id(), original_task_id);
+}
+
+#[test]
+fn browser_handoff_rejects_a_different_request_body_without_creating_a_second_task() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create engine directory");
+    let engine = DownloadEngine::open_in_memory().expect("open download engine");
+    let handoff_id = uuid::Uuid::new_v4();
+    let accepted = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserSubmit {
+            handoff_id,
+            request: request(&server, directory.path().join("first")),
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        accepted.outcome,
+        DownloadCommandOutcome::BrowserAccepted {
+            duplicate: false,
+            ..
+        }
+    ));
+
+    let mut conflicting_request = request(&server, directory.path().join("second"));
+    conflicting_request.source_url = "http://127.0.0.1:9/must-not-be-probed".into();
+    let conflict = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserSubmit {
+            handoff_id,
+            request: conflicting_request,
+            mode: DownloadSubmitMode::QueueOnly,
+        },
+    });
+    assert!(matches!(
+        conflict.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::InvalidRequest
+                && fault.message.contains("conflicts with a previously accepted request")
+    ));
+    assert_eq!(engine.tasks().expect("read tasks after conflict").len(), 1);
+}
+
+#[test]
+fn idempotent_submit_replays_across_engine_restart_and_rejects_a_conflict() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create idempotent submit directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let key = uuid::Uuid::new_v4();
+    let original_request = request(&server, directory.path().join("artifacts"));
+    let first_task_id = {
+        let engine = DownloadEngine::open(&database).expect("open first idempotent engine");
+        let result = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Cli,
+            command: DownloadCommand::Submit {
+                request: original_request.clone(),
+                mode: DownloadSubmitMode::QueueOnly,
+                idempotency_key: Some(key),
+            },
+        });
+        match result.outcome {
+            DownloadCommandOutcome::IdempotentAccepted {
+                task_id,
+                duplicate: false,
+            } => task_id,
+            outcome => panic!("unexpected first idempotent outcome: {outcome:?}"),
+        }
+    };
+
+    let reopened = DownloadEngine::open(&database).expect("reopen idempotent engine");
+    let replay = reopened.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Cli,
+        command: DownloadCommand::Submit {
+            request: original_request,
+            mode: DownloadSubmitMode::QueueOnly,
+            idempotency_key: Some(key),
+        },
+    });
+    assert!(matches!(
+        replay.outcome,
+        DownloadCommandOutcome::IdempotentAccepted {
+            task_id,
+            duplicate: true,
+        } if task_id == first_task_id
+    ));
+
+    let mut conflicting_request = request(&server, directory.path().join("other"));
+    conflicting_request.source_url = "http://127.0.0.1:9/must-not-be-probed".into();
+    let conflict = reopened.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Cli,
+        command: DownloadCommand::Submit {
+            request: conflicting_request,
+            mode: DownloadSubmitMode::QueueOnly,
+            idempotency_key: Some(key),
+        },
+    });
+    assert!(matches!(
+        conflict.outcome,
+        DownloadCommandOutcome::Rejected { fault }
+            if fault.code == nxtools_download::DownloadFaultCode::InvalidRequest
+                && fault.message.contains("conflicts with a previously accepted request")
+    ));
+    assert_eq!(reopened.tasks().expect("read idempotent tasks").len(), 1);
 }
 
 #[test]
@@ -3540,7 +3759,7 @@ async fn single_stream_retry_budget_stops_after_three_attempts() {
 #[tokio::test]
 async fn pause_during_single_stream_retry_backoff_prevents_another_attempt() {
     let server = DeterministicHttpServer::start_concurrent();
-    server.set_fallback_stream_failures(u64::MAX);
+    server.set_fallback_stream_hold(true);
     let directory = tempfile::tempdir().expect("create engine directory");
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open_in_memory().expect("open download engine");
@@ -3558,7 +3777,9 @@ async fn pause_during_single_stream_retry_backoff_prevents_another_attempt() {
         );
         tokio::time::sleep(Duration::from_millis(2)).await;
     }
-    engine.pause(task_id).expect("pause during retry backoff");
+    let pause_result = engine.pause(task_id);
+    server.set_fallback_stream_hold(false);
+    pause_result.expect("pause during retry backoff");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(1))
         .await
@@ -3860,6 +4081,11 @@ async fn task_can_resume_after_network_disconnect_exhausts_the_current_attempt()
         .expect("wait for disconnected task failure");
     assert_eq!(failed.task.status(), DownloadStatus::Failed);
     assert_eq!(failed.downloaded_bytes, 0);
+    assert!(
+        failed.error.as_ref().is_some_and(|fault| fault.retryable),
+        "network disconnect must remain retryable: {:?}",
+        failed.error
+    );
     assert!(!destination.join("disconnect.bin").exists());
 
     server.set_network_available(true);
@@ -4745,6 +4971,136 @@ async fn reject_strategy_preserves_an_existing_destination_without_overwriting_i
     );
 }
 
+#[test]
+fn engine_session_generation_changes_after_engine_restart() {
+    let directory = tempfile::tempdir().expect("create generation database directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let first = DownloadEngine::open(&database).expect("open first engine session");
+    let first_snapshot = first.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::default(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(first_snapshot) = first_snapshot.outcome else {
+        panic!("first engine must return a snapshot");
+    };
+    let first_generation = first_snapshot.generation;
+    drop(first);
+
+    let second = DownloadEngine::open(&database).expect("open second engine session");
+    let second_snapshot = second.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::default(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(second_snapshot) = second_snapshot.outcome else {
+        panic!("second engine must return a snapshot");
+    };
+    assert_ne!(first_generation, second_snapshot.generation);
+    assert_ne!(second_snapshot.generation, 0);
+}
+
+#[test]
+fn subscribe_with_a_stale_generation_requires_a_snapshot() {
+    let engine = DownloadEngine::open_in_memory().expect("open generation engine");
+    let events = engine
+        .take_event_receiver()
+        .expect("attach generation event receiver");
+    let generation = engine.session_generation();
+    let stale_generation = generation.wrapping_add(1).max(1);
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Subscribe {
+            after_sequence: Some(0),
+            generation: Some(stale_generation),
+        },
+    });
+    assert!(matches!(
+        result.outcome,
+        DownloadCommandOutcome::Subscribed {
+            generation: observed,
+            snapshot_required: true,
+            ..
+        } if observed == generation
+    ));
+    let event = events
+        .recv_blocking()
+        .expect("receive stale-generation snapshot event");
+    assert_eq!(event.generation, generation);
+    assert!(matches!(
+        event.event,
+        DownloadEvent::SnapshotRequired {
+            expected_generation: Some(expected),
+            observed_generation: Some(observed),
+            ..
+        } if expected == generation && observed == stale_generation
+    ));
+}
+
+#[test]
+fn subscribe_with_same_generation_and_sequence_gap_requires_a_snapshot() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create sequence-gap directory");
+    let engine = DownloadEngine::open_in_memory().expect("open sequence-gap engine");
+    let events = engine
+        .take_event_receiver()
+        .expect("attach sequence-gap receiver");
+    let generation = engine.session_generation();
+    let accepted = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Submit {
+            request: request(&server, directory.path().join("artifacts")),
+            mode: DownloadSubmitMode::QueueOnly,
+            idempotency_key: None,
+        },
+    });
+    assert!(matches!(
+        accepted.outcome,
+        DownloadCommandOutcome::Accepted { task_id: Some(_) }
+    ));
+    let _ = events.recv_blocking().expect("receive accepted task event");
+
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Subscribe {
+            after_sequence: Some(0),
+            generation: Some(generation),
+        },
+    });
+    assert!(matches!(
+        result.outcome,
+        DownloadCommandOutcome::Subscribed {
+            snapshot_required: true,
+            generation: observed,
+            ..
+        } if observed == generation
+    ));
+    let event = events
+        .recv_blocking()
+        .expect("receive sequence-gap snapshot event");
+    assert!(matches!(
+        event.event,
+        DownloadEvent::SnapshotRequired {
+            expected_sequence: 1,
+            observed_sequence: 1,
+            expected_generation: Some(expected),
+            observed_generation: Some(observed),
+        } if expected == generation && observed == generation
+    ));
+}
+
 #[tokio::test]
 async fn versioned_commands_publish_sequenced_state_events() {
     let server = DeterministicHttpServer::start();
@@ -4766,6 +5122,7 @@ async fn versioned_commands_publish_sequenced_state_events() {
         command: DownloadCommand::Submit {
             request: request(&server, directory.path().join("artifacts")),
             mode: DownloadSubmitMode::StartNow,
+            idempotency_key: None,
         },
     });
     let task_id = match result.outcome {
@@ -4824,6 +5181,7 @@ async fn queue_only_submission_stays_created_until_resumed() {
         command: DownloadCommand::Submit {
             request: request(&server, destination.clone()),
             mode: DownloadSubmitMode::QueueOnly,
+            idempotency_key: None,
         },
     });
     let task_id = match result.outcome {

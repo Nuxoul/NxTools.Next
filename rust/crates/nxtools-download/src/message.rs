@@ -54,6 +54,8 @@ pub enum DownloadCommand {
         request: DownloadRequest,
         #[serde(default)]
         mode: DownloadSubmitMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        idempotency_key: Option<Uuid>,
     },
     BrowserSubmit {
         handoff_id: Uuid,
@@ -109,6 +111,8 @@ pub enum DownloadCommand {
     },
     Subscribe {
         after_sequence: Option<u64>,
+        #[serde(default)]
+        generation: Option<u64>,
     },
 }
 
@@ -125,16 +129,19 @@ pub enum DownloadSubmitMode {
 pub enum DownloadTaskAction {
     Pause,
     Resume,
+    Retry,
+    Redownload,
     Cancel,
     SetSpeedLimit { bytes_per_second: Option<u64> },
     Remove { delete_artifact: bool },
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadBatchAction {
     Pause,
     Resume,
+    Retry,
+    Redownload,
     Cancel,
     Remove,
     RemoveWithArtifact,
@@ -187,6 +194,15 @@ pub struct DownloadCommandResult {
 pub enum DownloadCommandOutcome {
     Accepted {
         task_id: Option<DownloadTaskId>,
+    },
+    Subscribed {
+        generation: u64,
+        sequence: u64,
+        snapshot_required: bool,
+    },
+    IdempotentAccepted {
+        task_id: DownloadTaskId,
+        duplicate: bool,
     },
     BrowserAccepted {
         task_id: DownloadTaskId,
@@ -317,6 +333,8 @@ pub struct DownloadAggregateMetrics {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadEventEnvelope {
+    #[serde(default)]
+    pub generation: u64,
     pub sequence: u64,
     pub emitted_at_unix_ms: i64,
     #[serde(flatten)]
@@ -340,6 +358,15 @@ impl DownloadEventSequencer {
         emitted_at_unix_ms: i64,
         event: DownloadEvent,
     ) -> Result<DownloadEventEnvelope, DownloadEventSequenceError> {
+        self.next_with_generation(0, emitted_at_unix_ms, event)
+    }
+
+    pub fn next_with_generation(
+        &self,
+        generation: u64,
+        emitted_at_unix_ms: i64,
+        event: DownloadEvent,
+    ) -> Result<DownloadEventEnvelope, DownloadEventSequenceError> {
         let previous = self
             .sequence
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |sequence| {
@@ -347,6 +374,7 @@ impl DownloadEventSequencer {
             })
             .map_err(|_| DownloadEventSequenceError::Exhausted)?;
         Ok(DownloadEventEnvelope {
+            generation,
             sequence: previous + 1,
             emitted_at_unix_ms,
             event,
@@ -383,6 +411,10 @@ pub enum DownloadEvent {
     SnapshotRequired {
         expected_sequence: u64,
         observed_sequence: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_generation: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        observed_generation: Option<u64>,
     },
 }
 

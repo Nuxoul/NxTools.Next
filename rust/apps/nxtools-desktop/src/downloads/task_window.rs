@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::PILL_PADDING_X;
 
 pub(crate) struct DownloadTaskWindowPhaseLayout {
     pub(crate) size: gpui::Size<gpui::Pixels>,
@@ -26,6 +27,39 @@ pub(crate) fn download_task_window_phase_layout(
 
 pub(crate) fn download_task_window_size(phase: DownloadWindowPhase) -> gpui::Size<gpui::Pixels> {
     download_task_window_phase_layout(phase).size
+}
+
+pub(crate) fn download_task_window_size_for_details(
+    phase: DownloadWindowPhase,
+    details_expanded: bool,
+) -> gpui::Size<gpui::Pixels> {
+    if phase == DownloadWindowPhase::Progress {
+        if details_expanded {
+            size(px(440.0), px(TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT))
+        } else {
+            size(px(440.0), px(TASK_WINDOW_PROGRESS_HEIGHT))
+        }
+    } else {
+        download_task_window_size(phase)
+    }
+}
+
+pub(crate) fn details_expanded_after_phase_transition(
+    previous_phase: Option<DownloadWindowPhase>,
+    next_phase: DownloadWindowPhase,
+    expanded: bool,
+) -> bool {
+    if matches!(
+        (previous_phase, next_phase),
+        (
+            Some(DownloadWindowPhase::Failed | DownloadWindowPhase::Completed),
+            DownloadWindowPhase::Progress
+        )
+    ) {
+        false
+    } else {
+        expanded
+    }
 }
 
 pub(crate) fn download_task_window_shell(
@@ -114,10 +148,28 @@ impl DownloadTaskWindowView {
         shutdown_armed: bool,
         cx: &mut Context<Self>,
     ) {
+        let previous_phase = self
+            .snapshot
+            .as_ref()
+            .map(|task| download_window_phase(task.task.status()));
+        let next_phase = snapshot
+            .as_ref()
+            .map(|task| download_window_phase(task.task.status()));
+        if let Some(next_phase) = next_phase {
+            self.details_expanded = details_expanded_after_phase_transition(
+                previous_phase,
+                next_phase,
+                self.details_expanded,
+            );
+        }
         self.snapshot = snapshot;
         self.progress = progress;
         self.shutdown_armed = shutdown_armed;
         cx.notify();
+    }
+
+    pub(crate) fn reset_details_expanded(&mut self) {
+        self.details_expanded = false;
     }
 }
 
@@ -301,6 +353,8 @@ impl Render for DownloadTaskWindowView {
         if status == DownloadStatus::Failed {
             let cancel_application = application.clone();
             let retry_application = application.clone();
+            let redownload_application = application.clone();
+            let retryable = task.error.as_ref().is_some_and(|fault| fault.retryable);
             let error = task.error.as_ref().map_or_else(
                 || "下载任务失败，未返回更多信息。".into(),
                 |error| error.message.clone(),
@@ -376,18 +430,36 @@ impl Render for DownloadTaskWindowView {
                                 });
                             }),
                     )
+                    .when(retryable, |footer| {
+                        footer.child(
+                            Button::new("download-window-failed-retry")
+                                .icon(Icon::new(MaterialIcon::Download))
+                                .label("重试")
+                                .small()
+                                .h(px(CONTROL_HEIGHT_ACTION))
+                                .custom(download_primary_button_variant(theme, cx))
+                                .on_click(move |_, _, cx| {
+                                    let application = retry_application.clone();
+                                    cx.defer(move |cx| {
+                                        application.update(cx, |application, cx| {
+                                            let _ = application.retry(task_id, cx);
+                                        });
+                                    });
+                                }),
+                        )
+                    })
                     .child(
-                        Button::new("download-window-failed-retry")
+                        Button::new("download-window-failed-redownload")
                             .icon(Icon::new(MaterialIcon::Download))
-                            .label("重试")
+                            .label("重新下载")
                             .small()
                             .h(px(CONTROL_HEIGHT_ACTION))
-                            .custom(download_primary_button_variant(theme, cx))
+                            .outline()
                             .on_click(move |_, _, cx| {
-                                let application = retry_application.clone();
+                                let application = redownload_application.clone();
                                 cx.defer(move |cx| {
                                     application.update(cx, |application, cx| {
-                                        let _ = application.resume(task_id, cx);
+                                        let _ = application.redownload(task_id, cx);
                                     });
                                 });
                             }),
@@ -473,7 +545,11 @@ impl Render for DownloadTaskWindowView {
                             let application = action_application.clone();
                             cx.defer(move |cx| {
                                 application.update(cx, |application, cx| {
-                                    let _ = application.resume(task_id, cx);
+                                    if status == DownloadStatus::Failed {
+                                        let _ = application.retry(task_id, cx);
+                                    } else {
+                                        let _ = application.resume(task_id, cx);
+                                    }
                                 });
                             });
                         }),
@@ -620,17 +696,14 @@ impl Render for DownloadTaskWindowView {
                                             return;
                                         };
                                         let expanded = view.read(cx).details_expanded;
+                                        let next_expanded = !expanded;
                                         view.update(cx, |view, cx| {
-                                            view.details_expanded = !view.details_expanded;
+                                            view.details_expanded = next_expanded;
                                             cx.notify();
                                         });
-                                        window.resize(size(
-                                            px(440.0),
-                                            px(if expanded {
-                                                TASK_WINDOW_PROGRESS_HEIGHT
-                                            } else {
-                                                TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT
-                                            }),
+                                        window.resize(download_task_window_size_for_details(
+                                            DownloadWindowPhase::Progress,
+                                            next_expanded,
                                         ));
                                     }
                                 }),
@@ -658,6 +731,7 @@ impl Render for DownloadTaskWindowView {
                 .when(!details_expanded, |body| {
                     body.child(
                         div()
+                            .debug_selector(|| "download-window-collapsed-path".into())
                             .text_size(px(TEXT_META))
                             .text_color(theme.text_muted)
                             .truncate()
@@ -822,30 +896,28 @@ fn segment_progress_dots(
         .flex()
         .flex_wrap()
         .gap(px(3.0));
-    let dots = segments.iter().take(SEGMENT_DOT_LIMIT).fold(row, |row, segment| {
-        let ratio = segment_dot_ratio(segment);
-        row.child(
-            div()
-                .size(px(SEGMENT_DOT_SIZE))
-                .rounded_full()
-                .bg(theme.surface_raised)
-                .border_1()
-                .border_color(theme.border_subtle)
-                .overflow_hidden()
-                .when(ratio > 0.0, |dot| {
-                    dot.child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(ratio))
-                            .bg(if ratio >= 1.0 {
-                                theme.success
-                            } else {
-                                active_color
-                            }),
-                    )
-                }),
-        )
-    });
+    let dots = segments
+        .iter()
+        .take(SEGMENT_DOT_LIMIT)
+        .fold(row, |row, segment| {
+            let ratio = segment_dot_ratio(segment);
+            row.child(
+                div()
+                    .size(px(SEGMENT_DOT_SIZE))
+                    .rounded_full()
+                    .bg(theme.surface_raised)
+                    .border_1()
+                    .border_color(theme.border_subtle)
+                    .overflow_hidden()
+                    .when(ratio > 0.0, |dot| {
+                        dot.child(div().h_full().w(gpui::relative(ratio)).bg(if ratio >= 1.0 {
+                            theme.success
+                        } else {
+                            active_color
+                        }))
+                    }),
+            )
+        });
     if segments.len() > SEGMENT_DOT_LIMIT {
         dots.child(
             div()

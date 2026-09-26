@@ -84,9 +84,9 @@ use crate::ui::components::settings::{
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, PILL_PADDING_X,
-    PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_2,
-    SPACING_4, SPACING_6, SPACING_8, SPACING_12, SPACING_16,
+    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, PROGRESS_TRACK_HEIGHT,
+    RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6,
+    SPACING_8, SPACING_12, SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
@@ -94,15 +94,15 @@ use crate::ui::typography::{
     TEXT_LABEL, TEXT_META, TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
-mod delete_confirmation;
 mod browser_handoff_impl;
 mod completion_shutdown_impl;
-mod task_windows_impl;
+mod delete_confirmation;
 mod new_download_view;
 mod schedule_view;
 mod settings_view;
 mod shutdown_window;
 mod task_window;
+mod task_windows_impl;
 
 use self::delete_confirmation::*;
 use self::new_download_view::*;
@@ -317,6 +317,7 @@ impl DownloadSettingsPathAction {
 
 #[derive(Debug, Clone, Copy)]
 struct PendingExtensionExport {
+    command_id: uuid::Uuid,
     format: &'static str,
     started_at: Instant,
 }
@@ -507,6 +508,8 @@ struct PendingDownloadTaskIcon {
 }
 
 const DOWNLOAD_TASK_ICON_SIZE: u32 = 24;
+const DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT: usize = 8;
+const DOWNLOAD_TASK_ICON_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 fn download_task_icon_target(task: &DownloadEngineTask) -> Option<String> {
     if task.task.status() == DownloadStatus::Completed
@@ -567,14 +570,15 @@ pub(crate) struct DownloadApplication {
     tasks: Vec<DownloadEngineTask>,
     task_detail: Option<DownloadTaskDetail>,
     task_detail_error: Option<(DownloadTaskId, String)>,
+    snapshot_error: Option<String>,
     queues: Vec<DownloadQueue>,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
     task_icons: HashMap<DownloadTaskId, PathBuf>,
     task_icon_resource_assignments: HashMap<DownloadTaskId, String>,
     task_icon_resources: HashMap<String, PathBuf>,
     pending_task_icons: HashMap<uuid::Uuid, PendingDownloadTaskIcon>,
+    failed_task_icon_resources: HashMap<String, Instant>,
     pending_task_icon_resources: HashMap<String, uuid::Uuid>,
-    failed_task_icon_resources: HashSet<String>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
@@ -627,6 +631,7 @@ pub(crate) struct DownloadApplication {
     completion_feedback_commands: HashMap<uuid::Uuid, uuid::Uuid>,
     shutdown_window: Option<DownloadShutdownWindow>,
     pending_shutdown_command: Option<PendingShutdownCommand>,
+    event_generation: u64,
     last_event_sequence: u64,
     _event_task: Task<()>,
     _browser_dialog_task: Task<()>,
@@ -677,13 +682,19 @@ impl DownloadApplication {
         };
         let show_progress_window = config.download.show_progress_window;
         let show_completion_window = config.download.show_completion_window;
-        let (tasks, queues) = match load_download_snapshot(&engine) {
-            Ok(snapshot) => (snapshot.task_details, snapshot.queues),
-            Err(error) => {
-                warn!(%error, "could not load the download snapshot for the desktop");
-                (Vec::new(), Vec::new())
-            }
-        };
+        let (tasks, queues, event_generation, event_sequence) =
+            match load_download_snapshot(&engine) {
+                Ok(snapshot) => (
+                    snapshot.task_details,
+                    snapshot.queues,
+                    snapshot.generation,
+                    snapshot.sequence,
+                ),
+                Err(error) => {
+                    warn!(%error, "could not load the download snapshot for the desktop");
+                    (Vec::new(), Vec::new(), 0, 0)
+                }
+            };
         let mut task_window_lifecycle = DownloadWindowLifecycle::default();
         let awaiting_delayed_progress = tasks
             .iter()
@@ -707,7 +718,8 @@ impl DownloadApplication {
             request_id: uuid::Uuid::new_v4(),
             origin: RequestOrigin::Ui,
             command: DownloadCommand::Subscribe {
-                after_sequence: None,
+                after_sequence: Some(event_sequence),
+                generation: (event_generation != 0).then_some(event_generation),
             },
         });
         let receiver = engine.take_event_receiver().unwrap_or_else(|error| {
@@ -759,6 +771,7 @@ impl DownloadApplication {
             tasks,
             task_detail: None,
             task_detail_error: None,
+            snapshot_error: None,
             queues,
             latest_progress: HashMap::new(),
             task_icons: HashMap::new(),
@@ -766,7 +779,7 @@ impl DownloadApplication {
             task_icon_resources: HashMap::new(),
             pending_task_icons: HashMap::new(),
             pending_task_icon_resources: HashMap::new(),
-            failed_task_icon_resources: HashSet::new(),
+            failed_task_icon_resources: HashMap::new(),
             awaiting_delayed_progress,
             task_window_lifecycle,
             task_windows: HashMap::new(),
@@ -815,7 +828,8 @@ impl DownloadApplication {
             completion_feedback_commands: HashMap::new(),
             shutdown_window: None,
             pending_shutdown_command: None,
-            last_event_sequence: 0,
+            event_generation,
+            last_event_sequence: event_sequence,
             _event_task: event_task,
             _browser_dialog_task: browser_dialog_task,
         }
@@ -951,6 +965,10 @@ impl DownloadApplication {
             .map(|(_, error)| error.as_str())
     }
 
+    pub(crate) fn snapshot_error(&self) -> Option<&str> {
+        self.snapshot_error.as_deref()
+    }
+
     pub(crate) fn request_task_detail(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
         if self.task_detail(task_id).is_some() {
             return;
@@ -1039,19 +1057,25 @@ impl DownloadApplication {
         self.latest_progress.get(&task_id)
     }
 
-    pub(crate) fn submit(
+    pub(crate) fn submit_with_idempotency(
         &mut self,
         request: DownloadRequest,
         mode: DownloadSubmitMode,
+        idempotency_key: Option<uuid::Uuid>,
         cx: &mut Context<Self>,
     ) -> Result<DownloadTaskId, String> {
         let delayed_progress =
             mode == DownloadSubmitMode::StartNow && request.scheduled_at_unix_ms.is_some();
-        let outcome = self.execute(DownloadCommand::Submit { request, mode });
+        let outcome = self.execute(DownloadCommand::Submit {
+            request,
+            mode,
+            idempotency_key,
+        });
         let task_id = match outcome {
             DownloadCommandOutcome::Accepted {
                 task_id: Some(task_id),
-            } => task_id,
+            }
+            | DownloadCommandOutcome::IdempotentAccepted { task_id, .. } => task_id,
             DownloadCommandOutcome::Rejected { fault } => return Err(fault.message),
             _ => return Err("下载引擎返回了无效的提交结果".into()),
         };
@@ -1062,6 +1086,7 @@ impl DownloadApplication {
         info!(
             task_id = %task_id.as_uuid(),
             ?mode,
+            idempotency_key = ?idempotency_key,
             "download task submission accepted"
         );
         Ok(task_id)
@@ -1088,6 +1113,33 @@ impl DownloadApplication {
         }
         self.refresh(cx);
         Ok(())
+    }
+    pub(crate) fn retry(
+        &mut self,
+        task_id: DownloadTaskId,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        if let Err(error) = self.execute_task_action(task_id, DownloadTaskAction::Retry) {
+            return self.action_error("无法重试下载", error.to_string(), cx);
+        }
+        self.refresh(cx);
+        Ok(())
+    }
+
+    pub(crate) fn redownload(
+        &mut self,
+        task_id: DownloadTaskId,
+        cx: &mut Context<Self>,
+    ) -> Result<DownloadTaskId, String> {
+        let replacement = match self.execute_task_action(task_id, DownloadTaskAction::Redownload) {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                let _ = self.action_error("无法重新下载", error.clone(), cx);
+                return Err(error);
+            }
+        };
+        self.refresh(cx);
+        Ok(replacement)
     }
 
     pub(crate) fn cancel(
@@ -1277,9 +1329,6 @@ impl DownloadApplication {
         else {
             return;
         };
-        let file_name = PathBuf::from(&path)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned());
         match self
             .platform
             .send_command(PlatformCommand::BeginFileDrag(BeginFileDragCommand {
@@ -1291,7 +1340,6 @@ impl DownloadApplication {
                     task_id = %task_id.as_uuid(),
                     %correlation_id,
                     source_window_handle,
-                    ?file_name,
                     "download file drag requested"
                 );
             }
@@ -1299,7 +1347,6 @@ impl DownloadApplication {
                 warn!(
                     task_id = %task_id.as_uuid(),
                     source_window_handle,
-                    ?file_name,
                     %error,
                     "download file drag request rejected"
                 );
@@ -1460,9 +1507,14 @@ impl DownloadApplication {
         &self,
         task_id: DownloadTaskId,
         action: DownloadTaskAction,
-    ) -> Result<(), String> {
+    ) -> Result<DownloadTaskId, String> {
         match self.execute(DownloadCommand::Task { task_id, action }) {
-            DownloadCommandOutcome::Accepted { .. } => Ok(()),
+            DownloadCommandOutcome::Accepted {
+                task_id: Some(result_task_id),
+            } => Ok(result_task_id),
+            DownloadCommandOutcome::Accepted { task_id: None } => {
+                Err("下载引擎没有返回任务 ID".into())
+            }
             DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
             _ => Err("下载引擎返回了无效的任务操作结果".into()),
         }
@@ -2976,18 +3028,6 @@ impl DownloadApplication {
         }
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
     pub(crate) fn handle_platform_notification(
         &mut self,
         notification: PlatformNotification,
@@ -3036,6 +3076,43 @@ impl DownloadApplication {
                     "saved taskbar overlay placement could not be restored after PlatformHost connected"
                 ),
             }
+            return;
+        }
+        if let PlatformNotification::Disconnected {
+            generation,
+            pending_command_ids,
+        } = &notification
+        {
+            warn!(
+                event = "downloads.platform_disconnected",
+                generation,
+                pending_command_count = pending_command_ids.len(),
+                "downloads invalidated commands from the disconnected PlatformHost session"
+            );
+            self.pending_task_icons.clear();
+            self.pending_task_icon_resources.clear();
+            self.pending_task_window_activations.clear();
+            self.pending_taskbar_overlay_gestures.clear();
+            self.pending_directory_picker = None;
+            self.pending_settings_path_actions.clear();
+            if let Some(pending) = self.pending_extension_export.take() {
+                let elapsed = pending.started_at.elapsed().as_millis();
+                self.publish_extension_export_status("导出失败:Windows 连接已断开".into(), cx);
+                warn!(
+                    event = "download.browser_extension.export_failed",
+                    command_id = %pending.command_id,
+                    format = pending.format,
+                    failure_kind = "platform_disconnected",
+                    elapsed_ms = elapsed,
+                    "browser extension export was invalidated by PlatformHost disconnect"
+                );
+            }
+            self.pending_extension_export = None;
+            self.pending_ffmpeg_operations.clear();
+            self.completion_feedback_commands.clear();
+            self.pending_shutdown_command = None;
+            self.taskbar_overlay_edit_gesture_active = false;
+            cx.notify();
             return;
         }
         if let PlatformNotification::Event(PlatformEvent::TaskbarOverlayEditGestureFinished(
@@ -3099,8 +3176,9 @@ impl DownloadApplication {
                     error_present,
                     "download task Shell icon request failed"
                 );
-                self.failed_task_icon_resources.insert(pending.resource_key);
+                self.record_task_icon_failure(pending.resource_key, cx);
             }
+            self.request_task_icons();
             cx.notify();
             return;
         }
@@ -3165,7 +3243,15 @@ impl DownloadApplication {
             self.handle_download_settings_path_action_result(pending, result, cx);
             return;
         }
-        if let Some(pending) = self.pending_extension_export.take() {
+        if self
+            .pending_extension_export
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == correlation_id)
+        {
+            let pending = self
+                .pending_extension_export
+                .take()
+                .expect("matching browser extension export command");
             let elapsed = pending.started_at.elapsed().as_millis();
             if result.success {
                 let cancelled = result
@@ -3332,6 +3418,33 @@ impl DownloadApplication {
         self.refresh_snapshot(true, cx);
     }
 
+    fn record_task_icon_failure(&mut self, resource_key: String, cx: &mut Context<Self>) {
+        let failed_at = Instant::now();
+        self.failed_task_icon_resources
+            .insert(resource_key.clone(), failed_at);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(DOWNLOAD_TASK_ICON_RETRY_DELAY)
+                .await;
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+            let _ = this.update(cx, |application, cx| {
+                if application
+                    .failed_task_icon_resources
+                    .get(&resource_key)
+                    .is_none_or(|current| *current != failed_at)
+                {
+                    return;
+                }
+                application.failed_task_icon_resources.remove(&resource_key);
+                application.request_task_icons();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn request_task_icons(&mut self) {
         let live_task_ids = self
             .tasks
@@ -3361,7 +3474,8 @@ impl DownloadApplication {
         self.task_icon_resources
             .retain(|resource_key, _| live_resource_keys.contains(resource_key));
         self.failed_task_icon_resources
-            .retain(|resource_key| live_resource_keys.contains(resource_key));
+            .retain(|resource_key, _| live_resource_keys.contains(resource_key));
+        let mut in_flight = self.pending_task_icons.len();
         for (task_id, resource_key, target) in descriptors {
             let resource_scope = if resource_key.contains(":target:") {
                 "target"
@@ -3385,7 +3499,15 @@ impl DownloadApplication {
                 }
                 continue;
             }
-            if self.failed_task_icon_resources.contains(&resource_key) {
+            if self
+                .failed_task_icon_resources
+                .get(&resource_key)
+                .is_some_and(|failed_at| failed_at.elapsed() < DOWNLOAD_TASK_ICON_RETRY_DELAY)
+            {
+                continue;
+            }
+            self.failed_task_icon_resources.remove(&resource_key);
+            if in_flight >= DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT {
                 continue;
             }
             match self
@@ -3406,6 +3528,7 @@ impl DownloadApplication {
                             started_at: Instant::now(),
                         },
                     );
+                    in_flight += 1;
                     info!(
                         event = "download.list.icon_accepted",
                         correlation_id = %command_id,
@@ -3414,7 +3537,8 @@ impl DownloadApplication {
                     );
                 }
                 Err(error) => {
-                    self.failed_task_icon_resources.insert(resource_key);
+                    self.failed_task_icon_resources
+                        .insert(resource_key, Instant::now());
                     warn!(
                         event = "download.list.icon_request_failed",
                         %error,
@@ -3425,18 +3549,42 @@ impl DownloadApplication {
         }
     }
 
+    fn bounded_snapshot_error(error: &str) -> String {
+        const MAX_ERROR_CHARS: usize = 180;
+        let message = error.chars().take(MAX_ERROR_CHARS).collect::<String>();
+        if error.chars().count() > MAX_ERROR_CHARS {
+            format!("下载列表刷新失败：{message}…")
+        } else {
+            format!("下载列表刷新失败：{message}")
+        }
+    }
+
     fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
         let snapshot = match load_download_snapshot(&self.engine) {
             Ok(snapshot) => snapshot,
             Err(error) => {
+                let message = Self::bounded_snapshot_error(&error);
                 warn!(
                     event = "download.desktop.snapshot_refresh_failed",
-                    %error,
+                    error_kind = "snapshot",
+                    error_chars = error.chars().count(),
                     "desktop download snapshot refresh failed"
                 );
+                self.snapshot_error = Some(message);
+                cx.notify();
                 return;
             }
         };
+        if self.event_generation != 0 && self.event_generation != snapshot.generation {
+            info!(
+                previous_generation = self.event_generation,
+                generation = snapshot.generation,
+                "download desktop accepted a new engine session snapshot"
+            );
+            self.last_event_sequence = 0;
+        }
+        self.event_generation = snapshot.generation;
+        self.snapshot_error = None;
         let tasks = snapshot.task_details;
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
@@ -3487,10 +3635,37 @@ impl DownloadApplication {
         }
         cx.notify();
     }
+    fn refresh_open_task_window_for_progress(
+        &mut self,
+        task_id: DownloadTaskId,
+        cx: &mut Context<Self>,
+    ) {
+        if self.task_windows.contains_key(&task_id) {
+            self.apply_task_window_directive(task_id, DownloadWindowDirective::RefreshExisting, cx);
+        }
+    }
 
     fn handle_engine_event(&mut self, envelope: DownloadEventEnvelope, cx: &mut Context<Self>) {
+        if envelope.generation != 0
+            && self.event_generation != 0
+            && envelope.generation != self.event_generation
+        {
+            warn!(
+                expected_generation = self.event_generation,
+                observed_generation = envelope.generation,
+                "stale download event generation detected; refreshing the full task snapshot"
+            );
+            self.refresh_snapshot(true, cx);
+            return;
+        }
+        if self.event_generation == 0 && envelope.generation != 0 {
+            self.event_generation = envelope.generation;
+            self.last_event_sequence = 0;
+        }
         let sequence = envelope.sequence;
-        if self.last_event_sequence != 0 && sequence != self.last_event_sequence + 1 {
+        let sequence_gap =
+            self.last_event_sequence != 0 && sequence != self.last_event_sequence + 1;
+        if sequence_gap {
             warn!(
                 expected_sequence = self.last_event_sequence + 1,
                 observed_sequence = sequence,
@@ -3519,7 +3694,10 @@ impl DownloadApplication {
             }
             _ => None,
         };
-        let is_progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
+        let progress_task_id = match &envelope.event {
+            DownloadEvent::TaskProgress { progress } => Some(progress.task_id),
+            _ => None,
+        };
         match envelope.event {
             DownloadEvent::TaskProgress { progress } => {
                 if let Some(detail) = self.task_detail.as_mut()
@@ -3545,7 +3723,12 @@ impl DownloadApplication {
             }
             DownloadEvent::CommandRejected { .. } | DownloadEvent::SnapshotRequired { .. } => {}
         }
-        self.refresh_snapshot(!is_progress_event, cx);
+        if !sequence_gap && let Some(task_id) = progress_task_id {
+            self.refresh_open_task_window_for_progress(task_id, cx);
+            cx.notify();
+            return;
+        }
+        self.refresh_snapshot(true, cx);
         if let Some((task_id, origin, status)) = task_event_diagnostic {
             info!(
                 event = "download.desktop.task_event_applied",
@@ -3569,8 +3752,17 @@ impl DownloadApplication {
                 )
             });
             if still_active {
+                let use_background_policy = task_event_diagnostic
+                    .as_ref()
+                    .is_some_and(|(_, origin, _)| *origin == RequestOrigin::Cli)
+                    || self.awaiting_delayed_progress.contains(&task_id);
                 self.awaiting_delayed_progress.remove(&task_id);
-                let directive = self.task_window_lifecycle.request_progress(task_id);
+                let directive = if use_background_policy {
+                    self.task_window_lifecycle
+                        .request_background_progress(task_id)
+                } else {
+                    self.task_window_lifecycle.request_progress(task_id)
+                };
                 self.apply_task_window_directive(task_id, directive, cx);
             }
         }

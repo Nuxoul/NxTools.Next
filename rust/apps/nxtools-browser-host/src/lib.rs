@@ -1005,7 +1005,9 @@ fn task_action(
         .context("taskId must be a UUID")?;
     let action = match action.as_str() {
         "pause" => DownloadTaskAction::Pause,
-        "resume" | "retry" => DownloadTaskAction::Resume,
+        "resume" => DownloadTaskAction::Resume,
+        "retry" => DownloadTaskAction::Retry,
+        "redownload" => DownloadTaskAction::Redownload,
         "cancel" => DownloadTaskAction::Cancel,
         _ => bail!("unsupported task action '{action}'"),
     };
@@ -1490,16 +1492,22 @@ mod tests {
             )
             .is_ok()
         );
-        assert!(validate_browser_origin(
-            [String::from("nxtools-download-interceptor@nxtools.local")],
-            &registered
-        )
-        .is_ok());
-        assert!(validate_browser_origin(
-            [String::from("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/")],
-            &registered
-        )
-        .is_err());
+        assert!(
+            validate_browser_origin(
+                [String::from("nxtools-download-interceptor@nxtools.local")],
+                &registered
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_browser_origin(
+                [String::from(
+                    "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+                )],
+                &registered
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1509,17 +1517,27 @@ mod tests {
         // registrar writes the accepted origin into chromium-host.json; the
         // host must honor it or Chrome reports a communication failure
         // because this process exits before the first response frame.
-        let registered = [String::from("chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/")];
-        assert!(validate_browser_origin(
-            [String::from("chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/")],
-            &registered
-        )
-        .is_ok());
-        assert!(validate_browser_origin(
-            [String::from("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/")],
-            &registered
-        )
-        .is_err());
+        let registered = [String::from(
+            "chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/",
+        )];
+        assert!(
+            validate_browser_origin(
+                [String::from(
+                    "chrome-extension://ajcjlgdnfcagknjcajhbiikagimgdnaf/"
+                )],
+                &registered
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_browser_origin(
+                [String::from(
+                    "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+                )],
+                &registered
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1560,7 +1578,10 @@ mod tests {
             ]
         );
         assert!(parse_registered_allowed_origins("not json").is_empty());
-        assert!(parse_registered_allowed_origins(r#"{"allowed_origins": ["https://evil.example/"]}"#).is_empty());
+        assert!(
+            parse_registered_allowed_origins(r#"{"allowed_origins": ["https://evil.example/"]}"#)
+                .is_empty()
+        );
     }
 
     #[test]

@@ -47,6 +47,7 @@ fn hls_selection_round_trips_as_typed_download_request_state() {
     let command = DownloadCommand::Submit {
         request,
         mode: DownloadSubmitMode::StartNow,
+        idempotency_key: None,
     };
 
     let encoded = serde_json::to_value(&command).expect("serialize typed HLS request");
@@ -62,6 +63,25 @@ fn hls_selection_round_trips_as_typed_download_request_state() {
 }
 
 #[test]
+fn idempotent_submit_command_round_trips_its_business_key() {
+    let key = Uuid::parse_str("12345678-1234-5678-1234-567812345678")
+        .expect("fixed idempotency key is valid");
+    let command = DownloadCommand::Submit {
+        idempotency_key: Some(key),
+        request: request(),
+        mode: DownloadSubmitMode::QueueOnly,
+    };
+    let encoded = serde_json::to_value(&command).expect("serialize idempotent submit");
+    let decoded: DownloadCommand =
+        serde_json::from_value(encoded.clone()).expect("deserialize idempotent submit");
+
+    assert_eq!(encoded["command"], json!("submit"));
+    assert_eq!(encoded["data"]["idempotency_key"], json!(key));
+    assert_eq!(encoded["data"]["mode"], json!("queue_only"));
+    assert_eq!(decoded, command);
+}
+
+#[test]
 fn dash_track_selection_round_trips_as_typed_download_request_state() {
     let mut request = request();
     request.source_url = "https://media.example.test/manifest.mpd".into();
@@ -73,6 +93,7 @@ fn dash_track_selection_round_trips_as_typed_download_request_state() {
     let command = DownloadCommand::Submit {
         request,
         mode: DownloadSubmitMode::StartNow,
+        idempotency_key: None,
     };
 
     let encoded = serde_json::to_value(&command).expect("serialize typed DASH request");
@@ -129,9 +150,9 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
         command: DownloadCommand::Submit {
             request: request(),
             mode: DownloadSubmitMode::QueueOnly,
+            idempotency_key: None,
         },
     };
-
     let value = serde_json::to_value(envelope).expect("serialize command");
 
     assert_eq!(value["protocol_version"], json!(8));
@@ -143,6 +164,23 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
         value["data"]["request"]["source_url"],
         json!("https://example.test/file.bin")
     );
+}
+
+#[test]
+fn legacy_submit_json_without_idempotency_key_still_decodes() {
+    let command = DownloadCommand::Submit {
+        request: request(),
+        mode: DownloadSubmitMode::QueueOnly,
+        idempotency_key: None,
+    };
+    let mut value = serde_json::to_value(&command).expect("serialize legacy-compatible submit");
+    value["data"]
+        .as_object_mut()
+        .expect("submit data object")
+        .remove("idempotency_key");
+    let decoded: DownloadCommand =
+        serde_json::from_value(value).expect("decode submit without idempotency key");
+    assert_eq!(decoded, command);
 }
 
 #[test]
@@ -201,6 +239,24 @@ fn task_action_contract_does_not_expose_protocol_implementation() {
 }
 
 #[test]
+fn retry_and_redownload_actions_round_trip_as_additive_wire_variants() {
+    for (action, name) in [
+        (DownloadTaskAction::Retry, "retry"),
+        (DownloadTaskAction::Redownload, "redownload"),
+    ] {
+        let command = DownloadCommand::Task {
+            task_id: DownloadTaskId::new(),
+            action,
+        };
+        let value = serde_json::to_value(&command).expect("serialize explicit task action");
+        let decoded: DownloadCommand =
+            serde_json::from_value(value.clone()).expect("deserialize explicit task action");
+        assert_eq!(value["data"]["action"]["action"], json!(name));
+        assert_eq!(decoded, command);
+    }
+}
+
+#[test]
 fn speed_limit_commands_are_typed_and_use_none_for_unlimited() {
     let global = serde_json::to_value(DownloadCommand::SetGlobalSpeedLimit {
         bytes_per_second: Some(512 * 1024),
@@ -226,6 +282,7 @@ fn speed_limit_commands_are_typed_and_use_none_for_unlimited() {
 #[test]
 fn events_are_sequence_numbered_and_faults_are_machine_readable() {
     let event = DownloadEventEnvelope {
+        generation: 11,
         sequence: 41,
         emitted_at_unix_ms: 9_000,
         event: DownloadEvent::CommandRejected {

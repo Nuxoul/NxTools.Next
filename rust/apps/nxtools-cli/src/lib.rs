@@ -46,6 +46,7 @@ pub enum CliCommand {
         directory_explicit: bool,
         name: Option<String>,
         headers: Vec<DownloadRequestHeader>,
+        idempotency_key: Option<Uuid>,
         json: bool,
     },
     List {
@@ -84,6 +85,8 @@ pub enum CliAction {
     Pause,
     Resume,
     Cancel,
+    Retry,
+    Redownload,
     Remove,
 }
 
@@ -158,6 +161,8 @@ where
         "show" => parse_show(args),
         "pause" => parse_action(CliAction::Pause, args),
         "resume" => parse_action(CliAction::Resume, args),
+        "retry" => parse_action(CliAction::Retry, args),
+        "redownload" => parse_action(CliAction::Redownload, args),
         "cancel" => parse_action(CliAction::Cancel, args),
         "remove" => parse_action(CliAction::Remove, args),
         "schedule" => parse_schedule(args),
@@ -292,6 +297,7 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
     let mut directory_explicit = false;
     let mut name = None;
     let mut headers = Vec::new();
+    let mut idempotency_key = None;
     let mut json = false;
     let mut index = 0;
     while index < args.len() {
@@ -318,6 +324,14 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
                     name: header_name.trim().into(),
                     value: header_value.trim().into(),
                 });
+            }
+            "--idempotency-key" => {
+                index += 1;
+                let value = required_value(&args, index, "--idempotency-key")?;
+                idempotency_key = Some(
+                    Uuid::parse_str(value)
+                        .map_err(|_| CliError::syntax("--idempotency-key must be a valid UUID"))?,
+                );
             }
             "--json" => json = true,
             option if option.starts_with('-') => {
@@ -360,6 +374,7 @@ fn parse_add(args: Vec<String>, default_directory: PathBuf) -> Result<CliCommand
         directory_explicit,
         name,
         headers,
+        idempotency_key,
         json,
     })
 }
@@ -502,6 +517,7 @@ pub fn run_with_host_policy(
             directory_explicit,
             name,
             headers,
+            idempotency_key,
             json,
         } => run_add(
             &mut client,
@@ -510,6 +526,7 @@ pub fn run_with_host_policy(
             directory_explicit,
             name,
             headers,
+            idempotency_key,
             json,
         ),
         CliCommand::List { filter, json } => run_list(&mut client, filter, json),
@@ -600,6 +617,7 @@ fn run_add(
     directory_explicit: bool,
     name: Option<String>,
     headers: Vec<DownloadRequestHeader>,
+    idempotency_key: Option<Uuid>,
     json_output: bool,
 ) -> Result<(), CliError> {
     let request = DownloadRequest {
@@ -628,13 +646,15 @@ fn run_add(
         .command(command_envelope(DownloadCommand::Submit {
             request,
             mode: DownloadSubmitMode::StartNow,
+            idempotency_key,
         }))
         .map_err(CliError::host)?;
     let request_id = result.request_id;
     match result.outcome {
         DownloadCommandOutcome::Accepted {
             task_id: Some(task_id),
-        } => {
+        }
+        | DownloadCommandOutcome::IdempotentAccepted { task_id, .. } => {
             if json_output {
                 print_json(request_id, true, Some(json!({ "task_id": task_id })), None);
             } else {
@@ -739,19 +759,28 @@ fn run_show(
     if !watch || is_watch_terminal(task.task.status()) {
         return Ok(());
     }
+    let expected_generation = client
+        .host_snapshot()
+        .map(|snapshot| snapshot.engine_generation);
     let subscription = client
         .command(command_envelope(DownloadCommand::Subscribe {
             after_sequence: Some(sequence),
+            generation: expected_generation,
         }))
         .map_err(CliError::host)?;
     match subscription.outcome {
-        DownloadCommandOutcome::Accepted { .. } => {}
+        DownloadCommandOutcome::Accepted { .. } | DownloadCommandOutcome::Subscribed { .. } => {}
         DownloadCommandOutcome::Rejected { fault } => {
             return Err(error_from_fault(fault, false));
         }
         _ => return Err(unexpected_result("subscribe")),
     }
     while let Some(event) = client.next_event().map_err(CliError::host)? {
+        if expected_generation
+            .is_some_and(|generation| event.generation != 0 && event.generation != generation)
+        {
+            continue;
+        }
         match event.event {
             DownloadEvent::TaskChanged { task } if task.id() == task_id => {
                 if json_output {
@@ -839,6 +868,8 @@ fn run_action(
     let engine_action = match action {
         CliAction::Pause => DownloadBatchAction::Pause,
         CliAction::Resume => DownloadBatchAction::Resume,
+        CliAction::Retry => DownloadBatchAction::Retry,
+        CliAction::Redownload => DownloadBatchAction::Redownload,
         CliAction::Cancel => DownloadBatchAction::Cancel,
         CliAction::Remove if delete_file => DownloadBatchAction::RemoveWithArtifact,
         CliAction::Remove => DownloadBatchAction::Remove,
@@ -1180,10 +1211,10 @@ pub fn default_download_directory() -> PathBuf {
 
 pub fn usage() -> &'static str {
     "用法：
-  NxTools.Cli.exe [--connect-only] download add <url> [--dir <path>] [--name <name>] [--header <k:v>] [--json]
+  NxTools.Cli.exe [--connect-only] download add <url> [--dir <path>] [--name <name>] [--header <k:v>] [--idempotency-key <uuid>] [--json]
   NxTools.Cli.exe download list [--active|--completed|--failed] [--json]
   NxTools.Cli.exe download show <id> [--watch] [--json]
-  NxTools.Cli.exe download pause|resume|cancel <id...> [--json]
+  NxTools.Cli.exe download pause|resume|retry|redownload|cancel <id...> [--json]
   NxTools.Cli.exe download remove <id...> [--delete-file] [--json]
   NxTools.Cli.exe download schedule [--queue <id>] [--start HH:MM] [--stop HH:MM] [--days mon,tue,...] [--json]
   NxTools.Cli.exe download schedule [--queue <id>] --disable [--json]
@@ -1238,6 +1269,8 @@ mod tests {
                 "Referer:https://example.com",
                 "--header",
                 "Authorization:Bearer secret",
+                "--idempotency-key",
+                "12345678-1234-5678-1234-567812345678",
                 "--json",
             ],
             PathBuf::from(r"C:\Downloads"),
@@ -1246,12 +1279,17 @@ mod tests {
         let CliCommand::Add {
             directory,
             headers,
+            idempotency_key,
             json,
             ..
         } = parsed
         else {
             panic!("expected add");
         };
+        assert_eq!(
+            idempotency_key,
+            Some(Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap())
+        );
         assert_eq!(directory, PathBuf::from(r"D:\Downloads"));
         assert_eq!(headers.len(), 2);
         assert!(json);
@@ -1313,6 +1351,25 @@ mod tests {
         let error = parse_args(["download", "pause", "not-a-task"], PathBuf::new())
             .expect_err("invalid task ID must fail");
         assert_eq!(error.exit_code, EXIT_SYNTAX);
+    }
+
+    #[test]
+    fn explicit_retry_and_redownload_actions_are_distinct_from_resume() {
+        for (verb, expected) in [
+            ("resume", CliAction::Resume),
+            ("retry", CliAction::Retry),
+            ("redownload", CliAction::Redownload),
+        ] {
+            let parsed = parse_args(
+                ["download", verb, "12345678-1234-5678-1234-567812345678"],
+                PathBuf::new(),
+            )
+            .expect("parse explicit task action");
+            let CliCommand::Action { action, .. } = parsed else {
+                panic!("task action expected");
+            };
+            assert_eq!(action, expected);
+        }
     }
 
     #[test]

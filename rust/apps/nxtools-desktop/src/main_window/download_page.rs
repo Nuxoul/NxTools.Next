@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::components::tooltip::bounded_text_tooltip;
 use crate::ui::metrics::{DETAIL_TAB_HEIGHT, ICON_GLYPH_SMALL, PROGRESS_TRACK_HEIGHT};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -122,6 +123,8 @@ pub(crate) fn download_row_transfer_presentation(
 #[derive(Debug, Default)]
 pub(crate) struct DownloadContextCapabilities {
     pub(crate) resume_targets: Vec<DownloadTaskId>,
+    pub(crate) retry_targets: Vec<DownloadTaskId>,
+    pub(crate) redownload_targets: Vec<DownloadTaskId>,
     pub(crate) pause_targets: Vec<DownloadTaskId>,
     pub(crate) cancel_targets: Vec<DownloadTaskId>,
     pub(crate) can_move_queue: bool,
@@ -131,9 +134,6 @@ pub(crate) struct DownloadContextCapabilities {
     pub(crate) queue_bottom: bool,
     pub(crate) can_remove: bool,
     pub(crate) single_artifact: Option<DownloadTaskId>,
-    /// True when every resume target has failed, so the resume action reads
-    /// as an explicit retry in the menu.
-    pub(crate) resume_all_failed: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -142,6 +142,8 @@ pub(crate) struct DownloadContextMenuPlan {
     pub(crate) copy_url: bool,
     pub(crate) task_window: bool,
     pub(crate) resume: bool,
+    pub(crate) retry: bool,
+    pub(crate) redownload: bool,
     pub(crate) pause: bool,
     pub(crate) cancel: bool,
     pub(crate) queue_top: bool,
@@ -475,6 +477,26 @@ impl DownloadFilterCounts {
     }
 }
 
+pub(crate) fn download_filter_count_label(count: usize) -> String {
+    if count < 1_000 {
+        return count.to_string();
+    }
+    let mut value = count as f64;
+    let mut suffix = "k";
+    for candidate in ["k", "M", "B", "T", "P"] {
+        value /= 1_000.0;
+        suffix = candidate;
+        if value < 1_000.0 {
+            break;
+        }
+    }
+    if value >= 100.0 {
+        format!("{value:.0}{suffix}")
+    } else {
+        format!("{value:.1}{suffix}")
+    }
+}
+
 pub(crate) fn download_filter_counts(
     statuses: impl IntoIterator<Item = DownloadStatus>,
 ) -> DownloadFilterCounts {
@@ -613,22 +635,29 @@ pub(crate) fn download_context_capabilities(
             .filter(|task| {
                 matches!(
                     task.task.status(),
-                    DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
+                    DownloadStatus::Created | DownloadStatus::Paused
                 )
             })
             .map(|task| task.task.id())
             .collect(),
-        resume_all_failed: !selected_tasks.is_empty()
-            && selected_tasks.iter().all(|task| {
-                matches!(task.task.status(), DownloadStatus::Failed)
-                    || !matches!(
-                        task.task.status(),
-                        DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
-                    )
+        retry_targets: selected_tasks
+            .iter()
+            .filter(|task| {
+                task.task.status() == DownloadStatus::Failed
+                    && task.error.as_ref().is_some_and(|fault| fault.retryable)
             })
-            && selected_tasks
-                .iter()
-                .any(|task| task.task.status() == DownloadStatus::Failed),
+            .map(|task| task.task.id())
+            .collect(),
+        redownload_targets: selected_tasks
+            .iter()
+            .filter(|task| {
+                matches!(
+                    task.task.status(),
+                    DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+                )
+            })
+            .map(|task| task.task.id())
+            .collect(),
         pause_targets: selected_tasks
             .iter()
             .filter(|task| {
@@ -723,6 +752,8 @@ pub(crate) fn download_context_menu_plan(
         copy_url: selected_count > 0,
         task_window: selected_count == 1,
         resume: !capabilities.resume_targets.is_empty(),
+        retry: !capabilities.retry_targets.is_empty(),
+        redownload: !capabilities.redownload_targets.is_empty(),
         pause: !capabilities.pause_targets.is_empty(),
         cancel: !capabilities.cancel_targets.is_empty(),
         queue_top: capabilities.can_move_queue && capabilities.queue_top,
@@ -742,44 +773,45 @@ impl MainWindow {
             .value()
             .trim()
             .to_owned();
-        let (total_count, counts, visible_tasks, visible_progress, visible_icons) = self
-            .downloads
-            .upgrade()
-            .map(|application| {
-                let application = application.read(cx);
-                let tasks = application.tasks();
-                let visible_tasks = download_tasks_for_view(
-                    tasks,
-                    self.download_filter,
-                    &search_query,
-                    self.download_sort,
-                );
-                let visible_progress = visible_tasks
-                    .iter()
-                    .filter_map(|task| {
-                        application
-                            .progress(task.task.id())
-                            .cloned()
-                            .map(|progress| (task.task.id(), progress))
-                    })
-                    .collect::<HashMap<_, _>>();
-                let visible_icons = visible_tasks
-                    .iter()
-                    .filter_map(|task| {
-                        application
-                            .task_icon_path(task.task.id())
-                            .map(|path| (task.task.id(), path.to_path_buf()))
-                    })
-                    .collect::<HashMap<_, _>>();
-                (
-                    tasks.len(),
-                    download_filter_counts(tasks.iter().map(|task| task.task.status())),
-                    visible_tasks,
-                    visible_progress,
-                    visible_icons,
-                )
-            })
-            .unwrap_or_default();
+        let (total_count, counts, visible_tasks, visible_progress, visible_icons, snapshot_error) =
+            self.downloads
+                .upgrade()
+                .map(|application| {
+                    let application = application.read(cx);
+                    let tasks = application.tasks();
+                    let visible_tasks = download_tasks_for_view(
+                        tasks,
+                        self.download_filter,
+                        &search_query,
+                        self.download_sort,
+                    );
+                    let visible_progress = visible_tasks
+                        .iter()
+                        .filter_map(|task| {
+                            application
+                                .progress(task.task.id())
+                                .cloned()
+                                .map(|progress| (task.task.id(), progress))
+                        })
+                        .collect::<HashMap<_, _>>();
+                    let visible_icons = visible_tasks
+                        .iter()
+                        .filter_map(|task| {
+                            application
+                                .task_icon_path(task.task.id())
+                                .map(|path| (task.task.id(), path.to_path_buf()))
+                        })
+                        .collect::<HashMap<_, _>>();
+                    (
+                        tasks.len(),
+                        download_filter_counts(tasks.iter().map(|task| task.task.status())),
+                        visible_tasks,
+                        visible_progress,
+                        visible_icons,
+                        application.snapshot_error().map(str::to_owned),
+                    )
+                })
+                .unwrap_or_default();
         let selected_task_id = reconcile_download_selection(
             self.selected_download_task,
             &mut self.selected_download_tasks,
@@ -920,7 +952,11 @@ impl MainWindow {
                     let filter_count = counts.get(filter);
                     SegmentedOption::new(
                         filter.id(),
-                        format!("{} {filter_count}", filter.label()),
+                        format!(
+                            "{} {}",
+                            filter.label(),
+                            download_filter_count_label(filter_count)
+                        ),
                         cx.listener(move |this, _, _, cx| {
                             if select_download_filter(
                                 &mut this.download_filter,
@@ -1164,6 +1200,14 @@ impl MainWindow {
                     .when_some(batch_toolbar, |workspace, toolbar| {
                         workspace.child(toolbar)
                     })
+                    .when_some(snapshot_error, |workspace, error| {
+                        workspace.child(inline_error_state(
+                            theme,
+                            "download-snapshot-error",
+                            "下载列表刷新失败",
+                            error,
+                        ))
+                    })
                     .child(download_table_header(theme, self.download_sort, main_window))
                     .child(if visible_count == 0 {
                         if total_count == 0 {
@@ -1179,21 +1223,19 @@ impl MainWindow {
                                 "点击右上角新建下载，提交真实 HTTP 或 HTTPS 地址；也可以从浏览器直接发起下载。",
                             );
                             match self.downloads.upgrade() {
-                                Some(open_application) => div()
-                                    .id("download-empty-state-action")
-                                    .size_full()
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                Some(open_application) => interactive_state(
+                                    "download-empty-state-action",
+                                    empty,
+                                    cx.listener(move |_, _, _, cx| {
                                         let application = open_application.clone();
                                         cx.defer(move |cx| {
                                             application.update(cx, |application, cx| {
                                                 application.open_new_download_window(cx);
                                             });
                                         });
-                                        let _ = this;
-                                    }))
-                                    .child(empty)
-                                    .into_any_element(),
+                                    }),
+                                )
+                                .into_any_element(),
                                 None => empty.into_any_element(),
                             }
                         } else if !search_query.is_empty() {
@@ -1233,6 +1275,12 @@ impl MainWindow {
             .into_any_element()
     }
 }
+fn download_bounded_tooltip(
+    selector: &'static str,
+    message: String,
+) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView {
+    bounded_text_tooltip(selector, message, false)
+}
 
 pub(crate) fn download_task_row(
     theme: Theme,
@@ -1248,7 +1296,11 @@ pub(crate) fn download_task_row(
         visible_task_ids,
     } = selection;
     let task_id = task.task.id();
-    let element_id = task_id.as_uuid().as_u64_pair().0;
+    let element_id = task_id.as_uuid().to_string();
+    let row_id = gpui::SharedString::from(format!("download-task-row-{element_id}"));
+    let secondary_id = gpui::SharedString::from(format!("download-task-secondary-{element_id}"));
+    let created_id = gpui::SharedString::from(format!("download-task-created-{element_id}"));
+    let name_id = gpui::SharedString::from(format!("download-task-name-text-{element_id}"));
     let status = task.task.status();
     let created_at_unix_ms = task.task.created_at_unix_ms();
     let name = task.task.request().category_name.as_ref().map_or_else(
@@ -1272,6 +1324,7 @@ pub(crate) fn download_task_row(
         |error| (download_failure_summary(error).to_owned(), theme.danger),
     );
     let error_tooltip = task.error.as_ref().map(|error| error.message.clone());
+    let path_tooltip = (!failed).then(|| secondary_text.clone());
     let has_icon_path = icon_path.is_some();
     let row_open_application = application.clone();
     let context_application = application;
@@ -1283,8 +1336,8 @@ pub(crate) fn download_task_row(
     let context_visible_task_ids = visible_task_ids.clone();
 
     div()
-        .id(("download-task-row", element_id))
-        .debug_selector(move || format!("download-task-row-{element_id}"))
+        .id(row_id.clone())
+        .debug_selector(move || row_id.to_string())
         .h(px(DOWNLOAD_TASK_ROW_HEIGHT))
         .flex_none()
         .border_b_1()
@@ -1446,11 +1499,16 @@ pub(crate) fn download_task_row(
                         .gap(px(SPACING_2))
                         .child(
                             div()
+                                .id(name_id.clone())
                                 .when(selected, |text| {
                                     text.debug_selector(|| {
                                         "download-task-name-text-selected".into()
                                     })
                                 })
+                                .tooltip(download_bounded_tooltip(
+                                    "download-task-name-tooltip",
+                                    name.clone(),
+                                ))
                                 .overflow_hidden()
                                 .whitespace_nowrap()
                                 .text_size(px(TEXT_BODY))
@@ -1460,7 +1518,7 @@ pub(crate) fn download_task_row(
                         )
                         .child(
                             div()
-                                .id(("download-task-secondary", element_id))
+                                .id(secondary_id.clone())
                                 .when(selected, |text| {
                                     text.debug_selector(|| {
                                         "download-task-path-text-selected".into()
@@ -1502,6 +1560,12 @@ pub(crate) fn download_task_row(
                                         .max_h(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_HEIGHT))
                                         .build(window, cx)
                                     })
+                                })
+                                .when_some(path_tooltip, |line, message| {
+                                    line.tooltip(download_bounded_tooltip(
+                                        "download-task-path-tooltip",
+                                        message,
+                                    ))
                                 }),
                         ),
                 )
@@ -1597,7 +1661,7 @@ pub(crate) fn download_task_row(
                 )
                 .child(
                     div()
-                        .id(("download-task-created", element_id))
+                        .id(created_id.clone())
                         .when(selected, |column| {
                             column.debug_selector(|| "download-task-created-selected".into())
                         })
@@ -1760,23 +1824,35 @@ pub(crate) fn download_task_context_menu(
         );
         has_visible_items = true;
     }
-    if plan.resume || plan.pause || plan.cancel {
+    if plan.resume || plan.retry || plan.redownload || plan.pause || plan.cancel {
         if has_visible_items {
             menu = menu.separator();
         }
         if plan.resume {
-            // When every resume target has failed, the same action reads as
-            // an explicit retry.
             menu = menu.item(batch_item(
                 "download-menu-resume",
-                if capabilities.resume_all_failed {
-                    "重试"
-                } else {
-                    "开始 / 继续"
-                },
+                "开始 / 继续",
                 DownloadBatchAction::Resume,
                 MaterialIcon::Download,
                 capabilities.resume_targets.clone(),
+            ));
+        }
+        if plan.retry {
+            menu = menu.item(batch_item(
+                "download-menu-retry",
+                "重试",
+                DownloadBatchAction::Retry,
+                MaterialIcon::Download,
+                capabilities.retry_targets.clone(),
+            ));
+        }
+        if plan.redownload {
+            menu = menu.item(batch_item(
+                "download-menu-redownload",
+                "重新下载",
+                DownloadBatchAction::Redownload,
+                MaterialIcon::Download,
+                capabilities.redownload_targets.clone(),
             ));
         }
         if plan.pause {
@@ -1976,6 +2052,26 @@ pub(crate) fn download_batch_toolbar(
                 "开始 / 继续可运行任务",
                 DownloadBatchAction::Resume,
                 capabilities.resume_targets.clone(),
+                false,
+            ))
+        })
+        .when(plan.retry, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-retry",
+                MaterialIcon::Download,
+                "重试失败任务",
+                DownloadBatchAction::Retry,
+                capabilities.retry_targets.clone(),
+                false,
+            ))
+        })
+        .when(plan.redownload, |toolbar| {
+            toolbar.child(batch_action(
+                "download-batch-redownload",
+                MaterialIcon::Download,
+                "重新下载终态任务",
+                DownloadBatchAction::Redownload,
+                capabilities.redownload_targets.clone(),
                 false,
             ))
         })
@@ -2378,8 +2474,8 @@ pub(crate) fn download_segment_detail(
         .flex_wrap()
         .gap(px(3.0));
     for segment in &detail.segments {
-        let ratio = (segment.downloaded_bytes() as f32 / segment.len().max(1) as f32)
-            .clamp(0.0, 1.0);
+        let ratio =
+            (segment.downloaded_bytes() as f32 / segment.len().max(1) as f32).clamp(0.0, 1.0);
         let mut dot = div()
             .size(px(9.0))
             .rounded_full()

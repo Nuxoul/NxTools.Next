@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::dash::{DashManifest, DashTrackKind};
@@ -17,10 +20,78 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 8;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 11;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
+pub(crate) fn request_fingerprint(
+    request: &DownloadRequest,
+) -> Result<String, DownloadStorageError> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(request)?)
+    ))
+}
+
+fn sqlite_extended_code(error: &DownloadStorageError) -> Option<i32> {
+    match error {
+        DownloadStorageError::Sqlite(rusqlite::Error::SqliteFailure(native, _)) => {
+            Some(native.extended_code)
+        }
+        _ => None,
+    }
+}
+
+fn should_retry_open_error(error: &DownloadStorageError) -> bool {
+    let DownloadStorageError::Sqlite(rusqlite::Error::SqliteFailure(native, _)) = error else {
+        return false;
+    };
+    matches!(
+        native.code,
+        rusqlite::ffi::ErrorCode::DatabaseBusy
+            | rusqlite::ffi::ErrorCode::DatabaseLocked
+            | rusqlite::ffi::ErrorCode::SystemIoFailure
+    ) && (native.extended_code == rusqlite::ffi::SQLITE_IOERR_TRUNCATE
+        || matches!(
+            native.code,
+            rusqlite::ffi::ErrorCode::DatabaseBusy | rusqlite::ffi::ErrorCode::DatabaseLocked
+        ))
+}
+
+fn database_sidecar(path: &Path, suffix: &str) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("downloads.sqlite3");
+    path.with_file_name(format!("{file_name}{suffix}"))
+}
+
+fn quarantine_empty_database_file(path: &Path) -> Result<(), DownloadStorageError> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.len() != 0
+        || database_sidecar(path, "-wal").exists()
+        || database_sidecar(path, "-shm").exists()
+    {
+        return Ok(());
+    }
+    let quarantine = path.with_file_name(format!(
+        "{}.empty-{}.bak",
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("downloads.sqlite3"),
+        Uuid::new_v4()
+    ));
+    std::fs::rename(path, quarantine)?;
+    warn!(
+        event = "download.storage.empty_database_quarantined",
+        "quarantined an empty download database before recreating it"
+    );
+    Ok(())
+}
 
 pub struct SqliteDownloadStore {
     connection: Mutex<Connection>,
@@ -28,10 +99,38 @@ pub struct SqliteDownloadStore {
 
 impl SqliteDownloadStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DownloadStorageError> {
+        let path = path.as_ref();
+        quarantine_empty_database_file(path)?;
+        let mut last_error = None;
+        for attempt in 0..=3 {
+            match Self::open_once(path) {
+                Ok(store) => return Ok(store),
+                Err(error) if should_retry_open_error(&error) && attempt < 3 => {
+                    let extended_code = sqlite_extended_code(&error);
+                    warn!(
+                        event = "download.storage.open_retry",
+                        attempt = attempt + 1,
+                        sqlite_extended_code = ?extended_code,
+                        "retrying download database open after a transient SQLite I/O boundary"
+                    );
+                    last_error = Some(error);
+                    std::thread::sleep(Duration::from_millis(100 * (attempt + 1) as u64));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.expect("download database retry must retain its last error"))
+    }
+
+    fn open_once(path: &Path) -> Result<Self, DownloadStorageError> {
         let connection = Connection::open(path)?;
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        connection.busy_timeout(Duration::from_secs(5))?;
         reject_newer_schema(&connection)?;
-        connection.pragma_update(None, "journal_mode", "WAL")?;
+        let journal_mode: String =
+            connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+        if !journal_mode.eq_ignore_ascii_case("wal") {
+            connection.pragma_update(None, "journal_mode", "WAL")?;
+        }
         Self::initialize(connection)
     }
 
@@ -72,6 +171,16 @@ impl SqliteDownloadStore {
         }
         if current < 8 {
             connection.execute_batch(SCHEMA_V8)?;
+        }
+        if current < 9 {
+            connection.execute_batch(SCHEMA_V9)?;
+        }
+        if current < 10 {
+            connection.execute_batch(SCHEMA_V10)?;
+        }
+
+        if current < 11 {
+            connection.execute_batch(SCHEMA_V11)?;
         }
 
         Ok(Self {
@@ -1130,9 +1239,111 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    pub(crate) fn submission_receipt(
+        &self,
+        origin: RequestOrigin,
+        idempotency_key: Uuid,
+    ) -> Result<Option<SubmissionReceipt>, DownloadStorageError> {
+        let origin = enum_name(&origin)?;
+        let connection = self.lock()?;
+        let record = connection
+            .query_row(
+                r#"
+             SELECT task_id, request_fingerprint
+             FROM download_submission_receipts
+             WHERE origin = ?1 AND idempotency_key = ?2
+             "#,
+                params![origin, idempotency_key.to_string()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        record
+            .map(|(task_id, request_fingerprint)| {
+                let task_id = Uuid::parse_str(&task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))?;
+                Ok(SubmissionReceipt {
+                    task_id,
+                    request_fingerprint,
+                })
+            })
+            .transpose()
+    }
+
+    pub(crate) fn save_idempotent_task_with_transfer_and_queue(
+        &self,
+        origin: RequestOrigin,
+        idempotency_key: Uuid,
+        request_fingerprint: &str,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        is_eligible: bool,
+    ) -> Result<IdempotentSubmissionSave, DownloadStorageError> {
+        let origin_name = enum_name(&origin)?;
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            r#"
+         DELETE FROM download_submission_receipts
+         WHERE NOT EXISTS (
+             SELECT 1
+             FROM download_tasks
+             WHERE download_tasks.task_id = download_submission_receipts.task_id
+         )
+         "#,
+            [],
+        )?;
+        let existing = transaction
+            .query_row(
+                r#"
+             SELECT task_id, request_fingerprint
+             FROM download_submission_receipts
+             WHERE origin = ?1 AND idempotency_key = ?2
+             "#,
+                params![origin_name, idempotency_key.to_string()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        if let Some((task_id, stored_fingerprint)) = existing {
+            if stored_fingerprint != request_fingerprint {
+                return Err(DownloadStorageError::IdempotencyConflict {
+                    key: idempotency_key,
+                });
+            }
+            let task_id = Uuid::parse_str(&task_id)
+                .map(DownloadTaskId::from_uuid)
+                .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))?;
+            transaction.commit()?;
+            return Ok(IdempotentSubmissionSave::Duplicate(task_id));
+        }
+
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.execute(
+            r#"
+         INSERT INTO download_submission_receipts(
+             origin, idempotency_key, request_fingerprint, task_id, accepted_at_unix_ms
+         )
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         "#,
+            params![
+                origin_name,
+                idempotency_key.to_string(),
+                request_fingerprint,
+                task.id().as_uuid().to_string(),
+                now_unix_ms(),
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(IdempotentSubmissionSave::Inserted(task.id()))
+    }
+
     pub(crate) fn save_browser_task_with_transfer_and_queue(
         &self,
         handoff_id: Uuid,
+        request_fingerprint: &str,
         task: &DownloadTask,
         state: &StoredTransferState,
         queue_id: &str,
@@ -1142,17 +1353,39 @@ impl SqliteDownloadStore {
         let transaction = connection.transaction()?;
         let accepted_at_unix_ms = now_unix_ms();
         transaction.execute(
-            "DELETE FROM download_browser_handoffs WHERE accepted_at_unix_ms < ?1",
+            r#"
+            DELETE FROM download_browser_handoffs
+            WHERE accepted_at_unix_ms < ?1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM download_tasks
+                  WHERE download_tasks.task_id = download_browser_handoffs.task_id
+              )
+            "#,
             [accepted_at_unix_ms.saturating_sub(BROWSER_HANDOFF_RETENTION_MS)],
         )?;
         let existing = transaction
             .query_row(
-                "SELECT task_id FROM download_browser_handoffs WHERE handoff_id = ?1",
+                r#"
+                SELECT task_id, request_fingerprint
+                FROM download_browser_handoffs
+                WHERE handoff_id = ?1
+                "#,
                 [handoff_id.to_string()],
-                |row| row.get::<_, String>(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        if let Some(task_id) = existing {
+        if let Some((task_id, stored_fingerprint)) = existing {
+            if !stored_fingerprint.is_empty() && stored_fingerprint != request_fingerprint {
+                return Err(DownloadStorageError::BrowserHandoffConflict { handoff_id });
+            }
+            if stored_fingerprint.is_empty() {
+                transaction.execute(
+                    "UPDATE download_browser_handoffs SET request_fingerprint = ?2 WHERE handoff_id = ?1",
+                    params![handoff_id.to_string(), request_fingerprint],
+                )?;
+            }
+            transaction.commit()?;
             let task_id = Uuid::parse_str(&task_id)
                 .map(DownloadTaskId::from_uuid)
                 .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))?;
@@ -1164,12 +1397,15 @@ impl SqliteDownloadStore {
         append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
         transaction.execute(
             r#"
-            INSERT INTO download_browser_handoffs(handoff_id, task_id, accepted_at_unix_ms)
-            VALUES (?1, ?2, ?3)
+            INSERT INTO download_browser_handoffs(
+                handoff_id, task_id, request_fingerprint, accepted_at_unix_ms
+            )
+            VALUES (?1, ?2, ?3, ?4)
             "#,
             params![
                 handoff_id.to_string(),
                 task.id().as_uuid().to_string(),
+                request_fingerprint,
                 accepted_at_unix_ms,
             ],
         )?;
@@ -1178,10 +1414,15 @@ impl SqliteDownloadStore {
             DELETE FROM download_browser_handoffs
             WHERE handoff_id <> ?1
               AND handoff_id IN (
-                SELECT handoff_id
-                FROM download_browser_handoffs
-                WHERE handoff_id <> ?1
-                ORDER BY accepted_at_unix_ms DESC, handoff_id DESC
+                SELECT h.handoff_id
+                FROM download_browser_handoffs h
+                WHERE h.handoff_id <> ?1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM download_tasks t
+                      WHERE t.task_id = h.task_id
+                  )
+                ORDER BY h.accepted_at_unix_ms DESC, h.handoff_id DESC
                 LIMIT -1 OFFSET ?2
             )
             "#,
@@ -1191,25 +1432,51 @@ impl SqliteDownloadStore {
         Ok(BrowserHandoffSave::Inserted(task.id()))
     }
 
-    pub(crate) fn browser_handoff_task(
+    pub(crate) fn browser_handoff(
         &self,
         handoff_id: Uuid,
-    ) -> Result<Option<DownloadTaskId>, DownloadStorageError> {
+    ) -> Result<Option<BrowserHandoff>, DownloadStorageError> {
         let connection = self.lock()?;
-        let task_id = connection
+        let record = connection
             .query_row(
-                "SELECT task_id FROM download_browser_handoffs WHERE handoff_id = ?1",
+                r#"
+                SELECT task_id, request_fingerprint
+                FROM download_browser_handoffs
+                WHERE handoff_id = ?1
+                "#,
                 [handoff_id.to_string()],
-                |row| row.get::<_, String>(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        task_id
-            .map(|task_id| {
-                Uuid::parse_str(&task_id)
+        record
+            .map(|(task_id, stored_fingerprint)| {
+                let task_id = Uuid::parse_str(&task_id)
                     .map(DownloadTaskId::from_uuid)
-                    .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))
+                    .map_err(|_| DownloadStorageError::InvalidTaskId(task_id))?;
+                Ok(BrowserHandoff {
+                    task_id,
+                    request_fingerprint: (!stored_fingerprint.is_empty())
+                        .then_some(stored_fingerprint),
+                })
             })
             .transpose()
+    }
+
+    pub(crate) fn backfill_browser_handoff_fingerprint(
+        &self,
+        handoff_id: Uuid,
+        request_fingerprint: &str,
+    ) -> Result<bool, DownloadStorageError> {
+        let connection = self.lock()?;
+        let updated = connection.execute(
+            r#"
+            UPDATE download_browser_handoffs
+            SET request_fingerprint = ?2
+            WHERE handoff_id = ?1 AND request_fingerprint = ''
+            "#,
+            params![handoff_id.to_string(), request_fingerprint],
+        )?;
+        Ok(updated != 0)
     }
 
     pub(crate) fn save_task_with_transfer_and_eligibility(
@@ -1275,7 +1542,8 @@ impl SqliteDownloadStore {
                     etag,
                     last_modified,
                     error_code,
-                    error_message
+                    error_message,
+                    error_retryable
                 FROM download_tasks
                 WHERE task_id = ?1
                 "#,
@@ -1289,6 +1557,7 @@ impl SqliteDownloadStore {
                     let last_modified: Option<String> = row.get(5)?;
                     let error_code: Option<String> = row.get(6)?;
                     let error_message: Option<String> = row.get(7)?;
+                    let error_retryable: bool = row.get(8)?;
                     let probe = final_url.map(|final_url| DownloadProbe {
                         final_url,
                         file_name: None,
@@ -1305,7 +1574,7 @@ impl SqliteDownloadStore {
                         (Some(code), Some(message)) => Some(DownloadFault {
                             code: enum_from_name(&code, 6)?,
                             message,
-                            retryable: false,
+                            retryable: error_retryable,
                         }),
                         _ => None,
                     };
@@ -1487,6 +1756,24 @@ pub(crate) enum BrowserHandoffSave {
     Duplicate(DownloadTaskId),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BrowserHandoff {
+    pub task_id: DownloadTaskId,
+    pub request_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IdempotentSubmissionSave {
+    Inserted(DownloadTaskId),
+    Duplicate(DownloadTaskId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubmissionReceipt {
+    pub task_id: DownloadTaskId,
+    pub request_fingerprint: String,
+}
+
 fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), DownloadStorageError> {
     let request_json = serde_json::to_string(&task.request)?;
     let origin = enum_name(&task.origin)?;
@@ -1639,9 +1926,13 @@ fn save_transfer_state_row(
     task_id: DownloadTaskId,
     state: &StoredTransferState,
 ) -> Result<(), DownloadStorageError> {
-    let (error_code, error_message) = match state.error.as_ref() {
-        Some(error) => (Some(enum_name(&error.code)?), Some(error.message.as_str())),
-        None => (None, None),
+    let (error_code, error_message, error_retryable) = match state.error.as_ref() {
+        Some(error) => (
+            Some(enum_name(&error.code)?),
+            Some(error.message.as_str()),
+            error.retryable,
+        ),
+        None => (None, None, false),
     };
     connection.execute(
         r#"
@@ -1654,7 +1945,8 @@ fn save_transfer_state_row(
             etag = ?6,
             last_modified = ?7,
             error_code = ?8,
-            error_message = ?9
+            error_message = ?9,
+            error_retryable = ?10
         WHERE task_id = ?1
         "#,
         params![
@@ -1683,6 +1975,7 @@ fn save_transfer_state_row(
                 .and_then(|probe| probe.validator.last_modified.as_deref()),
             error_code,
             error_message,
+            error_retryable,
         ],
     )?;
     if let Some(path) = state.temporary_path.as_ref() {
@@ -1861,6 +2154,8 @@ pub enum DownloadStorageError {
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("download database schema {current} is newer than supported schema {supported}")]
     UnsupportedSchema { current: u32, supported: u32 },
@@ -1870,6 +2165,10 @@ pub enum DownloadStorageError {
     InvalidEnumEncoding,
     #[error("download integer does not fit SQLite INTEGER")]
     IntegerOverflow,
+    #[error("idempotency key conflicts with an existing request: {key}")]
+    IdempotencyConflict { key: Uuid },
+    #[error("browser handoff conflicts with an existing request: {handoff_id}")]
+    BrowserHandoffConflict { handoff_id: Uuid },
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
     #[error("download queue does not exist: {0}")]
@@ -2148,11 +2447,69 @@ PRAGMA user_version = 8;
 COMMIT;
 "#;
 
+const SCHEMA_V9: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE download_browser_handoffs
+    ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT '';
+
+PRAGMA user_version = 9;
+COMMIT;
+"#;
+
+const SCHEMA_V10: &str = r#"
+    BEGIN IMMEDIATE;
+
+    CREATE TABLE download_submission_receipts (
+        origin TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_fingerprint TEXT NOT NULL,
+        task_id TEXT NOT NULL UNIQUE REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+        accepted_at_unix_ms INTEGER NOT NULL,
+        PRIMARY KEY(origin, idempotency_key)
+    );
+
+    CREATE INDEX download_submission_receipts_task_idx
+        ON download_submission_receipts(task_id);
+
+    PRAGMA user_version = 10;
+    COMMIT;
+    "#;
+
+const SCHEMA_V11: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE download_tasks
+    ADD COLUMN error_retryable INTEGER NOT NULL DEFAULT 0;
+
+PRAGMA user_version = 11;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hls::{HlsMediaPlaylist, HlsMediaSegment, HlsSegmentEncryption};
     use crate::{DownloadFault, DownloadProbe, DownloadRequest, DownloadStatus};
+
+    #[test]
+    fn empty_database_file_is_quarantined_before_recreation() {
+        let directory = tempfile::tempdir().expect("create database directory");
+        let database = directory.path().join("downloads.sqlite3");
+        std::fs::File::create(&database).expect("create empty database placeholder");
+
+        let store = SqliteDownloadStore::open(&database).expect("recreate empty database");
+        assert_eq!(store.schema_version().expect("read schema version"), 11);
+        assert!(
+            std::fs::read_dir(directory.path())
+                .expect("read database directory")
+                .filter_map(Result::ok)
+                .any(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("downloads.sqlite3.empty-"))
+        );
+    }
 
     #[test]
     fn queue_membership_and_order_survive_store_reopen() {
@@ -2334,7 +2691,7 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 8);
+            assert_eq!(store.schema_version().expect("schema version"), 11);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -2390,7 +2747,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 8);
+        assert_eq!(store.schema_version().expect("schema version"), 11);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -2444,7 +2801,7 @@ mod tests {
             .expect("load upgraded HLS plan")
             .expect("upgraded HLS plan exists");
 
-        assert_eq!(store.schema_version().expect("schema version"), 8);
+        assert_eq!(store.schema_version().expect("schema version"), 11);
         assert_eq!(
             restored.segments[0].media.encryption,
             HlsSegmentEncryption::None
@@ -2487,39 +2844,314 @@ mod tests {
     }
 
     #[test]
-    fn browser_handoff_id_is_persistently_idempotent() {
+    fn browser_handoff_fingerprint_conflict_does_not_create_a_second_task() {
         let store = SqliteDownloadStore::open_in_memory().expect("open store");
         let handoff_id = Uuid::new_v4();
         let first = sample_task("first-browser.bin");
-        let duplicate_candidate = sample_task("duplicate-browser.bin");
+        let second = sample_task("second-browser.bin");
         let transfer = StoredTransferState::default();
 
         assert_eq!(
             store
                 .save_browser_task_with_transfer_and_queue(
-                    handoff_id, &first, &transfer, "default", true,
-                )
-                .expect("save first handoff"),
-            BrowserHandoffSave::Inserted(first.id())
-        );
-        assert_eq!(
-            store
-                .save_browser_task_with_transfer_and_queue(
                     handoff_id,
-                    &duplicate_candidate,
+                    "fingerprint-a",
+                    &first,
                     &transfer,
                     "default",
                     true,
                 )
-                .expect("resolve duplicate handoff"),
-            BrowserHandoffSave::Duplicate(first.id())
+                .expect("save first handoff"),
+            BrowserHandoffSave::Inserted(first.id())
+        );
+        assert!(matches!(
+            store.save_browser_task_with_transfer_and_queue(
+                handoff_id,
+                "fingerprint-b",
+                &second,
+                &transfer,
+                "default",
+                true,
+            ),
+            Err(DownloadStorageError::BrowserHandoffConflict { handoff_id: conflict })
+                if conflict == handoff_id
+        ));
+        assert!(
+            store
+                .load_task(second.id())
+                .expect("load conflicting task")
+                .is_none(),
+            "a conflicting handoff must not leave a second task"
         );
         assert!(
             store
-                .load_task(duplicate_candidate.id())
-                .expect("load duplicate candidate")
-                .is_none(),
-            "duplicate handoff must not leave a second task"
+                .load_task(first.id())
+                .expect("load original task")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn handoff_retention_does_not_evict_a_receipt_for_an_existing_task() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let first_handoff = Uuid::new_v4();
+        let second_handoff = Uuid::new_v4();
+        let first = sample_task("retained-first.bin");
+        let second = sample_task("retained-second.bin");
+        let transfer = StoredTransferState::default();
+        let first_fingerprint = request_fingerprint(first.request()).expect("fingerprint first");
+        let second_fingerprint = request_fingerprint(second.request()).expect("fingerprint second");
+
+        store
+            .save_browser_task_with_transfer_and_queue(
+                first_handoff,
+                &first_fingerprint,
+                &first,
+                &transfer,
+                "default",
+                true,
+            )
+            .expect("save first handoff");
+        store
+            .lock()
+            .expect("lock store")
+            .execute(
+                "UPDATE download_browser_handoffs SET accepted_at_unix_ms = 0 WHERE handoff_id = ?1",
+                [first_handoff.to_string()],
+            )
+            .expect("age first handoff");
+        store
+            .save_browser_task_with_transfer_and_queue(
+                second_handoff,
+                &second_fingerprint,
+                &second,
+                &transfer,
+                "default",
+                true,
+            )
+            .expect("save second handoff");
+
+        assert_eq!(
+            store
+                .save_browser_task_with_transfer_and_queue(
+                    first_handoff,
+                    &first_fingerprint,
+                    &sample_task("retained-replay.bin"),
+                    &transfer,
+                    "default",
+                    true,
+                )
+                .expect("replay retained handoff"),
+            BrowserHandoffSave::Duplicate(first.id())
+        );
+    }
+
+    #[test]
+    fn legacy_browser_handoff_fingerprint_is_backfilled_from_the_first_replay() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let handoff_id = Uuid::new_v4();
+        let first = sample_task("legacy-browser.bin");
+        let transfer = StoredTransferState::default();
+        store
+            .save_browser_task_with_transfer_and_queue(
+                handoff_id, "", &first, &transfer, "default", true,
+            )
+            .expect("save legacy handoff fixture");
+
+        let fingerprint = request_fingerprint(first.request()).expect("fingerprint request");
+        let replay = sample_task("legacy-browser.bin");
+        assert_eq!(
+            store
+                .save_browser_task_with_transfer_and_queue(
+                    handoff_id,
+                    &fingerprint,
+                    &replay,
+                    &transfer,
+                    "default",
+                    true,
+                )
+                .expect("replay legacy handoff"),
+            BrowserHandoffSave::Duplicate(first.id())
+        );
+
+        let stored = store
+            .browser_handoff(handoff_id)
+            .expect("read backfilled handoff")
+            .expect("backfilled handoff exists");
+        assert_eq!(
+            stored.request_fingerprint.as_deref(),
+            Some(fingerprint.as_str())
+        );
+        let different = sample_task("legacy-different.bin");
+        let different_fingerprint =
+            request_fingerprint(different.request()).expect("fingerprint different request");
+        assert!(matches!(
+            store.save_browser_task_with_transfer_and_queue(
+                handoff_id,
+                &different_fingerprint,
+                &different,
+                &transfer,
+                "default",
+                true,
+            ),
+            Err(DownloadStorageError::BrowserHandoffConflict { handoff_id: conflict })
+                if conflict == handoff_id
+        ));
+    }
+
+    #[test]
+    fn legacy_browser_handoff_backfill_reports_a_lost_claim() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let handoff_id = Uuid::new_v4();
+        let task = sample_task("legacy-claim.bin");
+        let transfer = StoredTransferState::default();
+        store
+            .save_browser_task_with_transfer_and_queue(
+                handoff_id, "", &task, &transfer, "default", true,
+            )
+            .expect("save legacy handoff fixture");
+
+        assert!(
+            store
+                .backfill_browser_handoff_fingerprint(handoff_id, "fingerprint-a")
+                .expect("claim legacy fingerprint")
+        );
+        assert!(
+            !store
+                .backfill_browser_handoff_fingerprint(handoff_id, "fingerprint-b")
+                .expect("observe lost legacy fingerprint claim")
+        );
+        let stored = store
+            .browser_handoff(handoff_id)
+            .expect("read claimed handoff")
+            .expect("claimed handoff exists");
+        assert_eq!(stored.request_fingerprint.as_deref(), Some("fingerprint-a"));
+    }
+
+    #[test]
+    fn idempotent_submission_conflict_does_not_create_a_second_task() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let first = sample_task("first-idempotent.bin");
+        let second = sample_task("second-idempotent.bin");
+        let key = Uuid::new_v4();
+        let transfer = StoredTransferState::default();
+
+        assert_eq!(
+            store
+                .save_idempotent_task_with_transfer_and_queue(
+                    RequestOrigin::Cli,
+                    key,
+                    "fingerprint-a",
+                    &first,
+                    &transfer,
+                    "default",
+                    true,
+                )
+                .expect("save first idempotent task"),
+            IdempotentSubmissionSave::Inserted(first.id())
+        );
+        assert_eq!(
+            store
+                .save_idempotent_task_with_transfer_and_queue(
+                    RequestOrigin::Cli,
+                    key,
+                    "fingerprint-a",
+                    &second,
+                    &transfer,
+                    "default",
+                    true,
+                )
+                .expect("replay idempotent task"),
+            IdempotentSubmissionSave::Duplicate(first.id())
+        );
+        assert!(matches!(
+            store.save_idempotent_task_with_transfer_and_queue(
+                RequestOrigin::Cli,
+                key,
+                "fingerprint-b",
+                &second,
+                &transfer,
+                "default",
+                true,
+            ),
+            Err(DownloadStorageError::IdempotencyConflict { key: conflict })
+                if conflict == key
+        ));
+        assert!(
+            store
+                .load_task(second.id())
+                .expect("load conflicting task")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn idempotency_key_is_scoped_by_origin() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        let first = sample_task("origin-cli.bin");
+        let second = sample_task("origin-ui.bin");
+        let key = Uuid::new_v4();
+        let transfer = StoredTransferState::default();
+
+        assert!(matches!(
+            store.save_idempotent_task_with_transfer_and_queue(
+                RequestOrigin::Cli,
+                key,
+                "fingerprint",
+                &first,
+                &transfer,
+                "default",
+                true,
+            ),
+            Ok(IdempotentSubmissionSave::Inserted(task_id)) if task_id == first.id()
+        ));
+        assert!(matches!(
+            store.save_idempotent_task_with_transfer_and_queue(
+                RequestOrigin::Ui,
+                key,
+                "fingerprint",
+                &second,
+                &transfer,
+                "default",
+                true,
+            ),
+            Ok(IdempotentSubmissionSave::Inserted(task_id)) if task_id == second.id()
+        ));
+    }
+
+    #[test]
+    fn idempotent_submission_receipt_failure_rolls_back_task_and_queue() {
+        let store = SqliteDownloadStore::open_in_memory().expect("open store");
+        store
+            .lock()
+            .expect("lock store")
+            .execute_batch(
+                r#"
+                CREATE TRIGGER reject_submission_receipt
+                BEFORE INSERT ON download_submission_receipts
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected receipt failure');
+                END;
+                "#,
+            )
+            .expect("install receipt failure trigger");
+        let task = sample_task("receipt-rollback.bin");
+        let result = store.save_idempotent_task_with_transfer_and_queue(
+            RequestOrigin::Cli,
+            Uuid::new_v4(),
+            "fingerprint",
+            &task,
+            &StoredTransferState::default(),
+            "default",
+            true,
+        );
+
+        assert!(result.is_err());
+        assert!(
+            store
+                .load_task(task.id())
+                .expect("load rolled back task")
+                .is_none()
         );
     }
 
