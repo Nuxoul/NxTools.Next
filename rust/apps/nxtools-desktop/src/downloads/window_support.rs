@@ -64,7 +64,10 @@ pub(crate) fn download_window_phase(status: DownloadStatus) -> DownloadWindowPha
     }
 }
 
-pub(crate) fn raise_terminal_window_without_activation(platform: &PlatformBridge, window_handle: i64) {
+pub(crate) fn raise_terminal_window_without_activation(
+    platform: &PlatformBridge,
+    window_handle: i64,
+) {
     if window_handle == 0 {
         return;
     }
@@ -80,7 +83,7 @@ pub(crate) fn load_download_snapshot(engine: &DownloadEngine) -> Result<Download
         request_id: uuid::Uuid::new_v4(),
         origin: RequestOrigin::Ui,
         command: DownloadCommand::Snapshot {
-            query: DownloadQuery::default(),
+            query: DownloadQuery::compact(),
         },
     });
     match result.outcome {
@@ -88,6 +91,24 @@ pub(crate) fn load_download_snapshot(engine: &DownloadEngine) -> Result<Download
         DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
         _ => Err("下载引擎返回了无效的快照结果".into()),
     }
+}
+
+pub(crate) fn download_snapshot_tasks(
+    snapshot: &DownloadSnapshot,
+) -> Result<Vec<DownloadEngineTask>, String> {
+    if !snapshot.task_summaries.is_empty() {
+        return snapshot
+            .task_summaries
+            .iter()
+            .cloned()
+            .map(|summary| {
+                summary
+                    .into_engine_task()
+                    .map_err(|error| error.to_string())
+            })
+            .collect();
+    }
+    Ok(snapshot.task_details.clone())
 }
 
 pub(crate) fn load_download_task_detail(
@@ -107,7 +128,10 @@ pub(crate) fn load_download_task_detail(
     }
 }
 
-pub(crate) fn apply_progress_to_task_detail(detail: &mut DownloadTaskDetail, progress: &DownloadProgress) {
+pub(crate) fn apply_progress_to_task_detail(
+    detail: &mut DownloadTaskDetail,
+    progress: &DownloadProgress,
+) {
     detail.task.downloaded_bytes = progress.downloaded_bytes;
     detail.task.total_bytes = progress.total_bytes;
     for segment_progress in &progress.segments {
@@ -219,7 +243,11 @@ pub(crate) fn completed_task_window_action(
     button.debug_selector(move || spec.role_selector.into())
 }
 
-pub(crate) fn download_window_metric(theme: Theme, label: &'static str, value: String) -> impl IntoElement {
+pub(crate) fn download_window_metric(
+    theme: Theme,
+    label: &'static str,
+    value: String,
+) -> impl IntoElement {
     div()
         .min_w_0()
         .flex_1()

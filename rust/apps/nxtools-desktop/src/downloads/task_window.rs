@@ -218,7 +218,7 @@ impl Render for DownloadTaskWindowView {
             .unwrap_or("正在解析文件名")
             .to_owned();
         let final_path = task.final_path.as_ref().map_or_else(
-            || task.task.request().save_directory.display().to_string(),
+            || task.task.request().source_url.clone(),
             |path| path.display().to_string(),
         );
 

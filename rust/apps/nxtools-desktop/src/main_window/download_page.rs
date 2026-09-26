@@ -715,7 +715,8 @@ pub(crate) fn download_context_capabilities(
         single_artifact: (selected_tasks.len() == 1)
             .then(|| selected_tasks[0])
             .filter(|task| task.task.status() == DownloadStatus::Completed)
-            .and_then(|task| task.final_path.as_ref().map(|_| task.task.id())),
+            .filter(|task| task.has_final_artifact)
+            .map(|task| task.task.id()),
     }
 }
 
@@ -2237,9 +2238,9 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
         );
     }
     let content = match active_tab {
-        DownloadDetailTab::Overview => download_overview_detail(theme, task, progress),
+        DownloadDetailTab::Overview => download_overview_detail(theme, task, detail, progress),
         DownloadDetailTab::Segments => download_segment_detail(theme, detail, detail_error),
-        DownloadDetailTab::Headers => download_header_detail(theme, task),
+        DownloadDetailTab::Headers => download_header_detail(theme, task, detail),
         DownloadDetailTab::Verification => {
             download_verification_detail(theme, task, detail, detail_error)
         }
@@ -2280,10 +2281,15 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
 pub(crate) fn download_overview_detail(
     theme: Theme,
     task: &DownloadEngineTask,
+    detail: Option<&DownloadTaskDetail>,
     progress: Option<&DownloadProgress>,
 ) -> AnyElement {
-    let request = task.task.request();
-    let total = task.total_bytes;
+    let full_task = detail.map_or(task, |detail| &detail.task);
+    let request = full_task.task.request();
+    let total = progress
+        .and_then(|progress| progress.total_bytes)
+        .or(task.total_bytes)
+        .or(full_task.total_bytes);
     let downloaded = progress.map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes);
     let bytes_per_second = progress.map_or(0, |progress| progress.bytes_per_second);
     let active_connections = progress.map_or(0, |progress| progress.active_connections);
@@ -2291,7 +2297,7 @@ pub(crate) fn download_overview_detail(
         .filter(|total| bytes_per_second > 0 && *total > downloaded)
         .map(|total| format_duration((total - downloaded) / bytes_per_second))
         .unwrap_or_else(|| "—".into());
-    let final_path = task
+    let final_path = full_task
         .final_path
         .as_ref()
         .map_or_else(|| "尚未解析".into(), |path| path.display().to_string());
@@ -2328,7 +2334,7 @@ pub(crate) fn download_overview_detail(
             theme,
             "download-detail-field-resume",
             "断点",
-            task.probe.as_ref().map_or_else(
+            full_task.probe.as_ref().map_or_else(
                 || "未知".into(),
                 |probe| {
                     if probe.supports_ranges {
@@ -2560,8 +2566,13 @@ pub(crate) fn download_segment_detail(
         .into_any_element()
 }
 
-pub(crate) fn download_header_detail(theme: Theme, task: &DownloadEngineTask) -> AnyElement {
-    let request = task.task.request();
+pub(crate) fn download_header_detail(
+    theme: Theme,
+    task: &DownloadEngineTask,
+    detail: Option<&DownloadTaskDetail>,
+) -> AnyElement {
+    let full_task = detail.map_or(task, |detail| &detail.task);
+    let request = full_task.task.request();
     let mut request_rows = Vec::new();
     for header in &request.headers {
         request_rows.push((
@@ -2579,7 +2590,7 @@ pub(crate) fn download_header_detail(theme: Theme, task: &DownloadEngineTask) ->
         request_rows.push(("请求 Header".into(), "未设置自定义 Header".into()));
     }
     let mut response_rows = Vec::new();
-    if let Some(probe) = &task.probe {
+    if let Some(probe) = &full_task.probe {
         response_rows.push(("Final URL".into(), probe.final_url.clone()));
         response_rows.push((
             "Content-Type".into(),
@@ -2623,7 +2634,8 @@ pub(crate) fn download_verification_detail(
     detail: Option<&DownloadTaskDetail>,
     detail_error: Option<&str>,
 ) -> AnyElement {
-    let validator = task.probe.as_ref().map(|probe| &probe.validator);
+    let full_task = detail.map_or(task, |detail| &detail.task);
+    let validator = full_task.probe.as_ref().map(|probe| &probe.validator);
     let identity = validator.map_or_else(
         || "尚未探测资源身份".into(),
         |validator| match (&validator.etag, &validator.last_modified) {
@@ -2670,7 +2682,7 @@ pub(crate) fn download_verification_detail(
         .child(download_detail_line(
             theme,
             "范围",
-            task.probe.as_ref().map_or_else(
+            full_task.probe.as_ref().map_or_else(
                 || "未知".into(),
                 |probe| {
                     if probe.supports_ranges {

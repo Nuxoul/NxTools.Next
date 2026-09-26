@@ -4,10 +4,10 @@ use nxtools_download::{
     BrowserDownloadSubmission, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashDownloadRequest,
     DownloadAggregateMetrics, DownloadBatchAction, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer,
-    DownloadFault, DownloadFaultCode, DownloadProbe, DownloadQueue, DownloadQueueAction,
-    DownloadQueuePlacement, DownloadRequest, DownloadRequestHeader, DownloadRequestMedia,
-    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId, HlsDownloadRequest,
-    RequestOrigin, ResourceValidator,
+    DownloadFault, DownloadFaultCode, DownloadProbe, DownloadQuery, DownloadQueue,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRequest, DownloadRequestHeader,
+    DownloadRequestMedia, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskId,
+    HlsDownloadRequest, RequestOrigin, ResourceValidator,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -345,6 +345,7 @@ fn snapshot_contains_queues_and_uses_the_frozen_metrics_name() {
         }],
         aggregate_metrics: DownloadAggregateMetrics::default(),
         task_details: Vec::new(),
+        task_summaries: Vec::new(),
     };
 
     let value = serde_json::to_value(snapshot).expect("serialize snapshot");
@@ -352,6 +353,26 @@ fn snapshot_contains_queues_and_uses_the_frozen_metrics_name() {
     assert_eq!(value["queues"][0]["id"], json!("main"));
     assert!(value.get("aggregate_metrics").is_some());
     assert!(value.get("aggregate").is_none());
+}
+#[test]
+fn compact_query_is_opt_in_and_legacy_snapshot_json_stays_decodable() {
+    assert!(!DownloadQuery::default().compact);
+    assert!(DownloadQuery::compact().compact);
+    let legacy = serde_json::json!({
+        "generation": 1,
+        "sequence": 2,
+        "tasks": [],
+        "queues": [],
+        "aggregate_metrics": {
+            "active_tasks": 0,
+            "downloaded_bytes_per_second": 0,
+            "disk_write_bytes_per_second": 0,
+            "active_connections": 0
+        }
+    });
+    let decoded: DownloadSnapshot =
+        serde_json::from_value(legacy).expect("legacy snapshot remains decodable");
+    assert!(decoded.task_summaries.is_empty());
 }
 
 #[test]

@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AppContext, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
@@ -16,8 +16,8 @@ use nxtools_core::{
     DownloadRowDoubleClickActionSettings, DownloadSettings, LinkPanelPosition, SystemSettings,
 };
 use nxtools_download::{
-    DownloadEngine, DownloadFault, DownloadFaultCode, DownloadProgress, DownloadRequest,
-    DownloadStatus, DownloadTaskId, RequestOrigin,
+    DownloadEngine, DownloadEngineTask, DownloadFault, DownloadFaultCode, DownloadProgress,
+    DownloadRequest, DownloadStatus, DownloadTask, DownloadTaskId, RequestOrigin,
 };
 use nxtools_finder::FinderCatalog;
 use nxtools_network::NetworkPolicy;
@@ -2827,6 +2827,22 @@ fn selected_download_detail_query_is_deferred_across_the_gpui_entity_boundary() 
         .expect("typed detail request");
 
     assert!(defer < request);
+    let detail_renderer = downloads
+        .split("pub(crate) fn download_task_detail")
+        .nth(1)
+        .expect("download task detail renderer");
+    assert!(
+        detail_renderer.contains("let full_task = detail.map_or(task, |detail| &detail.task)"),
+        "selected task detail must supply detail-only fields without replacing summary state"
+    );
+    assert!(
+        detail_renderer.contains("download_overview_detail(theme, task, detail"),
+        "overview must combine selected detail fields with the compact summary"
+    );
+    assert!(
+        detail_renderer.contains("download_header_detail(theme, task, detail"),
+        "headers must use the selected task detail"
+    );
     assert!(
         !downloads[..defer].contains("application.request_task_detail(task_id, cx)"),
         "render must not synchronously re-enter DownloadApplication"
@@ -3110,6 +3126,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
             .expect("advance fixture to completed");
     }
     completed.final_path = Some(r"C:\Downloads\Zeta.bin".into());
+    completed.has_final_artifact = true;
     completed.queue_eligible = true;
     let completed_capabilities = download_context_capabilities(&[completed], &[first]);
     assert_eq!(
@@ -3279,6 +3296,7 @@ fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAp
             .expect("advance completed-menu fixture");
     }
     completed.final_path = Some(r"C:\Downloads\completed.bin".into());
+    completed.has_final_artifact = true;
     completed.queue_eligible = true;
 
     let (platform, platform_endpoint) = nxtools_ipc::platform_bridge(16);
@@ -3878,6 +3896,11 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         .find(|task| task.task.id() == second_task)
         .expect("second task snapshot")
         .final_path = Some(long_success_path.clone());
+    task_snapshots
+        .iter_mut()
+        .find(|task| task.task.id() == second_task)
+        .expect("second task snapshot")
+        .has_final_artifact = true;
     let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let downloads = cx.update(|cx| {
@@ -5133,4 +5156,73 @@ fn tool_card_opens_feature_settings_and_persists_the_shared_toggle(cx: &mut Test
     worker_shutdown
         .shutdown()
         .expect("shutdown feature settings clipboard worker");
+}
+#[test]
+fn desktop_snapshot_projection_benchmark_uses_1000_and_10000_task_fixtures() {
+    for task_count in [1_000, 10_000] {
+        let mut tasks = Vec::with_capacity(task_count);
+        for index in 0..task_count {
+            let task = DownloadTask::new(
+                DownloadRequest {
+                    source_url: format!("https://snapshot.example.test/files/{index}.bin"),
+                    save_directory: r"C:\Downloads".into(),
+                    save_directory_explicit: false,
+                    file_name: Some(format!("snapshot-{index:05}.bin")),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    certificate_policy: Default::default(),
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: Some(1024),
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                    media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                },
+                RequestOrigin::Internal,
+                1_000 + index as i64,
+            );
+            tasks.push(DownloadEngineTask {
+                task,
+                probe: None,
+                downloaded_bytes: index as u64,
+                total_bytes: Some(1024),
+                error: None,
+                final_path: None,
+                temporary_path: None,
+                queue_eligible: false,
+                has_final_artifact: false,
+                scheduled: false,
+            });
+        }
+
+        let mut samples = Vec::with_capacity(7);
+        let mut visible_count = 0;
+        for _ in 0..7 {
+            let started = Instant::now();
+            let visible = download_tasks_for_view(
+                &tasks,
+                DownloadTaskFilter::All,
+                "",
+                DownloadSortState {
+                    key: DownloadSortKey::Name,
+                    descending: false,
+                },
+            );
+            let counts = download_filter_counts(tasks.iter().map(|task| task.task.status()));
+            visible_count = visible.len();
+            assert_eq!(counts.all, task_count);
+            assert_eq!(visible_count, task_count);
+            samples.push(started.elapsed().as_micros());
+        }
+        samples.sort_unstable();
+        let median = samples[samples.len() / 2];
+        let p95 = samples[((samples.len() * 95).div_ceil(100)).saturating_sub(1)];
+        println!(
+            "desktop_snapshot_projection_benchmark task_count={task_count} visible_count={visible_count} projection_us_median={median} projection_us_p95={p95}"
+        );
+    }
 }

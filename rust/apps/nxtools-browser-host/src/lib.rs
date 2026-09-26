@@ -967,6 +967,7 @@ fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
                 statuses: Vec::new(),
                 search: None,
                 limit: Some(80),
+                compact: true,
             },
         },
         RequestOrigin::Browser,
@@ -975,16 +976,17 @@ fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
         bail!("download engine returned an unexpected snapshot result");
     };
     let tasks = snapshot
-        .task_details
+        .task_summaries
         .into_iter()
-        .map(|detail| {
+        .map(|summary| {
+            let file_name = summary.file_name;
             json!({
-                "id": detail.task.id().as_uuid(),
-                "fileName": detail.task.request().file_name.clone(),
-                "displayFileName": detail.task.request().file_name.clone().unwrap_or_else(|| "download".into()),
-                "status": detail.task.status(),
-                "downloadedBytes": detail.downloaded_bytes,
-                "totalBytes": detail.total_bytes.unwrap_or_default()
+                "id": summary.task_id.as_uuid(),
+                "fileName": file_name.clone(),
+                "displayFileName": file_name.unwrap_or_else(|| "download".into()),
+                "status": summary.status,
+                "downloadedBytes": summary.downloaded_bytes,
+                "totalBytes": summary.total_bytes.unwrap_or_default()
             })
         })
         .collect::<Vec<_>>();

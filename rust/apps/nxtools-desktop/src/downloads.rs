@@ -684,12 +684,23 @@ impl DownloadApplication {
         let show_completion_window = config.download.show_completion_window;
         let (tasks, queues, event_generation, event_sequence) =
             match load_download_snapshot(&engine) {
-                Ok(snapshot) => (
-                    snapshot.task_details,
-                    snapshot.queues,
-                    snapshot.generation,
-                    snapshot.sequence,
-                ),
+                Ok(snapshot) => match download_snapshot_tasks(&snapshot) {
+                    Ok(tasks) => (
+                        tasks,
+                        snapshot.queues,
+                        snapshot.generation,
+                        snapshot.sequence,
+                    ),
+                    Err(error) => {
+                        warn!(%error, "could not project the compact download snapshot");
+                        (
+                            Vec::new(),
+                            snapshot.queues,
+                            snapshot.generation,
+                            snapshot.sequence,
+                        )
+                    }
+                },
                 Err(error) => {
                     warn!(%error, "could not load the download snapshot for the desktop");
                     (Vec::new(), Vec::new(), 0, 0)
@@ -698,10 +709,7 @@ impl DownloadApplication {
         let mut task_window_lifecycle = DownloadWindowLifecycle::default();
         let awaiting_delayed_progress = tasks
             .iter()
-            .filter(|task| {
-                task.task.origin() == RequestOrigin::Ui
-                    && task.task.request().scheduled_at_unix_ms.is_some()
-            })
+            .filter(|task| task.task.origin() == RequestOrigin::Ui && task.scheduled)
             .map(|task| task.task.id())
             .collect();
         let mut notified_terminal_states = HashSet::new();
@@ -1267,26 +1275,40 @@ impl DownloadApplication {
         }
     }
 
+    fn final_artifact_path(&self, task_id: DownloadTaskId) -> Result<PathBuf, String> {
+        let detail = self
+            .task_detail
+            .as_ref()
+            .filter(|detail| detail.task.task.id() == task_id)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| load_download_task_detail(&self.engine, task_id));
+        detail?
+            .task
+            .final_path
+            .clone()
+            .ok_or_else(|| "任务还没有可用的最终文件路径。".into())
+    }
+
     pub(crate) fn open_task_artifact(
         &mut self,
         task_id: DownloadTaskId,
         action: ShellOpenAction,
         cx: &mut Context<Self>,
     ) {
-        let Some(path) = self
-            .task(task_id)
-            .and_then(|task| task.final_path.as_ref())
-            .map(|path| path.to_string_lossy().into_owned())
-        else {
-            self.notifications.update(cx, |notifications, cx| {
-                notifications.show_error(
-                    format!("download-artifact-missing-{}", task_id.as_uuid()),
-                    "无法打开下载文件",
-                    "任务还没有可用的最终文件路径。",
-                    cx,
-                );
-            });
-            return;
+        let path = match self.final_artifact_path(task_id) {
+            Ok(path) => path.to_string_lossy().into_owned(),
+            Err(error) => {
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        format!("download-artifact-missing-{}", task_id.as_uuid()),
+                        "无法打开下载文件",
+                        error,
+                        cx,
+                    );
+                });
+                return;
+            }
         };
         match self
             .platform
@@ -1322,9 +1344,8 @@ impl DownloadApplication {
         source_window_handle: i64,
         cx: &mut Context<Self>,
     ) {
-        let Some(path) = self
-            .task(task_id)
-            .and_then(|task| task.final_path.as_ref())
+        let Ok(path) = self
+            .final_artifact_path(task_id)
             .map(|path| path.to_string_lossy().into_owned())
         else {
             return;
@@ -3585,7 +3606,15 @@ impl DownloadApplication {
         }
         self.event_generation = snapshot.generation;
         self.snapshot_error = None;
-        let tasks = snapshot.task_details;
+        let tasks = match download_snapshot_tasks(&snapshot) {
+            Ok(tasks) => tasks,
+            Err(error) => {
+                warn!(%error, "could not project the compact download snapshot");
+                self.snapshot_error = Some(Self::bounded_snapshot_error(&error));
+                cx.notify();
+                return;
+            }
+        };
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
         self.queues = snapshot.queues;

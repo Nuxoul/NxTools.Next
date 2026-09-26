@@ -180,6 +180,17 @@ pub struct DownloadQuery {
     pub statuses: Vec<DownloadStatus>,
     pub search: Option<String>,
     pub limit: Option<u32>,
+    #[serde(default)]
+    pub compact: bool,
+}
+
+impl DownloadQuery {
+    pub fn compact() -> Self {
+        Self {
+            compact: true,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,6 +302,25 @@ pub struct HlsVariantProbe {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTaskSummary {
+    pub task_id: DownloadTaskId,
+    pub origin: RequestOrigin,
+    pub status: DownloadStatus,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+    pub completed_at_unix_ms: Option<i64>,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub file_name: Option<String>,
+    pub source_url: String,
+    pub category_name: Option<String>,
+    pub category_id: Option<String>,
+    pub error: Option<DownloadFault>,
+    pub queue_eligible: bool,
+    pub has_final_artifact: bool,
+    pub scheduled: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadSnapshot {
     pub generation: u64,
     pub sequence: u64,
@@ -299,6 +329,8 @@ pub struct DownloadSnapshot {
     pub aggregate_metrics: DownloadAggregateMetrics,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub task_details: Vec<crate::DownloadEngineTask>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub task_summaries: Vec<DownloadTaskSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

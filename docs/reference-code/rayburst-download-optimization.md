@@ -209,7 +209,7 @@ fault_code (nullable)
 - `[已完成]` legacy 空 fingerprint 回填使用条件更新并校验竞争 claim 结果；engine-boundary reopen/replay/conflict 测试覆盖真实 fast path，Blob scheduler 二次 duplicate path 也记录 duplicate 诊断。
 - `[已完成]` 普通 `Submit` 现在带可选 `idempotency_key`；缺省字段兼容旧 protocol v8 JSON 和旧无 key 行为，有 key 时复用 schema v10 receipt、raw fingerprint、restart replay、conflict 和原子回滚语义。CLI `download add` 支持 `--idempotency-key`，桌面新建下载窗口为一次提交会话保存 key 并通过同一 Submit 入口发送，IPC 继续透传同一 typed command。
 - `[已完成]` 定向验证覆盖 origin 隔离、同 key replay、丢回复等价的重放、engine restart、不同 body conflict、receipt/task/queue 回滚、旧无 key Submit、CLI parser、IPC transport 和 desktop check。
-- `[未完成]` 其他外部调用方仍需按产品场景决定是否持久化并重用业务 key；显式 Retry/Redownload 和 snapshot payload 收窄仍属于后续切片。generation/readiness 的 engine/IPC 核心已落地，桌面/CLI 的完整 stale-event store 迁移仍需继续验收。
+- `[未完成]` 其他外部调用方仍需按产品场景决定是否持久化并重用业务 key；显式 Retry/Redownload、engine generation/readiness 核心和 snapshot/detail 收窄已完成，桌面/CLI 的完整 stale-event store 迁移仍需继续验收。
 
 ## 6. P1：Engine generation 与重连重同步
 
@@ -326,6 +326,35 @@ Rayburst `services/tasks/mod.rs::raw_task_snapshot` 通过 `system.multicall` �
 - 列表显示和排序结果与现状完全一致。
 - 打开详情只读取选中 task，不触发全量 plan/timeline 加载。
 - event gap 后的 snapshot 可以完全重建列表，不依赖上一次 task_details 缓存。
+
+### 8.5 [已完成] 测量结果与收窄决策
+
+基准 fixture 在 engine 内部批量写入 1,000/10,000 个任务和默认队列，避免把公共 `enqueue` 的逐项组织策略成本混入 snapshot 测量。每个场景先 warm up，再执行 7 次；输出的时间单位为微秒，格式为 `median/p95`。当前工作区直接运行结果如下：
+
+| 投影 | 任务数 | snapshot JSON bytes | command_snapshot us | snapshot serialization us | tasks+queue SQLite us | selected TaskDetail bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| legacy full | 1,000 | 1,461,192 | 7,775/11,227 | 46,160/58,211 | 19,060/20,923 | 972 |
+| compact summary | 1,000 | 423,305 | 6,812/9,996 | 13,692/14,389 | 19,742/21,638 | 972 |
+| legacy full | 10,000 | 14,632,193 | 92,246/112,475 | 439,193/461,393 | 180,467/207,491 | 974 |
+| compact summary | 10,000 | 4,241,306 | 90,912/103,486 | 124,156/130,510 | 195,511/201,976 | 974 |
+
+compact 在 1,000/10,000 任务下分别减少约 71% 的序列化 payload；10,000 任务序列化中位数减少约 72%。command construction 只有小幅改善，SQLite task+queue 读取没有材料改善，说明收益来自重复 full task projection 的序列化/传输，而不是 SQLite 查询形状；因此没有引入第二个数据库、sidecar 或新的查询存储。
+
+桌面列表投影 benchmark 的前置记录为 1,000 任务 `813/1,543 us`、10,000 任务 `8,694/12,133 us`；当前同一 projection fixture 重跑为 1,000 任务 `1,240/1,522 us`、10,000 任务 `8,358/11,090 us`。该微基准受 Windows 调度和分配噪声影响，没有把这组变化宣称为性能收益；compact 收窄的硬门槛由 payload 和 serialization 数据满足。
+
+实施形态保持 protocol v8 兼容：`DownloadQuery::compact()` 是显式兼容路径，desktop、CLI 和 BrowserHost 的活动列表调用使用 compact；`DownloadQuery::default()` 仍返回 legacy full projection，旧 JSON 中不存在 `task_summaries` 时按默认空数组解码。`DownloadTaskSummary` 只保留列表/重建所需的 ID、状态、时间、字节数、名称、来源、分类、fault、队列资格、计划状态和 artifact capability；probe metadata、validator、request headers/cookie、save paths、segments、media details 与 bounded timeline 只从选中任务的 `TaskDetail` 读取。
+
+契约与回归证据：
+
+- `compact_snapshot_preserves_legacy_filtering_and_queue_order` 比较 legacy/compact 的 source、name、category 搜索、状态过滤、limit 和队列顺序，并校验 selected `TaskDetail` 等于引擎真实任务。
+- `compact_snapshot_rebuilds_list_and_keeps_detail_selected_task_only` 校验 compact 列表没有 full task details，详情只返回选中任务，legacy 查询仍可用。
+- `compact_snapshot_is_self-contained_after_a_sequence_gap_refresh` 校验 gap 后只用 compact snapshot 重建任务列表。
+- `compact_query_is_opt_in_and_legacy_snapshot_json_stays_decodable` 校验缺少新增字段的旧 snapshot JSON 仍可解码。
+- desktop 的 selected-detail contract 校验 compact 占位只用于列表，详情到达后概览/Header/校验页统一使用真实 `detail.task`。
+
+### 8.6 [已完成] 当前边界
+
+Rust engine 继续拥有 task map、queue、SQLite、snapshot 构造和 `TaskDetail` 读取；IPC 只传 typed values，desktop/CLI 不直接访问 SQLite。列表过滤、排序和 queue admission 的语义没有迁移到 Rayburst 的 Vue/Pinia 结构，也没有复制 Aria2 sidecar；compact 仅在测量证明重复 full task projection 有材料成本后启用。
 
 ## 9. [架构推断] P1：宿主 readiness 与轻量 Supervisor
 
@@ -481,7 +510,7 @@ Rayburst `services/tasks/files.rs` 的 notify watcher、seeding 文件缺失暂�
 
 产物：explicit retry/redownload semantics、partial batch result、lazy task detail、terminal rollback tests。
 
-当前状态：Retry/Redownload 已完成并通过 engine library、CLI parser 和 GPUI context-action 定向测试；lazy task detail 仍是阶段 C 的未完成部分。
+当前状态：Retry/Redownload 已完成并通过 engine library、CLI parser 和 GPUI context-action 定向测试；snapshot/detail 已完成 measured compact projection、selected-task lazy detail、legacy decode、gap rebuild 和列表过滤/排序等价性验收。
 
 ### 阶段 D：P2 policy cleanup
 
@@ -489,24 +518,24 @@ Rayburst `services/tasks/files.rs` 的 notify watcher、seeding 文件缺失暂�
 
 ## 14. [架构推断] 验证矩阵
 
-| 领域 | 必须通过的验证 |
-| --- | --- |
-| 幂等 | 同 key replay、lost reply、body conflict、重启 replay、batch partial result |
-| 存储 | schema upgrade、WAL/sidecar、transaction rollback、receipt/task/queue 原子性 |
-| generation | host restart、stale event、sequence gap、snapshot reconstruction |
-| 队列 | stable reorder、eligible/user-paused、并发 slot refill、delayed schedule 不回归 |
-| retry | retry 保留 checkpoint、redownload 新 task、非 retryable fault、重复点击 coalesce |
-| snapshot | 1k/10k task payload benchmark、detail lazy load、列表排序等价性 |
-| 传输回归 | 现有 HTTP Range、validator、HLS/DASH、pause/cancel、artifact commit tests 全部通过 |
-| 诊断 | correlation 连贯、terminal success/failure 成对、无 URL/path/header/cookie payload 泄漏 |
-| 集成 | desktop、background host、CLI 只能共享一个 engine/database owner |
+| 领域 | 必须通过的验证 | 当前状态 |
+| --- | --- | --- |
+| 幂等 | 同 key replay、lost reply、body conflict、重启 replay、batch partial result | `[已完成]` P0 receipt/fingerprint contract |
+| 存储 | schema upgrade、WAL/sidecar、transaction rollback、receipt/task/queue 原子性 | `[已完成]` 相关 storage contract |
+| generation | host restart、stale event、sequence gap、snapshot reconstruction | `[部分完成]` engine/IPC 与 desktop gap gate 已覆盖，完整 stale-event store/real host restart 仍待补 |
+| 队列 | stable reorder、eligible/user-paused、并发 slot refill、delayed schedule 不回归 | `[已完成]` compact 保留 queue order，现有 queue contracts 继续运行 |
+| retry | retry 保留 checkpoint、redownload 新 task、非 retryable fault、重复点击 coalesce | `[已完成]` |
+| snapshot | 1k/10k task payload benchmark、detail lazy load、列表排序等价性 | `[已完成]` compact/legacy benchmark、TaskDetail、gap rebuild 和 filter/sort contract |
+| 传输回归 | 现有 HTTP Range、validator、HLS/DASH、pause/cancel、artifact commit tests 全部通过 | `[未全绿]` 本轮 engine_contract 为 92/101，9 个既有网络/动态 fixture 时序失败，见下方记录 |
+| 诊断 | correlation 连贯、terminal success/failure 成对、无 URL/path/header/cookie payload 泄漏 | `[已完成]` 本 slice 未新增敏感 payload 诊断 |
+| 集成 | desktop、background host、CLI 只能共享一个 engine/database owner | `[部分完成]` 相关 crate/desktop checks 已通过，real host restart 仍是后续验证 |
 
-所有 Rust 验证遵守仓库约束：`CARGO_BUILD_JOBS=1`、`CARGO_INCREMENTAL=0`、`RUSTFLAGS=-C codegen-units=256`。本轮 Retry/Redownload 已通过 `nxtools-download` library 96/96、artifact 4/4、domain 10/10、message contract 14/14、CLI 10/10、IPC 6/6、BrowserHost 26/26 和 desktop 408/408；相关 crate `cargo check`、`cargo fmt --all -- --check` 与 scoped `git diff --check` 通过。完整 `engine_contract` 在并发 runner 中为 96/98，失败的 `cancelling_with_partial_aes128_ciphertext_removes_task_owned_staging` 与 `reopened_dash_video_rejects_raw_timescale_changes_hidden_by_rounded_duration` 单独运行均通过，属于现有 fixture 调度漂移；因此完整 integration runner 仍明确标记为未全绿。
+所有 Rust 验证遵守仓库约束：`CARGO_BUILD_JOBS=1`、`CARGO_INCREMENTAL=0`、`RUSTFLAGS=-C codegen-units=256`。本轮通过：`nxtools-download` library 100/100、artifact 4/4、domain 10/10、message contract 15/15、CLI 10/10、IPC 6/6、BrowserHost 26/26、desktop 409/409；相关 crate `cargo check`、`cargo fmt --all -- --check` 与 scoped `git diff --check` 通过。完整 `engine_contract` 为 92/101，9 个失败为 `cli_dash_url_auto_selects_tracks_and_persists_the_media_request`、`dynamic_rebalance_splits_a_slow_tail_without_overlapping_output`、`a_dynamically_split_plan_resumes_after_engine_restart`、`selected_dash_video_track_downloads_init_and_segments_in_manifest_order`、`selected_hls_vod_bounds_parallel_segment_transfers_by_connection_limit`、`selected_hls_vod_downloads_segments_and_commits_them_in_playlist_order`、`reopening_engine_admits_a_durable_eligible_pending_task`、`single_stream_retry_budget_stops_after_three_attempts` 和 `pausing_after_aes128_decryption_failure_cleans_retry_staging`；它们是现有网络/动态 fixture 时序漂移，compact/detail 新增测试均通过，因此完整 integration runner 仍明确标记为未全绿。
 
 ## 15. [架构推断] 最终决策
 
 1. P0 browser handoff 和统一普通 `Submit` 的可选 key/receipt/fingerprint/conflict 已落地；下一步按产品场景补齐其他外部调用方的 key 持久化策略，再进入 P1 generation + snapshot/host readiness。
 2. 接着做 P1 generation + snapshot/host readiness，把后台宿主重启和 IPC 重连变成可观测、可恢复的生命周期。
-3. Retry/Redownload 已按 Rust task ownership 落地；lazy detail 仍作为阶段 C 后续 slice，继续改善大列表性能。
+3. Retry/Redownload 已按 Rust task ownership 落地；snapshot/detail 已按测量结果完成，继续保持 compact 列表与 selected-task lazy detail 边界。
 4. 保留 NxTools 现有的 Rust-owned transfer engine、segmented runner、SQLite schema、organization policy 和 bounded event model；这些不应被 Rayburst 的 Aria2/Tauri 结构替换。
 5. 在任何代码复用前，单独核对 Rayburst sidecar Aria2 Next 的 source/license/build provenance；本审计没有把它当作已获授权的可复制依赖。

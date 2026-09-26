@@ -32,10 +32,10 @@ use crate::{
     DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
     DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
     DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskDetail, DownloadTaskError,
-    DownloadTaskId, DownloadTransferContext, DownloadTransferControl, DownloadWeekday,
-    FfmpegInstallControl, FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError,
-    MAX_BROWSER_BATCH_ITEMS, NetworkPolicy, NetworkPolicyError, RequestOrigin, SegmentedArtifact,
-    SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadTaskId, DownloadTaskSummary, DownloadTransferContext, DownloadTransferControl,
+    DownloadWeekday, FfmpegInstallControl, FfmpegInstallOperation, HttpDownloadClient,
+    HttpDownloadError, MAX_BROWSER_BATCH_ITEMS, NetworkPolicy, NetworkPolicyError, RequestOrigin,
+    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -366,6 +366,54 @@ pub struct DownloadEngineTask {
     pub temporary_path: Option<PathBuf>,
     #[serde(default)]
     pub queue_eligible: bool,
+    #[serde(default)]
+    pub has_final_artifact: bool,
+    #[serde(default)]
+    pub scheduled: bool,
+}
+impl DownloadTaskSummary {
+    pub fn into_engine_task(self) -> Result<DownloadEngineTask, crate::DownloadTaskInvariantError> {
+        let request = DownloadRequest {
+            source_url: self.source_url,
+            save_directory: PathBuf::from("."),
+            save_directory_explicit: false,
+            file_name: self.file_name,
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(1),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: self.total_bytes,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+            category_id: self.category_id,
+            category_name: self.category_name,
+            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
+        };
+        let task = DownloadTask::restore(
+            self.task_id,
+            request,
+            self.origin,
+            self.status,
+            self.created_at_unix_ms,
+            self.updated_at_unix_ms,
+            self.completed_at_unix_ms,
+        )?;
+        Ok(DownloadEngineTask {
+            task,
+            probe: None,
+            downloaded_bytes: self.downloaded_bytes,
+            total_bytes: self.total_bytes,
+            error: self.error,
+            final_path: None,
+            temporary_path: None,
+            queue_eligible: self.queue_eligible,
+            has_final_artifact: self.has_final_artifact,
+            scheduled: self.scheduled,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1684,6 +1732,9 @@ impl DownloadEngine {
         &self,
         query: DownloadQuery,
     ) -> Result<DownloadSnapshot, DownloadEngineError> {
+        if query.compact {
+            return self.command_compact_snapshot(query);
+        }
         let search = query
             .search
             .as_deref()
@@ -1695,14 +1746,18 @@ impl DownloadEngine {
             .tasks()?
             .into_iter()
             .filter(|snapshot| {
+                let request = snapshot.task.request();
                 (query.statuses.is_empty() || query.statuses.contains(&snapshot.task.status()))
                     && search.as_ref().is_none_or(|search| {
-                        snapshot
-                            .task
-                            .request()
-                            .source_url
-                            .to_lowercase()
-                            .contains(search)
+                        request.source_url.to_lowercase().contains(search)
+                            || request
+                                .file_name
+                                .as_deref()
+                                .is_some_and(|name| name.to_lowercase().contains(search))
+                            || request
+                                .category_name
+                                .as_deref()
+                                .is_some_and(|name| name.to_lowercase().contains(search))
                             || snapshot.final_path.as_ref().is_some_and(|path| {
                                 path.to_string_lossy().to_lowercase().contains(search)
                             })
@@ -1721,6 +1776,115 @@ impl DownloadEngine {
             queues: self.inner.store.load_queues()?,
             aggregate_metrics: DownloadAggregateMetrics::default(),
             task_details,
+            task_summaries: Vec::new(),
+        })
+    }
+
+    fn command_compact_snapshot(
+        &self,
+        query: DownloadQuery,
+    ) -> Result<DownloadSnapshot, DownloadEngineError> {
+        let queues = self.inner.store.load_queues()?;
+        let mut eligible = HashSet::new();
+        let mut queue_positions = HashMap::new();
+        for queue in &queues {
+            if queue.id == "default" {
+                for (position, task_id) in self
+                    .inner
+                    .store
+                    .load_queue_order(&queue.id)?
+                    .into_iter()
+                    .enumerate()
+                {
+                    queue_positions.entry(task_id).or_insert(position);
+                }
+            }
+            eligible.extend(self.inner.store.load_eligible_queue_order(&queue.id)?);
+        }
+        let search = query
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|search| !search.is_empty())
+            .map(str::to_lowercase);
+        let limit = query.limit.unwrap_or(u32::MAX) as usize;
+        let mut summaries = self
+            .inner
+            .lock_tasks()?
+            .values()
+            .map(|state| {
+                let request = state.task.request();
+                let file_name = request
+                    .file_name
+                    .clone()
+                    .or_else(|| state.transfer.probe.as_ref()?.file_name.clone())
+                    .or_else(|| {
+                        state
+                            .transfer
+                            .final_path
+                            .as_ref()?
+                            .file_name()?
+                            .to_str()
+                            .map(str::to_owned)
+                    });
+                DownloadTaskSummary {
+                    task_id: state.task.id(),
+                    origin: state.task.origin(),
+                    status: state.task.status(),
+                    created_at_unix_ms: state.task.created_at_unix_ms(),
+                    updated_at_unix_ms: state.task.updated_at_unix_ms(),
+                    completed_at_unix_ms: state.task.completed_at_unix_ms(),
+                    downloaded_bytes: state.transfer.downloaded_bytes,
+                    total_bytes: state
+                        .transfer
+                        .probe
+                        .as_ref()
+                        .and_then(|probe| probe.total_bytes)
+                        .or(request.expected_total_bytes),
+                    file_name,
+                    source_url: request.source_url.clone(),
+                    category_name: request.category_name.clone(),
+                    category_id: request.category_id.clone(),
+                    error: state.transfer.error.clone(),
+                    queue_eligible: eligible.contains(&state.task.id()),
+                    has_final_artifact: state.transfer.final_committed
+                        && state.transfer.final_path.is_some(),
+                    scheduled: request.scheduled_at_unix_ms.is_some(),
+                }
+            })
+            .filter(|summary| {
+                (query.statuses.is_empty() || query.statuses.contains(&summary.status))
+                    && search.as_ref().is_none_or(|search| {
+                        summary.source_url.to_lowercase().contains(search)
+                            || summary
+                                .file_name
+                                .as_deref()
+                                .is_some_and(|name| name.to_lowercase().contains(search))
+                            || summary
+                                .category_name
+                                .as_deref()
+                                .is_some_and(|name| name.to_lowercase().contains(search))
+                    })
+            })
+            .collect::<Vec<_>>();
+        summaries.sort_by_key(|summary| {
+            (
+                queue_positions
+                    .get(&summary.task_id)
+                    .copied()
+                    .unwrap_or(usize::MAX),
+                std::cmp::Reverse(summary.created_at_unix_ms),
+            )
+        });
+        summaries.truncate(limit);
+        Ok(DownloadSnapshot {
+            generation: self.inner.session_generation,
+            sequence: self.inner.event_sequencer.current(),
+            tasks: Vec::new(),
+            queues,
+            aggregate_metrics: DownloadAggregateMetrics::default(),
+            task_details: Vec::new(),
+            task_summaries: summaries,
         })
     }
 
@@ -3890,6 +4054,8 @@ fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask {
             .or_else(|| file_name.map(|name| state.task.request().save_directory.join(name))),
         temporary_path: state.transfer.temporary_path.clone(),
         queue_eligible: false,
+        has_final_artifact: state.transfer.final_committed && state.transfer.final_path.is_some(),
+        scheduled: state.task.request().scheduled_at_unix_ms.is_some(),
     }
 }
 
@@ -5830,6 +5996,201 @@ mod tests {
         assert_eq!(engine.tasks().expect("list rolled back tasks").len(), 1);
     }
 
+    const SNAPSHOT_BENCHMARK_ITERATIONS: usize = 7;
+
+    fn snapshot_benchmark_request(directory: &Path, index: usize) -> DownloadRequest {
+        DownloadRequest {
+            source_url: format!("https://snapshot.example.test/files/{index}.bin"),
+            save_directory: directory.to_owned(),
+            save_directory_explicit: false,
+            file_name: Some(format!("snapshot-{index:05}.bin")),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(1),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: Some(1024),
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
+        }
+    }
+
+    fn seed_snapshot_benchmark_engine(task_count: usize) -> (DownloadEngine, Vec<DownloadTaskId>) {
+        let directory = tempfile::tempdir().expect("create snapshot benchmark directory");
+        let engine = DownloadEngine::open_in_memory().expect("open snapshot benchmark engine");
+        let mut task_ids = Vec::with_capacity(task_count);
+        let mut tasks = engine
+            .inner
+            .lock_tasks()
+            .expect("lock snapshot benchmark tasks");
+        for index in 0..task_count {
+            let task = DownloadTask::new(
+                snapshot_benchmark_request(directory.path(), index),
+                RequestOrigin::Internal,
+                1_000 + index as i64,
+            );
+            let task_id = task.id();
+            engine
+                .inner
+                .store
+                .save_task(&task)
+                .expect("save snapshot benchmark task");
+            tasks.insert(
+                task_id,
+                EngineTaskState {
+                    task,
+                    transfer: StoredTransferState::default(),
+                    control: None,
+                    last_progress_event: None,
+                    transfer_rate: None,
+                },
+            );
+            task_ids.push(task_id);
+        }
+        drop(tasks);
+        engine
+            .inner
+            .store
+            .replace_queue_order("default", &task_ids)
+            .expect("save snapshot benchmark queue order");
+        (engine, task_ids)
+    }
+
+    fn benchmark_snapshot(engine: &DownloadEngine, compact: bool) -> DownloadSnapshot {
+        let result = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Internal,
+            command: DownloadCommand::Snapshot {
+                query: DownloadQuery {
+                    compact,
+                    ..DownloadQuery::default()
+                },
+            },
+        });
+        let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {
+            panic!("snapshot benchmark command must return a snapshot");
+        };
+        snapshot
+    }
+
+    fn benchmark_detail(engine: &DownloadEngine, task_id: DownloadTaskId) -> DownloadTaskDetail {
+        let result = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id: uuid::Uuid::new_v4(),
+            origin: RequestOrigin::Internal,
+            command: DownloadCommand::TaskDetail { task_id },
+        });
+        let DownloadCommandOutcome::TaskDetail(detail) = result.outcome else {
+            panic!("task detail benchmark command must return detail");
+        };
+        *detail
+    }
+
+    fn benchmark_median_p95(samples: &mut [u128]) -> (u128, u128) {
+        samples.sort_unstable();
+        let median = samples[samples.len() / 2];
+        let p95_index = ((samples.len() * 95).div_ceil(100)).saturating_sub(1);
+        (median, samples[p95_index])
+    }
+
+    fn measure_snapshot_fixture(task_count: usize, compact: bool) {
+        let (engine, task_ids) = seed_snapshot_benchmark_engine(task_count);
+        let warm_snapshot = benchmark_snapshot(&engine, compact);
+        if compact {
+            assert_eq!(warm_snapshot.task_summaries.len(), task_count);
+            assert!(warm_snapshot.tasks.is_empty());
+            assert!(warm_snapshot.task_details.is_empty());
+        } else {
+            assert_eq!(warm_snapshot.tasks.len(), task_count);
+            assert_eq!(warm_snapshot.task_details.len(), task_count);
+        }
+        let warm_detail = benchmark_detail(&engine, task_ids[task_count / 2]);
+        assert_eq!(warm_detail.task.task.id(), task_ids[task_count / 2]);
+
+        let mut command_samples = Vec::with_capacity(SNAPSHOT_BENCHMARK_ITERATIONS);
+        let mut serialization_samples = Vec::with_capacity(SNAPSHOT_BENCHMARK_ITERATIONS);
+        let mut snapshot_json_bytes = 0_usize;
+        for _ in 0..SNAPSHOT_BENCHMARK_ITERATIONS {
+            let started = Instant::now();
+            let snapshot = benchmark_snapshot(&engine, compact);
+            command_samples.push(started.elapsed().as_micros());
+            let started = Instant::now();
+            snapshot_json_bytes = serde_json::to_vec(&snapshot)
+                .expect("serialize snapshot benchmark payload")
+                .len();
+            serialization_samples.push(started.elapsed().as_micros());
+        }
+
+        let mut detail_command_samples = Vec::with_capacity(SNAPSHOT_BENCHMARK_ITERATIONS);
+        let mut detail_serialization_samples = Vec::with_capacity(SNAPSHOT_BENCHMARK_ITERATIONS);
+        let mut detail_json_bytes = 0_usize;
+        for _ in 0..SNAPSHOT_BENCHMARK_ITERATIONS {
+            let started = Instant::now();
+            let detail = benchmark_detail(&engine, task_ids[task_count / 2]);
+            detail_command_samples.push(started.elapsed().as_micros());
+            let started = Instant::now();
+            detail_json_bytes = serde_json::to_vec(&detail)
+                .expect("serialize detail benchmark payload")
+                .len();
+            detail_serialization_samples.push(started.elapsed().as_micros());
+        }
+
+        let mut sqlite_samples = Vec::with_capacity(SNAPSHOT_BENCHMARK_ITERATIONS);
+        for _ in 0..SNAPSHOT_BENCHMARK_ITERATIONS {
+            let started = Instant::now();
+            let tasks = engine
+                .inner
+                .store
+                .load_tasks()
+                .expect("load SQLite benchmark tasks");
+            let queue = engine
+                .inner
+                .store
+                .load_queue_order("default")
+                .expect("load SQLite benchmark queue order");
+            assert_eq!(tasks.len(), task_count);
+            assert_eq!(queue.len(), task_count);
+            sqlite_samples.push(started.elapsed().as_micros());
+        }
+
+        let (command_median, command_p95) = benchmark_median_p95(&mut command_samples);
+        let (serialization_median, serialization_p95) =
+            benchmark_median_p95(&mut serialization_samples);
+        let (detail_command_median, detail_command_p95) =
+            benchmark_median_p95(&mut detail_command_samples);
+        let (detail_serialization_median, detail_serialization_p95) =
+            benchmark_median_p95(&mut detail_serialization_samples);
+        let (sqlite_median, sqlite_p95) = benchmark_median_p95(&mut sqlite_samples);
+        let projection = if compact { "compact" } else { "legacy" };
+        println!(
+            "snapshot_benchmark projection={projection} task_count={task_count} snapshot_json_bytes={snapshot_json_bytes} snapshot_command_us_median={command_median} snapshot_command_us_p95={command_p95} snapshot_serialize_us_median={serialization_median} snapshot_serialize_us_p95={serialization_p95} detail_json_bytes={detail_json_bytes} detail_command_us_median={detail_command_median} detail_command_us_p95={detail_command_p95} detail_serialize_us_median={detail_serialization_median} detail_serialize_us_p95={detail_serialization_p95} sqlite_tasks_queue_us_median={sqlite_median} sqlite_tasks_queue_us_p95={sqlite_p95}"
+        );
+    }
+
+    #[test]
+    fn snapshot_detail_baseline_uses_the_current_full_projection_at_1000_tasks() {
+        measure_snapshot_fixture(1_000, false);
+    }
+
+    #[test]
+    fn snapshot_detail_baseline_uses_the_current_full_projection_at_10000_tasks() {
+        measure_snapshot_fixture(10_000, false);
+    }
+    #[test]
+    fn snapshot_detail_compact_projection_at_1000_tasks() {
+        measure_snapshot_fixture(1_000, true);
+    }
+
+    #[test]
+    fn snapshot_detail_compact_projection_at_10000_tasks() {
+        measure_snapshot_fixture(10_000, true);
+    }
     fn one_head_response_server() -> (String, std::thread::JoinHandle<()>) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind HTTP fixture");
         let address = listener.local_addr().expect("read HTTP fixture address");

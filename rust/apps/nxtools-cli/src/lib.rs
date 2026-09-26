@@ -7,7 +7,7 @@ use nxtools_download::{
     DownloadBatchAction, DownloadCommand, DownloadCommandOutcome, DownloadDailySchedule,
     DownloadEngineTask, DownloadEvent, DownloadFault, DownloadFaultCode, DownloadQuery,
     DownloadQueueAction, DownloadRequest, DownloadRequestHeader, DownloadSchedule, DownloadStatus,
-    DownloadSubmitMode, DownloadTaskId, DownloadWeekday,
+    DownloadSubmitMode, DownloadTaskId, DownloadTaskSummary, DownloadWeekday,
 };
 use nxtools_download_ipc::{
     DOWNLOAD_PIPE_NAME, DownloadIpcClient, DownloadIpcProtocolIncompatible, command_envelope,
@@ -686,6 +686,7 @@ fn run_list(
                 statuses: statuses_for_filter(filter),
                 search: None,
                 limit: None,
+                compact: true,
             },
         }))
         .map_err(CliError::host)?;
@@ -693,9 +694,9 @@ fn run_list(
     match result.outcome {
         DownloadCommandOutcome::Snapshot(snapshot) => {
             let tasks = snapshot
-                .task_details
+                .task_summaries
                 .iter()
-                .map(safe_task_value)
+                .map(safe_task_summary_projection)
                 .collect::<Vec<_>>();
             if json_output {
                 print_json(
@@ -709,7 +710,7 @@ fn run_list(
                     None,
                 );
             } else {
-                print_task_table(&snapshot.task_details);
+                print_task_summary_table(&snapshot.task_summaries);
             }
             Ok(())
         }
@@ -930,24 +931,32 @@ fn fetch_task(
     client: &mut DownloadIpcClient,
     task_id: DownloadTaskId,
 ) -> Result<(Uuid, DownloadEngineTask, u64), CliError> {
-    let result = client
+    let snapshot_result = client
         .command(command_envelope(DownloadCommand::Snapshot {
-            query: DownloadQuery::default(),
+            query: DownloadQuery::compact(),
         }))
         .map_err(CliError::host)?;
-    let request_id = result.request_id;
-    let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {
+    let DownloadCommandOutcome::Snapshot(snapshot) = snapshot_result.outcome else {
         return Err(unexpected_result("show"));
     };
-    snapshot
-        .task_details
-        .into_iter()
-        .find(|task| task.task.id() == task_id)
-        .map(|task| (request_id, task, snapshot.sequence))
-        .ok_or_else(|| CliError {
+    if !snapshot
+        .task_summaries
+        .iter()
+        .any(|summary| summary.task_id == task_id)
+    {
+        return Err(CliError {
             exit_code: EXIT_TASK_NOT_FOUND,
             message: format!("download task {} was not found", task_id.as_uuid()),
-        })
+        });
+    }
+    let detail_result = client
+        .command(command_envelope(DownloadCommand::TaskDetail { task_id }))
+        .map_err(CliError::host)?;
+    let request_id = detail_result.request_id;
+    let DownloadCommandOutcome::TaskDetail(detail) = detail_result.outcome else {
+        return Err(unexpected_result("show detail"));
+    };
+    Ok((request_id, detail.task, snapshot.sequence))
 }
 
 fn connect_with_policy(
@@ -1041,6 +1050,24 @@ fn safe_task_value(task: &DownloadEngineTask) -> Value {
     })
 }
 
+fn safe_task_summary_projection(summary: &DownloadTaskSummary) -> Value {
+    json!({
+        "id": summary.task_id,
+        "source_url": summary.source_url,
+        "file_name": summary.file_name,
+        "status": summary.status,
+        "origin": summary.origin,
+        "created_at_unix_ms": summary.created_at_unix_ms,
+        "updated_at_unix_ms": summary.updated_at_unix_ms,
+        "completed_at_unix_ms": summary.completed_at_unix_ms,
+        "downloaded_bytes": summary.downloaded_bytes,
+        "total_bytes": summary.total_bytes,
+        "error": summary.error.as_ref().map(safe_fault_value),
+        "queue_eligible": summary.queue_eligible,
+        "has_final_artifact": summary.has_final_artifact
+    })
+}
+
 fn safe_task_summary(task: &nxtools_download::DownloadTask) -> Value {
     json!({
         "id": task.id(),
@@ -1095,7 +1122,17 @@ fn print_fault(request_id: Uuid, fault: &DownloadFault, json_output: bool) {
     }
 }
 
-fn print_task_table(tasks: &[DownloadEngineTask]) {
+fn summary_task_name(task: &DownloadTaskSummary) -> String {
+    task.file_name.clone().unwrap_or_else(|| {
+        url::Url::parse(&task.source_url)
+            .ok()
+            .and_then(|url| url.path_segments()?.next_back().map(str::to_owned))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| task.source_url.clone())
+    })
+}
+
+fn print_task_summary_table(tasks: &[DownloadTaskSummary]) {
     if tasks.is_empty() {
         println!("没有下载任务");
         return;
@@ -1104,9 +1141,9 @@ fn print_task_table(tasks: &[DownloadEngineTask]) {
     for task in tasks {
         println!(
             "{:<36}  {:<10}  {}",
-            task.task.id().as_uuid(),
-            status_name(task.task.status()),
-            task_name(task)
+            task.task_id.as_uuid(),
+            status_name(task.status),
+            summary_task_name(task)
         );
     }
 }
@@ -1114,6 +1151,7 @@ fn print_task_table(tasks: &[DownloadEngineTask]) {
 fn print_task_detail(task: &DownloadEngineTask) {
     println!("ID: {}", task.task.id().as_uuid());
     println!("状态: {}", status_name(task.task.status()));
+
     println!("文件: {}", task_name(task));
     println!("来源: {}", task.task.request().source_url);
     println!(

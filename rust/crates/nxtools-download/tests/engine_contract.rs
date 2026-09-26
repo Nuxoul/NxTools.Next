@@ -5245,3 +5245,319 @@ async fn wait_for_progress(engine: &DownloadEngine, task_id: nxtools_download::D
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
+#[test]
+fn compact_snapshot_rebuilds_list_and_keeps_detail_selected_task_only() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create compact snapshot directory");
+    let engine = DownloadEngine::open_in_memory().expect("open compact snapshot engine");
+    let first = engine
+        .enqueue(
+            request(&server, directory.path().join("first")),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue first compact task");
+    let second = engine
+        .enqueue(
+            request(&server, directory.path().join("second")),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue second compact task");
+
+    let compact = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::compact(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(compact) = compact.outcome else {
+        panic!("compact snapshot expected");
+    };
+    assert!(compact.tasks.is_empty());
+    assert!(compact.task_details.is_empty());
+    assert_eq!(
+        compact
+            .task_summaries
+            .iter()
+            .map(|summary| summary.task_id)
+            .collect::<Vec<_>>(),
+        vec![first, second]
+    );
+
+    let detail = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::TaskDetail { task_id: second },
+    });
+    let DownloadCommandOutcome::TaskDetail(detail) = detail.outcome else {
+        panic!("selected task detail expected");
+    };
+    assert_eq!(detail.task.task.id(), second);
+
+    let legacy = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::default(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(legacy) = legacy.outcome else {
+        panic!("legacy snapshot expected");
+    };
+    assert_eq!(legacy.task_details.len(), 2);
+    assert!(legacy.task_summaries.is_empty());
+}
+#[test]
+fn compact_snapshot_is_self_contained_after_a_sequence_gap_refresh() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create compact gap directory");
+    let engine = DownloadEngine::open_in_memory().expect("open compact gap engine");
+    let first = engine
+        .enqueue(
+            request(&server, directory.path().join("first")),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue first compact gap task");
+    let first_snapshot = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::compact(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(first_snapshot) = first_snapshot.outcome else {
+        panic!("compact gap baseline snapshot expected");
+    };
+    assert_eq!(first_snapshot.task_summaries.len(), 1);
+
+    let second = engine
+        .enqueue(
+            request(&server, directory.path().join("second")),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue second compact gap task");
+    let subscription = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Subscribe {
+            after_sequence: Some(first_snapshot.sequence),
+            generation: Some(first_snapshot.generation),
+        },
+    });
+    assert!(matches!(
+        subscription.outcome,
+        DownloadCommandOutcome::Subscribed {
+            snapshot_required: true,
+            ..
+        }
+    ));
+
+    let refreshed = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::compact(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(refreshed) = refreshed.outcome else {
+        panic!("compact gap refresh snapshot expected");
+    };
+    assert_eq!(
+        refreshed
+            .task_summaries
+            .iter()
+            .map(|summary| summary.task_id)
+            .collect::<Vec<_>>(),
+        vec![first, second]
+    );
+    assert!(refreshed.task_details.is_empty());
+}
+
+fn snapshot_task_ids(
+    engine: &DownloadEngine,
+    query: DownloadQuery,
+) -> Vec<nxtools_download::DownloadTaskId> {
+    let compact = query.compact;
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot { query },
+    });
+    let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {
+        panic!("snapshot query must return a snapshot");
+    };
+    if compact {
+        snapshot
+            .task_summaries
+            .into_iter()
+            .map(|summary| summary.task_id)
+            .collect()
+    } else {
+        snapshot
+            .task_details
+            .into_iter()
+            .map(|task| task.task.id())
+            .collect()
+    }
+}
+
+#[test]
+fn compact_snapshot_preserves_legacy_filtering_and_queue_order() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create snapshot equivalence directory");
+    let engine = DownloadEngine::open_in_memory().expect("open snapshot equivalence engine");
+    engine
+        .update_download_organization_policy(&DownloadSettings {
+            default_directory: directory.path().to_string_lossy().into_owned(),
+            categories: vec![
+                DownloadCategorySettings {
+                    id: "release_archive".into(),
+                    name: "release-archive".into(),
+                    enabled: true,
+                    save_directory: "release".into(),
+                    extensions: Vec::new(),
+                    url_patterns: Vec::new(),
+                },
+                DownloadCategorySettings {
+                    id: "mirror_cache".into(),
+                    name: "mirror-cache".into(),
+                    enabled: true,
+                    save_directory: "mirror".into(),
+                    extensions: Vec::new(),
+                    url_patterns: Vec::new(),
+                },
+                DownloadCategorySettings {
+                    id: "archive_category".into(),
+                    name: "archive-category".into(),
+                    enabled: true,
+                    save_directory: "archive".into(),
+                    extensions: Vec::new(),
+                    url_patterns: Vec::new(),
+                },
+            ],
+            ..DownloadSettings::default()
+        })
+        .expect("register snapshot equivalence categories");
+    let make_request = |source_url: &str, file_name: &str, category_name: &str| {
+        let mut request = request(&server, directory.path().join(file_name));
+        request.source_url = source_url.to_owned();
+        request.file_name = Some(file_name.to_owned());
+        request.category_id = Some(category_name.replace('-', "_"));
+        request.category_name = Some(category_name.to_owned());
+        request
+    };
+    let first = engine
+        .enqueue(
+            make_request(
+                "https://release.example.test/files/zeta.bin",
+                "zeta.bin",
+                "release-archive",
+            ),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue first equivalence task");
+    let second = engine
+        .enqueue(
+            make_request(
+                "https://mirror.example.test/files/alpha.bin",
+                "alpha.bin",
+                "mirror-cache",
+            ),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue second equivalence task");
+    let third = engine
+        .enqueue(
+            make_request(
+                "https://archive.example.test/files/other.bin",
+                "other.bin",
+                "archive-category",
+            ),
+            RequestOrigin::Internal,
+        )
+        .expect("enqueue third equivalence task");
+
+    let legacy_all = snapshot_task_ids(&engine, DownloadQuery::default());
+    let compact_all = snapshot_task_ids(&engine, DownloadQuery::compact());
+    assert_eq!(legacy_all, vec![first, second, third]);
+    assert_eq!(compact_all, legacy_all);
+
+    for search in ["release.example", "alpha.bin", "archive-category"] {
+        let legacy = snapshot_task_ids(
+            &engine,
+            DownloadQuery {
+                search: Some(search.to_owned()),
+                ..DownloadQuery::default()
+            },
+        );
+        let compact = snapshot_task_ids(
+            &engine,
+            DownloadQuery {
+                search: Some(search.to_owned()),
+                ..DownloadQuery::compact()
+            },
+        );
+        assert_eq!(compact, legacy, "search result differs for {search}");
+    }
+
+    engine
+        .cancel(third)
+        .expect("cancel status equivalence task");
+    let legacy_cancelled = snapshot_task_ids(
+        &engine,
+        DownloadQuery {
+            statuses: vec![DownloadStatus::Cancelled],
+            ..DownloadQuery::default()
+        },
+    );
+    let compact_cancelled = snapshot_task_ids(
+        &engine,
+        DownloadQuery {
+            statuses: vec![DownloadStatus::Cancelled],
+            ..DownloadQuery::compact()
+        },
+    );
+    assert_eq!(compact_cancelled, vec![third]);
+    assert_eq!(compact_cancelled, legacy_cancelled);
+
+    let legacy_limited = snapshot_task_ids(
+        &engine,
+        DownloadQuery {
+            limit: Some(2),
+            ..DownloadQuery::default()
+        },
+    );
+    let compact_limited = snapshot_task_ids(
+        &engine,
+        DownloadQuery {
+            limit: Some(2),
+            ..DownloadQuery::compact()
+        },
+    );
+    assert_eq!(compact_limited, vec![first, second]);
+    assert_eq!(compact_limited, legacy_limited);
+
+    let detail = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::TaskDetail { task_id: first },
+    });
+    let DownloadCommandOutcome::TaskDetail(detail) = detail.outcome else {
+        panic!("selected task detail expected");
+    };
+    assert_eq!(
+        detail.task,
+        engine
+            .task(first)
+            .expect("read selected equivalence task")
+            .expect("selected equivalence task exists")
+    );
+}

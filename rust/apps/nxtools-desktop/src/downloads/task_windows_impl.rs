@@ -107,12 +107,14 @@ impl DownloadApplication {
         if native_window_handle == 0 {
             return;
         }
-        let _ = self.platform.send_command(PlatformCommand::StashWindowBounds(
-            StashWindowBoundsCommand {
-                window_handle: native_window_handle,
-                key: task_id.as_uuid().to_string(),
-            },
-        ));
+        let _ = self
+            .platform
+            .send_command(PlatformCommand::StashWindowBounds(
+                StashWindowBoundsCommand {
+                    window_handle: native_window_handle,
+                    key: task_id.as_uuid().to_string(),
+                },
+            ));
     }
     /// Releases the keyed task-window registration after a native (non-app-driven)
     /// close. The window identity must still match so a replacement window opened
@@ -157,7 +159,15 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         let application = cx.entity();
-        let snapshot = self.task(task_id).cloned();
+        let snapshot = self.task(task_id).cloned().map(|snapshot| {
+            if snapshot.has_final_artifact {
+                load_download_task_detail(&self.engine, task_id)
+                    .map(|detail| detail.task)
+                    .unwrap_or(snapshot)
+            } else {
+                snapshot
+            }
+        });
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
         let window_size = download_task_window_size(phase);
@@ -249,14 +259,16 @@ impl DownloadApplication {
                 let native_handle = *native_slot.borrow();
                 if native_handle != 0 {
                     let scale = *scale_slot.borrow();
-                    let _ = self.platform.send_command(PlatformCommand::MoveWindowCenteredOverKey(
-                        MoveWindowCenteredOverKeyCommand {
-                            window_handle: native_handle,
-                            key: task_id.as_uuid().to_string(),
-                            width: (window_size.width.as_f32() * scale).round() as i32,
-                            height: (window_size.height.as_f32() * scale).round() as i32,
-                        },
-                    ));
+                    let _ = self
+                        .platform
+                        .send_command(PlatformCommand::MoveWindowCenteredOverKey(
+                            MoveWindowCenteredOverKeyCommand {
+                                window_handle: native_handle,
+                                key: task_id.as_uuid().to_string(),
+                                width: (window_size.width.as_f32() * scale).round() as i32,
+                                height: (window_size.height.as_f32() * scale).round() as i32,
+                            },
+                        ));
                 }
                 if activation.is_none()
                     && matches!(
@@ -305,13 +317,23 @@ impl DownloadApplication {
         let taskbar_progress = snapshot
             .as_ref()
             .map(|task| taskbar_progress_command(native_window_handle, task, progress.as_ref()));
+        let reset_details_expanded = matches!(resize_for, Some(DownloadWindowPhase::Progress));
+        let mut resize_size = None;
         view.update(cx, |view, cx| {
             view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
+            if reset_details_expanded {
+                view.reset_details_expanded();
+            }
+            if let Some(phase) = resize_for {
+                resize_size = Some(download_task_window_size_for_details(
+                    phase,
+                    view.details_expanded,
+                ));
+            }
         });
         let updated = window_handle
             .update(cx, move |_, window, _| {
-                if let Some(phase) = resize_for {
-                    let new_size = download_task_window_size(phase);
+                if let Some(new_size) = resize_size {
                     let scale = window.scale_factor();
                     if native_window_handle != 0 {
                         // GPUI's cached window origin never follows a user drag, so the

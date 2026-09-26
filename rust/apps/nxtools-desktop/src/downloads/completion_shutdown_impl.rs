@@ -22,9 +22,14 @@ impl DownloadApplication {
             {
                 continue;
             }
-            let display_name = task
-                .final_path
+            let detail = task
+                .has_final_artifact
+                .then(|| load_download_task_detail(&self.engine, task.task.id()).ok())
+                .flatten();
+            let final_path = detail
                 .as_ref()
+                .and_then(|detail| detail.task.final_path.as_ref());
+            let display_name = final_path
                 .and_then(|path| path.file_name())
                 .and_then(|name| name.to_str())
                 .or(task.task.request().file_name.as_deref())
@@ -33,9 +38,7 @@ impl DownloadApplication {
             self.completion_actions.record_terminal(CompletionTerminal {
                 task_id: task.task.id(),
                 status,
-                directory: task
-                    .final_path
-                    .as_ref()
+                directory: final_path
                     .and_then(|path| path.parent())
                     .map(Path::to_path_buf),
                 display_name,
@@ -261,7 +264,11 @@ impl DownloadApplication {
         self.completion_actions.is_shutdown_armed(task_id)
     }
 
-    pub(crate) fn toggle_shutdown_armed(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_shutdown_armed(
+        &mut self,
+        task_id: DownloadTaskId,
+        cx: &mut Context<Self>,
+    ) {
         if self.pending_shutdown_command.is_some() {
             return;
         }
@@ -324,7 +331,11 @@ impl DownloadApplication {
         self.apply_shutdown_transition(transition, cx);
     }
 
-    pub(crate) fn evaluate_shutdown(&mut self, tasks: &[DownloadEngineTask], cx: &mut Context<Self>) {
+    pub(crate) fn evaluate_shutdown(
+        &mut self,
+        tasks: &[DownloadEngineTask],
+        cx: &mut Context<Self>,
+    ) {
         let task_states = tasks
             .iter()
             .map(|task| (task.task.id(), task.task.status()))
@@ -361,7 +372,11 @@ impl DownloadApplication {
         }
     }
 
-    pub(crate) fn open_shutdown_countdown(&mut self, countdown: ShutdownCountdown, cx: &mut Context<Self>) {
+    pub(crate) fn open_shutdown_countdown(
+        &mut self,
+        countdown: ShutdownCountdown,
+        cx: &mut Context<Self>,
+    ) {
         if self.shutdown_window.is_some() {
             return;
         }
@@ -684,7 +699,11 @@ impl DownloadApplication {
         self.close_shutdown_window(pending.countdown.correlation_id, cx);
     }
 
-    pub(crate) fn shutdown_command_timed_out(&mut self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
+    pub(crate) fn shutdown_command_timed_out(
+        &mut self,
+        command_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
         let Some(pending) = self.pending_shutdown_command.take() else {
             return;
         };
@@ -715,7 +734,11 @@ impl DownloadApplication {
         });
     }
 
-    pub(crate) fn close_shutdown_window(&mut self, correlation_id: uuid::Uuid, cx: &mut Context<Self>) {
+    pub(crate) fn close_shutdown_window(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
         if self
             .shutdown_window
             .as_ref()
