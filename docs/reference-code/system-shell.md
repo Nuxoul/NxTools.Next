@@ -129,3 +129,15 @@ tray Exit
   (mirror) fetching, per-file segment scheduling and its updater design.
   License: GPL-3.0-or-later OR MIT — inspect per-file before copying ANY
   code; treat as clean-room behavioral reference like FluxDown.
+
+## DOpus quick-switch revalidation (2026-09-27)
+
+The current PlatformHost path was rechecked against the Listary and SwiftList notes before the next fix:
+
+- `WindowsPlatformAdapter.EventWindow::ProcessForeground` captures a supported directory source before publishing the file-dialog host; `DirectoryNavigationAdapter` dispatches `dopus` listers to `DirectoryOpusFileManagerOperations`.
+- `DirectoryOpusFileManagerOperations` stores an opaque session through `ThirdPartyFileManagerSessionRegistry`; the Rust side forwards that context unchanged in `NavigateDirectory` and does not know DOpus pane details.
+- `Win32DirectoryOpusWindowOperations::TryCaptureActivePane` must select the active `dopus.filedisplaycontainer` from the summon-time focus, lister caption/path evidence, geometry, or a per-lister remembered pane. A lister-frame focus is not a valid pane-child focus and must be represented as no restorable child focus, not as a pane focus that later fails validation.
+- `IsPaneAvailable` and `TryActivate` must validate the captured lister and container without requiring a stale frame focus to be a descendant of the selected container. Directory navigation remains bounded by `WM_COPYDATA` timeout and post-command path readback.
+- Directory-source recognition exhaustion must not leave a previous source dirty for a later file dialog. A failed DOpus capture is not a new source and must not trigger automatic navigation from stale state.
+
+The interactive DOpus 13 and real file-dialog soak remains an environment-dependent gate; the PlatformHost regression seam must cover frame-focus capture, same-pane navigation, and stale-source clearing without logging paths or window titles.

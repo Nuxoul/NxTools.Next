@@ -142,6 +142,19 @@ internal sealed class AutoQuickSwitchTracker
         }
     }
 
+    public void DiscardPendingSource()
+    {
+        lock (_gate)
+        {
+            if (!_sourceDirty)
+            {
+                return;
+            }
+            _sourceDirty = false;
+            AdvanceGeneration();
+        }
+    }
+
     public AutoQuickSwitchCandidate? ObserveFileDialog(
         DirectoryNavigationContext target)
     {

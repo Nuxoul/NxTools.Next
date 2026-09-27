@@ -51,6 +51,9 @@ internal static class Program
             ("file-dialog navigation keeps the captured host window", FileDialogNavigationKeepsCapturedWindow),
             ("third-party file manager navigation keeps the captured host and active pane", ThirdPartyFileManagerNavigationKeepsCapturedHost),
             ("Directory Opus adapter requires the real lister and preserves the active pane", DirectoryOpusAdapterPreservesActivePane),
+            ("Directory Opus frame focus keeps captured pane navigable", DirectoryOpusFrameFocusKeepsCapturedPaneNavigable),
+            ("Directory Opus pane selection uses title and geometry before cached pane", DirectoryOpusPaneSelectionUsesReferenceEvidence),
+            ("Directory source recognition failure clears stale source", DirectorySourceRecognitionFailureClearsStaleSource),
             ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
             ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
             ("Total Commander adapter uses the captured source panel", TotalCommanderAdapterPreservesSourcePanel),
@@ -1852,6 +1855,78 @@ internal static class Program
             out var activationError));
         Assert(activationError is null);
         Assert(native.LastActivatedWindowHandle == 88);
+        return Task.CompletedTask;
+    }
+    private static Task DirectoryOpusFrameFocusKeepsCapturedPaneNavigable()
+    {
+        var native = new FakeDirectoryOpusWindowOperations
+        {
+            ListerWindowHandle = 88,
+            ActiveDirectory = @"D:\\Work",
+            RequireRestorablePaneFocus = true
+        };
+        var adapter = new DirectoryOpusFileManagerOperations(native);
+        var foreground = new ForegroundContext(
+            88,
+            88,
+            9,
+            "dopus",
+            "Work");
+
+        Assert(adapter.TryCapture(foreground, out var capture, out _));
+        Assert(capture is not null);
+        var pane = (DirectoryOpusPaneState)capture!.PaneState;
+        Assert(pane.FocusWindowHandle == 0);
+        Assert(adapter.CanNavigate(88, capture.PaneState));
+        return Task.CompletedTask;
+    }
+
+
+    private static Task DirectoryOpusPaneSelectionUsesReferenceEvidence()
+    {
+        var titleSelected = DirectoryOpusPaneSelector.Select(
+            "D:\\Active",
+            [
+                new DirectoryOpusPaneCandidate(90, "D:\\Other", 0, 0, false),
+                new DirectoryOpusPaneCandidate(91, "D:\\Active", 400, 0, false)
+            ],
+            null,
+            rememberedWindowHandle: 90);
+        Assert(titleSelected == 91);
+
+        var geometrySelected = DirectoryOpusPaneSelector.Select(
+            "Directory Opus",
+            [
+                new DirectoryOpusPaneCandidate(90, "D:\\Other", 0, 0, false),
+                new DirectoryOpusPaneCandidate(91, "D:\\Active", 400, 0, false)
+            ],
+            new DirectoryOpusPanePoint(450, 100),
+            rememberedWindowHandle: 90);
+        Assert(geometrySelected == 91);
+        return Task.CompletedTask;
+    }
+
+    private static Task DirectorySourceRecognitionFailureClearsStaleSource()
+    {
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(autoSwitchEnabled: true, trackSources: true);
+        tracker.ObserveDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                88,
+                @"D:\\Work",
+                "dopus-session"),
+            "Work (Directory Opus)");
+
+        tracker.DiscardPendingSource();
+
+        var candidate = tracker.ObserveFileDialog(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.FileDialogHost,
+                99,
+                @"C:\\Dialog",
+                null));
+        Assert(candidate is null);
         return Task.CompletedTask;
     }
 
@@ -5492,6 +5567,7 @@ internal static class Program
     {
         public long ListerWindowHandle { get; init; }
         public string? ActiveDirectory { get; init; }
+        public bool RequireRestorablePaneFocus { get; init; }
         public long LastFocusWindowHandle { get; private set; }
         public long LastNavigatedWindowHandle { get; private set; }
         public string? LastNavigatedDirectory { get; private set; }
@@ -5520,7 +5596,9 @@ internal static class Program
             long windowHandle,
             DirectoryOpusPaneState paneState) =>
             windowHandle == ListerWindowHandle &&
-            paneState.ContainerWindowHandle == 90;
+            paneState.ContainerWindowHandle == 90 &&
+            (!RequireRestorablePaneFocus ||
+             paneState.FocusWindowHandle is 0 or 90);
 
         public bool TryNavigate(
             long windowHandle,

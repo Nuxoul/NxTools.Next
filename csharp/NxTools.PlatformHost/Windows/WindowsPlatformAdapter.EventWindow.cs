@@ -1005,6 +1005,15 @@ internal sealed partial class WindowsPlatformAdapter
                     foreground.WindowHandle,
                     out var windowHandle))
             {
+                if (windowHandle != 0 &&
+                    _directorySourceRecognitionRetry.HasPendingAttempt(windowHandle))
+                {
+                    ScheduleDirectorySourceRecognition(windowHandle);
+                }
+                else
+                {
+                    _autoQuickSwitch.DiscardPendingSource();
+                }
                 return;
             }
             var attempt = DirectoryNavigationAdapter.TryCaptureLocalAttempt(
@@ -1025,12 +1034,15 @@ internal sealed partial class WindowsPlatformAdapter
             if (attempt.Failure?.Fatal == true)
             {
                 CancelDirectorySourceRecognition();
+                _autoQuickSwitch.DiscardPendingSource();
                 return;
             }
             if (_directorySourceRecognitionRetry.HasPendingAttempt(windowHandle))
             {
                 ScheduleDirectorySourceRecognition(windowHandle);
+                return;
             }
+            _autoQuickSwitch.DiscardPendingSource();
         }
 
         private void CompleteDirectorySourceRecognition(long windowHandle)

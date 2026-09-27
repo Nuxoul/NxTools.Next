@@ -34,6 +34,90 @@ internal sealed record DirectoryOpusPaneState(
     long ContainerWindowHandle,
     long FocusWindowHandle);
 
+internal readonly record struct DirectoryOpusPaneCandidate(
+    long WindowHandle,
+    string? CurrentDirectory,
+    int Left,
+    int Top,
+    bool ContainsFocus);
+
+internal readonly record struct DirectoryOpusPanePoint(int Left, int Top);
+
+internal static class DirectoryOpusPaneSelector
+{
+    public static long Select(
+        string listerCaption,
+        IReadOnlyList<DirectoryOpusPaneCandidate> candidates,
+        DirectoryOpusPanePoint? focusedPoint,
+        long rememberedWindowHandle)
+    {
+        var ordered = candidates
+            .OrderBy(candidate => candidate.Left)
+            .ThenBy(candidate => candidate.Top)
+            .ToArray();
+        if (ordered.Length == 0)
+        {
+            return 0;
+        }
+        if (ordered.Length == 1)
+        {
+            return ordered[0].WindowHandle;
+        }
+
+        var titleMatches = ordered
+            .Where(candidate => CaptionMatchesPath(
+                listerCaption,
+                candidate.CurrentDirectory))
+            .ToArray();
+        if (titleMatches.Length == 1)
+        {
+            return titleMatches[0].WindowHandle;
+        }
+
+        var focused = ordered.FirstOrDefault(candidate => candidate.ContainsFocus);
+        if (focused.WindowHandle != 0)
+        {
+            return focused.WindowHandle;
+        }
+
+        if (focusedPoint is { } point)
+        {
+            var sameColumn = Math.Abs(ordered[0].Left - ordered[1].Left) <= 10;
+            var nearest = ordered.MinBy(candidate => Math.Abs(
+                (sameColumn ? candidate.Top : candidate.Left) -
+                (sameColumn ? point.Top : point.Left)));
+            if (nearest.WindowHandle != 0)
+            {
+                return nearest.WindowHandle;
+            }
+        }
+
+        return ordered.FirstOrDefault(candidate =>
+            candidate.WindowHandle == rememberedWindowHandle).WindowHandle;
+    }
+
+    private static bool CaptionMatchesPath(
+        string caption,
+        string? currentDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(caption) ||
+            string.IsNullOrWhiteSpace(currentDirectory))
+        {
+            return false;
+        }
+        var normalized = currentDirectory.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        var directoryName = Path.GetFileName(normalized);
+        return !string.IsNullOrWhiteSpace(directoryName) &&
+            (caption.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+             caption.StartsWith(
+                 directoryName + " ",
+                 StringComparison.OrdinalIgnoreCase) ||
+             caption.Equals(directoryName, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
 internal sealed class DirectoryOpusFileManagerOperations :
     IThirdPartyFileManagerOperations
 {
@@ -77,9 +161,14 @@ internal sealed class DirectoryOpusFileManagerOperations :
         {
             return false;
         }
+        var capturedPane = paneState!;
+        if (capturedPane.FocusWindowHandle == foreground.WindowHandle)
+        {
+            capturedPane = capturedPane with { FocusWindowHandle = 0 };
+        }
         capture = new ThirdPartyFileManagerCapture(
             capturedDirectory!,
-            paneState);
+            capturedPane);
         return true;
     }
 
@@ -167,31 +256,45 @@ internal sealed class Win32DirectoryOpusWindowOperations :
         }
 
         var focused = new IntPtr(focusWindowHandle);
-        var selected = containers.FirstOrDefault(
-            container => focused != IntPtr.Zero &&
-                (container == focused || IsChild(container, focused)));
-        if (selected == IntPtr.Zero)
-        {
-            // Focus on the lister frame (tab switches land here) must not
-            // break directory tracking: keep serving the last active pane,
-            // matching the SwiftList reference behavior.
-            selected = LastActivePane(lister, paneState, containers);
-            if (selected == IntPtr.Zero)
+        var candidates = containers
+            .Select(container =>
             {
-                return false;
-            }
+                var hasPosition = TryGetWindowPosition(
+                    container,
+                    out var position);
+                return new DirectoryOpusPaneCandidate(
+                    container.ToInt64(),
+                    GetContainerPath(container),
+                    hasPosition ? position.Left : 0,
+                    hasPosition ? position.Top : 0,
+                    focused != IntPtr.Zero &&
+                    (container == focused || IsChild(container, focused)));
+            })
+            .ToArray();
+        DirectoryOpusPanePoint? focusedPoint = null;
+        if (focused != IntPtr.Zero &&
+            TryGetWindowPosition(focused, out var focusedPosition))
+        {
+            focusedPoint = focusedPosition;
         }
-
-        var candidate = GetContainerPath(selected);
-        if (!ThirdPartyFileManagerPath.LooksLikeRootedDirectory(candidate))
+        var selected = new IntPtr(DirectoryOpusPaneSelector.Select(
+            GetWindowCaption(lister),
+            candidates,
+            focusedPoint,
+            LastActivePane(lister, paneState, containers).ToInt64()));
+        var candidate = candidates.FirstOrDefault(item =>
+            item.WindowHandle == selected.ToInt64());
+        if (selected == IntPtr.Zero ||
+            !ThirdPartyFileManagerPath.LooksLikeRootedDirectory(
+                candidate.CurrentDirectory))
         {
             return false;
         }
-        currentDirectory = candidate;
+        currentDirectory = candidate.CurrentDirectory;
         RememberActivePane(new IntPtr(windowHandle), selected);
         paneState = new DirectoryOpusPaneState(
             selected.ToInt64(),
-            focusWindowHandle);
+            candidate.ContainsFocus ? focusWindowHandle : 0);
         return true;
     }
 
@@ -240,13 +343,14 @@ internal sealed class Win32DirectoryOpusWindowOperations :
         var lister = new IntPtr(windowHandle);
         var container = new IntPtr(paneState.ContainerWindowHandle);
         var focus = new IntPtr(paneState.FocusWindowHandle);
+        var focusAvailable = focus == IntPtr.Zero ||
+            (IsWindow(focus) &&
+             (container == focus || IsChild(container, focus)));
         return container != IntPtr.Zero &&
-            focus != IntPtr.Zero &&
             IsWindow(container) &&
             IsWindowVisible(container) &&
             IsChild(lister, container) &&
-            IsWindow(focus) &&
-            (container == focus || IsChild(container, focus));
+            focusAvailable;
     }
 
     public bool TryNavigate(
@@ -339,6 +443,21 @@ internal sealed class Win32DirectoryOpusWindowOperations :
         }
         error = "Windows did not restore the captured Directory Opus lister.";
         return false;
+    }
+
+    private static bool TryGetWindowPosition(
+        IntPtr window,
+        out DirectoryOpusPanePoint point)
+    {
+        if (!GetWindowRect(window, out var rectangle))
+        {
+            point = default;
+            return false;
+        }
+        point = new DirectoryOpusPanePoint(
+            rectangle.Left,
+            rectangle.Top);
+        return true;
     }
 
     private static List<IntPtr> GetVisibleFileDisplayContainers(IntPtr lister)
@@ -479,6 +598,21 @@ internal sealed class Win32DirectoryOpusWindowOperations :
             return false;
         }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRectangle
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(
+        IntPtr window,
+        out WindowRectangle rectangle);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct CopyDataStruct
