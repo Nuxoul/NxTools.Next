@@ -129,16 +129,6 @@ mod tests {
         assert_eq!(links[1].copy_value, "https://x.test/p");
     }
 
-
-    #[test]
-    fn scratch_dump() {
-        let manifest = env!("CARGO_MANIFEST_DIR");
-        let path = format!("{}\\Cargo.toml", manifest.trim_end_matches('\\'));
-        println!("SCRATCH path={}", path);
-        println!("SCRATCH exists={}", std::path::Path::new(&path).exists());
-        println!("SCRATCH links={:?}", detect_links(&format!("文件在 {}", path)));
-    }
-
     #[test]
     fn bare_domains_with_a_path_are_recognized() {
         // The user's missed case: scheme-less CDN hosts.

@@ -175,7 +175,7 @@ internal sealed class Win32DirectoryOpusWindowOperations :
             // Focus on the lister frame (tab switches land here) must not
             // break directory tracking: keep serving the last active pane,
             // matching the SwiftList reference behavior.
-            selected = LastActivePane(paneState, containers);
+            selected = LastActivePane(lister, paneState, containers);
             if (selected == IntPtr.Zero)
             {
                 return false;
@@ -203,6 +203,7 @@ internal sealed class Win32DirectoryOpusWindowOperations :
         IntPtr> LastActivePaneByLister = new();
 
     private static IntPtr LastActivePane(
+        IntPtr lister,
         DirectoryOpusPaneState? paneState,
         List<IntPtr> containers)
     {
@@ -217,15 +218,11 @@ internal sealed class Win32DirectoryOpusWindowOperations :
                 return remembered;
             }
         }
-        return LastActivePaneByLister.TryGetValue(
-            containers.Count > 0 ? GetListerKey(containers) : IntPtr.Zero,
-            out var cached) &&
+        return LastActivePaneByLister.TryGetValue(lister, out var cached) &&
             containers.Contains(cached)
                 ? cached
                 : IntPtr.Zero;
     }
-
-    private static IntPtr GetListerKey(List<IntPtr> containers) => containers[0];
 
     private static void RememberActivePane(IntPtr lister, IntPtr container)
     {

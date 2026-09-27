@@ -21,10 +21,13 @@ pub(crate) enum DownloadWindowDirective {
     CloseExisting,
 }
 
+const MAX_BACKGROUND_PROGRESS_WINDOWS: usize = 3;
+
 #[derive(Default)]
 pub(crate) struct DownloadWindowLifecycle {
     open: HashMap<DownloadTaskId, DownloadWindowPhase>,
     handled_terminal: HashSet<(DownloadTaskId, DownloadStatus)>,
+    background_open: HashSet<DownloadTaskId>,
 }
 
 impl DownloadWindowLifecycle {
@@ -38,11 +41,31 @@ impl DownloadWindowLifecycle {
         self.request_window(task_id, DownloadWindowPhase::Progress)
     }
 
+    pub(crate) fn request_background_progress(
+        &mut self,
+        task_id: DownloadTaskId,
+    ) -> DownloadWindowDirective {
+        if let Some(phase) = self.open.get_mut(&task_id) {
+            if *phase != DownloadWindowPhase::Progress {
+                *phase = DownloadWindowPhase::Progress;
+                return DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Progress);
+            }
+            return DownloadWindowDirective::RefreshExisting;
+        }
+        if self.background_open.len() >= MAX_BACKGROUND_PROGRESS_WINDOWS {
+            return DownloadWindowDirective::None;
+        }
+        self.open.insert(task_id, DownloadWindowPhase::Progress);
+        self.background_open.insert(task_id);
+        DownloadWindowDirective::Open(DownloadWindowPhase::Progress)
+    }
+
     pub(crate) fn request_window(
         &mut self,
         task_id: DownloadTaskId,
         phase: DownloadWindowPhase,
     ) -> DownloadWindowDirective {
+        self.background_open.remove(&task_id);
         match self.open.entry(task_id) {
             Entry::Occupied(_) => DownloadWindowDirective::FocusExisting(phase),
             Entry::Vacant(entry) => {
@@ -54,6 +77,7 @@ impl DownloadWindowLifecycle {
 
     pub(crate) fn window_closed(&mut self, task_id: DownloadTaskId) {
         self.open.remove(&task_id);
+        self.background_open.remove(&task_id);
     }
 
     pub(crate) fn reopen_terminal_fallback(
@@ -61,6 +85,7 @@ impl DownloadWindowLifecycle {
         task_id: DownloadTaskId,
         phase: DownloadWindowPhase,
     ) -> DownloadWindowDirective {
+        self.background_open.remove(&task_id);
         match self.open.entry(task_id) {
             Entry::Occupied(_) => DownloadWindowDirective::RefreshExisting,
             Entry::Vacant(entry) => {
@@ -82,11 +107,13 @@ impl DownloadWindowLifecycle {
         if status == DownloadStatus::Cancelled {
             self.handled_terminal
                 .retain(|(candidate, _)| *candidate != task_id);
+            self.background_open.remove(&task_id);
             return match self.open.remove(&task_id) {
                 Some(_) => DownloadWindowDirective::CloseExisting,
                 None => DownloadWindowDirective::None,
             };
         }
+
         let terminal_phase = match status {
             DownloadStatus::Completed => Some(DownloadWindowPhase::Completed),
             DownloadStatus::Failed => Some(DownloadWindowPhase::Failed),
@@ -105,6 +132,7 @@ impl DownloadWindowLifecycle {
             };
         };
 
+        self.background_open.remove(&task_id);
         if !self.handled_terminal.insert((task_id, status)) {
             return if self.open.contains_key(&task_id) {
                 DownloadWindowDirective::RefreshExisting
@@ -125,6 +153,7 @@ impl DownloadWindowLifecycle {
     pub(crate) fn task_removed(&mut self, task_id: DownloadTaskId) -> DownloadWindowDirective {
         self.handled_terminal
             .retain(|(candidate, _)| *candidate != task_id);
+        self.background_open.remove(&task_id);
         if self.open.remove(&task_id).is_some() {
             DownloadWindowDirective::CloseExisting
         } else {
@@ -296,6 +325,21 @@ mod tests {
             DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Failed)
         );
     }
+    #[test]
+    fn retrying_a_completed_window_transforms_back_to_progress() {
+        let task_id = DownloadTaskId::new();
+        let mut lifecycle = DownloadWindowLifecycle::default();
+        lifecycle.request_progress(task_id);
+
+        assert_eq!(
+            lifecycle.task_changed(task_id, DownloadStatus::Completed),
+            DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Completed)
+        );
+        assert_eq!(
+            lifecycle.task_changed(task_id, DownloadStatus::Waiting),
+            DownloadWindowDirective::TransformExisting(DownloadWindowPhase::Progress)
+        );
+    }
 
     #[test]
     fn restored_terminal_tasks_do_not_open_fallback_windows_on_startup() {
@@ -313,6 +357,45 @@ mod tests {
         assert_eq!(
             lifecycle.task_changed(failed, DownloadStatus::Failed),
             DownloadWindowDirective::None
+        );
+    }
+
+    #[test]
+    fn background_progress_windows_are_bounded_and_never_focus() {
+        let task_ids = [
+            DownloadTaskId::new(),
+            DownloadTaskId::new(),
+            DownloadTaskId::new(),
+            DownloadTaskId::new(),
+        ];
+        let mut lifecycle = DownloadWindowLifecycle::default();
+
+        for task_id in task_ids.iter().take(MAX_BACKGROUND_PROGRESS_WINDOWS) {
+            assert_eq!(
+                lifecycle.request_background_progress(*task_id),
+                DownloadWindowDirective::Open(DownloadWindowPhase::Progress)
+            );
+        }
+        assert_eq!(
+            lifecycle.request_background_progress(task_ids[3]),
+            DownloadWindowDirective::None,
+            "automatic admission must cap visible progress windows"
+        );
+        assert_eq!(
+            lifecycle.request_background_progress(task_ids[0]),
+            DownloadWindowDirective::RefreshExisting,
+            "repeated admission must refresh without reopening or focusing"
+        );
+
+        assert_eq!(
+            lifecycle.request_window(task_ids[0], DownloadWindowPhase::Progress),
+            DownloadWindowDirective::FocusExisting(DownloadWindowPhase::Progress)
+        );
+        lifecycle.window_closed(task_ids[0]);
+        assert_eq!(
+            lifecycle.request_background_progress(task_ids[3]),
+            DownloadWindowDirective::Open(DownloadWindowPhase::Progress),
+            "closing a window releases only its presentation admission"
         );
     }
 }

@@ -34,7 +34,10 @@ internal sealed record ConfigureClipboardCommand(
     IReadOnlyList<string> HotkeyModifiers,
     string HotkeyKey,
     string HotkeyDisplay,
-    IReadOnlyList<string> ExcludedProcesses);
+    IReadOnlyList<string> ExcludedProcesses,
+    ulong MaxTextBytes = 8UL * 1024 * 1024,
+    ulong MaxImageBytes = 64UL * 1024 * 1024,
+    ulong MaxImagePixels = 100_000_000);
 internal sealed record SetClipboardHotKeyRecordingCommand(bool Recording);
 internal sealed record ConfigureQuickLaunchCommand(
     bool Enabled,

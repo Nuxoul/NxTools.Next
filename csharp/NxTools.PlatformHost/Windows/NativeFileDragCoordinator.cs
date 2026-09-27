@@ -182,7 +182,6 @@ internal sealed class NativeFileDragCoordinator
             {
                 ["stage"] = stage,
                 ["source_window_handle"] = command.SourceWindowHandle,
-                ["file_name"] = Path.GetFileName(command.Path)
             };
             if (details is not null)
             {

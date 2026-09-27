@@ -370,6 +370,61 @@ internal static class IndexerServiceInstaller
             ComputeBinaryHash(indexerPath),
             StringComparison.OrdinalIgnoreCase);
 
+    internal static bool IsApprovedProtectedDesktop(string processPath)
+    {
+        try
+        {
+            var expectedPath = Path.Combine(
+                ProtectedServiceDirectory(),
+                "NxTools.exe");
+            if (!string.Equals(
+                    Path.GetFullPath(processPath),
+                    Path.GetFullPath(expectedPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            using var key = Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+            var registeredDesktopPath = key?.GetValue(DesktopPathValueName) as string;
+            var registeredIndexerHash = key?.GetValue(BinaryHashValueName) as string;
+            var registeredDesktopHash = key?.GetValue(DesktopHashValueName) as string;
+            var registeredPlatformHostHash = key?.GetValue(PlatformHostHashValueName) as string;
+            var currentPlatformHostPath = Environment.ProcessPath;
+            var protectedDirectory = ProtectedServiceDirectory();
+            var protectedIndexerPath = Path.Combine(protectedDirectory, "NxTools.Indexer.exe");
+            var protectedPlatformHostPath = Path.Combine(
+                protectedDirectory,
+                "NxTools.PlatformHost.exe");
+            return registeredDesktopPath is not null &&
+                string.Equals(
+                    Path.GetFullPath(registeredDesktopPath),
+                    Path.GetFullPath(expectedPath),
+                    StringComparison.OrdinalIgnoreCase) &&
+                registeredIndexerHash is not null &&
+                registeredDesktopHash is not null &&
+                registeredPlatformHostHash is not null &&
+                currentPlatformHostPath is not null &&
+                File.Exists(expectedPath) &&
+                File.Exists(protectedIndexerPath) &&
+                File.Exists(protectedPlatformHostPath) &&
+                BinaryHashMatches(registeredIndexerHash, protectedIndexerPath) &&
+                BinaryHashMatches(ReleaseBinaryManifest.IndexerSha256, protectedIndexerPath) &&
+                BinaryHashMatches(registeredDesktopHash, expectedPath) &&
+                BinaryHashMatches(ReleaseBinaryManifest.DesktopSha256, expectedPath) &&
+                BinaryHashMatches(registeredPlatformHostHash, protectedPlatformHostPath) &&
+                BinaryHashMatches(registeredPlatformHostHash, currentPlatformHostPath);
+        }
+        catch (Exception error) when (
+            error is IOException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException or
+            InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     internal static bool IsApprovedProtectedPlatformHost(string processPath)
     {
         try

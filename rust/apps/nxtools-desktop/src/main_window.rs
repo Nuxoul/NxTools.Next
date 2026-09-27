@@ -19,7 +19,6 @@ use gpui_component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuIte
 use gpui_component::scroll::{ScrollableElement, Scrollbar};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{Disableable, Icon, PixelsExt, Sizable};
-use nxtools_clipboard::ClipboardHistoryCounts;
 use nxtools_core::{
     ClipboardClickAction, ClipboardClickModifier, ClipboardHotKey, ClipboardHotKeyModifier,
     ClipboardSettings, CustomCommandSettings, SystemSettings,
@@ -63,7 +62,9 @@ use crate::ui::components::quick_launch_diagnostics::{
     QuickLaunchDiagnosticsActions, QuickLaunchDiagnosticsData, quick_launch_diagnostics,
 };
 use crate::ui::components::settings::{SettingsSplitSurfaceIds, settings_split_surface};
-use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
+use crate::ui::components::state::{
+    empty_state, inline_error_state, interactive_state, progress_state,
+};
 use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::components::volume_scope::{
     automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,
@@ -153,8 +154,7 @@ pub(crate) struct MainWindow {
     download_sort: DownloadSortState,
     download_list_scroll: UniformListScrollHandle,
     tools_scroll: ScrollHandle,
-    tools_open_tool: Option<&'static str>,
-    tool_settings_window: Option<AnyWindowHandle>,
+    tool_settings_windows: HashMap<&'static str, AnyWindowHandle>,
     download_search_log_generation: u64,
     download_detail_tab: DownloadDetailTab,
     download_detail_scroll: ScrollHandle,
@@ -163,6 +163,10 @@ pub(crate) struct MainWindow {
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
     recording_hotkey: Option<HotkeyRecordingTarget>,
+    clipboard_overview: ClipboardOverview,
+    clipboard_overview_generation: u64,
+    clipboard_overview_loading: bool,
+    clipboard_overview_dirty: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -306,9 +310,13 @@ impl MainWindow {
                 .detach();
             },
         );
-        let clipboard_subscription = clipboard
-            .upgrade()
-            .map(|application| cx.observe(&application, |_, _, cx| cx.notify()));
+        let clipboard_subscription = clipboard.upgrade().map(|application| {
+            cx.observe(&application, |this, _, cx| {
+                this.clipboard_overview_dirty = true;
+                this.request_clipboard_overview(cx);
+                cx.notify();
+            })
+        });
         let quick_launch_subscription = quick_launch
             .upgrade()
             .map(|application| cx.observe(&application, |_, _, cx| cx.notify()));
@@ -394,7 +402,7 @@ impl MainWindow {
                 }
             })
             .unwrap_or_default();
-        Self {
+        let mut main_window = Self {
             theme: Theme::zed_dark(),
             shell: ShellState::default(),
             clipboard,
@@ -427,12 +435,15 @@ impl MainWindow {
             download_sort: initial_download_sort,
             download_list_scroll: UniformListScrollHandle::new(),
             tools_scroll: ScrollHandle::new(),
-            tools_open_tool: None,
-            tool_settings_window: None,
+            tool_settings_windows: HashMap::new(),
             download_search_log_generation: 0,
             download_detail_tab: DownloadDetailTab::default(),
             download_detail_scroll: ScrollHandle::new(),
             requested_download_detail: None,
+            clipboard_overview: ClipboardOverview::default(),
+            clipboard_overview_generation: 0,
+            clipboard_overview_loading: false,
+            clipboard_overview_dirty: false,
             custom_command_run_as_admin: initial_custom_command
                 .as_ref()
                 .is_some_and(|command| command.run_as_admin),
@@ -442,7 +453,9 @@ impl MainWindow {
             hotkey_focus,
             recording_hotkey: None,
             _subscriptions: subscriptions,
-        }
+        };
+        main_window.request_clipboard_overview(cx);
+        main_window
     }
 }
 impl Render for MainWindow {

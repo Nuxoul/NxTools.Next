@@ -1,4 +1,4 @@
-use gpui::{Div, SharedString, div, prelude::*, px};
+use gpui::{App, ClickEvent, Div, SharedString, Window, div, prelude::*, px};
 use gpui_component::Icon;
 
 use crate::icons::MaterialIcon;
@@ -63,6 +63,22 @@ pub(crate) fn inline_error_state(
         description.into(),
         WorkStateTone::Error,
     )
+}
+
+pub(crate) fn interactive_state(
+    selector: &'static str,
+    state: Div,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(selector)
+        .debug_selector(move || selector.into())
+        .w_full()
+        .flex_none()
+        .cursor_pointer()
+        .min_h(px(WORK_STATE_MIN_HEIGHT))
+        .on_click(on_click)
+        .child(state)
 }
 
 fn work_state(

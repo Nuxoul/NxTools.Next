@@ -521,13 +521,15 @@ pub fn run_with_host_policy(
             json,
         } => run_add(
             &mut client,
-            url,
-            directory,
-            directory_explicit,
-            name,
-            headers,
-            idempotency_key,
-            json,
+            AddOptions {
+                url,
+                directory,
+                directory_explicit,
+                name,
+                headers,
+                idempotency_key,
+                json_output: json,
+            },
         ),
         CliCommand::List { filter, json } => run_list(&mut client, filter, json),
         CliCommand::Show {
@@ -610,8 +612,7 @@ fn run_schedule(
     }
 }
 
-fn run_add(
-    client: &mut DownloadIpcClient,
+struct AddOptions {
     url: String,
     directory: PathBuf,
     directory_explicit: bool,
@@ -619,7 +620,18 @@ fn run_add(
     headers: Vec<DownloadRequestHeader>,
     idempotency_key: Option<Uuid>,
     json_output: bool,
-) -> Result<(), CliError> {
+}
+
+fn run_add(client: &mut DownloadIpcClient, options: AddOptions) -> Result<(), CliError> {
+    let AddOptions {
+        url,
+        directory,
+        directory_explicit,
+        name,
+        headers,
+        idempotency_key,
+        json_output,
+    } = options;
     let request = DownloadRequest {
         source_url: url,
         save_directory: directory,
@@ -1326,7 +1338,10 @@ mod tests {
         };
         assert_eq!(
             idempotency_key,
-            Some(Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap())
+            Some(
+                Uuid::parse_str("12345678-1234-5678-1234-567812345678")
+                    .expect("fixture idempotency key is valid"),
+            )
         );
         assert_eq!(directory, PathBuf::from(r"D:\Downloads"));
         assert_eq!(headers.len(), 2);

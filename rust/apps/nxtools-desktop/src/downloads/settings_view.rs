@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::components::tooltip::bounded_text_tooltip;
 
 pub(crate) struct DownloadSettingsInput<'a> {
     pub(crate) default_directory: &'a str,
@@ -2907,20 +2908,11 @@ pub(crate) fn download_settings_path_row(
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_secondary)
-                .tooltip(move |window, cx| {
-                    let complete_path = path_tooltip.clone();
-                    Tooltip::element(move |_, _| {
-                        div()
-                            .debug_selector(move || value_tooltip_selector.into())
-                            .max_w(px(720.0))
-                            .whitespace_normal()
-                            .font_family(UI_MONO_FONT_FAMILY)
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .child(complete_path.clone())
-                    })
-                    .build(window, cx)
-                })
+                .tooltip(bounded_text_tooltip(
+                    value_tooltip_selector,
+                    path_tooltip,
+                    true,
+                ))
                 .child(path),
         )
         .child(

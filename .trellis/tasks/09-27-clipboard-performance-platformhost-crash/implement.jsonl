@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/nxtools-clipboard/backend/index.md", "reason": "Clipboard history storage, query and worker ownership guidance"}
+{"file": ".trellis/spec/nxtools-desktop/backend/index.md", "reason": "GPUI clipboard panel, async state and UI quality guidance"}
+{"file": ".trellis/spec/nxtools-ipc/backend/index.md", "reason": "PlatformHost/desktop typed IPC boundary guidance"}
+{"file": ".trellis/spec/nxtools-protocol/backend/index.md", "reason": "Clipboard event and payload contract guidance"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Clipboard flow across C#, IPC, Rust storage and GPUI"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search existing cache/query/lifecycle patterns before adding helpers"}
+{"file": ".trellis/tasks/09-27-clipboard-performance-platformhost-crash/research/ecopaste-clipboard-performance.md", "reason": "Read-only EcoPaste performance evidence and tradeoffs"}
+{"file": ".trellis/tasks/09-27-clipboard-performance-platformhost-crash/research/nxtools-clipboard-evidence.md", "reason": "Current NxTools evidence and red-test seams"}

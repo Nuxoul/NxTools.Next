@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -20,12 +21,18 @@ internal static class Program
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
             ("command result preserves native error code", CommandResultPreservesNativeErrorCode),
+            ("parser exceptions produce correlated failure results", ParserExceptionsProduceCorrelatedFailureResults),
+            ("detached sync commands schedule before invocation", DetachedSyncCommandsScheduleBeforeInvocation),
+            ("full clipboard event queues clean staging and report once", FullClipboardEventQueueCleansStagingAndReportsOnce),
+            ("empty clipboard payloads are ignored even with native formats", EmptyClipboardPayloadsAreIgnored),
+            ("fallback sequence recheck prevents emptying changed clipboard", FallbackSequenceRecheckPreventsEmptyingChangedClipboard),
             ("platform command diagnostics prefer the operation correlation",
                 PlatformCommandDiagnosticsPreferOperationCorrelation),
             ("paste command preserves text and target window", PasteCommandPreservesPayload),
             ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
             ("native clipboard format command preserves staged payload", NativeFormatPayloadRoundTrips),
-            ("clipboard configuration preserves hotkey and exclusions", ClipboardConfigurationRoundTrips),
+            ("clipboard configuration preserves hotkey, exclusions and capture limits", ClipboardConfigurationRoundTrips),
+            ("clipboard capture limits clamp sizes without payload data", ClipboardCaptureLimitsClampAndReject),
             ("quick-launch configuration and panel request preserve Windows context", QuickLaunchContractsRoundTrip),
             ("auto quick switch only consumes an Explorer source after a dialog is known", AutoQuickSwitchRequiresKnownDialog),
             ("auto quick switch invalidates stale asynchronous candidates", AutoQuickSwitchInvalidatesStaleCandidates),
@@ -52,10 +59,15 @@ internal static class Program
             ("Files adapter requires its real window and confirms navigation on the captured host", FilesAdapterPreservesCapturedWindow),
             ("Files navigation succeeds only after its path control confirms the target", FilesNavigationRequiresReadback),
             ("bounded STA operations cancel before a stalled provider can perform late work", BoundedStaOperationsCancelLateWork),
+            ("canceled STA dialog drops its late result", CanceledStaDialogDropsLateResult),
+            ("canceled detached drain does not block reconnect", CanceledDetachedDrainDoesNotBlockReconnect),
+            ("detached cancellation observes late faults", DetachedCancellationObservesLateFaults),
+            ("canceled Shell worker is not reused from cache", CanceledShellWorkerIsNotReusedFromCache),
             ("elevated directory contexts route only through the same-integrity channel", ElevatedDirectoryContextsUseSameIntegrityChannel),
             ("elevated helper sessions preserve and consume the captured local context", ElevatedHelperSessionsPreserveCapturedContext),
             ("elevated capture preserves summon-time focus instead of delayed focus", ElevatedCapturePreservesSummonTimeFocus),
             ("elevated helper rendezvous accepts only bounded random names and tokens", ElevatedHelperRendezvousIsBounded),
+            ("elevated helper diagnostics keep host and helper PIDs distinct", ElevatedHelperDiagnosticsKeepPidsDistinct),
             ("real Directory Opus lister exposes a third-party navigation context", RealDirectoryOpusListerExposesNavigationContext),
             ("real Files window exposes a third-party navigation context", RealFilesWindowExposesNavigationContext),
             ("file-dialog recognition rejects unrelated #32770 windows", FileDialogRecognitionUsesStructuralMarkers),
@@ -67,6 +79,7 @@ internal static class Program
             ("double-control gesture requires two released taps inside the activation window", DoubleControlGestureRequiresTwoReleasedTaps),
             ("double-control gesture rejects key repeat and intervening keys", DoubleControlGestureRejectsRepeatAndInterveningKeys),
             ("hotkey recording releases and restores the registered shortcut", HotKeyRecordingReleasesAndRestoresShortcut),
+            ("clipboard hotkey uses 350ms debounce", ClipboardHotKeyUses350MsDebounce),
             ("clipboard exclusions match process names safely", ClipboardExclusionsMatchProcessNames),
             ("topmost command preserves native window", TopmostCommandPreservesNativeWindow),
             ("minimized command shows a hidden native window minimized without focus", MinimizedCommandUsesRealNativeWindow),
@@ -94,6 +107,7 @@ internal static class Program
             ("visibility command preserves native window", VisibilityCommandPreservesNativeWindow),
             ("desktop shell and tray contracts preserve bounded intent", DesktopShellAndTrayContractsRoundTrip),
             ("startup registration and tray actions use real Windows boundaries", DesktopShellUsesRealWindowsBoundaries),
+            ("startup registration resolves the current desktop release path", StartupRegistrationResolvesCurrentDesktopPath),
             ("desktop tray rejects a missing product executable icon", DesktopTrayRequiresProductIcon),
             ("tray factory failure disposes partially created resources", TrayFactoryFailureDisposesPartialResources),
             ("titlebar move reaches the real native window boundary", TitlebarMoveUsesRealNativeWindow),
@@ -105,6 +119,14 @@ internal static class Program
             ("shell action session enumerates a real filesystem target", ShellActionSessionEnumeratesFilesystemTarget),
             ("shell action bitmap is staged as a GPUI image", ShellActionBitmapIsStaged),
             ("shell icon extraction command preserves target and size", ShellIconCommandPreservesPayload),
+            ("shell icon extraction runs on a dedicated STA worker", ShellIconExtractionRunsOnDedicatedStaWorker),
+            ("shell icon extraction allows bounded parallel STA workers", ShellIconExtractionAllowsBoundedParallelWorkers),
+            ("icon cache reuses identical content keys", IconCacheReusesIdenticalKeys),
+            ("icon cache separates size and selector keys", IconCacheSeparatesSizeAndSelectorKeys),
+            ("icon cache bounds the memory LRU", IconCacheBoundsMemoryLru),
+            ("icon cache regenerates a missing disk file", IconCacheRegeneratesMissingDiskFile),
+            ("icon cache deduplicates concurrent generation", IconCacheDeduplicatesConcurrentGeneration),
+            ("icon cache generation does not hold the metadata lock", IconCacheGenerationDoesNotHoldMetadataLock),
             ("missing files fall back to their Windows file type icon", MissingFileUsesTypeIcon),
             ("shortcut icon resolves to its target without the link overlay", ShortcutIconResolvesWithoutOverlay),
             ("shortcut extraction preserves distinct application icons", ShortcutExtractionPreservesApplicationIcons),
@@ -128,6 +150,7 @@ internal static class Program
             ("native input layout matches Windows ABI", NativeInputLayoutMatchesWindowsAbi),
             ("paste diagnostics preserve correlation and Win32 error", PasteDiagnosticsPreserveCorrelationAndWin32Error),
             ("platform log writes structured JSON lines", PlatformLogWritesStructuredJsonLines),
+            ("process exception diagnostics preserve evidence without payload text", ProcessExceptionDiagnosticsPreserveEvidence),
             ("unverified fallback is not reported as paste success", UnverifiedFallbackIsNotReportedAsPasteSuccess),
             ("pressed modifiers keep paste result unconfirmed", PressedModifiersKeepPasteResultUnconfirmed),
             ("incomplete input keeps paste result unconfirmed", IncompleteInputKeepsPasteResultUnconfirmed),
@@ -141,6 +164,7 @@ internal static class Program
             ("native file drag does not block later platform commands", FileDragDoesNotBlockLaterCommands),
             ("shell enumeration does not block later platform commands", ShellEnumerationDoesNotBlockLaterCommands),
             ("shell target launch does not block later platform commands", ShellTargetLaunchDoesNotBlockLaterCommands),
+            ("directory navigation does not block later platform commands", DirectoryNavigationDoesNotBlockLaterCommands),
             ("browser extension export command parses format and destination", BrowserExtensionExportCommandParses),
             ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
@@ -252,20 +276,56 @@ internal static class Program
         Assert(response.Payload.GetProperty("native_error_code").GetInt32() == 5);
         return Task.CompletedTask;
     }
+    private static Task ParserExceptionsProduceCorrelatedFailureResults()
+    {
+        var request = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "pick_program"
+        });
+        Exception? parserError = null;
+        try
+        {
+            _ = PlatformCommandParser.ParsePickProgram(request);
+        }
+        catch (Exception error)
+        {
+            parserError = error;
+        }
+        Assert(parserError is not null);
+
+        var response = PlatformPipeClient.CreateCommandFailureEnvelope(request, parserError!);
+        Assert(response.CorrelationId == request.Id);
+        Assert(!response.Payload.GetProperty("success").GetBoolean());
+        Assert(!string.IsNullOrWhiteSpace(response.Payload.GetProperty("error").GetString()));
+        return Task.CompletedTask;
+    }
 
     private static Task PlatformCommandDiagnosticsPreferOperationCorrelation()
     {
         var operationCorrelationId = Guid.NewGuid();
-        var correlated = ProtocolEnvelope.Create(
-            "platform_command",
-            new { Command = "paste_text" },
-            operationCorrelationId);
+        foreach (var commandName in new[]
+        {
+            "open_shell_target",
+            "export_browser_extension",
+            "query_shell_actions",
+        })
+        {
+            var request = ProtocolEnvelope.Create(
+                "platform_command",
+                new { Command = commandName },
+                operationCorrelationId);
+            Assert(PlatformPipeClient.ResolveDiagnosticCorrelationId(request) == operationCorrelationId);
+            var failure = PlatformPipeClient.CreateCommandFailureEnvelope(
+                request,
+                new ExternalException("synthetic native failure", 5));
+            Assert(failure.CorrelationId == request.Id);
+            Assert(!failure.Payload.GetProperty("success").GetBoolean());
+            Assert(failure.Payload.GetProperty("native_error_code").GetInt32() == 5);
+        }
+
         var uncorrelated = ProtocolEnvelope.Create(
             "platform_command",
             new { Command = "paste_text" });
-
-        Assert(
-            PlatformPipeClient.ResolveDiagnosticCorrelationId(correlated) == operationCorrelationId);
         Assert(PlatformPipeClient.ResolveDiagnosticCorrelationId(uncorrelated) == uncorrelated.Id);
         return Task.CompletedTask;
     }
@@ -654,7 +714,7 @@ internal static class Program
             Assert(worker.CorrelationId == correlationId);
             Assert(callback.CorrelationId == correlationId);
             Assert(!callback.Fields.ContainsKey("probe"));
-            Assert(Equals(callback.Fields["file_name"], "completed.bin"));
+            Assert(!callback.Fields.ContainsKey("file_name"));
             Assert(Equals(callback.Fields["source_window_handle"], 783L));
             Assert(Equals(callback.Fields["callback_count"], 1));
             Assert(Equals(callback.Fields["result_name"], "continue"));
@@ -930,7 +990,84 @@ internal static class Program
         Assert(json.Contains("C:/source.png", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
+    private static Task FullClipboardEventQueueCleansStagingAndReportsOnce()
+    {
+        var channel = Channel.CreateBounded<WindowsPlatformEvent>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false
+            });
+        Assert(channel.Writer.TryWrite(
+            new ForegroundChangedEvent(
+                new ForegroundContext(1, 1, 1, "source", "window"))));
+        var root = Path.Combine(
+            Path.GetTempPath(), $"nxtools-clipboard-event-drop-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var imagePath = Path.Combine(root, "image.png");
+        var nativePath = Path.Combine(root, "native.bin");
+        var iconPath = Path.Combine(root, "source-icon.png");
+        var sourcePath = Path.Combine(root, "source.txt");
+        File.WriteAllBytes(imagePath, [1]);
+        File.WriteAllBytes(nativePath, [2, 3, 4]);
+        File.WriteAllBytes(iconPath, [5]);
+        File.WriteAllText(sourcePath, "source payload");
+        try
+        {
+            var captured = new ClipboardCapturedEvent(
+                null,
+                new ClipboardImageData(imagePath, 10, 10),
+                [sourcePath],
+                iconPath,
+                new ForegroundContext(2, 2, 2, "source", "window"),
+                1_700_000_000_000,
+                [new ClipboardNativeFormatData(49_200, "TestFormat", nativePath, 3, 0)]);
+            var log = new RecordingPlatformLog();
+            var dropGate = new ClipboardCaptureDropDiagnosticGate();
 
+            Assert(!WindowsPlatformAdapter.TryPublishClipboardCapturedEvent(
+                channel.Writer,
+                captured,
+                log,
+                dropGate));
+            Assert(!File.Exists(imagePath));
+            Assert(!File.Exists(nativePath));
+            Assert(!File.Exists(iconPath));
+            Assert(File.Exists(sourcePath));
+            var dropped = log.Entries.Single(entry =>
+                entry.EventName == "clipboard.capture_event_dropped");
+            Assert(log.Entries.Count == 1);
+            Assert(!WindowsPlatformAdapter.TryPublishClipboardCapturedEvent(
+                channel.Writer,
+                captured,
+                log,
+                dropGate));
+            Assert(log.Entries.Count == 1);
+            Assert(Equals(dropped.Fields["reason"], "event_queue_full"));
+            Assert(Equals(dropped.Fields["image_staging_file_count"], 1));
+            Assert(Equals(dropped.Fields["native_format_staging_file_count"], 1));
+            Assert(Equals(dropped.Fields["source_icon_staging_file_count"], 1));
+            Assert(Equals(dropped.Fields["cleanup_deleted_file_count"], 3));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+
+    }
+    private static Task EmptyClipboardPayloadsAreIgnored()
+    {
+        var noPaths = Array.Empty<string>();
+        Assert(!WindowsPlatformAdapter.EventWindow.HasUserClipboardContent(null, null, noPaths));
+        Assert(!WindowsPlatformAdapter.EventWindow.HasUserClipboardContent(string.Empty, null, noPaths));
+        Assert(!WindowsPlatformAdapter.EventWindow.HasUserClipboardContent(" \r\n ", null, noPaths));
+        Assert(WindowsPlatformAdapter.EventWindow.HasUserClipboardContent("text", null, noPaths));
+        Assert(WindowsPlatformAdapter.EventWindow.HasUserClipboardContent(null, new ClipboardImageData("C:/image.png", 1, 1), noPaths));
+        Assert(WindowsPlatformAdapter.EventWindow.HasUserClipboardContent(null, null, ["C:/file.txt"]));
+        return Task.CompletedTask;
+    }
     private static Task MultiFormatPayloadsRoundTrip()
     {
         var filesEnvelope = ProtocolEnvelope.Create("platform_command", new
@@ -1006,7 +1143,10 @@ internal static class Program
                 HotkeyModifiers = new[] { "control", "shift" },
                 HotkeyKey = "V",
                 HotkeyDisplay = "Ctrl+Shift+V",
-                ExcludedProcesses = new[] { "KeePass.exe", "Bitwarden.exe" }
+                ExcludedProcesses = new[] { "KeePass.exe", "Bitwarden.exe" },
+                MaxTextBytes = 12UL * 1024 * 1024,
+                MaxImageBytes = 96UL * 1024 * 1024,
+                MaxImagePixels = 120_000_000
             }
         });
 
@@ -1018,6 +1158,9 @@ internal static class Program
         Assert(binding.Modifiers == 0x0006);
         Assert(binding.VirtualKey == 0x56);
         Assert(command.ExcludedProcesses.SequenceEqual(["KeePass.exe", "Bitwarden.exe"]));
+        Assert(command.MaxTextBytes == 12UL * 1024 * 1024);
+        Assert(command.MaxImageBytes == 96UL * 1024 * 1024);
+        Assert(command.MaxImagePixels == 120_000_000);
 
         var recordingEnvelope = ProtocolEnvelope.Create("platform_command", new
         {
@@ -1026,6 +1169,21 @@ internal static class Program
         });
         var recording = PlatformCommandParser.ParseSetClipboardHotKeyRecording(recordingEnvelope);
         Assert(recording.Recording);
+        return Task.CompletedTask;
+    }
+
+    private static Task ClipboardCaptureLimitsClampAndReject()
+    {
+        var limits = ClipboardCaptureLimits.From(new ConfigureClipboardCommand(
+            [], "C", "Alt+C", [], 1, ulong.MaxValue, 0));
+        Assert(limits.MaxTextBytes == ClipboardCaptureLimits.MinTextBytes);
+        Assert(limits.MaxImageBytes == ClipboardCaptureLimits.MaxAllowedImageBytes);
+        Assert(limits.MaxImagePixels == ClipboardCaptureLimits.MinImagePixels);
+        Assert(limits.AllowsText(ClipboardCaptureLimits.MinTextBytes));
+        Assert(!limits.AllowsText(ClipboardCaptureLimits.MinTextBytes + 1));
+        Assert(limits.ImageRejectionReason(1_000, 1_000, 1) is null);
+        Assert(limits.ImageRejectionReason(1_001, 1_000, 1) == "max_image_pixels");
+        Assert(limits.ImageRejectionReason(1_000, 1_000, limits.MaxImageBytes + 1) == "max_image_bytes");
         return Task.CompletedTask;
     }
 
@@ -1927,6 +2085,33 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static async Task ShellIconExtractionAllowsBoundedParallelWorkers()
+    {
+        var operationName = $"shell-icon-parallel-{Guid.NewGuid():N}";
+        using var release = new ManualResetEventSlim();
+        using var started = new CountdownEvent(2);
+        var runs = Enumerable.Range(0, 2)
+            .Select(_ => Task.Run(() => BoundedStaOperationRunner.TryRun(
+                operationName,
+                TimeSpan.FromSeconds(2),
+                maxConcurrency: 2,
+                cancellationToken =>
+                {
+                    started.Signal();
+                    release.Wait(cancellationToken);
+                    return true;
+                },
+                out bool? result,
+                out string? parallelError,
+                CancellationToken.None)
+                && result == true))
+            .ToArray();
+
+        Assert(started.Wait(TimeSpan.FromSeconds(1)));
+        release.Set();
+        Assert((await Task.WhenAll(runs)).All(value => value));
+    }
+
     private static async Task BoundedStaOperationsCancelLateWork()
     {
         var lateSideEffects = 0;
@@ -1991,6 +2176,135 @@ internal static class Program
                 out bool? _,
                 out _),
             TimeSpan.FromSeconds(1)));
+    }
+
+    private static async Task CanceledStaDialogDropsLateResult()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var started = new TaskCompletionSource<ApartmentState>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateResultProduced = 0;
+        var run = Task.Run(() => StaDialogRunner.Run(
+            "NxTools.CanceledDialogRegression",
+            () =>
+            {
+                started.TrySetResult(Thread.CurrentThread.GetApartmentState());
+                cancellation.Token.WaitHandle.WaitOne();
+                Interlocked.Increment(ref lateResultProduced);
+                return new WindowsCommandResult(true, Data: "late-result");
+            },
+            cancellation.Token));
+
+        Assert(await started.Task.WaitAsync(TimeSpan.FromSeconds(1)) == ApartmentState.STA);
+        cancellation.Cancel();
+        var stopwatch = Stopwatch.StartNew();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(1));
+        stopwatch.Stop();
+
+        Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+        Assert(!result.Success);
+        Assert(result.Data is null);
+        Assert(Volatile.Read(ref lateResultProduced) == 1);
+    }
+
+    private static async Task CanceledDetachedDrainDoesNotBlockReconnect()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var processing = dispatcher.DispatchAsync(
+            "pick_program",
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task;
+            },
+            cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            cancellation.Cancel();
+            var stopwatch = Stopwatch.StartNew();
+            dispatcher.BeginDrain(TimeSpan.FromSeconds(1));
+            stopwatch.Stop();
+            Assert(stopwatch.Elapsed < TimeSpan.FromMilliseconds(100));
+
+            var reconnected = new PlatformCommandSequenceDispatcher();
+            var followUpRan = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            await reconnected.DispatchAsync(
+                "set_window_visibility",
+                () =>
+                {
+                    followUpRan.TrySetResult();
+                    return Task.CompletedTask;
+                });
+            Assert(await Task.WhenAny(
+                followUpRan.Task,
+                Task.Delay(TimeSpan.FromMilliseconds(250))) == followUpRan.Task);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private static async Task DetachedCancellationObservesLateFaults()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var failures = 0;
+        var dispatcher = new PlatformCommandSequenceDispatcher(
+            _ => Interlocked.Increment(ref failures));
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await dispatcher.DispatchAsync(
+            "pick_program",
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task;
+                throw new InvalidOperationException("late detached fault");
+            },
+            cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        cancellation.Cancel();
+        dispatcher.BeginDrain(TimeSpan.FromSeconds(1));
+        release.TrySetResult();
+        await dispatcher.DrainAsync(TimeSpan.FromSeconds(1));
+        Assert(SpinWait.SpinUntil(() => Volatile.Read(ref failures) == 1, TimeSpan.FromSeconds(1)));
+    }
+
+    private static Task CanceledShellWorkerIsNotReusedFromCache()
+    {
+        var target = Path.Combine(
+            Path.GetTempPath(),
+            $"nxtools-canceled-shell-worker-{Guid.NewGuid():N}");
+        var worker = new ShellContextMenuSessionWorker(target);
+        worker.Release();
+        var stopwatch = Stopwatch.StartNew();
+        ShellContextMenuSessionWorker.CancelCached();
+        stopwatch.Stop();
+        Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+
+        var replacement = ShellContextMenuSessionWorker.Acquire(target);
+        try
+        {
+            Assert(!ReferenceEquals(worker, replacement));
+        }
+        finally
+        {
+            replacement.CancelCurrent();
+        }
+        return Task.CompletedTask;
     }
 
     private static Task ElevatedDirectoryContextsUseSameIntegrityChannel()
@@ -2098,6 +2412,26 @@ internal static class Program
         var fatalCapture = fatalRegistry.TryCapture(foreground);
         Assert(fatalCapture.Context is null);
         Assert(fatalCapture.Failure?.Fatal == true);
+        return Task.CompletedTask;
+    }
+
+    private static Task ElevatedHelperDiagnosticsKeepPidsDistinct()
+    {
+        var connected = ElevatedDirectoryNavigationClient.HelperConnectedDiagnosticFields(12_345);
+        Assert(Equals(connected["helper_process_id"], 12_345));
+        Assert(!connected.ContainsKey("process_id"));
+
+        var disconnected = ElevatedDirectoryNavigationClient
+            .HelperDisconnectedDiagnosticFields(12_345, "pipe_closed");
+        Assert(Equals(disconnected["helper_process_id"], 12_345));
+        Assert(Equals(disconnected["reason"], "pipe_closed"));
+        Assert(!disconnected.ContainsKey("process_id"));
+        var terminalFailure = ElevatedDirectoryNavigationClient
+            .HelperConnectionFailureDiagnosticFields(null, 4, terminal: true, "timeout");
+        Assert(terminalFailure["helper_process_id"] is null);
+        Assert(Equals(terminalFailure["attempt"], 4));
+        Assert(Equals(terminalFailure["terminal"], true));
+        Assert(Equals(terminalFailure["retry_exhausted"], true));
         return Task.CompletedTask;
     }
 
@@ -2696,6 +3030,17 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task ClipboardHotKeyUses350MsDebounce()
+    {
+        var debouncer = new ClipboardHotKeyDebouncer();
+        Assert(debouncer.TryAccept(1_000));
+        Assert(!debouncer.TryAccept(1_349));
+        Assert(debouncer.TryAccept(1_350));
+        Assert(debouncer.TryAccept(900));
+        Assert(ClipboardHotKeyDebouncer.DebounceMilliseconds == 350);
+        return Task.CompletedTask;
+    }
+
     private static Task HotKeyRecordingReleasesAndRestoresShortcut()
     {
         var registrar = new FakeClipboardHotKeyRegistrar();
@@ -2790,12 +3135,16 @@ internal static class Program
         {
             var executable = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Test executable path is unavailable.");
+            runKey.SetValue("NxTools", "\"C:\\Legacy\\NxTools.exe\" --silent-start");
             var enabled = WindowsPlatformAdapter.ApplyStartupRegistration(runKey, executable, true);
             Assert(enabled.Success);
             Assert((string?)runKey.GetValue("NxTools.Next") == $"\"{executable}\" --silent-start");
+            Assert(runKey.GetValue("NxTools") is null);
+            runKey.SetValue("NxTools", "\"C:\\Legacy\\NxTools.exe\" --silent-start");
             var disabled = WindowsPlatformAdapter.ApplyStartupRegistration(runKey, executable, false);
             Assert(disabled.Success);
             Assert(runKey.GetValue("NxTools.Next") is null);
+            Assert(runKey.GetValue("NxTools") is null);
 
             var opened = 0;
             var exited = 0;
@@ -2840,6 +3189,58 @@ internal static class Program
         finally
         {
             Registry.CurrentUser.DeleteSubKeyTree(keyName, throwOnMissingSubKey: false);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task StartupRegistrationResolvesCurrentDesktopPath()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"nxtools-startup-path-{Guid.NewGuid():N}");
+        var protectedDesktop = Path.Combine(
+            root,
+            "ProgramData",
+            "NxTools",
+            "NxTools.Next",
+            "Service",
+            "NxTools.exe");
+        var configuredDesktop = Path.Combine(root, "selected", "NxTools.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(protectedDesktop)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(configuredDesktop)!);
+        File.WriteAllText(protectedDesktop, "protected desktop");
+        File.WriteAllText(configuredDesktop, "configured desktop");
+        var keyName = $@"Software\NxTools\Tests\DesktopShell\{Guid.NewGuid():N}";
+        try
+        {
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                configuredDesktop,
+                protectedDesktop,
+                candidate => candidate == configuredDesktop) == configuredDesktop);
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                configuredDesktop,
+                protectedDesktop,
+                candidate => candidate == protectedDesktop) == protectedDesktop);
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                configuredDesktop,
+                protectedDesktop,
+                _ => false) is null);
+
+            using var runKey = Registry.CurrentUser.CreateSubKey(keyName, writable: true)
+                ?? throw new InvalidOperationException("Could not create isolated startup registry key.");
+            Assert(runKey.GetValue("NxTools.Next") is null);
+            var enabled = WindowsPlatformAdapter.ApplyStartupRegistration(
+                runKey,
+                protectedDesktop,
+                true);
+            Assert(enabled.Success);
+            Assert((string?)runKey.GetValue("NxTools.Next") ==
+                $"\"{protectedDesktop}\" --silent-start");
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(keyName, throwOnMissingSubKey: false);
+            Directory.Delete(root, recursive: true);
         }
         return Task.CompletedTask;
     }
@@ -3189,6 +3590,58 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task FallbackSequenceRecheckPreventsEmptyingChangedClipboard()
+    {
+        var openCalls = 0;
+        var emptyCalls = 0;
+        var closeCalls = 0;
+        var sequenceReads = new Queue<uint>([41]);
+        var beforeOpenChanged = NativeClipboardFormats.TryOpenAndPrepareClipboardRewrite(
+            42,
+            () => sequenceReads.Dequeue(),
+            () =>
+            {
+                openCalls++;
+                return true;
+            },
+            () =>
+            {
+                emptyCalls++;
+                return true;
+            },
+            () => closeCalls++,
+            () => (5, "native failure"),
+            out var beforeError,
+            out _);
+        Assert(!beforeOpenChanged);
+        Assert(beforeError == "clipboard_changed");
+        Assert(openCalls == 0);
+        Assert(emptyCalls == 0);
+        sequenceReads = new Queue<uint>([42, 43]);
+        var afterOpenChanged = NativeClipboardFormats.TryOpenAndPrepareClipboardRewrite(
+            42,
+            () => sequenceReads.Dequeue(),
+            () =>
+            {
+                openCalls++;
+                return true;
+            },
+            () =>
+            {
+                emptyCalls++;
+                return true;
+            },
+            () => closeCalls++,
+            () => (5, "native failure"),
+            out var afterError,
+            out _);
+        Assert(!afterOpenChanged);
+        Assert(afterError == "clipboard_changed");
+        Assert(openCalls == 1);
+        Assert(emptyCalls == 0);
+        Assert(closeCalls == 1);
+        return Task.CompletedTask;
+    }
     private static Task ImagePathFallbackCleanupIsBounded()
     {
         var root = Path.Combine(
@@ -3613,12 +4066,277 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task ShellIconExtractionRunsOnDedicatedStaWorker()
+    {
+        var callerThreadId = Environment.CurrentManagedThreadId;
+        var observedThreadId = 0;
+        var observedApartment = ApartmentState.Unknown;
+        var result = ShellIconExtractor.ExtractOnSta(
+            new ExtractShellIconCommand("probe", 32),
+            _ =>
+            {
+                observedThreadId = Environment.CurrentManagedThreadId;
+                observedApartment = Thread.CurrentThread.GetApartmentState();
+                return new WindowsCommandResult(true, Data: "probe-result");
+            });
+
+        Assert(result.Success);
+        Assert(result.Data == "probe-result");
+        Assert(observedThreadId != 0);
+        Assert(observedThreadId != callerThreadId);
+        Assert(observedApartment == ApartmentState.STA);
+        return Task.CompletedTask;
+    }
+
+    private static async Task ShellIconExtractionDoesNotBlockLaterCommands()
+    {
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var extractionStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseExtraction = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var followUpRan = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processing = Task.Run(async () =>
+        {
+            await dispatcher.DispatchAsync(
+                "extract_shell_icon",
+                async () =>
+                {
+                    extractionStarted.TrySetResult();
+                    await releaseExtraction.Task;
+                });
+            await dispatcher.DispatchAsync(
+                "set_window_visibility",
+                () =>
+                {
+                    followUpRan.TrySetResult();
+                    return Task.CompletedTask;
+                });
+        });
+
+        await extractionStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        try
+        {
+            var completed = await Task.WhenAny(
+                followUpRan.Task,
+                Task.Delay(TimeSpan.FromMilliseconds(250)));
+            Assert(completed == followUpRan.Task);
+        }
+        finally
+        {
+            releaseExtraction.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private static Task IconCacheReusesIdenticalKeys()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var cache = new IconCache(root);
+            var key = IconCacheKey.Create(Path.Combine(root, "App.exe"), null, 32, 12, "file");
+            var writes = 0;
+            Assert(cache.TryGetOrCreate(key, path =>
+            {
+                writes++;
+                File.WriteAllBytes(path, [1, 2, 3]);
+                return true;
+            }, out var first));
+            Assert(cache.TryGetOrCreate(key, _ =>
+            {
+                writes++;
+                return false;
+            }, out var second));
+            Assert(first == second);
+            Assert(writes == 1);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task IconCacheSeparatesSizeAndSelectorKeys()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var cache = new IconCache(root);
+            var target = Path.Combine(root, "App.exe");
+            var keys = new[]
+            {
+                IconCacheKey.Create(target, null, 16, 12, "file"),
+                IconCacheKey.Create(target, null, 32, 12, "file"),
+                IconCacheKey.Create(target, 1, 32, 12, "file")
+            };
+            var paths = keys.Select(key =>
+            {
+                Assert(cache.TryGetOrCreate(key, path =>
+                {
+                    File.WriteAllBytes(path, [1]);
+                    return true;
+                }, out var path));
+                return path;
+            }).ToArray();
+            Assert(paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() == keys.Length);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task IconCacheBoundsMemoryLru()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var cache = new IconCache(root);
+            for (var index = 0; index < IconCache.MaxMemoryEntries + 1; index++)
+            {
+                var key = IconCacheKey.Create(
+                    Path.Combine(root, $"App-{index}.exe"), null, 32, index, "file");
+                Assert(cache.TryGetOrCreate(key, path =>
+                {
+                    File.WriteAllBytes(path, [1]);
+                    return true;
+                }, out _));
+            }
+            Assert(cache.MemoryEntryCount == IconCache.MaxMemoryEntries);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task IconCacheRegeneratesMissingDiskFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var cache = new IconCache(root);
+            var key = IconCacheKey.Create(Path.Combine(root, "App.exe"), null, 32, 12, "file");
+            var writes = 0;
+            Assert(cache.TryGetOrCreate(key, path =>
+            {
+                writes++;
+                File.WriteAllBytes(path, [1]);
+                return true;
+            }, out var path));
+            File.Delete(path);
+            Assert(cache.TryGetOrCreate(key, path =>
+            {
+                writes++;
+                File.WriteAllBytes(path, [2]);
+                return true;
+            }, out var regenerated));
+            Assert(regenerated == path);
+            Assert(writes == 2);
+            Assert(File.ReadAllBytes(regenerated).SequenceEqual(new byte[] { 2 }));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static async Task IconCacheDeduplicatesConcurrentGeneration()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-concurrent-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        using var generationEntered = new ManualResetEventSlim();
+        using var releaseGeneration = new ManualResetEventSlim();
+        try
+        {
+            var cache = new IconCache(root);
+            var key = IconCacheKey.Create(Path.Combine(root, "App.exe"), null, 32, 12, "file");
+            var generationCount = 0;
+            var results = new bool[8];
+            var paths = new string[8];
+            var tasks = Enumerable.Range(0, results.Length)
+                .Select(index => Task.Run(() =>
+                {
+                    results[index] = cache.TryGetOrCreate(key, path =>
+                    {
+                        Interlocked.Increment(ref generationCount);
+                        generationEntered.Set();
+                        releaseGeneration.Wait();
+                        File.WriteAllBytes(path, [7]);
+                        return true;
+                    }, out paths[index]);
+                }))
+                .ToArray();
+            Assert(generationEntered.Wait(TimeSpan.FromSeconds(1)));
+            releaseGeneration.Set();
+            await Task.WhenAll(tasks);
+            Assert(results.All(result => result));
+            Assert(generationCount == 1);
+            Assert(paths.All(path => path == paths[0]));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task IconCacheGenerationDoesNotHoldMetadataLock()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-cache-lock-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        using var generationEntered = new ManualResetEventSlim();
+        using var releaseGeneration = new ManualResetEventSlim();
+        try
+        {
+            var cache = new IconCache(root);
+            var slowKey = IconCacheKey.Create(Path.Combine(root, "Slow.exe"), null, 32, 12, "file");
+            var fastKey = IconCacheKey.Create(Path.Combine(root, "Fast.exe"), null, 32, 12, "file");
+            var slow = Task.Run(() => cache.TryGetOrCreate(slowKey, path =>
+            {
+                generationEntered.Set();
+                releaseGeneration.Wait();
+                File.WriteAllBytes(path, [1]);
+                return true;
+            }, out _));
+            Assert(generationEntered.Wait(TimeSpan.FromSeconds(1)));
+            var fast = Task.Run(() => cache.TryGetOrCreate(
+                fastKey,
+                path =>
+                {
+                    File.WriteAllBytes(path, [2]);
+                    return true;
+                },
+                out _));
+            Assert(await Task.WhenAny(fast, Task.Delay(TimeSpan.FromMilliseconds(500))) == fast);
+            releaseGeneration.Set();
+            Assert(await slow);
+            Assert(await fast);
+        }
+        finally
+        {
+            releaseGeneration.Set();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static Task MissingFileUsesTypeIcon()
     {
         var missingPng = Path.Combine(
             Path.GetTempPath(),
             $"nxtools-missing-icon-{Guid.NewGuid():N}.png");
-        var result = ShellIconExtractor.Extract(new ExtractShellIconCommand(missingPng, 32));
+        var result = ShellIconExtractor.ExtractOnSta(new ExtractShellIconCommand(missingPng, 32));
 
         Assert(result.Success);
         Assert(result.Data is string path && File.Exists(path));
@@ -3667,9 +4385,9 @@ internal static class Program
             CreateShortcut(commandShortcut, command);
             CreateShortcut(explorerShortcut, explorer);
 
-            var commandIcon = ShellIconExtractor.Extract(
+            var commandIcon = ShellIconExtractor.ExtractOnSta(
                 new ExtractShellIconCommand(commandShortcut, 32));
-            var explorerIcon = ShellIconExtractor.Extract(
+            var explorerIcon = ShellIconExtractor.ExtractOnSta(
                 new ExtractShellIconCommand(explorerShortcut, 32));
             if (!commandIcon.Success || commandIcon.Data is not string)
                 throw new InvalidOperationException($"Command shortcut extraction failed: {commandIcon.Error}");
@@ -3894,7 +4612,10 @@ internal static class Program
             {
                 ["win32_error"] = 87,
                 ["text"] = "must-not-appear",
-                ["nested"] = new { Text = "nested-must-not-appear", Safe = 1 }
+                ["nested"] = new { Text = "nested-must-not-appear", Safe = 1 },
+                ["message"] = "message-secret",
+                ["path"] = "C:/secret/path.bin",
+                ["window_title"] = "window-secret"
             });
         }
         var json = File.ReadAllText(path);
@@ -3902,11 +4623,46 @@ internal static class Program
         var root = document.RootElement;
         Assert(root.GetProperty("event").GetString() == "test.event");
         Assert(root.GetProperty("correlation_id").GetGuid() == correlationId);
+        Assert(root.GetProperty("platform_host_pid").GetInt32() == Environment.ProcessId);
         Assert(root.GetProperty("win32_error").GetInt32() == 87);
         Assert(root.GetProperty("text").GetString() == "[REDACTED]");
         Assert(root.GetProperty("nested").GetProperty("Text").GetString() == "[REDACTED]");
+        Assert(root.GetProperty("message").GetString() == "[REDACTED]");
+        Assert(root.GetProperty("path").GetString() == "[REDACTED]");
+        Assert(root.GetProperty("window_title").GetString() == "[REDACTED]");
         Assert(!json.Contains("must-not-appear", StringComparison.Ordinal));
         Assert(!json.Contains("nested-must-not-appear", StringComparison.Ordinal));
+        Directory.Delete(directory, recursive: true);
+        return Task.CompletedTask;
+    }
+
+    private static Task ProcessExceptionDiagnosticsPreserveEvidence()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-exception-diagnostics-{Guid.NewGuid():N}");
+        string path;
+        Exception exception;
+        try
+        {
+            throw new InvalidOperationException("clipboard secret must not be logged");
+        }
+        catch (Exception error)
+        {
+            exception = error;
+        }
+        using (var log = PlatformLog.CreateForDirectory(directory))
+        {
+            path = log.CurrentLogPath;
+            PlatformExceptionDiagnostics.Record(log, "test.process_exception", exception);
+        }
+        var json = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert(root.GetProperty("event").GetString() == "test.process_exception");
+        Assert(root.GetProperty("exception_type").GetString() == typeof(InvalidOperationException).FullName);
+        Assert(root.GetProperty("hresult").GetString()?.StartsWith("0x", StringComparison.Ordinal) == true);
+        Assert(root.TryGetProperty("stack_trace", out var stackTrace));
+        Assert(stackTrace.ValueKind == JsonValueKind.String);
+        Assert(!json.Contains("clipboard secret must not be logged", StringComparison.Ordinal));
         Directory.Delete(directory, recursive: true);
         return Task.CompletedTask;
     }
@@ -3995,7 +4751,8 @@ internal static class Program
                 700,
                 1,
                 144,
-                1_700_000_000_500));
+                1_700_000_000_500,
+                41));
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
 
         Assert(json.Contains("\"event\":\"clipboard_panel_requested\"", StringComparison.Ordinal));
@@ -4004,19 +4761,22 @@ internal static class Program
         Assert(json.Contains("\"cursor_y\":700", StringComparison.Ordinal));
         Assert(json.Contains("\"cursor_display_index\":1", StringComparison.Ordinal));
         Assert(json.Contains("\"cursor_monitor_dpi\":144", StringComparison.Ordinal));
+        Assert(json.Contains("\"event_sequence\":41", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 
     private static Task GlobalPointerEventPreservesClickedWindow()
     {
         var envelope = PlatformEventEnvelopeFactory.Create(
-            new GlobalPointerPressedEvent(91, 80, 7));
+            new GlobalPointerPressedEvent(91, 80, 7, 1_700_000_000_400, 42));
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
 
         Assert(json.Contains("\"event\":\"global_pointer_pressed\"", StringComparison.Ordinal));
         Assert(json.Contains("\"window_handle\":91", StringComparison.Ordinal));
         Assert(json.Contains("\"root_window_handle\":80", StringComparison.Ordinal));
         Assert(json.Contains("\"process_id\":7", StringComparison.Ordinal));
+        Assert(json.Contains("\"sampled_at_unix_ms\":1700000000400", StringComparison.Ordinal));
+        Assert(json.Contains("\"event_sequence\":42", StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 
@@ -4065,6 +4825,33 @@ internal static class Program
         }
     }
 
+    private static async Task DetachedSyncCommandsScheduleBeforeInvocation()
+    {
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var dispatch = Task.Run(() => dispatcher.DispatchAsync(
+            "pick_program",
+            () =>
+            {
+                started.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+                return Task.CompletedTask;
+            }));
+        try
+        {
+            Assert(await Task.WhenAny(dispatch, Task.Delay(250)) == dispatch);
+            Assert(await Task.WhenAny(started.Task, Task.Delay(1_000)) == started.Task);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await dispatch.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
     private static async Task FileDragDoesNotBlockLaterCommands()
     {
         var dispatcher = new PlatformCommandSequenceDispatcher();
@@ -4200,6 +4987,50 @@ internal static class Program
         finally
         {
             releaseLaunch.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(1));
+            await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private static async Task DirectoryNavigationDoesNotBlockLaterCommands()
+    {
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var navigationStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseNavigation = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var followUpRan = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processing = Task.Run(async () =>
+        {
+            await dispatcher.DispatchAsync(
+                "navigate_directory",
+                async () =>
+                {
+                    navigationStarted.TrySetResult();
+                    await releaseNavigation.Task;
+                });
+            await dispatcher.DispatchAsync(
+                "set_window_visibility",
+                () =>
+                {
+                    followUpRan.TrySetResult();
+                    return Task.CompletedTask;
+                });
+        });
+
+        await navigationStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        try
+        {
+            var completed = await Task.WhenAny(
+                followUpRan.Task,
+                Task.Delay(TimeSpan.FromMilliseconds(250)));
+            Assert(completed == followUpRan.Task);
+        }
+        finally
+        {
+            releaseNavigation.TrySetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(1));
             await dispatcher.DrainAsync().WaitAsync(TimeSpan.FromSeconds(1));
         }

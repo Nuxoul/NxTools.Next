@@ -172,7 +172,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
             UnauthorizedAccessException or
             InvalidOperationException)
         {
-            HandleRendezvousFailure(error);
+            HandleRendezvousFailure(error, null);
         }
     }
 
@@ -221,6 +221,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
         string authenticationToken,
         CancellationToken cancellationToken)
     {
+        int? helperProcessId = null;
         try
         {
             using var acceptTimeout =
@@ -252,6 +253,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
                 : JsonSerializer.Deserialize<ElevatedDirectoryHelperHello>(
                     line,
                     JsonDefaults.Options);
+            helperProcessId = hello?.ProcessId;
             if (hello is null ||
                 string.IsNullOrWhiteSpace(hello.AuthenticationToken) ||
                 !CryptographicOperations.FixedTimeEquals(
@@ -265,7 +267,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
                 throw new InvalidDataException(
                     "the elevated directory helper handshake was rejected");
             }
-            var connection = new HelperConnection(server, reader, writer);
+            var connection = new HelperConnection(server, reader, writer, hello.ProcessId);
             lock (_connectionGate)
             {
                 if (_disposed)
@@ -279,10 +281,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
                 _rendezvousFailures = 0;
             }
             _log.Write("info", "elevated_directory_helper.connected", fields:
-                new Dictionary<string, object?>
-                {
-                    ["process_id"] = hello.ProcessId
-                });
+                HelperConnectedDiagnosticFields(hello.ProcessId));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -299,11 +298,11 @@ internal sealed class ElevatedDirectoryNavigationClient :
             OperationCanceledException)
         {
             server.Dispose();
-            HandleRendezvousFailure(error);
+            HandleRendezvousFailure(error, helperProcessId);
         }
     }
 
-    private void HandleRendezvousFailure(Exception error)
+    private void HandleRendezvousFailure(Exception error, int? helperProcessId)
     {
         int failureCount;
         var shouldRetry = false;
@@ -318,11 +317,11 @@ internal sealed class ElevatedDirectoryNavigationClient :
             shouldRetry = failureCount < MaximumRendezvousAttempts;
         }
         _log.Write("warning", "elevated_directory_helper.connection_failed", fields:
-            new Dictionary<string, object?>
-            {
-                ["message"] = error.Message,
-                ["attempt"] = failureCount
-            });
+            HelperConnectionFailureDiagnosticFields(
+                helperProcessId,
+                failureCount,
+                terminal: !shouldRetry,
+                message: error.Message));
         if (shouldRetry)
         {
             _ = Task.Run(async () =>
@@ -341,6 +340,36 @@ internal sealed class ElevatedDirectoryNavigationClient :
         }
     }
 
+    internal static Dictionary<string, object?> HelperConnectedDiagnosticFields(
+        int helperProcessId) => new()
+    {
+        ["process_role"] = "elevated_directory_helper",
+        ["helper_process_id"] = helperProcessId
+    };
+
+    internal static Dictionary<string, object?> HelperDisconnectedDiagnosticFields(
+        int helperProcessId,
+        string reason) => new()
+    {
+        ["process_role"] = "elevated_directory_helper",
+        ["helper_process_id"] = helperProcessId,
+        ["reason"] = reason
+    };
+
+    internal static Dictionary<string, object?> HelperConnectionFailureDiagnosticFields(
+        int? helperProcessId,
+        int attempt,
+        bool terminal,
+        string message) => new()
+    {
+        ["process_role"] = "elevated_directory_helper",
+        ["helper_process_id"] = helperProcessId,
+        ["message"] = message,
+        ["attempt"] = attempt,
+        ["terminal"] = terminal,
+        ["retry_exhausted"] = terminal
+    };
+
     private void InvalidateConnection(
         HelperConnection connection,
         string reason)
@@ -357,10 +386,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
         }
         connection.Dispose();
         _log.Write("warning", "elevated_directory_helper.disconnected", fields:
-            new Dictionary<string, object?>
-            {
-                ["reason"] = reason
-            });
+            HelperDisconnectedDiagnosticFields(connection.HelperProcessId, reason));
         if (restart)
         {
             TryBeginRendezvous();
@@ -386,8 +412,10 @@ internal sealed class ElevatedDirectoryNavigationClient :
     private sealed class HelperConnection(
         NamedPipeServerStream pipe,
         StreamReader reader,
-        StreamWriter writer) : IDisposable
+        StreamWriter writer,
+        int helperProcessId) : IDisposable
     {
+        public int HelperProcessId { get; } = helperProcessId;
         public StreamReader Reader { get; } = reader;
         public StreamWriter Writer { get; } = writer;
 

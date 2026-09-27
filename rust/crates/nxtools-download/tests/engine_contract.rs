@@ -5310,6 +5310,74 @@ fn compact_snapshot_rebuilds_list_and_keeps_detail_selected_task_only() {
     assert_eq!(legacy.task_details.len(), 2);
     assert!(legacy.task_summaries.is_empty());
 }
+#[tokio::test]
+async fn compact_snapshot_preserves_final_path_and_searches_that_path() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create final-path snapshot directory");
+    let engine = DownloadEngine::open_in_memory().expect("open final-path snapshot engine");
+    let mut download = request(&server, directory.path().to_owned());
+    download.file_name = Some("compact-final.bin".into());
+    let task_id = engine
+        .submit(download, RequestOrigin::Internal)
+        .expect("submit final-path snapshot task");
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for final-path snapshot task");
+    assert_eq!(completed.task.status(), DownloadStatus::Completed);
+    let final_path = directory.path().join("compact-final.bin");
+
+    let snapshot = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::compact(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(snapshot) = snapshot.outcome else {
+        panic!("compact final-path snapshot expected");
+    };
+    let summary = snapshot
+        .task_summaries
+        .iter()
+        .find(|summary| summary.task_id == task_id)
+        .expect("final-path summary");
+    assert_eq!(summary.final_path.as_ref(), Some(&final_path));
+    assert_eq!(
+        summary
+            .clone()
+            .into_engine_task()
+            .expect("project final-path summary")
+            .final_path
+            .as_ref(),
+        Some(&final_path)
+    );
+
+    let search = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery {
+                search: Some(directory.path().to_string_lossy().into_owned()),
+                ..DownloadQuery::compact()
+            },
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(search) = search.outcome else {
+        panic!("compact final-path search snapshot expected");
+    };
+    assert_eq!(
+        search
+            .task_summaries
+            .iter()
+            .map(|summary| summary.task_id)
+            .collect::<Vec<_>>(),
+        vec![task_id]
+    );
+}
+
 #[test]
 fn compact_snapshot_is_self_contained_after_a_sequence_gap_refresh() {
     let server = DeterministicHttpServer::start();

@@ -26,6 +26,8 @@ internal sealed class PlatformCommandSequenceDispatcher
         // the self-healing retry queued behind the same stall — the panel
         // stayed on screen until the launch finished.
         "open_shell_target",
+        "navigate_directory",
+        "open_file_in_dialog",
     };
 
     private readonly object _gate = new();
@@ -40,26 +42,31 @@ internal sealed class PlatformCommandSequenceDispatcher
 
     public Task DispatchAsync(
         string commandName,
-        Func<Task> executeAsync)
+        Func<Task> executeAsync) =>
+        DispatchAsync(commandName, _ => executeAsync(), CancellationToken.None);
+
+    public Task DispatchAsync(
+        string commandName,
+        Func<Task> executeAsync,
+        CancellationToken cancellationToken) =>
+        DispatchAsync(commandName, _ => executeAsync(), cancellationToken);
+
+    public Task DispatchAsync(
+        string commandName,
+        Func<CancellationToken, Task> executeAsync,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         ArgumentNullException.ThrowIfNull(executeAsync);
         if (!DetachedCommands.Contains(commandName))
         {
-            return executeAsync();
+            return executeAsync(cancellationToken);
         }
 
-        Task command;
-        try
-        {
-            command = executeAsync();
-        }
-        catch (Exception error)
-        {
-            _onDetachedFailure?.Invoke(error);
-            return Task.CompletedTask;
-        }
-
+        // Queue detached work before invoking the delegate. Some detached
+        // operations enter synchronous Windows APIs before returning a Task.
+        // Task.Run captures those synchronous failures in the observed Task.
+        var command = Task.Run(() => executeAsync(cancellationToken), cancellationToken);
         lock (_gate)
         {
             _detachedCommands.Add(command);
@@ -68,14 +75,60 @@ internal sealed class PlatformCommandSequenceDispatcher
         return Task.CompletedTask;
     }
 
-    public Task DrainAsync()
+    public async Task DrainAsync(TimeSpan? timeout = null)
     {
-        Task[] commands;
-        lock (_gate)
+        var budget = timeout ?? TimeSpan.FromSeconds(2);
+        if (budget < TimeSpan.Zero)
         {
-            commands = [.. _detachedCommands];
+            throw new ArgumentOutOfRangeException(nameof(timeout));
         }
-        return Task.WhenAll(commands.Select(IgnoreFailureAsync));
+
+        var deadline = DateTime.UtcNow + budget;
+        while (true)
+        {
+            Task[] commands;
+            lock (_gate)
+            {
+                commands = [.. _detachedCommands];
+            }
+            if (commands.Length == 0)
+            {
+                return;
+            }
+
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            var drain = Task.WhenAll(commands.Select(IgnoreFailureAsync));
+            try
+            {
+                await drain.WaitAsync(remaining);
+            }
+            catch (TimeoutException)
+            {
+                return;
+            }
+        }
+    }
+
+    public void BeginDrain(TimeSpan? timeout = null)
+    {
+        _ = ObserveDrainAsync(timeout);
+    }
+
+    private async Task ObserveDrainAsync(TimeSpan? timeout)
+    {
+        try
+        {
+            await DrainAsync(timeout);
+        }
+        catch
+        {
+            // Teardown observation must never create an unobserved task fault.
+        }
     }
 
     private async Task ObserveDetachedAsync(Task command)
@@ -89,7 +142,14 @@ internal sealed class PlatformCommandSequenceDispatcher
         }
         catch (Exception error)
         {
-            _onDetachedFailure?.Invoke(error);
+            try
+            {
+                _onDetachedFailure?.Invoke(error);
+            }
+            catch
+            {
+                // Detached diagnostics must not create an unobserved task fault.
+            }
         }
         finally
         {

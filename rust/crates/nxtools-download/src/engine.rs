@@ -17,7 +17,10 @@ use crate::http::{
     TransferDirective, decrypt_hls_aes128_segment, hls_sequence_iv, is_disk_full_error,
     is_file_in_use_error,
 };
-use crate::storage::{BrowserHandoffSave, IdempotentSubmissionSave, StoredTransferState};
+use crate::storage::{
+    BrowserHandoffSave, IdempotentSubmissionSave, QueueAdmission, RedownloadOperationSave,
+    StoredTransferState,
+};
 use crate::{
     ArtifactAllocation, BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
@@ -407,7 +410,7 @@ impl DownloadTaskSummary {
             downloaded_bytes: self.downloaded_bytes,
             total_bytes: self.total_bytes,
             error: self.error,
-            final_path: None,
+            final_path: self.final_path,
             temporary_path: None,
             queue_eligible: self.queue_eligible,
             has_final_artifact: self.has_final_artifact,
@@ -607,6 +610,7 @@ impl DownloadEngine {
         download_http_policy: DownloadHttpPolicy,
     ) -> Result<Self, DownloadEngineError> {
         let persisted_tasks = store.load_tasks()?;
+        let pending_redownload_operations = store.load_redownload_operations()?;
         let reconciliation_id = uuid::Uuid::new_v4();
         for task in persisted_tasks.iter().rev() {
             match store.is_queue_task_eligible(task.id()) {
@@ -692,6 +696,10 @@ impl DownloadEngine {
                 browser_blob_staging_root,
             }),
         };
+        engine.reconcile_pending_redownload_operations(
+            &pending_redownload_operations,
+            uuid::Uuid::new_v4(),
+        )?;
         if let Err(error) = engine.process_due_schedules_at(now_unix_ms()) {
             warn!(
                 event = "download.schedule.startup_due_release_failed",
@@ -1842,6 +1850,7 @@ impl DownloadEngine {
                         .and_then(|probe| probe.total_bytes)
                         .or(request.expected_total_bytes),
                     file_name,
+                    final_path: state.transfer.final_path.clone(),
                     source_url: request.source_url.clone(),
                     category_name: request.category_name.clone(),
                     category_id: request.category_id.clone(),
@@ -1864,6 +1873,9 @@ impl DownloadEngine {
                                 .category_name
                                 .as_deref()
                                 .is_some_and(|name| name.to_lowercase().contains(search))
+                            || summary.final_path.as_ref().is_some_and(|path| {
+                                path.to_string_lossy().to_lowercase().contains(search)
+                            })
                     })
             })
             .collect::<Vec<_>>();
@@ -2054,24 +2066,24 @@ impl DownloadEngine {
         let request_fingerprint = idempotency_key
             .map(|_| crate::storage::request_fingerprint(&request))
             .transpose()?;
-        if let Some(idempotency_key) = idempotency_key {
-            if let Some(task_id) = self.resolve_existing_idempotent_submission(
+        if let Some(idempotency_key) = idempotency_key
+            && let Some(task_id) = self.resolve_existing_idempotent_submission(
                 origin,
                 idempotency_key,
                 request_fingerprint
                     .as_deref()
                     .expect("idempotent submission has a request fingerprint"),
                 correlation_id,
-            )? {
-                info!(
-                    event = "download.submission.duplicate",
-                    %correlation_id,
-                    %idempotency_key,
-                    ?task_id,
-                    "idempotent submission replay resolved before request acceptance"
-                );
-                return Ok((task_id, true));
-            }
+            )?
+        {
+            info!(
+                event = "download.submission.duplicate",
+                %correlation_id,
+                %idempotency_key,
+                ?task_id,
+                "idempotent submission replay resolved before request acceptance"
+            );
+            return Ok((task_id, true));
         }
         self.inner
             .download_http_policy
@@ -2083,24 +2095,24 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        if let Some(idempotency_key) = idempotency_key {
-            if let Some(task_id) = self.resolve_existing_idempotent_submission(
+        if let Some(idempotency_key) = idempotency_key
+            && let Some(task_id) = self.resolve_existing_idempotent_submission(
                 origin,
                 idempotency_key,
                 request_fingerprint
                     .as_deref()
                     .expect("idempotent submission has a request fingerprint"),
                 correlation_id,
-            )? {
-                info!(
-                    event = "download.submission.duplicate",
-                    %correlation_id,
-                    %idempotency_key,
-                    ?task_id,
-                    "idempotent submission replay resolved at acceptance boundary"
-                );
-                return Ok((task_id, true));
-            }
+            )?
+        {
+            info!(
+                event = "download.submission.duplicate",
+                %correlation_id,
+                %idempotency_key,
+                ?task_id,
+                "idempotent submission replay resolved at acceptance boundary"
+            );
+            return Ok((task_id, true));
         }
         let mut tasks = self.inner.lock_tasks()?;
         apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
@@ -2126,8 +2138,10 @@ impl DownloadEngine {
                         .expect("idempotent submission has a request fingerprint"),
                     &task,
                     &transfer,
-                    "default",
-                    is_eligible,
+                    QueueAdmission {
+                        id: "default",
+                        eligible: is_eligible,
+                    },
                 )
                 .map_err(|error| match error {
                     DownloadStorageError::IdempotencyConflict { .. } => {
@@ -3129,11 +3143,156 @@ impl DownloadEngine {
         Ok(task_id)
     }
 
+    fn create_redownload_replacement(
+        &self,
+        old: &DownloadEngineTask,
+        correlation_id: uuid::Uuid,
+    ) -> Result<DownloadTaskId, DownloadEngineError> {
+        if let Some((_, replacement_task_id)) = self
+            .inner
+            .store
+            .load_redownload_operations()?
+            .into_iter()
+            .find(|(old_task_id, _)| *old_task_id == old.task.id())
+        {
+            return Ok(replacement_task_id);
+        }
+        let mut request = old.task.request().clone();
+        self.inner
+            .download_http_policy
+            .apply_to_request(&mut request)?;
+        request.validate()?;
+        self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
+        let mut tasks = self.inner.lock_tasks()?;
+        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
+        request.validate()?;
+        let task = DownloadTask::new(request, old.task.origin(), now_unix_ms());
+        let task_id = task.id();
+        let transfer = StoredTransferState::default();
+        let saved = self
+            .inner
+            .store
+            .save_redownload_task_with_transfer_and_queue(
+                old.task.id(),
+                &task,
+                &transfer,
+                "default",
+                false,
+            )?;
+        match saved {
+            RedownloadOperationSave::Existing(existing_task_id) => {
+                drop(tasks);
+                Ok(existing_task_id)
+            }
+            RedownloadOperationSave::Inserted(_) => {
+                tasks.insert(
+                    task_id,
+                    EngineTaskState {
+                        task,
+                        transfer,
+                        control: None,
+                        last_progress_event: None,
+                        transfer_rate: None,
+                    },
+                );
+                drop(tasks);
+                self.inner.emit_task(task_id);
+                Ok(task_id)
+            }
+        }
+    }
+
+    fn reconcile_pending_redownload_operations(
+        &self,
+        operations: &[(DownloadTaskId, DownloadTaskId)],
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        for &(old_task_id, replacement_task_id) in operations {
+            let (old, replacement_exists) = {
+                let tasks = self.inner.lock_tasks()?;
+                (
+                    tasks.get(&old_task_id).map(snapshot_from_state),
+                    tasks.contains_key(&replacement_task_id),
+                )
+            };
+            let Some(old) = old else {
+                warn!(
+                    event = "download.redownload.reconciliation_missing_old_task",
+                    %correlation_id,
+                    ?old_task_id,
+                    ?replacement_task_id,
+                    "pending redownload marker has no original task"
+                );
+                continue;
+            };
+            if !replacement_exists {
+                warn!(
+                    event = "download.redownload.reconciliation_missing_replacement",
+                    %correlation_id,
+                    ?old_task_id,
+                    ?replacement_task_id,
+                    "pending redownload marker has no replacement task"
+                );
+                continue;
+            }
+            if let Err(error) = self.cleanup_owned_artifacts(
+                &old,
+                correlation_id,
+                "startup_reconcile",
+                Instant::now(),
+            ) {
+                warn!(
+                    event = "download.redownload.reconciliation_deferred",
+                    %correlation_id,
+                    ?old_task_id,
+                    ?replacement_task_id,
+                    error = %error,
+                    "pending redownload remains durable after cleanup failure"
+                );
+                continue;
+            }
+            if !self
+                .inner
+                .store
+                .complete_redownload_operation(old_task_id, replacement_task_id)?
+            {
+                continue;
+            }
+            self.inner.lock_tasks()?.remove(&old_task_id);
+            self.inner.emit(DownloadEvent::TaskRemoved {
+                task_id: old_task_id,
+            });
+            if let Err(error) = self.resume_correlated(replacement_task_id, correlation_id) {
+                warn!(
+                    event = "download.redownload.reconciliation_admission_deferred",
+                    %correlation_id,
+                    ?old_task_id,
+                    ?replacement_task_id,
+                    error = %error,
+                    "reconciled replacement remains eligible for queue refill"
+                );
+            }
+            info!(
+                event = "download.redownload.reconciled",
+                %correlation_id,
+                ?old_task_id,
+                ?replacement_task_id,
+                "pending redownload replacement reconciled"
+            );
+        }
+        Ok(())
+    }
+
     fn redownload_correlated(
         &self,
         task_id: DownloadTaskId,
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadTaskId, DownloadEngineError> {
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
         let old = self
             .task(task_id)?
             .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
@@ -3148,56 +3307,34 @@ impl DownloadEngine {
             });
         }
 
-        // Keep the replacement task Created until the old task's owned state has
-        // been removed. That makes cleanup failure compensatable without racing
-        // an already-running replacement worker.
-        let (new_task_id, _) = self.submit_with_mode_idempotent_correlated(
-            old.task.request().clone(),
-            old.task.origin(),
-            DownloadSubmitMode::QueueOnly,
-            None,
-            correlation_id,
-        )?;
-        if let Err(cleanup_error) = self.remove_correlated(task_id, false, correlation_id) {
+        let new_task_id = self.create_redownload_replacement(&old, correlation_id)?;
+        if let Err(cleanup_error) =
+            self.cleanup_owned_artifacts(&old, correlation_id, "redownload", Instant::now())
+        {
             warn!(
                 event = "download.redownload.old_task_cleanup_failed",
                 %correlation_id,
                 ?task_id,
                 ?new_task_id,
                 error = %cleanup_error,
-                "redownload could not clean the original task"
+                "redownload remains durable for cleanup retry"
             );
-            match self.remove_correlated(new_task_id, false, correlation_id) {
-                Ok(()) => {
-                    info!(
-                        event = "download.redownload.rollback_completed",
-                        %correlation_id,
-                        ?task_id,
-                        ?new_task_id,
-                        "redownload replacement task was rolled back"
-                    );
-                    return Err(DownloadEngineError::RedownloadCleanupFailed {
-                        old_task_id: task_id,
-                        new_task_id,
-                    });
-                }
-                Err(rollback_error) => {
-                    error!(
-                        event = "download.redownload.rollback_failed",
-                        %correlation_id,
-                        ?task_id,
-                        ?new_task_id,
-                        error = %rollback_error,
-                        "redownload replacement task could not be rolled back"
-                    );
-                    return Err(DownloadEngineError::RedownloadRollbackFailed {
-                        old_task_id: task_id,
-                        new_task_id,
-                    });
-                }
-            }
+            return Err(DownloadEngineError::RedownloadCleanupFailed {
+                old_task_id: task_id,
+                new_task_id,
+            });
         }
+        if !self
+            .inner
+            .store
+            .complete_redownload_operation(task_id, new_task_id)?
+        {
+            return Err(DownloadEngineError::TaskNotFound(task_id));
+        }
+        self.inner.lock_tasks()?.remove(&task_id);
+        self.inner.emit(DownloadEvent::TaskRemoved { task_id });
 
+        drop(_scheduler);
         if let Err(error) = self.resume_correlated(new_task_id, correlation_id) {
             warn!(
                 event = "download.redownload.admission_deferred",
@@ -3217,7 +3354,6 @@ impl DownloadEngine {
         );
         Ok(new_task_id)
     }
-
     fn resume_correlated(
         &self,
         task_id: DownloadTaskId,
@@ -3411,6 +3547,74 @@ impl DownloadEngine {
         Ok(())
     }
 
+    fn cleanup_owned_artifacts(
+        &self,
+        snapshot: &DownloadEngineTask,
+        correlation_id: uuid::Uuid,
+        reason: &'static str,
+        started_at: Instant,
+    ) -> Result<(), DownloadEngineError> {
+        let task_id = snapshot.task.id();
+        if matches!(
+            snapshot.task.request().media.as_ref(),
+            Some(DownloadRequestMedia::Hls(_))
+        ) {
+            info!(
+                event = "download.hls_cleanup.started",
+                %correlation_id,
+                ?task_id,
+                reason,
+                "HLS task-owned artifact cleanup started"
+            );
+            remove_hls_owned_artifacts(
+                snapshot.task.request(),
+                task_id,
+                snapshot.temporary_path.as_deref(),
+                correlation_id,
+                reason,
+                started_at,
+            )?;
+            info!(
+                event = "download.hls_cleanup.completed",
+                %correlation_id,
+                ?task_id,
+                reason,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "HLS task-owned artifact cleanup completed"
+            );
+        } else if matches!(
+            snapshot.task.request().media.as_ref(),
+            Some(DownloadRequestMedia::Dash(_))
+        ) {
+            info!(
+                event = "download.dash_cleanup.started",
+                %correlation_id,
+                ?task_id,
+                reason,
+                "DASH task-owned artifact cleanup started"
+            );
+            remove_dash_owned_artifacts(
+                snapshot.task.request(),
+                task_id,
+                snapshot.temporary_path.as_deref(),
+                correlation_id,
+                reason,
+                started_at,
+            )?;
+            info!(
+                event = "download.dash_cleanup.completed",
+                %correlation_id,
+                ?task_id,
+                reason,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "DASH task-owned artifact cleanup completed"
+            );
+        } else if let Some(temporary_path) = snapshot.temporary_path.as_deref() {
+            remove_path_if_exists(temporary_path)?;
+        }
+        Ok(())
+    }
+
     pub fn remove(
         &self,
         task_id: DownloadTaskId,
@@ -3425,6 +3629,11 @@ impl DownloadEngine {
         delete_artifact: bool,
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
         let started_at = Instant::now();
         let snapshot = {
             let tasks = self.inner.lock_tasks()?;
@@ -3448,63 +3657,7 @@ impl DownloadEngine {
             snapshot_from_state(state)
         };
 
-        if matches!(
-            snapshot.task.request().media.as_ref(),
-            Some(DownloadRequestMedia::Hls(_))
-        ) {
-            info!(
-                event = "download.hls_cleanup.started",
-                %correlation_id,
-                ?task_id,
-                reason = "removed",
-                "HLS task-owned artifact cleanup started"
-            );
-            remove_hls_owned_artifacts(
-                snapshot.task.request(),
-                task_id,
-                snapshot.temporary_path.as_deref(),
-                correlation_id,
-                "removed",
-                started_at,
-            )?;
-            info!(
-                event = "download.hls_cleanup.completed",
-                %correlation_id,
-                ?task_id,
-                reason = "removed",
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "HLS task-owned artifact cleanup completed"
-            );
-        } else if matches!(
-            snapshot.task.request().media.as_ref(),
-            Some(DownloadRequestMedia::Dash(_))
-        ) {
-            info!(
-                event = "download.dash_cleanup.started",
-                %correlation_id,
-                ?task_id,
-                reason = "removed",
-                "DASH task-owned artifact cleanup started"
-            );
-            remove_dash_owned_artifacts(
-                snapshot.task.request(),
-                task_id,
-                snapshot.temporary_path.as_deref(),
-                correlation_id,
-                "removed",
-                started_at,
-            )?;
-            info!(
-                event = "download.dash_cleanup.completed",
-                %correlation_id,
-                ?task_id,
-                reason = "removed",
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "DASH task-owned artifact cleanup completed"
-            );
-        } else if let Some(temporary_path) = snapshot.temporary_path.as_deref() {
-            remove_path_if_exists(temporary_path)?;
-        }
+        self.cleanup_owned_artifacts(&snapshot, correlation_id, "removed", started_at)?;
         if delete_artifact && let Some(final_path) = snapshot.final_path.as_deref() {
             remove_path_if_exists(final_path)?;
         }
@@ -5960,14 +6113,14 @@ mod tests {
     }
 
     #[test]
-    fn redownload_artifact_cleanup_failure_rolls_back_the_new_task() {
-        let directory = tempfile::tempdir().expect("create rollback redownload directory");
-        let engine = DownloadEngine::open_in_memory().expect("open rollback redownload engine");
+    fn redownload_artifact_cleanup_failure_retains_retryable_operation() {
+        let directory = tempfile::tempdir().expect("create retryable redownload directory");
+        let engine = DownloadEngine::open_in_memory().expect("open retryable redownload engine");
         engine
             .inner
             .store
             .set_queue_running("default", false)
-            .expect("stop rollback redownload fixture queue");
+            .expect("stop retryable redownload fixture queue");
         let temporary_path = directory.path().join("broken.part");
         std::fs::create_dir_all(&temporary_path).expect("create obstructing temporary artifact");
         let (old_id, _) = seed_failed_action_task(
@@ -5989,11 +6142,143 @@ mod tests {
         assert!(
             engine
                 .task(old_id)
-                .expect("read retained rollback task")
+                .expect("read retained retryable task")
                 .is_some()
         );
         assert!(temporary_path.is_dir());
-        assert_eq!(engine.tasks().expect("list rolled back tasks").len(), 1);
+        assert_eq!(engine.tasks().expect("list retryable tasks").len(), 2);
+        assert_eq!(
+            engine
+                .inner
+                .store
+                .load_redownload_operations()
+                .expect("load pending redownload operation")
+                .len(),
+            1
+        );
+        let replacement_id = engine
+            .tasks()
+            .expect("list pending replacement")
+            .into_iter()
+            .find(|task| task.task.id() != old_id)
+            .expect("pending replacement task")
+            .task
+            .id();
+        std::fs::remove_dir_all(&temporary_path).expect("remove cleanup obstruction");
+        let replay = engine.handle_command(action_envelope(old_id, DownloadTaskAction::Redownload));
+        assert!(matches!(
+            replay.outcome,
+            DownloadCommandOutcome::Accepted {
+                task_id: Some(task_id)
+            } if task_id == replacement_id
+        ));
+        assert_eq!(engine.tasks().expect("list replayed tasks").len(), 1);
+        assert!(
+            engine
+                .inner
+                .store
+                .load_redownload_operations()
+                .expect("load completed redownload operation")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn pending_redownload_operation_reconciles_after_restart_without_duplicate_tasks() {
+        let directory = tempfile::tempdir().expect("create restart redownload directory");
+        let database = directory.path().join("downloads.sqlite3");
+        let final_path = directory.path().join("restart.bin");
+        let (old_id, replacement_id) = {
+            let engine = DownloadEngine::open(&database).expect("open restart redownload engine");
+            engine
+                .inner
+                .store
+                .set_queue_running("default", false)
+                .expect("stop restart redownload queue");
+            let old_id = seed_completed_action_task(
+                &engine,
+                action_request(directory.path(), "restart.bin"),
+                final_path.clone(),
+            );
+            let old = engine
+                .task(old_id)
+                .expect("read restart redownload task")
+                .expect("restart redownload task exists");
+            let replacement_id = engine
+                .create_redownload_replacement(&old, uuid::Uuid::new_v4())
+                .expect("persist replacement before simulated crash");
+            assert_eq!(engine.tasks().expect("list pre-crash tasks").len(), 2);
+            (old_id, replacement_id)
+        };
+
+        let reopened = DownloadEngine::open(&database).expect("reopen restart redownload engine");
+        assert!(
+            reopened
+                .task(old_id)
+                .expect("read reconciled old task")
+                .is_none()
+        );
+        assert!(
+            reopened
+                .task(replacement_id)
+                .expect("read reconciled replacement")
+                .is_some()
+        );
+        assert_eq!(reopened.tasks().expect("list reconciled tasks").len(), 1);
+        assert!(final_path.exists(), "redownload preserves the old artifact");
+        assert!(
+            reopened
+                .inner
+                .store
+                .load_redownload_operations()
+                .expect("load reconciled markers")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn media_cleanup_preflights_both_owned_targets_before_deleting_either() {
+        let directory = tempfile::tempdir().expect("create media cleanup directory");
+        let request = action_request(directory.path(), "partial.bin");
+        let hls_task_id = DownloadTaskId::new();
+        let hls_working = hls_working_directory(&request, hls_task_id);
+        let hls_temporary = directory.path().join("hls-merge.part");
+        std::fs::create_dir_all(&hls_working).expect("create HLS working directory");
+        std::fs::write(hls_working.join("segment"), b"segment").expect("write HLS segment");
+        std::fs::create_dir_all(&hls_temporary).expect("obstruct HLS temporary artifact");
+        assert!(
+            remove_hls_owned_artifacts(
+                &request,
+                hls_task_id,
+                Some(&hls_temporary),
+                uuid::Uuid::new_v4(),
+                "test",
+                Instant::now(),
+            )
+            .is_err()
+        );
+        assert!(hls_working.exists());
+        assert!(hls_temporary.is_dir());
+
+        let dash_task_id = DownloadTaskId::new();
+        let dash_working = dash_working_directory(&request, dash_task_id);
+        let dash_temporary = directory.path().join("dash-merge.part");
+        std::fs::create_dir_all(&dash_working).expect("create DASH working directory");
+        std::fs::write(dash_working.join("fragment"), b"fragment").expect("write DASH fragment");
+        std::fs::create_dir_all(&dash_temporary).expect("obstruct DASH temporary artifact");
+        assert!(
+            remove_dash_owned_artifacts(
+                &request,
+                dash_task_id,
+                Some(&dash_temporary),
+                uuid::Uuid::new_v4(),
+                "test",
+                Instant::now(),
+            )
+            .is_err()
+        );
+        assert!(dash_working.exists());
+        assert!(dash_temporary.is_dir());
     }
 
     const SNAPSHOT_BENCHMARK_ITERATIONS: usize = 7;

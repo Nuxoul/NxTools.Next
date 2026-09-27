@@ -166,6 +166,7 @@ pub struct DeterministicHttpServer {
     transient_range_attempts: Arc<AtomicU64>,
     fallback_stream_failures_remaining: Arc<AtomicU64>,
     fallback_stream_attempts: Arc<AtomicU64>,
+    fallback_stream_hold: Arc<AtomicBool>,
     validator_range_failures_remaining: Arc<AtomicU64>,
     validator_range_attempts: Arc<AtomicU64>,
     varying_validator_full_stream_attempts: Arc<AtomicU64>,
@@ -203,6 +204,7 @@ impl DeterministicHttpServer {
         let transient_range_attempts = Arc::new(AtomicU64::new(0));
         let fallback_stream_failures_remaining = Arc::new(AtomicU64::new(1));
         let fallback_stream_attempts = Arc::new(AtomicU64::new(0));
+        let fallback_stream_hold = Arc::new(AtomicBool::new(false));
         let validator_range_failures_remaining = Arc::new(AtomicU64::new(1));
         let validator_range_attempts = Arc::new(AtomicU64::new(0));
         let varying_validator_full_stream_attempts = Arc::new(AtomicU64::new(0));
@@ -224,6 +226,7 @@ impl DeterministicHttpServer {
         let listener_fallback_stream_failures_remaining =
             Arc::clone(&fallback_stream_failures_remaining);
         let listener_fallback_stream_attempts = Arc::clone(&fallback_stream_attempts);
+        let listener_fallback_stream_hold = Arc::clone(&fallback_stream_hold);
         let listener_validator_range_failures_remaining =
             Arc::clone(&validator_range_failures_remaining);
         let listener_validator_range_attempts = Arc::clone(&validator_range_attempts);
@@ -260,6 +263,7 @@ impl DeterministicHttpServer {
                             Arc::clone(&listener_fallback_stream_failures_remaining);
                         let fallback_stream_attempts =
                             Arc::clone(&listener_fallback_stream_attempts);
+                        let fallback_stream_hold = Arc::clone(&listener_fallback_stream_hold);
                         let validator_range_failures_remaining =
                             Arc::clone(&listener_validator_range_failures_remaining);
                         let validator_range_attempts =
@@ -284,6 +288,7 @@ impl DeterministicHttpServer {
                                 &transient_range_attempts,
                                 &fallback_stream_failures_remaining,
                                 &fallback_stream_attempts,
+                                &fallback_stream_hold,
                                 &validator_range_failures_remaining,
                                 &validator_range_attempts,
                                 &varying_validator_full_stream_attempts,
@@ -333,6 +338,7 @@ impl DeterministicHttpServer {
             transient_range_attempts,
             fallback_stream_failures_remaining,
             fallback_stream_attempts,
+            fallback_stream_hold,
             validator_range_failures_remaining,
             validator_range_attempts,
             varying_validator_full_stream_attempts,
@@ -422,6 +428,9 @@ impl DeterministicHttpServer {
     pub fn set_fallback_stream_failures(&self, failures: u64) {
         self.fallback_stream_failures_remaining
             .store(failures, Ordering::Release);
+    }
+    pub fn set_fallback_stream_hold(&self, hold: bool) {
+        self.fallback_stream_hold.store(hold, Ordering::Release);
     }
 
     pub fn fallback_stream_attempts(&self) -> u64 {
@@ -537,6 +546,7 @@ fn serve_connection(
     transient_range_attempts: &AtomicU64,
     fallback_stream_failures_remaining: &AtomicU64,
     fallback_stream_attempts: &AtomicU64,
+    fallback_stream_hold: &AtomicBool,
     validator_range_failures_remaining: &AtomicU64,
     validator_range_attempts: &AtomicU64,
     varying_validator_full_stream_attempts: &AtomicU64,
@@ -1011,6 +1021,7 @@ fn serve_connection(
             headers.get("range"),
             fallback_stream_failures_remaining,
             fallback_stream_attempts,
+            fallback_stream_hold,
             false,
         ),
         "/range-probe-only-unavailable" => serve_probe_only_range(
@@ -1019,6 +1030,7 @@ fn serve_connection(
             headers.get("range"),
             fallback_stream_failures_remaining,
             fallback_stream_attempts,
+            fallback_stream_hold,
             true,
         ),
         "/range-mutable" => {
@@ -1451,6 +1463,7 @@ fn serve_probe_only_range(
     range: Option<&String>,
     fallback_failures_remaining: &AtomicU64,
     fallback_attempts: &AtomicU64,
+    fallback_stream_hold: &AtomicBool,
     respond_unavailable: bool,
 ) {
     let common = [
@@ -1483,6 +1496,9 @@ fn serve_probe_only_range(
             })
             .is_ok()
         {
+            while fallback_stream_hold.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(2));
+            }
             if respond_unavailable {
                 write_response(stream, 503, "Service Unavailable", &common, b"", Some(0));
             } else {

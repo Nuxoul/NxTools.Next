@@ -3615,6 +3615,8 @@ impl DownloadApplication {
                 return;
             }
         };
+        self.latest_progress.clear();
+        self.last_event_sequence = snapshot.sequence;
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = tasks;
         self.queues = snapshot.queues;
@@ -3692,6 +3694,15 @@ impl DownloadApplication {
             self.last_event_sequence = 0;
         }
         let sequence = envelope.sequence;
+        if self.last_event_sequence != 0 && sequence <= self.last_event_sequence {
+            warn!(
+                event = "download.desktop.stale_event_dropped",
+                expected_after_sequence = self.last_event_sequence,
+                observed_sequence = sequence,
+                "stale download event was rejected before applying state"
+            );
+            return;
+        }
         let sequence_gap =
             self.last_event_sequence != 0 && sequence != self.last_event_sequence + 1;
         if sequence_gap {
@@ -3702,6 +3713,11 @@ impl DownloadApplication {
             );
         }
         self.last_event_sequence = sequence;
+        let progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
+        if sequence_gap && progress_event {
+            self.refresh_snapshot(true, cx);
+            return;
+        }
         let task_event_diagnostic = match &envelope.event {
             DownloadEvent::TaskChanged { task } => Some((task.id(), task.origin(), task.status())),
             _ => None,

@@ -169,6 +169,28 @@ internal static class NativeClipboardFormats
         out string? error,
         out int hresult)
     {
+        var expectedSequence = GetClipboardSequenceNumber();
+        return TryRewriteWithImageFallbacks(
+            owner,
+            formats,
+            pngData,
+            imagePathFallback,
+            expectedSequence,
+            out rewrittenFormats,
+            out error,
+            out hresult);
+    }
+
+    public static bool TryRewriteWithImageFallbacks(
+        IntPtr owner,
+        IReadOnlyList<CapturedClipboardNativeFormat> formats,
+        byte[] pngData,
+        string imagePathFallback,
+        uint expectedSequence,
+        out IReadOnlyList<CapturedClipboardNativeFormat> rewrittenFormats,
+        out string? error,
+        out int hresult)
+    {
         rewrittenFormats = formats;
         error = null;
         hresult = 0;
@@ -201,7 +223,12 @@ internal static class NativeClipboardFormats
                 .Select(static format => new NativePayload(
                     format.FormatId, format.Data, format.SortOrder))
                 .ToList();
-            if (!TryWritePayloads(owner, payloads, out error, out hresult))
+            if (!TryWritePayloads(
+                    owner,
+                    payloads,
+                    out error,
+                    out hresult,
+                    expectedSequence))
             {
                 return false;
             }
@@ -220,7 +247,8 @@ internal static class NativeClipboardFormats
         IntPtr owner,
         IReadOnlyList<NativePayload> payloads,
         out string? error,
-        out int hresult)
+        out int hresult,
+        uint? expectedSequence = null)
     {
         error = null;
         hresult = 0;
@@ -229,15 +257,34 @@ internal static class NativeClipboardFormats
             error = "No native clipboard formats were available.";
             return false;
         }
-        if (!OpenClipboard(owner))
+
+        var clipboardOpened = false;
+        if (expectedSequence is uint sequence)
+        {
+            if (!TryOpenAndPrepareClipboardRewrite(
+                    owner,
+                    sequence,
+                    out error,
+                    out hresult))
+            {
+                return false;
+            }
+            clipboardOpened = true;
+        }
+        else if (!OpenClipboard(owner))
         {
             hresult = Marshal.GetHRForLastWin32Error();
             error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
             return false;
         }
+        else
+        {
+            clipboardOpened = true;
+        }
+
         try
         {
-            if (!EmptyClipboard())
+            if (expectedSequence is null && !EmptyClipboard())
             {
                 hresult = Marshal.GetHRForLastWin32Error();
                 error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
@@ -274,8 +321,78 @@ internal static class NativeClipboardFormats
         }
         finally
         {
-            _ = CloseClipboard();
+            if (clipboardOpened)
+            {
+                _ = CloseClipboard();
+            }
         }
+    }
+
+    private static bool TryOpenAndPrepareClipboardRewrite(
+        IntPtr owner,
+        uint expectedSequence,
+        out string? error,
+        out int hresult) =>
+        TryOpenAndPrepareClipboardRewrite(
+            expectedSequence,
+            GetClipboardSequenceNumber,
+            () => OpenClipboard(owner),
+            EmptyClipboard,
+            () =>
+            {
+                _ = CloseClipboard();
+            },
+            GetNativeFailure,
+            out error,
+            out hresult);
+
+    internal static bool TryOpenAndPrepareClipboardRewrite(
+        uint expectedSequence,
+        Func<uint> getClipboardSequenceNumber,
+        Func<bool> openClipboard,
+        Func<bool> emptyClipboard,
+        Action closeClipboard,
+        Func<(int Hresult, string Message)> getNativeFailure,
+        out string? error,
+        out int hresult)
+    {
+        error = null;
+        hresult = 0;
+        if (getClipboardSequenceNumber() != expectedSequence)
+        {
+            error = "clipboard_changed";
+            return false;
+        }
+        if (!openClipboard())
+        {
+            var failure = getNativeFailure();
+            hresult = failure.Hresult;
+            error = failure.Message;
+            return false;
+        }
+        if (getClipboardSequenceNumber() != expectedSequence)
+        {
+            closeClipboard();
+            error = "clipboard_changed";
+            return false;
+        }
+        if (!emptyClipboard())
+        {
+            var failure = getNativeFailure();
+            hresult = failure.Hresult;
+            error = failure.Message;
+            closeClipboard();
+            return false;
+        }
+        return true;
+    }
+
+    private static (int Hresult, string Message) GetNativeFailure()
+    {
+        var nativeError = Marshal.GetLastWin32Error();
+        return (
+            Marshal.GetHRForLastWin32Error(),
+            new Win32Exception(nativeError).Message);
     }
 
     private static List<NativePayload> LoadPayloads(IReadOnlyList<ClipboardNativeFormatData> formats)
@@ -333,6 +450,8 @@ internal static class NativeClipboardFormats
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

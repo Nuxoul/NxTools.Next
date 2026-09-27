@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace NxTools.PlatformHost.Windows;
@@ -14,8 +13,6 @@ internal sealed record ForegroundContext(
 
 internal sealed class ForegroundContextProvider
 {
-    private readonly Dictionary<uint, CachedProcessIcon> _processIcons = [];
-
     public string? TryStageProcessIcon(uint processId, out string? error)
     {
         error = null;
@@ -32,35 +29,22 @@ internal sealed class ForegroundContextProvider
                 return null;
             }
             var lastWriteTicks = File.GetLastWriteTimeUtc(executablePath).Ticks;
-            if (_processIcons.TryGetValue(processId, out var cached) &&
-                cached.ExecutablePath.Equals(executablePath, StringComparison.OrdinalIgnoreCase) &&
-                cached.LastWriteTicks == lastWriteTicks &&
-                File.Exists(cached.IconPath))
+            var key = IconCacheKey.Create(executablePath, null, 32, lastWriteTicks, "file");
+            if (IconCache.Shared.TryGetOrCreate(key, destination =>
+                {
+                    using var icon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
+                    if (icon is null)
+                    {
+                        return false;
+                    }
+                    using var bitmap = icon.ToBitmap();
+                    bitmap.Save(destination, System.Drawing.Imaging.ImageFormat.Png);
+                    return true;
+                }, out var iconPath))
             {
-                return cached.IconPath;
+                return iconPath;
             }
-            var keyMaterial = $"{executablePath}\0{lastWriteTicks}";
-            var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))
-                .ToLowerInvariant();
-            var directory = Path.Combine(Path.GetTempPath(), "NxTools.Next", "process-icons");
-            Directory.CreateDirectory(directory);
-            var destination = Path.Combine(directory, $"{key}.png");
-            if (File.Exists(destination))
-            {
-                _processIcons[processId] = new CachedProcessIcon(
-                    executablePath, lastWriteTicks, destination);
-                return destination;
-            }
-            using var icon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
-            if (icon is null)
-            {
-                return null;
-            }
-            using var bitmap = icon.ToBitmap();
-            bitmap.Save(destination, System.Drawing.Imaging.ImageFormat.Png);
-            _processIcons[processId] = new CachedProcessIcon(
-                executablePath, lastWriteTicks, destination);
-            return destination;
+            return null;
         }
         catch (Exception exception)
         {
@@ -68,11 +52,6 @@ internal sealed class ForegroundContextProvider
             return null;
         }
     }
-
-    private sealed record CachedProcessIcon(
-        string ExecutablePath,
-        long LastWriteTicks,
-        string IconPath);
 
     public ForegroundContext Capture()
     {

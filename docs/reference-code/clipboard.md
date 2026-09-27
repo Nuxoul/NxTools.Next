@@ -9,8 +9,9 @@ Last verified: 2026-07-18.
   history kind.
 - Original paste restores the richest compatible representation; plain paste maps images and files
   to paths.
-- The popup targets the window that was active before it opened, hides after confirmed paste, and
-  stays available when a platform action fails.
+- The popup targets the window that was active before it opened. The old NxTools popup hides before
+  target-focus restoration and paste input; NxTools.Next must keep the popup available when the
+  confirmed Windows action fails so the user can retry.
 - Pure images must expose PNG/DIB for image-aware applications. `CF_HDROP` is added only for
   allowlisted file/terminal targets that need a path fallback; rich editors such as Zed must not
   receive the same image a second time as a file attachment.
@@ -25,12 +26,11 @@ Root: `D:\Code\NxTools`
 | `Services\ClipboardNativeFormatService.cs` | Reads/writes native Windows clipboard representations and selects target-compatible image behavior. |
 | `Services\ClipboardPasteService.cs` | Writes the selected item, restores the target window and performs the paste fallback sequence. |
 | `Services\ClipboardPasteActionService.cs` | Converts special actions to payloads; image plain-text action returns `ImagePath`, files return their paths. |
-| `Services\ClipboardActivationResolver.cs` | Maps click/modifier actions; names image plain paste `粘贴图片路径` and file plain paste `粘贴文件路径`. |
+| `Views\MainWindow.axaml.cs` | Owns `ClipboardPasteActionKind` and dispatches Ctrl/Alt/Shift modifier actions into paste, copy-only, plain-text/path and line-break flows. |
 | `Services\ClipboardHistoryService.cs` | History-facing orchestration. |
-| `Services\ClipboardRepository.cs` | Clipboard persistence. |
+| `Services\ClipboardRepository.cs` | Clipboard persistence, duplicate revival, usage ordering and retention cleanup. |
 | `Services\ClipboardHotKeyParser.cs` | Parses Ctrl/Alt/Shift/Win plus a non-modifier key into Win32 modifier and virtual-key values. |
-| `Services\ClipboardHotKeyService.cs` | Re-registers the configured global hotkey and reports registration failure without installing a permanent low-level hook. |
-| `Services\ClipboardActivationResolver.cs` | Defines five configurable modifier-click actions and rejects multiple simultaneous modifiers. |
+| `Services\ClipboardHotKeyService.cs` | Re-registers the configured global hotkey, applies the 350ms debounce and reports registration failure without installing a permanent low-level hook. |
 | `ViewModels\MainWindowClipboardViewModel.cs` | Applies capture exclusions case-insensitively after splitting process names by semicolon, comma or line break. |
 | `Models\AppState.cs` | Defaults to 1000 items, 30 cleanup days and password-manager process exclusions. |
 | `Views\MainWindow.axaml` (clipboard settings) | Uses separate Ctrl/Alt/Shift selectors; ordinary click remains original-format paste. |
@@ -44,18 +44,50 @@ clipboard change
   -> ClipboardHistoryService + ClipboardRepository
 
 panel action
-  -> ClipboardActivationResolver
-  -> ClipboardPasteActionService (original or path/text transformation)
-  -> ClipboardPasteService
-  -> ClipboardNativeFormatService + target activation/input
+  -> `Views\MainWindow.axaml.cs` / `ClipboardPasteActionKind`
+  -> `ClipboardPasteActionService` (original or path/text transformation)
+  -> `ClipboardPasteService`
+  -> `ClipboardNativeFormatService` + target activation/input
+
 ```
+## Verified popup and hotkey lifecycle
+
+Reconciled against the actual old NxTools sources:
+
+- `Views\ClipboardHistoryPopupWindow.axaml.cs:127-167,206-260` creates one reusable popup,
+  focuses the search box on show, hides rather than destroys it, and has no idle auto-hide timer.
+  `Deactivated` hides after the 180ms opening suppression unless a context menu is open.
+- `Views\ClipboardHistoryPopupWindow.axaml.cs:430-507` runs a separate 45ms outside-pointer monitor;
+  a primary/secondary press outside the popup hides it, while preview exit only affects the preview.
+- `Views\ClipboardPreviewWindow.cs` is a passive auxiliary window; its lifetime is independent from
+  the main popup. `Services\ClipboardPasteService.cs` receives a `beforeRestore` callback so the
+  popup is hidden before target focus restoration and paste input.
+- `Services\ClipboardHotKeyService.cs:25,111-123` uses `RegisterHotKey`, applies a 350ms trigger
+  debounce, and installs `WH_KEYBOARD_LL` only during shortcut recording. A registration failure
+  does not become a permanent low-level hook fallback.
+- The old action mapping is `ClipboardPasteActionKind` in `Views\MainWindow.axaml.cs`, not a
+  standalone `Services\ClipboardActivationResolver.cs`; that file is absent from the reference tree.
+  The note does not claim a verified multiple-modifier rejection rule.
+
+NxTools.Next keeps these boundaries in Rust/C# form: `PopupLifecycle` owns the current reusable
+popup, `PreviewSession` owns one independent preview, C# owns native hotkeys and Windows focus APIs,
+and worker-confirmed actions update usage only after success. The current C# hotkey boundary also
+- The old ViewModel marks ordinary paste usage before the Windows paste result is known. NxTools.Next
+  deliberately does not copy that failure-prone ordering: usage is persisted only after a successful
+  platform result, and failed actions must not reorder history.
+uses a tested 350ms debouncer in `ClipboardHotKeyDebouncer.cs`.
+The old NxTools `ClipboardHistoryService.CleanupOrphanedImageFiles` scans only active recent rows
+after soft deletion; that can delete files still reachable through a recoverable deleted row. NxTools.Next
+must keep the stronger remaining-database-reference check instead of copying that cleanup shortcut.
+
 
 Verified retention rules in `ClipboardRepository.Cleanup`:
 
 - age and overflow cleanup soft-delete only unpinned, non-favorite items;
 - maximum item count is clamped to 100–100000;
 - cleanup days use a minimum of one day;
-- deleted rows are permanently purged only after at least 30 days.
+- deleted rows are permanently purged only after `max(7, cleanupDays)` days; the old default of 30
+  days makes the common case 30, but 30 is not the hard minimum.
 
 Verified history identity and ordering rules:
 
@@ -64,8 +96,9 @@ Verified history identity and ordering rules:
   and moves the existing record instead of creating another visible copy;
 - `ClipboardRepository.MarkUsed` updates `last_used_at`, increments `use_count` and moves an
   activated entry to the front of its non-pinned order;
-- popup ordering uses pinned state first and last-use/capture recency second;
-- the old search path includes visible content and source application metadata.
+- repository recent ordering uses pinned state, `order_value`, last-use and capture recency;
+  the popup query itself matches visible text, file paths and image paths, while source metadata is
+  available through the broader recent/search paths rather than every popup query.
 
 NxTools.Next must preserve distinct native representations of equal visible text, so its global
 duplicate match is the typed payload plus the complete native-format set. A successful paste or
@@ -80,12 +113,23 @@ age cleanup while protecting the path just placed on the Windows clipboard.
 Verified settings defaults: `Alt+C`, 1000 items, 30 days, and `KeePass.exe`,
 `1Password.exe`, `Bitwarden.exe` excluded from capture.
 
+Reverified on 2026-09-18: clipboard capture limits are user-configurable in `ClipboardSettings` and are carried through `ConfigureClipboardCommand` to `WindowsPlatformAdapter.EventWindow`. Text is bounded by UTF-8 byte size; images are bounded by encoded output bytes and pixel count. Over-limit content is skipped without truncating or logging payload data, while independent file/native representations may remain capturable. Source process icons use a content-addressed staging cache with a bounded in-memory process index.
+
 Verified modifier-action contract:
 
 - Ctrl, Alt and Shift remain the only configurable modifier slots;
 - each slot can choose original paste, copy only, plain-text/path paste, line-break removal or disabled;
 - multiple modifiers are unsupported;
 - line-break removal remains text-only at execution time.
+- Modifier actions that rewrite the Windows clipboard arm a Rust-side capture suppression window
+  before the platform command is sent. PlatformHost already suppresses the first native clipboard
+  notification; Rust also drops the next matching-time capture even when the target application
+  exposes mixed formats (for example image plus path text), then removes its staging files. This
+  prevents Alt/Shift/Ctrl transformed output from creating a second history row without assuming
+  that the target returns only one clipboard format.
+- The category editor is an in-panel modal surface, not a second native window. Its root consumes
+  left-button down and click propagation before history rows can receive the event; focus remains
+  owned by the category-name input until save or cancel.
 
 The persisted Rust hotkey model uses semantic modifiers plus a key label. The C# adapter maps those
 values to `MOD_*` and virtual-key constants immediately before `RegisterHotKey`; legacy development
@@ -117,6 +161,40 @@ Reverified on 2026-08-24 before the CL-01 main-workspace settings migration:
 - CL-01 extracts only that outer grammar into the shared settings component: one square boundary,
   12 px column insets, one 1 px seam and the existing 410 px secondary rail. It does not change row
   density, labels, controls, persistence, picker flows, hotkey registration or clipboard lifecycle.
+
+## Clipboard setting descriptions
+
+Verified before the compact settings-row migration:
+
+- Old NxTools `Views/MainWindow.axaml:1460-1495,1524-1538` groups clipboard calling/hotkey,
+  storage and retention controls with concise section-level help; these controls do not use a
+  fixed-size per-row tooltip.
+- NxTools.Next `main_window/clipboard_page.rs:809-893` supplies explicit descriptions to the shared
+  `main_window/quick_launch_page.rs::compact_setting_row`; that row is also used by Quick Launch.
+  The current implementation truncates descriptions in-row and builds a fixed 360×170 tooltip.
+- Preserve the existing setting text and control behavior, but keep descriptions readable across
+  the row and size the hover tooltip to its text, bounded by a maximum width rather than a fixed
+  width/height.
+
+## Link detector floating panel
+
+Verified current NxTools.Next call chain for the link-detector tool settings and panel placement:
+
+- `rust/apps/nxtools-desktop/src/clipboard.rs::handle_link_detector_capture` extracts detected
+  links, while `show_link_panel` owns one reusable GPUI popup and crosses the native
+  `SetWindowPosition`/`SetWindowBounds` boundary.
+- `rust/apps/nxtools-desktop/src/tools/link_detector.rs` owns link extraction and
+  `rust/apps/nxtools-desktop/src/tools/link_panel.rs` owns the panel content, expansion and
+  auto-hide lifecycle. Neither module owns persisted settings.
+- `ClipboardSettings::link_panel_position` is persisted with `center` as the compatibility default;
+  `ClipboardApplication` is the sole writer through `set_link_panel_position`, and the dedicated
+  `ToolSettingsWindowBody` defers that cross-entity write after a dropdown selection.
+- Position math is Rust-owned and uses the selected display bounds plus the fixed panel size:
+  top-left and top-right use a 24 px inset, center uses both display axes, and all results are
+  clamped to the selected display. Reusing the panel reapplies both position and size after every
+  capture and keeps expansion growing downward from the selected top edge.
+- Exhaustive inspection of the old NxTools tree found no equivalent link-detector popup or persisted
+  three-position setting. This is a new NxTools.Next preference, not a legacy behavior migration.
 
 ## GPUI settings and popup ownership invariant
 
@@ -179,6 +257,7 @@ cards and controls. Generic GPUI drop shadows are also not used on the root shel
 render into transparent Windows surfaces as visible rectangular blocks; compact borders provide the
 surface separation instead. C# owns topmost, position, visibility, move and resize Win32 calls only;
 it does not own visual shape policy or apply a native window region.
+Reverified popup creation on 2026-09-18: a hidden GPUI clipboard window can expose a native HWND with the monitor-sized default rectangle even when `WindowOptions.window_bounds` and the Rust open log both report `300×440`. The clipboard creation path must therefore send `SetWindowBoundsCommand` with the final popup rectangle before the topmost confirmation can reveal the HWND. The command is handled by `WindowsPlatformAdapter.SetWindowBounds`/`SetWindowPos`; this native resize is part of popup lifecycle correctness, not a visual-only adjustment.
 
 Preview appearance motion follows the Zed/GPUI one-shot animation model. Each requested item update
 increments an appearance generation, and that generation is part of the animation element id so a
@@ -220,6 +299,7 @@ without adding Unicode text that would override image paste in ordinary applicat
 | Module | Responsibility |
 | --- | --- |
 | `csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs` | Capture/write orchestration on the STA Windows thread. |
+| `csharp/NxTools.PlatformHost/Windows/ClipboardHotKeyDebouncer.cs` | Applies the old 350ms monotonic trigger debounce to the clipboard `WM_HOTKEY` boundary. |
 | `csharp/NxTools.PlatformHost/Windows/NativeClipboardFormats.cs` | Native format capture, bounded staging, restoration and image fallback injection. |
 | `csharp/NxTools.PlatformHost/Windows/ClipboardFileDropPayload.cs` | Encodes Unicode `DROPFILES` memory for `CF_HDROP`. |
 | `csharp/NxTools.PlatformHost/Windows/ClipboardImageDataObject.cs` | Exposes history images as PNG/Bitmap and conditionally adds FileDrop. |
@@ -280,19 +360,47 @@ The toggle belongs to the GPUI panel state; Rust history owns both query definit
 panel resets to the predictable content-only default. Large histories must be fetched in bounded
 pages rather than raising the popup query limit to the configured retention maximum.
 
+## Async worker-owned history queries
+
+Reverified for the worker ownership/query migration:
+
+- `ClipboardHistory` is opened and retained only by `clipboard_worker`; the desktop runtime and
+  GPUI entities receive a cloneable worker handle rather than a database connection.
+- Popup creation waits for one worker snapshot containing the first bounded page, categories and
+  custom-category sources. The hidden popup then follows the existing native-bounds, topmost and
+  reveal confirmation lifecycle.
+- Search and pagination replies are accepted only when generation, query, category and search scope
+  still match the panel state. Stale replies are discarded without changing rows, selection or
+  loading/error state.
+- Worker replies are awaited from GPUI async tasks. `ClipboardApplication` and
+  `ClipboardPanel::render` do not synchronously wait on SQLite; entity-to-entity UI updates are
+  deferred to a later application turn.
+- Loading, worker-error and genuinely empty results remain distinct presentation states; a query
+  failure must not be rendered as an empty history page.
+
+
+## Bounded query and history-window invariant
+
+The Next implementation keeps the filtered total independent from the loaded payload window. The
+first search/category page establishes the total; forward pages use the stable usage-order cursor
+(`is_pinned`, `last_used_at_unix_ms`, `captured_at_unix_ms`, `id`) and fetch one extra row to retain
+`has_more` semantics. The legacy offset path remains for compatibility and backward page loads.
+
+The GPUI panel retains at most four history pages (320 rows) at a time. Moving forward evicts the
+oldest rows; moving backward prepends a page and evicts the newest tail. `ListState::splice` owns the
+logical index adjustment so the visible anchor survives each eviction. This bounds retained payload
+rows without changing the database's total count or the worker ownership boundary.
+
 ## Portable archive management
 
-Verified old NxTools behavior in `ClipboardHistoryService.ExportArchive` / `ImportArchive`:
+Verified old NxTools behavior in `ClipboardHistoryService.ExportJson` / `ImportJson`:
 
-- `.nxtclip` is a ZIP archive with `manifest.json`;
-- export includes active history and image bytes instead of retaining absolute image paths;
-- import writes assets into the target storage root and merges through the normal deduplication path;
-- SQLite maintenance creates a database backup before destructive migration and uses `VACUUM` to
-  reclaim space.
+- export writes a JSON list containing each item plus its saved formats;
+- import reads that JSON and merges each item through the normal repository `Save`/deduplication path;
+- the old project has no verified `.nxtclip` ZIP archive or `ExportArchive`/`ImportArchive` call chain.
 
-NxTools.Next keeps that user-visible format concept, while also carrying native clipboard-format
-files and source icons. Archive entry names are generated by Rust, imports reject unsafe or oversized
-entries, and imported assets are content-addressed inside the configured clipboard asset directory.
+NxTools.Next separately provides a portable archive format with managed assets and native-format files;
+that is a Next behavior, not an old NxTools reference behavior.
 
 ## Database maintenance and storage migration
 
@@ -371,3 +479,25 @@ GPUI 迁移规则：
   migration are available from the main window. Live interaction with the Windows file and folder
   dialogs still requires user verification; popup search and history paging no longer depend on
   loading the configured retention maximum.
+
+- Migration gap: old NxTools hides the popup before target-focus restoration and paste input, while
+  `rust/apps/nxtools-desktop/src/ui/mod.rs:1163-1248` currently sends the paste action first and
+  hides the popup after a successful Windows result. A true hide-before-paste migration needs an
+  ordered native hide confirmation and a failure path that reveals the popup again; this audit did
+  not change that lifecycle spec by guesswork.
+- Migration gap: the first clipboard preview path uses `WindowOptions.show = true` and sends
+  topmost immediately (`rust/apps/nxtools-desktop/src/clipboard.rs:1706-1737`). It still needs a
+  real native sequence test for final bounds, passive/no-activate behavior, frame submission and
+  reveal; reused preview generation guards are covered separately.
+- Migration gap: no full cross-boundary fake-platform test currently drives popup visibility/topmost
+  failure, stale visibility results, target/focus restore parameters and success/failure action
+  ordering. The current gates protect source invariants and worker MarkUsed ordering, but do not
+  replace that lifecycle test.
+- Compatibility gap: direct image fallback cleanup is currently exercised through its persistence
+  trigger; add an independent cleanup boundary test so stale fallback files are reclaimed even when
+  no new image capture occurs, while preserving the path currently placed on the Windows clipboard.
+- Fixed in the current implementation: `GlobalPointerPressedEvent` carries
+  `sampled_at_unix_ms` and a monotonic `event_sequence`, `ClipboardPanelRequest` carries the summon
+  sequence, and the Rust popup session rejects presses sampled before that session. Zero-valued
+  fields remain a backward-compatible fallback for older PlatformHost peers; current package parts
+  must ship together for the strict race protection.

@@ -28,17 +28,46 @@ internal readonly record struct NativeWindowPresentationState(
     long ForegroundWindowHandle,
     NativeWindowRectangle Bounds);
 
+ internal sealed class ClipboardCaptureDropDiagnosticGate
+ {
+     private const long LogIntervalMilliseconds = 1_000;
+     private readonly object _gate = new();
+     private bool _hasLogged;
+     private long _lastLogAtMilliseconds;
+     private long _suppressedDropCount;
+
+     internal bool TryAcquire(out long suppressedDropCount)
+     {
+         lock (_gate)
+         {
+             var now = Environment.TickCount64;
+             if (!_hasLogged || now - _lastLogAtMilliseconds >= LogIntervalMilliseconds)
+             {
+                 _hasLogged = true;
+                 _lastLogAtMilliseconds = now;
+                 suppressedDropCount = _suppressedDropCount;
+                 _suppressedDropCount = 0;
+                 return true;
+             }
+             _suppressedDropCount++;
+             suppressedDropCount = 0;
+             return false;
+         }
+     }
+ }
+
 internal sealed partial class WindowsPlatformAdapter : IDisposable
 {
     private const long QuickLaunchContextMaximumAgeMilliseconds = 1_000;
     internal static int NativeInputSize => NativeMethods.InputSize;
     internal static int BottomRightResizeSystemCommand => 0xF008;
     internal static int MoveCaptionSystemCommand => 0xF012;
+    internal const string DesktopExecutableEnvironmentVariable = "NXTOOLS_DESKTOP_EXECUTABLE";
 
     private readonly Channel<WindowsPlatformEvent> _events = Channel.CreateBounded<WindowsPlatformEvent>(
         new BoundedChannelOptions(512)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
         });
@@ -49,6 +78,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly IElevatedDirectoryNavigationChannel _elevatedDirectoryNavigation;
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
+    private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate = new();
     private readonly ICompletionSystemActions _completionSystemActions;
     private EventWindow? _window;
     private Exception? _startupError;
@@ -83,6 +113,167 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     }
 
     public ChannelReader<WindowsPlatformEvent> Events => _events.Reader;
+    internal void DiscardQueuedEventsForNewSession()
+    {
+        while (_events.Reader.TryRead(out var platformEvent))
+        {
+            if (platformEvent is ClipboardCapturedEvent captured)
+            {
+                HandleClipboardCapturedEventForwardingFailure(
+                    captured,
+                    "session_replaced",
+                    null);
+            }
+        }
+    }
+
+    internal void CancelCurrentShellContextWork() => _shellActions.CancelCurrent();
+    internal static bool TryPublishClipboardCapturedEvent(
+        ChannelWriter<WindowsPlatformEvent> events,
+        ClipboardCapturedEvent captured,
+        IPlatformLog log,
+        ClipboardCaptureDropDiagnosticGate? dropDiagnosticGate = null)
+    {
+        if (events.TryWrite(captured))
+        {
+            return true;
+        }
+        var cleanup = CleanupClipboardCapturedStaging(captured);
+        long suppressedDropCount = 0;
+        var shouldLog = dropDiagnosticGate is null ||
+            dropDiagnosticGate.TryAcquire(out suppressedDropCount);
+        if (!shouldLog)
+        {
+            return false;
+        }
+        try
+        {
+            log.Write(
+                "warning",
+                "clipboard.capture_event_dropped",
+                fields: new Dictionary<string, object?>
+                {
+                    ["reason"] = "event_queue_full",
+                    ["image_staging_file_count"] = cleanup.ImageFileCount,
+                    ["native_format_staging_file_count"] = cleanup.NativeFormatFileCount,
+                    ["source_icon_staging_file_count"] = cleanup.SourceIconFileCount,
+                    ["cleanup_deleted_file_count"] = cleanup.DeletedFileCount,
+                    ["cleanup_failed_file_count"] = cleanup.FailedFileCount,
+                    ["suppressed_drop_count"] = suppressedDropCount
+                });
+        }
+        catch
+        {
+            // Event diagnostics must not change the bounded queue result.
+        }
+        return false;
+    }
+    internal void HandleClipboardCapturedEventForwardingFailure(
+        ClipboardCapturedEvent captured,
+        string reason,
+        int? frameBytes,
+        Exception? error = null)
+    {
+        var cleanup = CleanupClipboardCapturedStaging(captured);
+        if (!_clipboardCaptureDropDiagnosticGate.TryAcquire(out var suppressedDropCount))
+        {
+            return;
+        }
+        try
+        {
+            _log.Write(
+                "warning",
+                "clipboard.capture_event_dropped",
+                fields: new Dictionary<string, object?>
+                {
+                    ["reason"] = reason,
+                    ["frame_bytes"] = frameBytes,
+                    ["exception_type"] = error?.GetType().FullName,
+                    ["image_staging_file_count"] = cleanup.ImageFileCount,
+                    ["native_format_staging_file_count"] = cleanup.NativeFormatFileCount,
+                    ["source_icon_staging_file_count"] = cleanup.SourceIconFileCount,
+                    ["cleanup_deleted_file_count"] = cleanup.DeletedFileCount,
+                    ["cleanup_failed_file_count"] = cleanup.FailedFileCount,
+                    ["suppressed_drop_count"] = suppressedDropCount
+                });
+        }
+        catch
+        {
+            // Event diagnostics must not change forwarding behavior.
+        }
+    }
+
+    internal static ClipboardCapturedEventCleanup CleanupClipboardCapturedStaging(
+        ClipboardCapturedEvent captured)
+    {
+        var candidates = new List<(string Kind, string Path)>();
+        if (captured.Image is { StagingPath: { } imagePath } &&
+            !string.IsNullOrWhiteSpace(imagePath))
+        {
+            candidates.Add(("image", imagePath));
+        }
+        foreach (var format in captured.NativeFormats ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(format.DataPath))
+            {
+                candidates.Add(("native_format", format.DataPath));
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(captured.SourceIconStagingPath))
+        {
+            candidates.Add(("source_icon", captured.SourceIconStagingPath));
+        }
+        var uniquePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var deleted = 0;
+        var failed = 0;
+        foreach (var candidate in candidates)
+        {
+            if (!uniquePaths.Add(candidate.Path))
+            {
+                continue;
+            }
+            try
+            {
+                if (File.Exists(candidate.Path))
+                {
+                    File.Delete(candidate.Path);
+                    deleted++;
+                }
+            }
+            catch (IOException)
+            {
+                failed++;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                failed++;
+            }
+            catch (ArgumentException)
+            {
+                failed++;
+            }
+            catch (NotSupportedException)
+            {
+                failed++;
+            }
+            catch (System.Security.SecurityException)
+            {
+                failed++;
+            }
+        }
+        return new ClipboardCapturedEventCleanup(
+            candidates.Count(candidate => candidate.Kind == "image"),
+            candidates.Count(candidate => candidate.Kind == "native_format"),
+            candidates.Count(candidate => candidate.Kind == "source_icon"),
+            deleted,
+            failed);
+    }
+    internal readonly record struct ClipboardCapturedEventCleanup(
+        int ImageFileCount,
+        int NativeFormatFileCount,
+        int SourceIconFileCount,
+        int DeletedFileCount,
+        int FailedFileCount);
 
     public bool ClipboardHotKeyAvailable => _window?.ClipboardHotKeyAvailable ?? false;
     public bool QuickLaunchHotKeyAvailable => _window?.QuickLaunchHotKeyAvailable ?? false;
@@ -402,7 +593,9 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         return result;
     }
 
-    public WindowsCommandResult SetWindowVisibility(SetWindowVisibilityCommand command)
+    public WindowsCommandResult SetWindowVisibility(
+        SetWindowVisibilityCommand command,
+        Guid correlationId)
     {
         var window = new IntPtr(command.WindowHandle);
         var before = NativeMethods.CaptureWindowPresentation(window);
@@ -417,7 +610,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             new Dictionary<string, object?>
             {
                 ["requested_visible"] = command.Visible
-            });
+            },
+            correlationId);
         return result;
     }
 
@@ -476,7 +670,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         NativeWindowPresentationState before,
         NativeWindowPresentationState after,
         WindowsCommandResult result,
-        Dictionary<string, object?> fields)
+        Dictionary<string, object?> fields,
+        Guid? diagnosticCorrelationId = null)
     {
         fields["window_handle"] = windowHandle;
         fields["success"] = result.Success;
@@ -492,7 +687,11 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         fields["foreground_window_handle"] = after.ForegroundWindowHandle;
         fields["bounds"] =
             $"{after.Bounds.Left},{after.Bounds.Top},{after.Bounds.Right},{after.Bounds.Bottom}";
-        _log.Write(result.Success ? "info" : "warning", eventName, fields: fields);
+        _log.Write(
+            result.Success ? "info" : "warning",
+            eventName,
+            diagnosticCorrelationId,
+            fields: fields);
     }
 
     public WindowsCommandResult SetWindowPosition(SetWindowPositionCommand command) =>
@@ -527,19 +726,34 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         CancellationToken cancellationToken) =>
         _fileDragCoordinator.BeginAsync(command, correlationId, cancellationToken);
 
-    public WindowsCommandResult OpenShellTarget(OpenShellTargetCommand command)
+    public Task<WindowsCommandResult> OpenShellTargetAsync(
+        OpenShellTargetCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken)
     {
         if (!ShellTarget.TryCreate(
                 command.Target, command.Action, out var target, out var validationError))
         {
-            return new WindowsCommandResult(false, validationError);
+            return Task.FromResult(new WindowsCommandResult(false, validationError));
         }
-        // ShellExecute for a .lnk can block for seconds (measured 1978 ms).
-        // It must never run on the pipe reader thread: dispatch detaches only
-        // after executeAsync() returns, and a synchronous lambda stalls the
-        // reader until then — the quick-launch panel hide queued behind it
-        // was the visible "panel won't close" bug. A dedicated STA thread
-        // also matches the apartment .lnk resolution wants.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(new WindowsCommandResult(false, "The platform command was cancelled."));
+        }
+
+        var completion = new TaskCompletionSource<WindowsCommandResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            _log.Write("info", "shell_target.dispatch_started", diagnosticCorrelationId, fields: new Dictionary<string, object?>
+            {
+                ["action"] = command.Action
+            });
+        }
+        catch
+        {
+            // Diagnostics must not change the command lifecycle.
+        }
         var launchThread = new Thread(() =>
         {
             var started = Stopwatch.GetTimestamp();
@@ -548,11 +762,6 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             {
                 target.Launch();
                 result = new WindowsCommandResult(true);
-                _log.Write("info", "shell_target.launched", fields: new Dictionary<string, object?>
-                {
-                    ["action"] = command.Action,
-                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
-                });
             }
             catch (Win32Exception error)
             {
@@ -561,21 +770,45 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                     error.Message,
                     NativeErrorCode: error.NativeErrorCode);
             }
-            catch (InvalidOperationException error)
+            catch (Exception error)
             {
-                result = new WindowsCommandResult(false, error.Message);
+                result = new WindowsCommandResult(
+                    false,
+                    error.Message,
+                    NativeErrorCode: error.HResult);
             }
-            _log.Write("info", "shell_target.dispatch_completed", fields: new Dictionary<string, object?>
+            completion.TrySetResult(result);
+            try
             {
-                ["action"] = command.Action,
-                ["success"] = result.Success,
-                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
-            });
-        });
-        launchThread.SetApartmentState(ApartmentState.STA);
-        launchThread.IsBackground = true;
-        launchThread.Start();
-        return new WindowsCommandResult(true);
+                _log.Write("info", "shell_target.dispatch_completed", diagnosticCorrelationId, fields: new Dictionary<string, object?>
+                {
+                    ["action"] = command.Action,
+                    ["success"] = result.Success,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                });
+            }
+            catch
+            {
+                // Diagnostics must not change the command lifecycle.
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "NxTools.ShellTarget"
+        };
+        try
+        {
+            launchThread.SetApartmentState(ApartmentState.STA);
+            launchThread.Start();
+        }
+        catch (Exception error)
+        {
+            completion.TrySetResult(new WindowsCommandResult(
+                false,
+                error.Message,
+                NativeErrorCode: error.HResult));
+        }
+        return completion.Task;
     }
 
     public WindowsCommandResult PlaySystemNotificationSound() =>
@@ -584,8 +817,12 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult ShutdownSystem(ShutdownSystemCommand command) =>
         _completionSystemActions.RequestShutdown(command.DelaySeconds);
 
-    public WindowsCommandResult ExportBrowserExtension(ExportBrowserExtensionCommand command)
+    public WindowsCommandResult ExportBrowserExtension(
+        ExportBrowserExtensionCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var started = Stopwatch.GetTimestamp();
         var format = string.Equals(
             command.Format,
@@ -598,7 +835,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         {
             // Empty destination asks the host to show the save dialog; a
             // cancelled dialog reports success with empty data.
-            var picked = BrowserExtensionExportDialog.PickDestination(format);
+            var picked = BrowserExtensionExportDialog.PickDestination(format, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!picked.Success)
             {
                 return picked;
@@ -609,7 +847,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 _log.Write(
                     "info",
                     "browser_extension.export_cancelled",
-                    null,
+                    diagnosticCorrelationId,
                     new Dictionary<string, object?>
                     {
                         ["format"] = format,
@@ -620,11 +858,16 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         }
         try
         {
-            var actualPath = BrowserExtensionPackageService.Export(format, destination);
+            cancellationToken.ThrowIfCancellationRequested();
+            var actualPath = BrowserExtensionPackageService.Export(
+                format,
+                destination,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             _log.Write(
                 "info",
                 "browser_extension.exported",
-                null,
+                diagnosticCorrelationId,
                 new Dictionary<string, object?>
                 {
                     ["format"] = format,
@@ -633,12 +876,16 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 });
             return new WindowsCommandResult(true, Data: actualPath);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception error)
         {
             _log.Write(
                 "error",
                 "browser_extension.export_failed",
-                null,
+                diagnosticCorrelationId,
                 new Dictionary<string, object?>
                 {
                     ["format"] = format,
@@ -661,6 +908,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             return new WindowsCommandResult(false, error.Message);
         }
     }
+
 
     internal static ProcessStartInfo CreateProcessStartInfo(LaunchProcessCommand command)
     {
@@ -704,29 +952,131 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult OpenFileInDialog(OpenFileInDialogCommand command) =>
         FileDialogWindowAdapter.OpenFile(command);
 
-    public WindowsCommandResult QueryShellActions(QueryShellActionsCommand command) =>
-        _shellActions.QueryActions(command);
+    public WindowsCommandResult QueryShellActions(
+        QueryShellActionsCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteShellOperation(
+            "query_shell_actions",
+            diagnosticCorrelationId,
+            () => _shellActions.QueryActions(command, cancellationToken),
+            cancellationToken);
 
-    public WindowsCommandResult QueryShellSubmenu(QueryShellSubmenuCommand command) =>
-        _shellActions.QuerySubmenu(command);
+    public WindowsCommandResult QueryShellSubmenu(
+        QueryShellSubmenuCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteShellOperation(
+            "query_shell_submenu",
+            diagnosticCorrelationId,
+            () => _shellActions.QuerySubmenu(command, cancellationToken),
+            cancellationToken);
 
-    public WindowsCommandResult InvokeShellAction(InvokeShellActionCommand command) =>
-        _shellActions.InvokeAction(command);
+    public WindowsCommandResult InvokeShellAction(
+        InvokeShellActionCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteShellOperation(
+            "invoke_shell_action",
+            diagnosticCorrelationId,
+            () => _shellActions.InvokeAction(command, cancellationToken),
+            cancellationToken);
 
-    public WindowsCommandResult ExtractShellIcon(ExtractShellIconCommand command) =>
-        ShellIconExtractor.Extract(command);
+    public WindowsCommandResult ExtractShellIcon(
+        ExtractShellIconCommand command,
+        Guid diagnosticCorrelationId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteShellOperation(
+            "extract_shell_icon",
+            diagnosticCorrelationId,
+            () => ShellIconExtractor.ExtractOnSta(command, cancellationToken),
+            cancellationToken);
+
+    private WindowsCommandResult ExecuteShellOperation(
+        string operation,
+        Guid diagnosticCorrelationId,
+        Func<WindowsCommandResult> action,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var started = Stopwatch.GetTimestamp();
+        WriteNativeDiagnostic(
+            "info",
+            $"shell.{operation}.started",
+            diagnosticCorrelationId,
+            new Dictionary<string, object?>
+            {
+                ["operation"] = operation,
+            });
+        try
+        {
+            var result = action();
+            cancellationToken.ThrowIfCancellationRequested();
+            WriteNativeDiagnostic(
+                result.Success ? "info" : "error",
+                $"shell.{operation}.completed",
+                diagnosticCorrelationId,
+                new Dictionary<string, object?>
+                {
+                    ["operation"] = operation,
+                    ["success"] = result.Success,
+                    ["native_error_code"] = result.NativeErrorCode,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                });
+            return result;
+        }
+        catch (Exception error)
+        {
+            WriteNativeDiagnostic(
+                "error",
+                $"shell.{operation}.failed",
+                diagnosticCorrelationId,
+                new Dictionary<string, object?>
+                {
+                    ["operation"] = operation,
+                    ["exception_type"] = error.GetType().FullName,
+                    ["native_error_code"] = error.HResult,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                });
+            throw;
+        }
+    }
+
+    private void WriteNativeDiagnostic(
+        string level,
+        string eventName,
+        Guid correlationId,
+        IReadOnlyDictionary<string, object?> fields)
+    {
+        try
+        {
+            _log.Write(level, eventName, correlationId, fields);
+        }
+        catch
+        {
+            // Diagnostics must not change native operation results.
+        }
+    }
 
     public WindowsCommandResult PickClipboardArchivePath(
-        PickClipboardArchivePathCommand command) => ClipboardArchiveFilePicker.Pick(command);
+        PickClipboardArchivePathCommand command,
+        CancellationToken cancellationToken = default) =>
+        ClipboardArchiveFilePicker.Pick(command, cancellationToken);
 
     public WindowsCommandResult PickClipboardStorageDirectory(
-        PickClipboardStorageDirectoryCommand command) => ClipboardStorageDirectoryPicker.Pick(command);
+        PickClipboardStorageDirectoryCommand command,
+        CancellationToken cancellationToken = default) =>
+        ClipboardStorageDirectoryPicker.Pick(command, cancellationToken);
 
-    public WindowsCommandResult PickDirectory(PickDirectoryCommand command) =>
-        DirectoryPicker.Pick(command);
+    public WindowsCommandResult PickDirectory(
+        PickDirectoryCommand command,
+        CancellationToken cancellationToken = default) =>
+        DirectoryPicker.Pick(command, cancellationToken);
 
-    public WindowsCommandResult PickProgram(PickProgramCommand command) =>
-        ProgramPicker.Pick(command);
+    public WindowsCommandResult PickProgram(
+        PickProgramCommand command,
+        CancellationToken cancellationToken = default) =>
+        ProgramPicker.Pick(command, cancellationToken);
 
     public Task<WindowsCommandResult> EnsureIndexerServiceAsync(
         EnsureIndexerServiceCommand command,
@@ -737,6 +1087,41 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         EnsureBrowserNativeMessagingCommand command,
         Guid correlationId) =>
         BrowserNativeMessagingRegistrar.Ensure(command, _log, correlationId);
+
+    internal static string? ResolveApprovedDesktopExecutablePath()
+        => ResolveApprovedDesktopExecutablePath(
+            Environment.GetEnvironmentVariable(DesktopExecutableEnvironmentVariable),
+            Path.Combine(IndexerServiceInstaller.ProtectedServiceDirectory(), "NxTools.exe"),
+            IndexerServiceInstaller.IsApprovedProtectedDesktop);
+
+    internal static string? ResolveApprovedDesktopExecutablePath(
+        string? configuredDesktopExecutable,
+        string protectedDesktopExecutable,
+        Func<string, bool> isApproved)
+    {
+        foreach (var candidate in new[] { configuredDesktopExecutable, protectedDesktopExecutable })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(candidate);
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+            if (File.Exists(fullPath) && isApproved(fullPath))
+            {
+                return fullPath;
+            }
+        }
+        return null;
+    }
+
 
     internal static WindowsCommandResult ApplyStartupRegistration(
         RegistryKey runKey,
@@ -759,6 +1144,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             {
                 runKey.DeleteValue("NxTools.Next", throwOnMissingValue: false);
             }
+            runKey.DeleteValue("NxTools", throwOnMissingValue: false);
             return new WindowsCommandResult(true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -857,7 +1243,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 _events.Writer,
                 foregroundContextProvider,
                 elevatedDirectoryNavigation,
-                _log);
+                _log,
+                _clipboardCaptureDropDiagnosticGate);
             _started.Set();
             Application.Run();
         }

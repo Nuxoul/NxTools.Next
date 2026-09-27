@@ -115,7 +115,6 @@ pub(crate) fn labeled_field(
     )
 }
 
-#[allow(dead_code)] // Migrated path pickers consume this in later P0 slices.
 pub(crate) fn path_picker_shell(
     selector: &'static str,
     field: AnyElement,
@@ -132,15 +131,6 @@ pub(crate) fn path_picker_shell(
         .child(div().flex_1().min_w_0().child(field))
         .child(picker)
         .into_any_element()
-}
-
-#[allow(dead_code)] // Numeric settings migrate without changing their parsing owner.
-pub(crate) fn numeric_field_shell(
-    theme: Theme,
-    selector: &'static str,
-    control: Input,
-) -> AnyElement {
-    field_shell(theme, selector, control)
 }
 
 pub(crate) fn inline_error(

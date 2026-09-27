@@ -600,6 +600,19 @@ const fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkPanelPosition {
+    TopLeft,
+    #[default]
+    Center,
+    TopRight,
+}
+
+impl LinkPanelPosition {
+    pub const ALL: [Self; 3] = [Self::TopLeft, Self::Center, Self::TopRight];
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClipboardSettings {
     pub enabled: bool,
@@ -607,6 +620,8 @@ pub struct ClipboardSettings {
     pub capture_files: bool,
     #[serde(default = "default_true")]
     pub link_detector_enabled: bool,
+    #[serde(default)]
+    pub link_panel_position: LinkPanelPosition,
     #[serde(default = "default_link_panel_auto_hide_ms")]
     pub link_panel_auto_hide_ms: u64,
     #[serde(default)]
@@ -621,6 +636,12 @@ pub struct ClipboardSettings {
     pub retention_days: u32,
     #[serde(default = "default_clipboard_excluded_processes")]
     pub excluded_processes: Vec<String>,
+    #[serde(default = "default_clipboard_max_text_bytes")]
+    pub max_text_bytes: u64,
+    #[serde(default = "default_clipboard_max_image_bytes")]
+    pub max_image_bytes: u64,
+    #[serde(default = "default_clipboard_max_image_pixels")]
+    pub max_image_pixels: u64,
     #[serde(default)]
     pub modifier_actions: ClipboardModifierActions,
     #[serde(default)]
@@ -634,6 +655,7 @@ impl Default for ClipboardSettings {
             capture_images: true,
             capture_files: true,
             link_detector_enabled: true,
+            link_panel_position: LinkPanelPosition::default(),
             link_panel_auto_hide_ms: 6_000,
             link_panel_auto_open_browser: false,
             link_panel_copy_only: true,
@@ -641,12 +663,14 @@ impl Default for ClipboardSettings {
             max_items: default_clipboard_max_items(),
             retention_days: default_clipboard_retention_days(),
             excluded_processes: default_clipboard_excluded_processes(),
+            max_text_bytes: default_clipboard_max_text_bytes(),
+            max_image_bytes: default_clipboard_max_image_bytes(),
+            max_image_pixels: default_clipboard_max_image_pixels(),
             modifier_actions: ClipboardModifierActions::default(),
             storage_directory: String::new(),
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipboardClickAction {
@@ -720,10 +744,10 @@ pub fn clipboard_image_paste_profile(process_name: &str) -> ClipboardImagePasteP
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(process_name)
-        .trim_end_matches(".exe")
         .to_ascii_lowercase();
+    let process_name = process_name.strip_suffix(".exe").unwrap_or(&process_name);
     if matches!(
-        process_name.as_str(),
+        process_name,
         "explorer"
             | "dopus"
             | "dopusrt"
@@ -761,6 +785,18 @@ fn default_clipboard_retention_days() -> u32 {
     30
 }
 
+fn default_clipboard_max_text_bytes() -> u64 {
+    8 * 1024 * 1024
+}
+
+fn default_clipboard_max_image_bytes() -> u64 {
+    64 * 1024 * 1024
+}
+
+fn default_clipboard_max_image_pixels() -> u64 {
+    100_000_000
+}
+
 fn default_clipboard_excluded_processes() -> Vec<String> {
     vec![
         "KeePass.exe".into(),
@@ -778,6 +814,9 @@ impl ClipboardSettings {
         self.capture_files = true;
         self.max_items = self.max_items.clamp(100, 100_000);
         self.retention_days = self.retention_days.clamp(1, 3650);
+        self.max_text_bytes = self.max_text_bytes.clamp(64 * 1024, 64 * 1024 * 1024);
+        self.max_image_bytes = self.max_image_bytes.clamp(1024 * 1024, 256 * 1024 * 1024);
+        self.max_image_pixels = self.max_image_pixels.clamp(1_000_000, 500_000_000);
         self.storage_directory = self.storage_directory.trim().to_owned();
         let mut seen = std::collections::HashSet::new();
         self.excluded_processes.retain_mut(|process| {
@@ -1077,6 +1116,25 @@ impl SingleInstanceGuard {
         Self::acquire_with_timeout(paths, process_name, Duration::ZERO)
     }
 
+    /// Returns whether another process currently holds the instance lock.
+    ///
+    /// This is intentionally separate from reading the hint file: a crashed
+    /// process can leave its last window handle behind after releasing the
+    /// lock, and that handle must not trigger a stale IPC summon.
+    pub fn is_locked(paths: &AppPaths, process_name: &str) -> bool {
+        let path = paths.cache_dir.join(format!("{process_name}.lock"));
+        let Ok(file) = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(path)
+        else {
+            return true;
+        };
+        file.try_lock_exclusive().is_err()
+    }
+
     /// Persists a fresh hint file for this instance. Callers update the
     /// window handle after the main window exists; a second launch reads it
     /// to summon the running instance instead of failing.
@@ -1181,6 +1239,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn instance_lock_state_distinguishes_stale_hints_from_a_live_owner() {
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-core-instance-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let paths = AppPaths {
+            config_dir: root.join("config"),
+            data_dir: root.join("data"),
+            cache_dir: root.join("cache"),
+            log_dir: root.join("logs"),
+        };
+        fs::create_dir_all(&paths.cache_dir).expect("create instance cache");
+
+        SingleInstanceGuard::record_main_window_handle(&paths, "desktop", 12345);
+        assert_eq!(
+            SingleInstanceGuard::read_main_window_handle(&paths, "desktop"),
+            12345
+        );
+        assert!(!SingleInstanceGuard::is_locked(&paths, "desktop"));
+        let guard = SingleInstanceGuard::acquire(&paths, "desktop").expect("acquire instance");
+        assert!(SingleInstanceGuard::is_locked(&paths, "desktop"));
+        drop(guard);
+        assert!(!SingleInstanceGuard::is_locked(&paths, "desktop"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn rich_image_editors_do_not_receive_a_duplicate_file_drop_representation() {
         assert_eq!(
             clipboard_image_paste_profile("zed.exe"),
@@ -1192,6 +1282,10 @@ mod tests {
         );
         assert_eq!(
             clipboard_image_paste_profile("explorer.exe"),
+            ClipboardImagePasteProfile::NativeImageWithFileDrop
+        );
+        assert_eq!(
+            clipboard_image_paste_profile("C:/Windows/EXPLORER.EXE"),
             ClipboardImagePasteProfile::NativeImageWithFileDrop
         );
         assert_eq!(
@@ -1620,6 +1714,23 @@ mod tests {
         let restored: AppConfig = serde_json::from_str(&json).expect("deserialize settings");
         assert_eq!(restored.clipboard, config.clipboard);
     }
+    #[test]
+    fn link_panel_position_round_trips_and_legacy_configs_default_to_center() {
+        let settings = ClipboardSettings {
+            link_panel_position: LinkPanelPosition::TopRight,
+            ..ClipboardSettings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serialize link panel position");
+        let restored: ClipboardSettings =
+            serde_json::from_str(&json).expect("deserialize link panel position");
+        assert_eq!(restored.link_panel_position, LinkPanelPosition::TopRight);
+
+        let legacy: ClipboardSettings = serde_json::from_str(
+            r#"{"enabled":true,"capture_images":true,"capture_files":true,"max_items":1000,"retention_days":30,"excluded_processes":[]}"#,
+        )
+        .expect("legacy clipboard settings must remain readable");
+        assert_eq!(legacy.link_panel_position, LinkPanelPosition::Center);
+    }
 
     #[test]
     fn clipboard_storage_directory_survives_config_reload() {
@@ -1664,6 +1775,41 @@ mod tests {
                 shift: ClipboardClickAction::WithoutLineBreaks,
             }
         );
+    }
+
+    #[test]
+    fn clipboard_capture_limits_default_and_legacy_values_are_compatible() {
+        let settings = ClipboardSettings::default();
+        assert_eq!(settings.max_text_bytes, 8 * 1024 * 1024);
+        assert_eq!(settings.max_image_bytes, 64 * 1024 * 1024);
+        assert_eq!(settings.max_image_pixels, 100_000_000);
+
+        let restored: ClipboardSettings = serde_json::from_str(
+            r#"{"enabled":true,"capture_images":true,"capture_files":true,"max_items":1000,"retention_days":30,"excluded_processes":[]}"#,
+        )
+        .expect("legacy clipboard settings must remain readable");
+        assert_eq!(restored.max_text_bytes, settings.max_text_bytes);
+        assert_eq!(restored.max_image_bytes, settings.max_image_bytes);
+        assert_eq!(restored.max_image_pixels, settings.max_image_pixels);
+    }
+
+    #[test]
+    fn clipboard_capture_limits_normalize_to_supported_ranges_and_round_trip() {
+        let mut settings = ClipboardSettings {
+            max_text_bytes: 1,
+            max_image_bytes: u64::MAX,
+            max_image_pixels: 0,
+            ..ClipboardSettings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.max_text_bytes, 64 * 1024);
+        assert_eq!(settings.max_image_bytes, 256 * 1024 * 1024);
+        assert_eq!(settings.max_image_pixels, 1_000_000);
+
+        let json = serde_json::to_string(&settings).expect("serialize capture limits");
+        let restored: ClipboardSettings =
+            serde_json::from_str(&json).expect("deserialize capture limits");
+        assert_eq!(restored, settings);
     }
 
     #[test]

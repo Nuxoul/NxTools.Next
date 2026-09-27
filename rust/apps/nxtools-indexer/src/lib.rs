@@ -2018,9 +2018,7 @@ fn schedule_snapshot_compactions(
 /// subsequent searches fault pages back in on demand.
 #[allow(unsafe_code)] // Windows process working-set control has no safe wrapper.
 fn trim_working_set_after_snapshot_restore() {
-    use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, SetProcessWorkingSetSize,
-    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
     // (-1, -1) empties the working set to the minimum allowed.
     unsafe {
         let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);

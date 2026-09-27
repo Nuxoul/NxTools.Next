@@ -25,8 +25,17 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
     private ShellContextMenuSessionWorker? _current;
     private bool _disposed;
 
-    public WindowsCommandResult QueryActions(QueryShellActionsCommand command)
+    public WindowsCommandResult QueryActions(QueryShellActionsCommand command) =>
+        QueryActions(command, CancellationToken.None);
+
+    public WindowsCommandResult QueryActions(
+        QueryShellActionsCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         var target = command.Target.Trim();
         var navigationDirectory = ShellIconExtractor.ResolveNavigationDirectory(target);
         var shellTarget = File.Exists(target) || Directory.Exists(target)
@@ -45,33 +54,39 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
         {
             if (_disposed)
             {
-                worker.Release();
+                worker.CancelCurrent();
                 return new WindowsCommandResult(false, "Shell action sessions are shutting down.");
             }
             previous = _current;
             _current = worker;
         }
-        previous?.Release();
+        if (previous is not null && !ReferenceEquals(previous, worker))
+        {
+            previous.CancelCurrent();
+        }
 
-        var result = worker.QueryActions(navigationDirectory);
-        if (result.Success)
+        var result = worker.QueryActions(navigationDirectory, cancellationToken);
+        if (result.Success && !cancellationToken.IsCancellationRequested)
         {
             worker.Release();
             return result;
         }
-        lock (_gate)
-        {
-            if (ReferenceEquals(_current, worker))
-            {
-                _current = null;
-            }
-        }
-        worker.Release();
-        return result;
+        ClearCurrent(worker);
+        worker.CancelCurrent();
+        return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
     }
 
-    public WindowsCommandResult InvokeAction(InvokeShellActionCommand command)
+    public WindowsCommandResult InvokeAction(InvokeShellActionCommand command) =>
+        InvokeAction(command, CancellationToken.None);
+
+    public WindowsCommandResult InvokeAction(
+        InvokeShellActionCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         if (!Guid.TryParse(command.SessionId, out var sessionId))
         {
             return new WindowsCommandResult(false, "The Shell action session id is invalid.");
@@ -88,18 +103,39 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
             _current = null;
         }
 
+        WindowsCommandResult result;
         try
         {
-            return worker.Invoke(command.CommandId, new IntPtr(command.OwnerWindowHandle));
+            result = worker.Invoke(
+                command.CommandId,
+                new IntPtr(command.OwnerWindowHandle),
+                cancellationToken);
+            return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
         }
         finally
         {
-            worker.Release();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                worker.CancelCurrent();
+            }
+            else
+            {
+                worker.Release();
+            }
         }
     }
 
-    public WindowsCommandResult QuerySubmenu(QueryShellSubmenuCommand command)
+    public WindowsCommandResult QuerySubmenu(QueryShellSubmenuCommand command) =>
+        QuerySubmenu(command, CancellationToken.None);
+
+    public WindowsCommandResult QuerySubmenu(
+        QueryShellSubmenuCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         if (!Guid.TryParse(command.SessionId, out var sessionId))
         {
             return new WindowsCommandResult(false, "The Shell action session id is invalid.");
@@ -114,7 +150,42 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
                 return new WindowsCommandResult(false, "The Shell action session has expired.");
             }
         }
-        return worker.QuerySubmenu(command.SubmenuId);
+        var result = worker.QuerySubmenu(command.SubmenuId, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            ClearCurrent(worker);
+            worker.CancelCurrent();
+            return CancelledResult();
+        }
+        if (!result.Success)
+        {
+            ClearCurrent(worker);
+            worker.CancelCurrent();
+        }
+        return result;
+    }
+
+    internal void CancelCurrent()
+    {
+        ShellContextMenuSessionWorker? current;
+        lock (_gate)
+        {
+            current = _current;
+            _current = null;
+        }
+        current?.CancelCurrent();
+        ShellContextMenuSessionWorker.CancelCached();
+    }
+
+    private void ClearCurrent(ShellContextMenuSessionWorker worker)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_current, worker))
+            {
+                _current = null;
+            }
+        }
     }
 
     public void Dispose()
@@ -130,13 +201,18 @@ internal sealed class ShellContextMenuSessionManager : IDisposable
             current = _current;
             _current = null;
         }
-        current?.Dispose();
+        current?.CancelCurrent();
+        ShellContextMenuSessionWorker.CancelCached();
     }
+
+    private static WindowsCommandResult CancelledResult() =>
+        new(false, "Shell action operation was cancelled.");
 }
 
 internal sealed class ShellContextMenuSessionWorker : IDisposable
 {
     private const int RequestTimeoutMilliseconds = 5000;
+    private const int DisposeJoinMilliseconds = 250;
     // A warm session for the same target answers a repeat right-click without
     // re-running the Shell COM handshake (SHParseDisplayName → GetUIObjectOf →
     // QueryContextMenu), which measured 160–534 ms per cold query and is what
@@ -152,32 +228,66 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
     private Exception? _startupError;
     private ShellContextMenuSession? _session;
     private int _disposed;
-    private int _leased;
+    private int _leased = 1;
 
     public static ShellContextMenuSessionWorker Acquire(string target)
     {
+        ShellContextMenuSessionWorker? selected = null;
+        List<ShellContextMenuSessionWorker>? stale = null;
         lock (CacheGate)
         {
-            for (int i = 0; i < Cache.Count; i++)
+            var count = Cache.Count;
+            for (var index = 0; index < count; index++)
             {
                 var (cachedTarget, worker) = Cache.Dequeue();
-                if (string.Equals(cachedTarget, target, StringComparison.OrdinalIgnoreCase)
-                    && worker.TryAcquireFromCache())
+                if (Volatile.Read(ref worker._disposed) != 0)
                 {
-                    return worker;
+                    stale ??= new List<ShellContextMenuSessionWorker>();
+                    stale.Add(worker);
+                    continue;
+                }
+                if (selected is null &&
+                    string.Equals(cachedTarget, target, StringComparison.OrdinalIgnoreCase) &&
+                    worker.TryAcquireFromCache())
+                {
+                    selected = worker;
+                    continue;
                 }
                 Cache.Enqueue((cachedTarget, worker));
             }
         }
-        return new ShellContextMenuSessionWorker(target);
+        if (stale is not null)
+        {
+            foreach (var worker in stale)
+            {
+                worker.Dispose();
+            }
+        }
+        return selected ?? new ShellContextMenuSessionWorker(target);
+    }
+
+    internal static void CancelCached()
+    {
+        ShellContextMenuSessionWorker[] cached;
+        lock (CacheGate)
+        {
+            cached = Cache.Select(entry => entry.Worker).ToArray();
+            Cache.Clear();
+        }
+        foreach (var worker in cached)
+        {
+            worker.CancelCurrent();
+        }
     }
 
     private bool TryAcquireFromCache()
     {
-        if (Interlocked.Exchange(ref _leased, 1) != 0 || Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 ||
+            Interlocked.Exchange(ref _leased, 1) != 0)
         {
             return false;
         }
+        SessionId = Guid.NewGuid();
         return true;
     }
 
@@ -188,19 +298,26 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
             Dispose();
             return;
         }
+        if (Interlocked.Exchange(ref _leased, 0) == 0)
+        {
+            return;
+        }
         List<ShellContextMenuSessionWorker>? evicted = null;
         lock (CacheGate)
         {
-            Cache.Enqueue((_target, this));
-            while (Cache.Count > CacheCapacity)
+            if (Volatile.Read(ref _disposed) != 0)
             {
-                var (_, evictedWorker) = Cache.Dequeue();
-                if (ReferenceEquals(evictedWorker, this))
+                evicted = [this];
+            }
+            else
+            {
+                Cache.Enqueue((_target, this));
+                while (Cache.Count > CacheCapacity)
                 {
-                    continue;
+                    var (_, evictedWorker) = Cache.Dequeue();
+                    evicted ??= new List<ShellContextMenuSessionWorker>();
+                    evicted.Add(evictedWorker);
                 }
-                evicted ??= new List<ShellContextMenuSessionWorker>();
-                evicted.Add(evictedWorker);
             }
         }
         if (evicted is not null)
@@ -225,30 +342,48 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         _thread.Start();
     }
 
-    public Guid SessionId { get; }
+    public Guid SessionId { get; private set; }
 
-    public WindowsCommandResult QueryActions(string? navigationDirectory)
+    public WindowsCommandResult QueryActions(string? navigationDirectory) =>
+        QueryActions(navigationDirectory, CancellationToken.None);
+
+    public WindowsCommandResult QueryActions(
+        string? navigationDirectory,
+        CancellationToken cancellationToken)
     {
         if (!TryInvoke(
                 () =>
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     _session = ShellContextMenuSession.Open(_target);
-                    return _session.Enumerate();
+                    return _session.Enumerate(cancellationToken);
                 },
+                cancellationToken,
                 out IReadOnlyList<ShellActionItemData>? items,
                 out var error))
         {
-            if (navigationDirectory is not null)
+            if (navigationDirectory is not null && !cancellationToken.IsCancellationRequested)
             {
                 return SerializeMenu([], navigationDirectory);
             }
-            return new WindowsCommandResult(false, error);
+            return new WindowsCommandResult(
+                false,
+                cancellationToken.IsCancellationRequested
+                    ? "Shell action operation was cancelled."
+                    : error);
         }
 
-        return SerializeMenu(items!, navigationDirectory);
+        return cancellationToken.IsCancellationRequested
+            ? new WindowsCommandResult(false, "Shell action operation was cancelled.")
+            : SerializeMenu(items!, navigationDirectory);
     }
 
-    public WindowsCommandResult QuerySubmenu(uint submenuId)
+    public WindowsCommandResult QuerySubmenu(uint submenuId) =>
+        QuerySubmenu(submenuId, CancellationToken.None);
+
+    public WindowsCommandResult QuerySubmenu(
+        uint submenuId,
+        CancellationToken cancellationToken)
     {
         if (!TryInvoke(
                 () =>
@@ -257,14 +392,21 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
                     {
                         throw new InvalidOperationException("The Shell action session is not initialized.");
                     }
-                    return _session.EnumerateSubmenu(submenuId);
+                    return _session.EnumerateSubmenu(submenuId, cancellationToken);
                 },
+                cancellationToken,
                 out IReadOnlyList<ShellActionItemData>? items,
                 out var error))
         {
-            return new WindowsCommandResult(false, error);
+            return new WindowsCommandResult(
+                false,
+                cancellationToken.IsCancellationRequested
+                    ? "Shell action operation was cancelled."
+                    : error);
         }
-        return SerializeMenu(items!, null);
+        return cancellationToken.IsCancellationRequested
+            ? new WindowsCommandResult(false, "Shell action operation was cancelled.")
+            : SerializeMenu(items!, null);
     }
 
     private WindowsCommandResult SerializeMenu(
@@ -278,7 +420,13 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         return new WindowsCommandResult(true, Data: JsonSerializer.Serialize(menu, JsonDefaults.Options));
     }
 
-    public WindowsCommandResult Invoke(uint commandId, IntPtr owner)
+    public WindowsCommandResult Invoke(uint commandId, IntPtr owner) =>
+        Invoke(commandId, owner, CancellationToken.None);
+
+    public WindowsCommandResult Invoke(
+        uint commandId,
+        IntPtr owner,
+        CancellationToken cancellationToken)
     {
         if (!TryInvoke(
                 () =>
@@ -287,22 +435,49 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
                     {
                         throw new InvalidOperationException("The Shell action session is not initialized.");
                     }
-                    _session.Invoke(commandId, owner);
+                    _session.Invoke(commandId, owner, cancellationToken);
                     return true;
                 },
+                cancellationToken,
                 out _,
                 out var error))
         {
-            return new WindowsCommandResult(false, error);
+            return new WindowsCommandResult(
+                false,
+                cancellationToken.IsCancellationRequested
+                    ? "Shell action operation was cancelled."
+                    : error);
         }
-        return new WindowsCommandResult(true);
+        return cancellationToken.IsCancellationRequested
+            ? new WindowsCommandResult(false, "Shell action operation was cancelled.")
+            : new WindowsCommandResult(true);
     }
 
-    private bool TryInvoke<T>(Func<T> operation, out T? result, out string? error)
+    private bool TryInvoke<T>(
+        Func<T> operation,
+        CancellationToken cancellationToken,
+        out T? result,
+        out string? error)
     {
         result = default;
         error = null;
-        if (!_started.Wait(RequestTimeoutMilliseconds))
+        if (cancellationToken.IsCancellationRequested)
+        {
+            Dispose();
+            error = "Shell action operation was cancelled.";
+            return false;
+        }
+        try
+        {
+            _started.Wait(RequestTimeoutMilliseconds, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Dispose();
+            error = "Shell action operation was cancelled.";
+            return false;
+        }
+        if (!_started.IsSet)
         {
             error = "The Shell action STA worker did not start in time.";
             return false;
@@ -320,10 +495,22 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
 
         var completion = new TaskCompletionSource<T>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = completion.Task.ContinueWith(
+            completedTask => _ = completedTask.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        using var cancellationRegistration = cancellationToken.Register(
+            () => completion.TrySetCanceled(cancellationToken));
         try
         {
             _requests.Add(() =>
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled(cancellationToken);
+                    return;
+                }
                 try
                 {
                     completion.TrySetResult(operation());
@@ -343,16 +530,24 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         bool completed;
         try
         {
-            completed = completion.Task.Wait(RequestTimeoutMilliseconds);
+            completed = completion.Task.Wait(RequestTimeoutMilliseconds, cancellationToken);
         }
-        catch (AggregateException exception)
+        catch (OperationCanceledException)
         {
-            error = exception.GetBaseException().Message;
+            Dispose();
+            error = "Shell action operation was cancelled.";
             return false;
         }
         if (!completed)
         {
+            Dispose();
             error = "A Windows Shell extension did not respond within five seconds.";
+            return false;
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            Dispose();
+            error = "Shell action operation was cancelled.";
             return false;
         }
         try
@@ -399,22 +594,46 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         }
     }
 
-    public void Dispose()
+    internal void CancelCurrent() => DisposeCore(waitForThread: false);
+
+    public void Dispose() => DisposeCore(waitForThread: true);
+
+    private void DisposeCore(bool waitForThread)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
-        _requests.CompleteAdding();
-        var stopped = Thread.CurrentThread == _thread;
-        if (!stopped)
+        lock (CacheGate)
         {
-            stopped = _thread.Join(250);
+            if (Cache.Count != 0)
+            {
+                var retained = new Queue<(string Target, ShellContextMenuSessionWorker Worker)>();
+                while (Cache.Count != 0)
+                {
+                    var entry = Cache.Dequeue();
+                    if (!ReferenceEquals(entry.Worker, this))
+                    {
+                        retained.Enqueue(entry);
+                    }
+                }
+                while (retained.Count != 0)
+                {
+                    Cache.Enqueue(retained.Dequeue());
+                }
+            }
         }
-        if (stopped)
+        _requests.CompleteAdding();
+        if (waitForThread && Thread.CurrentThread != _thread)
         {
-            _requests.Dispose();
-            _started.Dispose();
+            try
+            {
+                _ = _thread.Join(DisposeJoinMilliseconds);
+            }
+            catch
+            {
+                // A late STA worker remains background-only and is not cached.
+            }
         }
     }
 }
@@ -505,26 +724,40 @@ internal sealed class ShellContextMenuSession : IDisposable
         }
     }
 
-    public IReadOnlyList<ShellActionItemData> Enumerate()
+    public IReadOnlyList<ShellActionItemData> Enumerate() =>
+        Enumerate(CancellationToken.None);
+
+    public IReadOnlyList<ShellActionItemData> Enumerate(CancellationToken cancellationToken)
     {
-        return EnumerateMenu(_menu, 0);
+        cancellationToken.ThrowIfCancellationRequested();
+        return EnumerateMenu(_menu, 0, cancellationToken);
     }
 
-    public IReadOnlyList<ShellActionItemData> EnumerateSubmenu(uint submenuId)
+    public IReadOnlyList<ShellActionItemData> EnumerateSubmenu(uint submenuId) =>
+        EnumerateSubmenu(submenuId, CancellationToken.None);
+
+    public IReadOnlyList<ShellActionItemData> EnumerateSubmenu(
+        uint submenuId,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_submenus.TryGetValue(submenuId, out var submenu))
         {
             throw new InvalidOperationException("The selected Shell submenu is unavailable.");
         }
-        return EnumerateMenu(submenu.Menu, submenu.ParentIndex);
+        return EnumerateMenu(submenu.Menu, submenu.ParentIndex, cancellationToken);
     }
 
-    private List<ShellActionItemData> EnumerateMenu(IntPtr menu, uint menuIndex)
+    private List<ShellActionItemData> EnumerateMenu(
+        IntPtr menu,
+        uint menuIndex,
+        CancellationToken cancellationToken)
     {
         if (menu == IntPtr.Zero)
         {
             return [];
         }
+        cancellationToken.ThrowIfCancellationRequested();
         InitializeMenu(menu, menuIndex);
         var count = ShellContextMenuNativeMethods.GetMenuItemCount(menu);
         if (count <= 0)
@@ -538,6 +771,7 @@ internal sealed class ShellContextMenuSession : IDisposable
         {
             for (uint index = 0; index < count && items.Count < MaximumItems; index++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 Marshal.WriteInt16(titleBuffer, 0);
                 var info = new ShellContextMenuNativeMethods.MenuItemInfo
                 {
@@ -584,7 +818,7 @@ internal sealed class ShellContextMenuSession : IDisposable
                     enabled,
                     false,
                     submenuId,
-                    ShellMenuIconStager.Stage(info.ItemBitmap)));
+                    ShellMenuIconStager.Stage(info.ItemBitmap, cancellationToken)));
             }
         }
         finally
@@ -624,8 +858,15 @@ internal sealed class ShellContextMenuSession : IDisposable
         }
     }
 
-    public void Invoke(uint commandId, IntPtr owner)
+    public void Invoke(uint commandId, IntPtr owner) =>
+        Invoke(commandId, owner, CancellationToken.None);
+
+    public void Invoke(
+        uint commandId,
+        IntPtr owner,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_contextMenu is null || commandId is < FirstCommand or > LastCommand)
         {
             throw new InvalidOperationException("The selected Shell command is invalid.");
@@ -638,6 +879,7 @@ internal sealed class ShellContextMenuSession : IDisposable
             Show = 1
         };
         ThrowIfFailed(_contextMenu.InvokeCommand(ref command));
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private static string NormalizeTitle(string? title)
@@ -700,13 +942,19 @@ internal static class ShellMenuIconStager
     private const int MaximumCachedIcons = 2048;
     private static int _stageCount;
 
-    public static string? Stage(IntPtr bitmapHandle)
+    public static string? Stage(IntPtr bitmapHandle) =>
+        Stage(bitmapHandle, CancellationToken.None);
+
+    public static string? Stage(
+        IntPtr bitmapHandle,
+        CancellationToken cancellationToken)
     {
         // HBMMENU_* pseudo handles occupy the small integer range and are not GDI bitmaps.
         if (bitmapHandle == IntPtr.Zero || bitmapHandle.ToInt64() is >= -1 and <= 12)
         {
             return null;
         }
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var bitmap = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
@@ -719,6 +967,7 @@ internal static class ShellMenuIconStager
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
             encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
             encoder.Save(encoded);
+            cancellationToken.ThrowIfCancellationRequested();
             var bytes = encoded.ToArray();
             var fingerprint = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
             var directory = Path.Combine(

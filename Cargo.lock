@@ -4141,6 +4141,7 @@ dependencies = [
  "nxtools-network",
  "nxtools-protocol",
  "raw-window-handle",
+ "rusqlite",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
@@ -4205,7 +4206,6 @@ dependencies = [
  "nxtools-core",
  "rusqlite",
  "tempfile",
- "url",
 ]
 
 [[package]]

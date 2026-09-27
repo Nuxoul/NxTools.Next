@@ -76,8 +76,10 @@ public static class NxToolsCpuProbeInput
         var candidates = new List<Rect>();
         EnumWindows((window, _) =>
         {
-            GetWindowThreadProcessId(window, out var ownerProcessId);
-            if (ownerProcessId == processId && IsWindowVisible(window) && GetWindowRect(window, out var rect))
+            uint ownerProcessId;
+            Rect rect;
+            GetWindowThreadProcessId(window, out ownerProcessId);
+            if (ownerProcessId == processId && IsWindowVisible(window) && GetWindowRect(window, out rect))
             {
                 var width = rect.Right - rect.Left;
                 var height = rect.Bottom - rect.Top;

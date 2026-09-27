@@ -1,4 +1,5 @@
 use super::*;
+use tracing::error;
 
 pub(crate) fn custom_command_selection_after_removal(
     remaining_item_count: usize,
@@ -19,35 +20,103 @@ pub(crate) enum HotkeyRecordingTarget {
     Clipboard,
     QuickLaunch,
 }
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ClipboardCaptureLimitKind {
+    TextBytes,
+    ImageBytes,
+    ImagePixels,
+}
 
-#[derive(Default)]
+fn update_clipboard_capture_limit(
+    application: &mut crate::clipboard::ClipboardApplication,
+    kind: ClipboardCaptureLimitKind,
+    value: u64,
+) {
+    let settings = application.clipboard_settings();
+    let (text, image, pixels) = match kind {
+        ClipboardCaptureLimitKind::TextBytes => {
+            (value, settings.max_image_bytes, settings.max_image_pixels)
+        }
+        ClipboardCaptureLimitKind::ImageBytes => {
+            (settings.max_text_bytes, value, settings.max_image_pixels)
+        }
+        ClipboardCaptureLimitKind::ImagePixels => {
+            (settings.max_text_bytes, settings.max_image_bytes, value)
+        }
+    };
+    application.set_clipboard_capture_limits(text, image, pixels);
+}
+#[derive(Default, Clone)]
 pub(crate) struct ClipboardOverview {
     pub(crate) total: usize,
     pub(crate) text: usize,
     pub(crate) images: usize,
     pub(crate) files: usize,
+    pub(crate) loading: bool,
+    pub(crate) error: bool,
 }
 
 impl MainWindow {
-    pub(crate) fn clipboard_overview(&self, cx: &App) -> ClipboardOverview {
-        let Ok(application) = self.clipboard.upgrade().ok_or(()) else {
-            return ClipboardOverview::default();
-        };
-        let Ok(ClipboardHistoryCounts {
-            total,
-            text,
-            images,
-            files,
-        }) = application.read(cx).clipboard_counts()
-        else {
-            return ClipboardOverview::default();
-        };
-        ClipboardOverview {
-            total,
-            text,
-            images,
-            files,
+    pub(crate) fn clipboard_overview(&self) -> ClipboardOverview {
+        self.clipboard_overview.clone()
+    }
+
+    pub(crate) fn request_clipboard_overview(&mut self, cx: &mut Context<Self>) {
+        if self.clipboard_overview_loading {
+            self.clipboard_overview_dirty = true;
+            return;
         }
+        let Some(worker) = self
+            .clipboard
+            .upgrade()
+            .map(|application| application.read(cx).clipboard_worker_handle())
+        else {
+            self.clipboard_overview = ClipboardOverview {
+                error: true,
+                ..ClipboardOverview::default()
+            };
+            cx.notify();
+            return;
+        };
+        self.clipboard_overview_loading = true;
+        self.clipboard_overview_dirty = false;
+        self.clipboard_overview_generation =
+            self.clipboard_overview_generation.wrapping_add(1).max(1);
+        let generation = self.clipboard_overview_generation;
+        self.clipboard_overview.loading = true;
+        self.clipboard_overview.error = false;
+        let main_window = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            let result = worker.counts_async().await;
+            let _ = main_window.update(cx, |main_window, cx| {
+                if main_window.clipboard_overview_generation != generation {
+                    return;
+                }
+                main_window.clipboard_overview_loading = false;
+                match result {
+                    Ok(counts) => {
+                        main_window.clipboard_overview = ClipboardOverview {
+                            total: counts.total,
+                            text: counts.text,
+                            images: counts.images,
+                            files: counts.files,
+                            loading: false,
+                            error: false,
+                        };
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to load clipboard counts");
+                        main_window.clipboard_overview.loading = false;
+                        main_window.clipboard_overview.error = true;
+                    }
+                }
+                if main_window.clipboard_overview_dirty {
+                    main_window.request_clipboard_overview(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn clipboard_settings(&self, cx: &App) -> ClipboardSettings {
@@ -279,6 +348,96 @@ impl MainWindow {
             .into_any_element()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_capture_limit_stepper(
+        &mut self,
+        id: &'static str,
+        value: u64,
+        step: u64,
+        kind: ClipboardCaptureLimitKind,
+        display_value: String,
+        suffix: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = self.theme;
+        let clipboard = self.clipboard.clone();
+        let value_label = format!("{display_value} {suffix}");
+        let minus_clipboard = clipboard.clone();
+        let plus_clipboard = clipboard;
+        div()
+            .id(id)
+            .h(px(26.0))
+            .rounded(px(RADIUS_CONTROL))
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.canvas)
+            .flex()
+            .items_center()
+            .child(
+                div()
+                    .id(gpui::SharedString::from(format!("{id}-minus")))
+                    .w(px(28.0))
+                    .h_full()
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.text_muted)
+                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
+                    .child("−")
+                    .on_click(cx.listener(move |_, _event, _window, cx| {
+                        cx.stop_propagation();
+                        let _ = minus_clipboard.update(cx, |application, _| {
+                            update_clipboard_capture_limit(
+                                application,
+                                kind,
+                                value.saturating_sub(step),
+                            );
+                        });
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .w(px(86.0))
+                    .h_full()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_color(theme.border_subtle)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(TEXT_LABEL))
+                    .font_family(UI_MONO_FONT_FAMILY)
+                    .child(value_label),
+            )
+            .child(
+                div()
+                    .id(gpui::SharedString::from(format!("{id}-plus")))
+                    .w(px(28.0))
+                    .h_full()
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.text_muted)
+                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
+                    .child("+")
+                    .on_click(cx.listener(move |_, _event, _window, cx| {
+                        cx.stop_propagation();
+                        let _ = plus_clipboard.update(cx, |application, _| {
+                            update_clipboard_capture_limit(
+                                application,
+                                kind,
+                                value.saturating_add(step),
+                            );
+                        });
+                        cx.notify();
+                    })),
+            )
+            .into_any_element()
+    }
+
     pub(crate) fn defer_hotkey_recording(
         &self,
         target: HotkeyRecordingTarget,
@@ -378,7 +537,17 @@ impl MainWindow {
 impl MainWindow {
     pub(crate) fn render_clipboard(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
-        let overview = self.clipboard_overview(cx);
+        let overview = self.clipboard_overview();
+        let overview_metadata = if overview.loading {
+            "CLIPBOARD LOADING".to_owned()
+        } else if overview.error {
+            "CLIPBOARD UNAVAILABLE".to_owned()
+        } else {
+            format!(
+                "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
+                overview.total, overview.text, overview.images, overview.files
+            )
+        };
         let settings = self.clipboard_settings(cx);
         let configuration_status = self
             .clipboard
@@ -482,6 +651,33 @@ impl MainWindow {
             settings.retention_days as usize,
             1,
             true,
+            cx,
+        );
+        let max_text_control = self.render_capture_limit_stepper(
+            "clipboard-max-text-bytes",
+            settings.max_text_bytes,
+            64 * 1024,
+            ClipboardCaptureLimitKind::TextBytes,
+            format!("{:.2}", settings.max_text_bytes as f64 / (1024.0 * 1024.0)),
+            "MB",
+            cx,
+        );
+        let max_image_control = self.render_capture_limit_stepper(
+            "clipboard-max-image-bytes",
+            settings.max_image_bytes,
+            1024 * 1024,
+            ClipboardCaptureLimitKind::ImageBytes,
+            (settings.max_image_bytes / (1024 * 1024)).to_string(),
+            "MB",
+            cx,
+        );
+        let max_pixels_control = self.render_capture_limit_stepper(
+            "clipboard-max-image-pixels",
+            settings.max_image_pixels,
+            1_000_000,
+            ClipboardCaptureLimitKind::ImagePixels,
+            (settings.max_image_pixels / 1_000_000).to_string(),
+            "MP",
             cx,
         );
         let exclusions_control = div()
@@ -660,6 +856,24 @@ impl MainWindow {
             ),
             compact_setting_row(
                 theme,
+                "文本大小上限",
+                "按 UTF-8 字节计算；超限文本跳过，不截断保存",
+                max_text_control,
+            ),
+            compact_setting_row(
+                theme,
+                "图片文件上限",
+                "输出文件大小；超限图片跳过并保留其他格式",
+                max_image_control,
+            ),
+            compact_setting_row(
+                theme,
+                "图片像素上限",
+                "宽 × 高；超限图片跳过并保留其他格式",
+                max_pixels_control,
+            ),
+            compact_setting_row(
+                theme,
                 "排除来源进程",
                 "分号或逗号分隔；失焦或回车后应用",
                 exclusions_control,
@@ -688,10 +902,7 @@ impl MainWindow {
                     "clipboard-module-header-title",
                     "clipboard-module-header-metadata",
                     "剪贴板",
-                    format!(
-                        "ALL {:04}  TXT {:04}  IMG {:04}  FILE {:04}",
-                        overview.total, overview.text, overview.images, overview.files
-                    ),
+                    overview_metadata,
                 )
                 .metadata_monospace()
                 .trailing(

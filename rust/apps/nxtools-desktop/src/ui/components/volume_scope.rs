@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui_component::checkbox::Checkbox;
+use gpui_component::{Sizable, Size};
 
 use crate::theme::Theme;
 use crate::ui::metrics::{RADIUS_CONTROL, SPACING_2, SPACING_8, SPACING_12};
@@ -8,8 +10,6 @@ use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT
 
 const VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT: f32 = 48.0;
 const VOLUME_SCOPE_ROW_HEIGHT: f32 = 40.0;
-const CHECKBOX_GLYPH_SIZE: f32 = 14.0;
-const CHECKBOX_GLYPH_TEXT: f32 = 10.0;
 
 pub(crate) fn volume_scope_setting(
     theme: Theme,
@@ -93,20 +93,9 @@ pub(crate) fn automatic_volume_scope_row(
                 .items_center()
                 .gap(px(SPACING_8))
                 .child(
-                    div()
-                        .id("quick-launch-volume-scope-automatic-checkbox")
-                        .size(px(CHECKBOX_GLYPH_SIZE))
-                        .flex_none()
-                        .rounded(px(RADIUS_CONTROL))
-                        .border_1()
-                        .border_color(if checked { theme.accent } else { theme.border })
-                        .bg(if checked { theme.accent } else { theme.canvas })
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_color(theme.canvas)
-                        .text_size(px(CHECKBOX_GLYPH_TEXT))
-                        .child(if checked { "✓" } else { "" }),
+                    Checkbox::new("quick-launch-volume-scope-automatic-checkbox")
+                        .checked(checked)
+                        .with_size(Size::Small),
                 )
                 .child(
                     div()
@@ -178,20 +167,9 @@ pub(crate) fn volume_scope_row(
                 .items_center()
                 .gap(px(SPACING_8))
                 .child(
-                    div()
-                        .id(checkbox_id)
-                        .size(px(CHECKBOX_GLYPH_SIZE))
-                        .flex_none()
-                        .rounded(px(RADIUS_CONTROL))
-                        .border_1()
-                        .border_color(if checked { theme.accent } else { theme.border })
-                        .bg(if checked { theme.accent } else { theme.canvas })
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_color(theme.canvas)
-                        .text_size(px(CHECKBOX_GLYPH_TEXT))
-                        .child(if checked { "✓" } else { "" }),
+                    Checkbox::new(checkbox_id.clone())
+                        .checked(checked)
+                        .with_size(Size::Small),
                 )
                 .child(
                     div()

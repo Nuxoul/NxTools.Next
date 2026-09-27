@@ -1,4 +1,6 @@
+use crate::icons::MaterialIcon;
 use crate::theme::Theme;
+use crate::ui::components::action::icon_action;
 use crate::ui::metrics::{
     CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT, SETTINGS_ROW_MIN_HEIGHT,
     SPACING_2, SPACING_8, SPACING_12,
@@ -6,8 +8,11 @@ use crate::ui::metrics::{
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY,
 };
-use gpui::{AnyElement, FontWeight, IntoElement, div, prelude::*, px};
-
+use gpui::{
+    AnyElement, FontWeight, IntoElement, MouseButton, SharedString, Window, WindowControlArea, div,
+    prelude::*, px,
+};
+use gpui_component::button::ButtonVariants;
 const TOGGLE_KNOB_SIZE: f32 = 16.0;
 
 pub(crate) struct SettingsShellIds {
@@ -102,6 +107,135 @@ pub(crate) fn settings_shell(
                 .border_color(theme.border_subtle)
                 .bg(theme.surface)
                 .child(footer),
+        )
+        .into_any_element()
+}
+
+pub(crate) struct FeatureSettingsWindowIds {
+    pub root: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub status: &'static str,
+    pub enabled_toggle: &'static str,
+    pub close: &'static str,
+    pub content: &'static str,
+}
+
+pub(crate) struct FeatureSettingsWindowSpec {
+    pub ids: FeatureSettingsWindowIds,
+    pub title: SharedString,
+    pub description: SharedString,
+    pub enabled: bool,
+}
+
+pub(crate) fn feature_settings_window(
+    theme: Theme,
+    spec: FeatureSettingsWindowSpec,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    on_close: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    content: AnyElement,
+) -> AnyElement {
+    let FeatureSettingsWindowSpec {
+        ids,
+        title,
+        description,
+        enabled,
+    } = spec;
+    let status = if enabled { "已启用" } else { "已停用" };
+    div()
+        .id(ids.root)
+        .debug_selector(move || ids.root.into())
+        .size_full()
+        .bg(theme.canvas)
+        .font_family(UI_FONT_FAMILY)
+        .text_color(theme.text)
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .h(px(68.0))
+                .w_full()
+                .flex_none()
+                .px(px(SPACING_12))
+                .border_b_1()
+                .border_color(theme.border_subtle)
+                .bg(theme.surface)
+                .window_control_area(WindowControlArea::Drag)
+                .flex()
+                .items_center()
+                .gap(px(SPACING_12))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .gap(px(SPACING_2))
+                        .child(
+                            div()
+                                .id(ids.title)
+                                .debug_selector(move || ids.title.into())
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .id(ids.description)
+                                .debug_selector(move || ids.description.into())
+                                .min_w_0()
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_color(theme.text_muted)
+                                .child(description),
+                        ),
+                )
+                .child(
+                    div()
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .gap(px(SPACING_12))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(
+                            div()
+                                .id(ids.status)
+                                .debug_selector(move || ids.status.into())
+                                .flex_none()
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_color(if enabled {
+                                    theme.success
+                                } else {
+                                    theme.text_muted
+                                })
+                                .child(status),
+                        )
+                        .child(settings_toggle(
+                            theme,
+                            ids.enabled_toggle,
+                            enabled,
+                            on_toggle,
+                        ))
+                        .child(
+                            icon_action(ids.close, MaterialIcon::Close, "关闭")
+                                .ghost()
+                                .on_click(on_close),
+                        ),
+                ),
+        )
+        .child(
+            div()
+                .id(ids.content)
+                .debug_selector(move || ids.content.into())
+                .w_full()
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .px(px(SPACING_12))
+                .py(px(SPACING_12))
+                .child(content),
         )
         .into_any_element()
 }
@@ -225,4 +359,127 @@ pub(crate) fn dialog_footer(content: AnyElement) -> AnyElement {
         .gap(px(SPACING_8))
         .child(content)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    use gpui::{Modifiers, Render, TestAppContext, size};
+    use gpui_component::Root;
+
+    use super::*;
+
+    struct FeatureSettingsTestView {
+        enabled: bool,
+        close_requested: Rc<Cell<bool>>,
+    }
+
+    impl Render for FeatureSettingsTestView {
+        fn render(
+            &mut self,
+            _window: &mut Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            let on_toggle = cx.listener(|this, _event, _window, cx| {
+                this.enabled = !this.enabled;
+                cx.notify();
+            });
+            let close_requested = Rc::clone(&self.close_requested);
+            let on_close = cx.listener(move |_, _event, window, _cx| {
+                close_requested.set(true);
+                window.remove_window();
+            });
+            let content = div()
+                .debug_selector(|| "feature-settings-test-body".into())
+                .child("功能自己的设置")
+                .into_any_element();
+            feature_settings_window(
+                Theme::zed_dark(),
+                FeatureSettingsWindowSpec {
+                    ids: FeatureSettingsWindowIds {
+                        root: "feature-settings-test-root",
+                        title: "feature-settings-test-title",
+                        description: "feature-settings-test-description",
+                        status: "feature-settings-test-status",
+                        enabled_toggle: "feature-settings-test-toggle",
+                        close: "feature-settings-test-close",
+                        content: "feature-settings-test-content",
+                    },
+                    title: "测试工具".into(),
+                    description: "功能说明".into(),
+                    enabled: self.enabled,
+                },
+                on_toggle,
+                on_close,
+                content,
+            )
+        }
+    }
+
+    #[test]
+    fn feature_settings_window_keeps_a_native_drag_region_outside_controls() {
+        let source = include_str!("settings.rs");
+        let feature_window = source
+            .split("pub(crate) fn feature_settings_window(")
+            .nth(1)
+            .and_then(|source| source.split("pub(crate) fn settings_section(").next())
+            .expect("feature settings shell source");
+        assert!(feature_window.contains(".window_control_area(WindowControlArea::Drag)"));
+        assert!(
+            feature_window
+                .contains("on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())")
+        );
+    }
+
+    #[gpui::test]
+    fn feature_settings_window_has_shared_status_toggle_close_and_content_slot(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let view_slot = Rc::new(RefCell::new(None));
+        let close_requested = Rc::new(Cell::new(false));
+        let view_slot_for_window = Rc::clone(&view_slot);
+        let close_requested_for_window = Rc::clone(&close_requested);
+        let (_root, window) = cx.add_window_view(move |window, cx| {
+            window.resize(size(px(460.0), px(320.0)));
+            let view = cx.new(|_| FeatureSettingsTestView {
+                enabled: true,
+                close_requested: close_requested_for_window,
+            });
+            view_slot_for_window.borrow_mut().replace(view.clone());
+            Root::new(view, window, cx)
+        });
+
+        window.refresh().expect("render feature settings shell");
+        let status = window
+            .debug_bounds("feature-settings-test-status")
+            .expect("enabled status label");
+        let toggle = window
+            .debug_bounds("feature-settings-test-toggle")
+            .expect("shared enabled toggle");
+        let close = window
+            .debug_bounds("feature-settings-test-close")
+            .expect("shared close action");
+        assert!(status.origin.x < toggle.origin.x);
+        assert!(toggle.origin.x < close.origin.x);
+        assert!(window.debug_bounds("feature-settings-test-body").is_some());
+
+        window.simulate_click(toggle.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(!window.read(|cx| {
+            view_slot
+                .borrow()
+                .as_ref()
+                .expect("feature settings view")
+                .read(cx)
+                .enabled
+        }));
+        assert!(window.debug_bounds("feature-settings-test-body").is_some());
+
+        window.simulate_click(close.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(close_requested.get());
+    }
 }

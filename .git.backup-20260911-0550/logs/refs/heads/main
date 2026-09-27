@@ -1,0 +1,155 @@
+0000000000000000000000000000000000000000 15b0d44478c8fb081f73f48ff0464bed0155a6f5 Nuxoul <Xfiend@qq.com> 1788188720 +0800	reset: moving to origin/main
+15b0d44478c8fb081f73f48ff0464bed0155a6f5 e5fafae3022675d9013a886fd33cc4c1188f768b Nuxoul <Xfiend@qq.com> 1788188743 +0800	commit: docs(reference): rebase reference roots onto the migrated machine
+e5fafae3022675d9013a886fd33cc4c1188f768b b362c9a999e895c8b12bc6236aae85b3f6e9403b Nuxoul <Xfiend@qq.com> 1788191251 +0800	commit: feat(design-system): add ui token boundary gate and migrate raw literals
+b362c9a999e895c8b12bc6236aae85b3f6e9403b 9cce6fc1360bb8f56ccef881fd89091695ff6307 Nuxoul <Xfiend@qq.com> 1788194697 +0800	commit: docs(audit): capture CL-01 pre/post clipboard settings comparison
+9cce6fc1360bb8f56ccef881fd89091695ff6307 250154bde87ea94885999e1fcf6d6a8c2087e00b Nuxoul <Xfiend@qq.com> 1788194891 +0800	commit: docs(plan): authorize the automated ui pipeline and close CL-01
+250154bde87ea94885999e1fcf6d6a8c2087e00b 8d4af878f5a0e611598dcead496f88128bf85f2c Nuxoul <Xfiend@qq.com> 1788199882 +0800	commit: feat(clipboard): retire legacy popup tokens and unify popup menus
+8d4af878f5a0e611598dcead496f88128bf85f2c d5e434ea9e594a37be78042495e78aa2b23c5f6b Nuxoul <Xfiend@qq.com> 1788201185 +0800	commit: feat(clipboard): render history rows through the shared compact result row shell
+d5e434ea9e594a37be78042495e78aa2b23c5f6b c53df40002debbe9c54971d69c586c12817e44b2 Nuxoul <Xfiend@qq.com> 1788202001 +0800	commit: feat(clipboard): move category strip typography onto ui tokens
+c53df40002debbe9c54971d69c586c12817e44b2 e58458d72147eb7c70374fa9d094e47f0e330036 Nuxoul <Xfiend@qq.com> 1788202563 +0800	commit: test(clipboard): pin the shared preview shell and bounded resource cache
+e58458d72147eb7c70374fa9d094e47f0e330036 e93878a5984c847bdd277d913dfff454bee2124a Nuxoul <Xfiend@qq.com> 1788204155 +0800	commit: docs(audit): close clipboard batch 5 with a consolidated regression baseline
+e93878a5984c847bdd277d913dfff454bee2124a 993091e316b89bdbb2aaec0010317143f9f6a74d Nuxoul <Xfiend@qq.com> 1788206243 +0800	commit: feat(extension): move popup colors onto shared browser tokens
+993091e316b89bdbb2aaec0010317143f9f6a74d 43b7eef0e0a596a4ed13e3f4f0f7f7d80279f965 Nuxoul <Xfiend@qq.com> 1788206993 +0800	commit: feat(extension): flatten popup backgrounds onto opaque token surfaces
+43b7eef0e0a596a4ed13e3f4f0f7f7d80279f965 272d58dad7f36c7775465500724002facec534c6 Nuxoul <Xfiend@qq.com> 1788207787 +0800	commit: feat(extension): raise popup typography above the 10px metadata floor
+272d58dad7f36c7775465500724002facec534c6 d5497a5444cdd3e7304d8e7a474550a4f5042a34 Nuxoul <Xfiend@qq.com> 1788209601 +0800	commit: feat(extension): use the official icon asset in the popup brand slot
+d5497a5444cdd3e7304d8e7a474550a4f5042a34 c72699b72d6da309fc600abcefe15e46a86ec8b4 Nuxoul <Xfiend@qq.com> 1788211464 +0800	commit: feat(extension): quiet the popup tab counts, keep the 2px accent underline
+c72699b72d6da309fc600abcefe15e46a86ec8b4 980f3aec690db614c689d0628a87d6055947cf22 Nuxoul <Xfiend@qq.com> 1788213304 +0800	commit: feat(extension): stabilize resource meta chips to type, resolution and size
+980f3aec690db614c689d0628a87d6055947cf22 11ab7c5e87111d25ccab6a062ffbddd996d385c6 Nuxoul <Xfiend@qq.com> 1788214978 +0800	commit: feat(extension): lock the capture tool toggles into flat command rows
+11ab7c5e87111d25ccab6a062ffbddd996d385c6 712cf24b867a45c85c2c4025707c3d7b4682e3c5 Nuxoul <Xfiend@qq.com> 1788216867 +0800	commit: feat(extension): align popup settings rows with the desktop toggle grammar
+712cf24b867a45c85c2c4025707c3d7b4682e3c5 a2f700d995e6154613b03dd0bacce8ae59265bce Nuxoul <Xfiend@qq.com> 1788218715 +0800	commit: feat(extension): replace the capture sweep with a one-shot state pulse
+a2f700d995e6154613b03dd0bacce8ae59265bce 57219b3f756c650a460511e1e7dbea5051696477 Nuxoul <Xfiend@qq.com> 1788220767 +0800	commit: feat(extension): finish popup token purity and consolidate the contract gates
+57219b3f756c650a460511e1e7dbea5051696477 a4878cc3f7b383470fecb81cd4d093ff50768eeb Nuxoul <Xfiend@qq.com> 1788224532 +0800	commit: feat(extension): restyle the media entry as a 28px graphite icon button
+a4878cc3f7b383470fecb81cd4d093ff50768eeb 4fc3e665663eadaf6c738f33a810ba98a9ab76d2 Nuxoul <Xfiend@qq.com> 1788225988 +0800	commit: docs(errors): record the silent packaged-startup failure and schema-9 orphan db
+4fc3e665663eadaf6c738f33a810ba98a9ab76d2 4ea5420b67ad5cc874ad5cb5ff9964cd39ff0cb6 Nuxoul <Xfiend@qq.com> 1788235585 +0800	commit: fix(desktop): surface startup failures natively and clear the four test baselines
+4ea5420b67ad5cc874ad5cb5ff9964cd39ff0cb6 7bccf8515e89797ea414a8e524b7f5bdf338edbd Nuxoul <Xfiend@qq.com> 1788240430 +0800	commit: refactor(downloads): split downloads.rs into a downloads/ module directory
+7bccf8515e89797ea414a8e524b7f5bdf338edbd a53ed82e5521e23d0fff04ffbc2f0c84c4854178 Nuxoul <Xfiend@qq.com> 1788240471 +0800	commit: chore: drop the split-ranges working file and ignore it
+a53ed82e5521e23d0fff04ffbc2f0c84c4854178 93514405292c4e509b0cb0a02198ef8bfc087a6b Nuxoul <Xfiend@qq.com> 1788243076 +0800	commit: refactor(desktop): split main_window.rs into per-page modules
+93514405292c4e509b0cb0a02198ef8bfc087a6b 8a0573cac8071bc2b8a8a4861ba871d0318f6262 Nuxoul <Xfiend@qq.com> 1788244544 +0800	commit: refactor(quick-launch): split quick_launch.rs into domain modules
+8a0573cac8071bc2b8a8a4861ba871d0318f6262 39614069c87d8e6242a2a4622b9020fb96f58795 Nuxoul <Xfiend@qq.com> 1788265327 +0800	commit: docs(learnings): record loopback test flakiness from NDIS filter drivers
+39614069c87d8e6242a2a4622b9020fb96f58795 414e4fbc06986af17ce47ca5cc32e5604e1dc057 Nuxoul <Xfiend@qq.com> 1788272050 +0800	commit: feat(extension): EX-12 media panel becomes a 6px token popover with two-level rows
+414e4fbc06986af17ce47ca5cc32e5604e1dc057 31d8053e7b654b61ee83a24f81c40ed69263ba61 Nuxoul <Xfiend@qq.com> 1788272439 +0800	commit: feat(extension): EX-13 drop target uses the real download icon on a quiet token surface
+31d8053e7b654b61ee83a24f81c40ed69263ba61 d164ce616d11b2118b0d8cc59be756d04817b735 Nuxoul <Xfiend@qq.com> 1788272898 +0800	commit: refactor(extension): EX-14 page isolation via a shared Shadow DOM style module
+d164ce616d11b2118b0d8cc59be756d04817b735 694ec874b0f970d1d695c4287ba4c46bf00da31e Nuxoul <Xfiend@qq.com> 1788273197 +0800	commit: feat(extension): EX-15 overlay accessibility + batch-6 slice records
+694ec874b0f970d1d695c4287ba4c46bf00da31e 8746255ef61b32ddf6eece7a25169649a348107c Nuxoul <Xfiend@qq.com> 1788273242 +0800	commit: docs(plan): mark the ui remediation plan complete through batch 6
+8746255ef61b32ddf6eece7a25169649a348107c bb82066c78235e1971ea5a7f63ad98da2577e4f5 Nuxoul <Xfiend@qq.com> 1788278215 +0800	commit: fix(platform-host): canonicalize Directory Opus localized display paths
+bb82066c78235e1971ea5a7f63ad98da2577e4f5 438db1d05eaefc2c501c8daafe44c94af1d47cc9 Nuxoul <Xfiend@qq.com> 1788326012 +0800	commit: fix(quick-launch): coalesce count-only indexer status logs
+438db1d05eaefc2c501c8daafe44c94af1d47cc9 b7ed62a5e120c654d7b29afe1caaf77d4f9884cf Nuxoul <Xfiend@qq.com> 1788328734 +0800	commit: fix(browser-host): bounded blob upload connection resilience
+b7ed62a5e120c654d7b29afe1caaf77d4f9884cf 9969d55f378c78f20819cd06faec3949a001948d Nuxoul <Xfiend@qq.com> 1788332878 +0800	commit: chore(tests): mark in-flight C# suite tests with a RUN line
+9969d55f378c78f20819cd06faec3949a001948d 6f05ad7e120c1826e3287c08964175c501ac6f6e Nuxoul <Xfiend@qq.com> 1788335498 +0800	commit: fix(tests): reset the ambient synchronization context between C# suite tests
+6f05ad7e120c1826e3287c08964175c501ac6f6e 972084ba1d4f063d418cc05885d3edfece26f76d Nuxoul <Xfiend@qq.com> 1788338552 +0800	commit: feat(downloads): export the packaged browser extension from settings
+972084ba1d4f063d418cc05885d3edfece26f76d c5298ca13332ab14d105edc19e35f9b3c4011792 Nuxoul <Xfiend@qq.com> 1788340623 +0800	commit: feat(downloads): save dialog for the browser extension export
+c5298ca13332ab14d105edc19e35f9b3c4011792 637e4558edc96f06b403176ed6c7d720c78f6ba1 Nuxoul <Xfiend@qq.com> 1788358409 +0800	commit: fix(platform-host): retire legacy native messaging registrations
+637e4558edc96f06b403176ed6c7d720c78f6ba1 56e56642d917d2e39ffb0674332c9baab0bf0f40 Nuxoul <Xfiend@qq.com> 1788359574 +0800	commit: fix(platform-host): derive the chromium allowed origin from the packaged extension key
+56e56642d917d2e39ffb0674332c9baab0bf0f40 6f2bb15cbead209b4d99b0f3171e96b6c03a47ec Nuxoul <Xfiend@qq.com> 1788361008 +0800	commit: fix(downloads): progress task window height fits its content
+6f2bb15cbead209b4d99b0f3171e96b6c03a47ec 5833aaca403442a9e5c3f9ead9c7aeae479bb5ec Nuxoul <Xfiend@qq.com> 1788361550 +0800	commit: fix(extension): carry the style module in dynamic injections and use adoptable stylesheets
+5833aaca403442a9e5c3f9ead9c7aeae479bb5ec 6a085bf1bce36f7dea8e56855ff43f587bb5ad58 Nuxoul <Xfiend@qq.com> 1788361864 +0800	commit: fix(extension): keep an open media panel anchored on fallback rects
+6a085bf1bce36f7dea8e56855ff43f587bb5ad58 d9bf254b862d28c80115ea8519f8c0ab4914f9f1 Nuxoul <Xfiend@qq.com> 1788364757 +0800	commit: feat(downloads): configurable double-click action with open-file default
+d9bf254b862d28c80115ea8519f8c0ab4914f9f1 4da0f2d03921ac1e096a602be49b2c274945f932 Nuxoul <Xfiend@qq.com> 1788367909 +0800	commit: feat(download): adaptive segment shrink sheds idle connections
+4da0f2d03921ac1e096a602be49b2c274945f932 1d7b76052f1a71b876a8ce33faad3b7c06eaa481 Nuxoul <Xfiend@qq.com> 1788370063 +0800	commit: test(downloads): settings view double-click control chain + render gate
+1d7b76052f1a71b876a8ce33faad3b7c06eaa481 01d414664a6954d6041e6fec0278224dc915e9c1 Nuxoul <Xfiend@qq.com> 1788371752 +0800	commit: refactor(ui): unify off-token heights, glyph sizes and colors onto the token system
+01d414664a6954d6041e6fec0278224dc915e9c1 b35feac4d11e9d6657a8347f1a0cf5c5fbbb55f2 Nuxoul <Xfiend@qq.com> 1788392306 +0800	commit: style(downloads): align settings chrome with the Zed reference grammar
+b35feac4d11e9d6657a8347f1a0cf5c5fbbb55f2 a9eeef05408928d38846e40eaab3af909696a955 Nuxoul <Xfiend@qq.com> 1788393346 +0800	commit: style(downloads): settings density pass and humanized probe failures
+a9eeef05408928d38846e40eaab3af909696a955 6ccbeb94f2a746f97054e5de86ae23124448e52e Nuxoul <Xfiend@qq.com> 1788405386 +0800	commit: fix(download): present as a browser client; honest failure guidance
+6ccbeb94f2a746f97054e5de86ae23124448e52e 6e4c8f213106da58f2e07b7ae7ab46aaca7de2d2 Nuxoul <Xfiend@qq.com> 1788412966 +0800	commit: perf(download): phase 7 slice 1-3 - progress cadence, connection reuse, baseline
+6e4c8f213106da58f2e07b7ae7ab46aaca7de2d2 f5aa797499fd48a0e065916b648f17bbe2d48f63 Nuxoul <Xfiend@qq.com> 1788415246 +0800	commit: docs(reference): register Wox as a quick-launch reference project
+f5aa797499fd48a0e065916b648f17bbe2d48f63 ef0ff177b3ef4084f5063c0a07470ce7398cab72 Nuxoul <Xfiend@qq.com> 1788416196 +0800	commit: feat(desktop): second launch summons the running instance
+ef0ff177b3ef4084f5063c0a07470ce7398cab72 c426e6066c80cdec1ea077545a2ed84c0f6eb071 Nuxoul <Xfiend@qq.com> 1788421982 +0800	commit: feat(downloads): copy download links from the context menu
+c426e6066c80cdec1ea077545a2ed84c0f6eb071 4f170ca1620fad26ab675b960c08b80362c38a6b Nuxoul <Xfiend@qq.com> 1788422979 +0800	commit: feat(downloads): Enter submits the new-download dialog
+4f170ca1620fad26ab675b960c08b80362c38a6b 74612b2755e5c11e3b75bff50996ad31beef5cd4 Nuxoul <Xfiend@qq.com> 1788423890 +0800	commit: test(downloads): context-menu plan literals expect the copy-url action
+74612b2755e5c11e3b75bff50996ad31beef5cd4 bfd978a233c06a0452b237254f7b713c817fd343 Nuxoul <Xfiend@qq.com> 1788426205 +0800	commit: feat(downloads): clickable empty state opens the new-download dialog
+bfd978a233c06a0452b237254f7b713c817fd343 12c850670b228273cf2b45e4ee3f17a567fae318 Nuxoul <Xfiend@qq.com> 1788431324 +0800	commit: feat(downloads): persist the task-list sort preference
+12c850670b228273cf2b45e4ee3f17a567fae318 a0b8141c337bc8cd8870caa95205462c29f9cf27 Nuxoul <Xfiend@qq.com> 1788452487 +0800	commit: fix(downloads): close the completion window after artifact actions and sync native closes
+a0b8141c337bc8cd8870caa95205462c29f9cf27 844e20cd482dd6f36843c5ecf59f4afd2b79dff9 Nuxoul <Xfiend@qq.com> 1788452697 +0800	commit: test(core): initialize task-list sort fields in the download-settings update fixture
+844e20cd482dd6f36843c5ecf59f4afd2b79dff9 df034096f030b5f5817b9fd1817e36306aeaf298 Nuxoul <Xfiend@qq.com> 1788454881 +0800	revert: Revert "perf(download): phase 7 slice 1-3 - progress cadence, connection reuse, baseline"
+df034096f030b5f5817b9fd1817e36306aeaf298 6428ebbf3dce71729263b258133a84c189ed146e Nuxoul <Xfiend@qq.com> 1788454955 +0800	revert: Revert "fix(download): present as a browser client; honest failure guidance"
+6428ebbf3dce71729263b258133a84c189ed146e 844e20cd482dd6f36843c5ecf59f4afd2b79dff9 Nuxoul <Xfiend@qq.com> 1788455169 +0800	reset: moving to 844e20c
+844e20cd482dd6f36843c5ecf59f4afd2b79dff9 48e7facf26a52797dd63f358de26fb022f68968f Nuxoul <Xfiend@qq.com> 1788456075 +0800	commit: fix(download): stop autoref from rewriting the task Referer on redirects
+48e7facf26a52797dd63f358de26fb022f68968f 339bef9cfeb70e2dc3b77462bd7fef263ccdab1d Nuxoul <Xfiend@qq.com> 1788456693 +0800	commit: fix(download): flush HLS segment staging per chunk
+339bef9cfeb70e2dc3b77462bd7fef263ccdab1d 544cc61c2fff43d5b3282934711f08b640db2265 Nuxoul <Xfiend@qq.com> 1788458510 +0800	commit: chore(release): refresh release binary manifest
+544cc61c2fff43d5b3282934711f08b640db2265 56d69b2697ab7026e9dcf32d4771949c47ef3fc9 Nuxoul <Xfiend@qq.com> 1788460274 +0800	commit: fix(browser-host): clear inherited non-blocking mode on accepted upload sockets
+56d69b2697ab7026e9dcf32d4771949c47ef3fc9 8fede46583da6da271c9ffb40acb43eb49b1ed8e Nuxoul <Xfiend@qq.com> 1788463264 +0800	commit: chore(release): refresh release binary manifest after packaging
+8fede46583da6da271c9ffb40acb43eb49b1ed8e be6e0d514337b84536d1967182795c39c00e534d Nuxoul <Xfiend@qq.com> 1788485448 +0800	commit: fix(platform-host): stop shell enumeration from stalling the command pipe
+be6e0d514337b84536d1967182795c39c00e534d 824d4cb509c77683af2a066caf0c416598cb5bec Nuxoul <Xfiend@qq.com> 1788489943 +0800	commit: fix: warm Shell session cache and rearm orphaned preview hide timers
+824d4cb509c77683af2a066caf0c416598cb5bec 8f71aa84955b7b446b6c078e037ad332035dfbb1 Nuxoul <Xfiend@qq.com> 1788491825 +0800	commit: chore(release): refresh release binary manifest after packaging
+8f71aa84955b7b446b6c078e037ad332035dfbb1 a02957a9f2825cdd60c8cda3daeda438b33f2866 Nuxoul <Xfiend@qq.com> 1788501417 +0800	commit: fix(downloads): reserve error-row height in the new-download dialog and unify task-window buttons
+a02957a9f2825cdd60c8cda3daeda438b33f2866 468763e05509300cc27c1e6b8b3a56121b43bddf Nuxoul <Xfiend@qq.com> 1788501818 +0800	commit: chore(downloads): drop unused error-reserve armed flag
+468763e05509300cc27c1e6b8b3a56121b43bddf fc7f55e5262a510e1db05b356c48873409581562 Nuxoul <Xfiend@qq.com> 1788502313 +0800	commit: chore(release): refresh release binary manifest after packaging
+fc7f55e5262a510e1db05b356c48873409581562 b0793b47ce37187bfc3c18a1c8e60bb5f3ffb05c Nuxoul <Xfiend@qq.com> 1788504382 +0800	commit: fix(downloads): unify task-window footer button heights at 28px
+b0793b47ce37187bfc3c18a1c8e60bb5f3ffb05c 74c7f698cd8d1a74c03496c2dcd2352d22c70f2c Nuxoul <Xfiend@qq.com> 1788505633 +0800	commit: chore(release): refresh release binary manifest after packaging
+74c7f698cd8d1a74c03496c2dcd2352d22c70f2c 6d5e8cd8ac863811dd94abf48b04fc56d911ed00 Nuxoul <Xfiend@qq.com> 1788506776 +0800	commit: fix(downloads): close the task window when its task is cancelled
+6d5e8cd8ac863811dd94abf48b04fc56d911ed00 e1d751dcae4afec59e0741efff9187480bd55d7b Nuxoul <Xfiend@qq.com> 1788508335 +0800	commit: chore(release): refresh release binary manifest after packaging
+e1d751dcae4afec59e0741efff9187480bd55d7b e3df060979392e5d4dc687164cbe4376a276f887 Nuxoul <Xfiend@qq.com> 1788515242 +0800	commit: fix(download): let manual queue ordering apply to finished tasks
+e3df060979392e5d4dc687164cbe4376a276f887 abef0953540f1da6f25f5d163b968c4e471da302 Nuxoul <Xfiend@qq.com> 1788515592 +0800	commit: chore(download): satisfy clippy in the queue-order contract test
+abef0953540f1da6f25f5d163b968c4e471da302 03415c6da3f99eb48137a4764351e4e852ce6753 Nuxoul <Xfiend@qq.com> 1788516977 +0800	commit: chore(release): refresh release binary manifest after packaging
+03415c6da3f99eb48137a4764351e4e852ce6753 9bdeead0f4ea55695757fa0093424ce85c4c4811 Nuxoul <Xfiend@qq.com> 1788520806 +0800	commit: feat(installer): Inno Setup package with user-selected install directory
+9bdeead0f4ea55695757fa0093424ce85c4c4811 9a5daa30a3c2da5cc112bc6259666ef6c94e57a6 Nuxoul <Xfiend@qq.com> 1788524495 +0800	commit: fix: foreground the directory picker and explorer windows, enlarge preview text
+9a5daa30a3c2da5cc112bc6259666ef6c94e57a6 d2c0bb0ba9a0263b9b069a8a20e68340c4d228a9 Nuxoul <Xfiend@qq.com> 1788524849 +0800	commit: chore(release): refresh release binary manifest after packaging
+d2c0bb0ba9a0263b9b069a8a20e68340c4d228a9 5338a3204d62115f4540b6c7ea6d52a52980aa91 Nuxoul <Xfiend@qq.com> 1788528951 +0800	commit: fix: snappy quick-launch enter, taller main window, clipboard search focus, extension header layout
+5338a3204d62115f4540b6c7ea6d52a52980aa91 54e204bcd7c812cae8fa32cf9fb5481d3fa29029 Nuxoul <Xfiend@qq.com> 1788529486 +0800	commit: chore(clipboard): discard the refocus update result
+54e204bcd7c812cae8fa32cf9fb5481d3fa29029 da051353d5973f50e3d780e06b2a2935843ce953 Nuxoul <Xfiend@qq.com> 1788530430 +0800	commit: chore(release): refresh release binary manifest after packaging
+da051353d5973f50e3d780e06b2a2935843ce953 774802026bb87a77a2bf47187bc35ee800bb5868 Nuxoul <Xfiend@qq.com> 1788572324 +0800	commit: fix(deploy): copy browser_extension into the protected service directory
+774802026bb87a77a2bf47187bc35ee800bb5868 a620a7432af77f53d41df2dacc1533d029a1ec9a Nuxoul <Xfiend@qq.com> 1788579160 +0800	commit: fix(browser-host): trust the exported CRX origin in native messaging
+a620a7432af77f53d41df2dacc1533d029a1ec9a 3ad4accc6586d4e44e896c5793583148548bdb16 Nuxoul <Xfiend@qq.com> 1788583926 +0800	commit: fix(browser-host): honor the registrar's allowed origins
+3ad4accc6586d4e44e896c5793583148548bdb16 bfd62d2b211f973d575629c44196b02aba6fdc18 Nuxoul <Xfiend@qq.com> 1788584426 +0800	commit: feat(quick-launch): put cross-character program matches on top
+bfd62d2b211f973d575629c44196b02aba6fdc18 6e18f6de2f2b651373cc1834ca35ab87c238031d Nuxoul <Xfiend@qq.com> 1788584688 +0800	commit: chore(release): refresh release binary manifest after packaging
+6e18f6de2f2b651373cc1834ca35ab87c238031d da92b1b3c1bfd56087a2aa02e00f618839a08cfc Nuxoul <Xfiend@qq.com> 1788586804 +0800	commit: fix(quick-launch): keep query matching case insensitive
+da92b1b3c1bfd56087a2aa02e00f618839a08cfc bba658b80fe19ded48f3760e76dbac054fa42bf5 Nuxoul <Xfiend@qq.com> 1788589434 +0800	commit: feat(downloads): stable window placement, live segment details and dot progress
+bba658b80fe19ded48f3760e76dbac054fa42bf5 9581d83937e96b664c7f1e1b3aa3dc477dee2c5c Nuxoul <Xfiend@qq.com> 1788590391 +0800	commit: fix(browser-host): hold the browser save dialog until the handoff resolves
+9581d83937e96b664c7f1e1b3aa3dc477dee2c5c cd2cd7f056af4a09d50583e7a72e5b7231596f87 Nuxoul <Xfiend@qq.com> 1788591389 +0800	commit: fix(clipboard): survive transient foreground hosts and sink-to-bottom
+cd2cd7f056af4a09d50583e7a72e5b7231596f87 55b19a7825bea9b5bff94bec9c568a159fb4b842 Nuxoul <Xfiend@qq.com> 1788591687 +0800	commit: chore(release): refresh release binary manifest after packaging
+55b19a7825bea9b5bff94bec9c568a159fb4b842 ff0976adf5cba068e1bc6ede069289172b23ce91 Nuxoul <Xfiend@qq.com> 1788593283 +0800	commit: fix(browser-host): read the registrar manifest from the local app root
+ff0976adf5cba068e1bc6ede069289172b23ce91 0d6055b58dfe6ca593ee1e48f1e10bee2901419f Nuxoul <Xfiend@qq.com> 1788595964 +0800	commit: fix(downloads): header sort persistence, segment dots, dialog focus and paste
+0d6055b58dfe6ca593ee1e48f1e10bee2901419f a706fbc65f951480a4ae1b1a3a88a66e5a775b48 Nuxoul <Xfiend@qq.com> 1788596280 +0800	commit: chore(release): refresh release binary manifest after packaging
+a706fbc65f951480a4ae1b1a3a88a66e5a775b48 f44a3902288c6ce72e98a31422adbe14e7d9772f Nuxoul <Xfiend@qq.com> 1788597707 +0800	commit: refactor(desktop): extract test modules from the three largest files
+f44a3902288c6ce72e98a31422adbe14e7d9772f 9d8a4d086c6532587ba8d571add25c2498be47fb Nuxoul <Xfiend@qq.com> 1788598460 +0800	commit: refactor(downloads): extract stateless window support from the core module
+9d8a4d086c6532587ba8d571add25c2498be47fb 9f3002bf9dd46bb565109c09f3cdd7360bbf75c5 Nuxoul <Xfiend@qq.com> 1788600880 +0800	commit: feat(downloads): configurable task-file deletion; fix panel dismissal and stale metrics
+9f3002bf9dd46bb565109c09f3cdd7360bbf75c5 b3a0feb9fba7299bb46f9d13b7e272b8ae750062 Nuxoul <Xfiend@qq.com> 1788601191 +0800	commit: chore(release): refresh release binary manifest after packaging
+b3a0feb9fba7299bb46f9d13b7e272b8ae750062 c26fee2aa31e5eac36946ab2ea1acbfeb7860bb9 Nuxoul <Xfiend@qq.com> 1788603434 +0800	commit: feat(quick-launch): detect and self-heal a stuck panel
+c26fee2aa31e5eac36946ab2ea1acbfeb7860bb9 df46fb7fc3fd086dc580a7098ad73067fc99b770 Nuxoul <Xfiend@qq.com> 1788603561 +0800	commit: chore(release): refresh release binary manifest after packaging
+df46fb7fc3fd086dc580a7098ad73067fc99b770 c968cd8eaf3691fe4ba0079f0b617c523b47c0b5 Nuxoul <Xfiend@qq.com> 1788622033 +0800	commit: feat(quick-launch): pinyin initial matching; fix menu artifacts and row centering
+c968cd8eaf3691fe4ba0079f0b617c523b47c0b5 671e77cecedc1ff64e3bee79d65db25238ecca38 Nuxoul <Xfiend@qq.com> 1788622354 +0800	commit: chore(release): refresh release binary manifest after packaging
+671e77cecedc1ff64e3bee79d65db25238ecca38 d0db22ae46d8d88e122f74a2360b87ae0d7dae4e Nuxoul <Xfiend@qq.com> 1788654075 +0800	commit: fix(platform-host): detach shell target launches from the pipe read loop
+d0db22ae46d8d88e122f74a2360b87ae0d7dae4e fc293971cf4fc0de1b5a09bbf19dc662951928f6 Nuxoul <Xfiend@qq.com> 1788655839 +0800	commit: refactor(downloads): split DownloadApplication impl by responsibility
+fc293971cf4fc0de1b5a09bbf19dc662951928f6 3c089bcbd8d347960a7e80e4b13415a98bf7d785 Nuxoul <Xfiend@qq.com> 1788656789 +0800	commit: refactor(download): split the engine into per-strategy runner modules
+3c089bcbd8d347960a7e80e4b13415a98bf7d785 7b2c52323da7acdd9d7ab6be2c1d501ad52207d2 Nuxoul <Xfiend@qq.com> 1788657238 +0800	commit: refactor(platform-host): split the Windows adapter into partial class files
+7b2c52323da7acdd9d7ab6be2c1d501ad52207d2 fe2ed8485f5ca49851d7999b9d485b21f4f390a1 Nuxoul <Xfiend@qq.com> 1788657776 +0800	commit: refactor: extract test modules from indexer lib and clipboard panel
+fe2ed8485f5ca49851d7999b9d485b21f4f390a1 781b5bb9eb0150d648bb396f2e8152f7d7bf704a Nuxoul <Xfiend@qq.com> 1788658093 +0800	commit: chore(release): refresh release binary manifest after packaging
+781b5bb9eb0150d648bb396f2e8152f7d7bf704a 5de04ac95bd2bf517e15a5ba9892c6ed79d24310 Nuxoul <Xfiend@qq.com> 1788667041 +0800	commit: chore(platform-host): time the shell target launch boundary
+5de04ac95bd2bf517e15a5ba9892c6ed79d24310 4d5afed8bb1c27b1188cc70313ba7d6aa1a2f26f Nuxoul <Xfiend@qq.com> 1788682914 +0800	commit: fix(quick-launch): revive hotkeys after page switch, widen double-Ctrl window
+4d5afed8bb1c27b1188cc70313ba7d6aa1a2f26f 61eda3183d58b43817a6667d2a839bff9bc50ac2 Nuxoul <Xfiend@qq.com> 1788683141 +0800	commit: chore(release): refresh release binary manifest after packaging
+61eda3183d58b43817a6667d2a839bff9bc50ac2 9f23fd67138a5f8a9f0fc0e3eded25579f521887 Nuxoul <Xfiend@qq.com> 1788687813 +0800	commit: fix(downloads): keep the sort through settings save; flatten menu shadow
+9f23fd67138a5f8a9f0fc0e3eded25579f521887 b1a8cfe75d914be43277cf1f04e7e06be076d621 Nuxoul <Xfiend@qq.com> 1788688168 +0800	commit: chore(release): refresh release binary manifest after packaging
+b1a8cfe75d914be43277cf1f04e7e06be076d621 b53a30e84582bf3f0350e66a0957e543ac7458fd Nuxoul <Xfiend@qq.com> 1788852861 +0800	commit: feat(tools): 其他工具 page with the 链接识别 floating panel
+b53a30e84582bf3f0350e66a0957e543ac7458fd a014592b9b79877c72a6bcfae38a6c51db1531ea Nuxoul <Xfiend@qq.com> 1788853205 +0800	commit: chore(release): refresh release binary manifest after packaging
+a014592b9b79877c72a6bcfae38a6c51db1531ea d6d0cbe8bfa5c8656916622a0b159687e911e583 Nuxoul <Xfiend@qq.com> 1788854897 +0800	commit: fix(tools): flat rounded centered link panel; bare-domain detection
+d6d0cbe8bfa5c8656916622a0b159687e911e583 41738f00561f09adafcb91d27e9384dbf4ea630d Nuxoul <Xfiend@qq.com> 1788855242 +0800	commit: chore(release): refresh release binary manifest after packaging
+41738f00561f09adafcb91d27e9384dbf4ea630d 2eb1c003bac44989712f79f33764a6864e57a6e4 Nuxoul <Xfiend@qq.com> 1788858061 +0800	commit: fix(platform-host): keep serving the last DOpus pane across tab switches
+2eb1c003bac44989712f79f33764a6864e57a6e4 62ab899988de482486f2bff57ec3dd105bad02a8 Nuxoul <Xfiend@qq.com> 1788860124 +0800	commit: fix(tools): link panel topmost, centered, spec-styled; bare-host detection
+62ab899988de482486f2bff57ec3dd105bad02a8 1c5cfbf1365d181c506d6ebc2e7179541897a02e Nuxoul <Xfiend@qq.com> 1788860256 +0800	commit: chore(release): refresh release binary manifest after packaging
+1c5cfbf1365d181c506d6ebc2e7179541897a02e fd2d17f607a01288e9978f77d99e0df10d53d12d Nuxoul <Xfiend@qq.com> 1788863780 +0800	commit: fix(tools): one persistent link panel with a retrying auto-hide; drop its shadow
+fd2d17f607a01288e9978f77d99e0df10d53d12d 8d899f150dbab6ece1c33d2e038e5081d8393763 Nuxoul <Xfiend@qq.com> 1788863955 +0800	commit: chore(release): refresh release binary manifest after packaging
+8d899f150dbab6ece1c33d2e038e5081d8393763 9694da47f8f21a96049c0107bfd86ddd41367775 Nuxoul <Xfiend@qq.com> 1788865056 +0800	commit: fix(tools): dedupe dual-delivered captures; surface panel open failures
+9694da47f8f21a96049c0107bfd86ddd41367775 5afcce5a32309811e2d37bad25dc85e47c89277e Nuxoul <Xfiend@qq.com> 1788865187 +0800	commit: chore(release): refresh release binary manifest after packaging
+5afcce5a32309811e2d37bad25dc85e47c89277e 5df9b411462d83652bc94539172f0d6bd40044fc Nuxoul <Xfiend@qq.com> 1788952221 +0800	commit: fix(tools): link panel window-scoped auto-hide, upper-quarter position
+5df9b411462d83652bc94539172f0d6bd40044fc 35c1e97cf247e85eae89aa9352ce4621cc865ce0 Nuxoul <Xfiend@qq.com> 1788952597 +0800	commit: fix(tools): clippy cleanups for the link panel handle plumbing
+35c1e97cf247e85eae89aa9352ce4621cc865ce0 1e88f952c5ccc48a77305344d55746e75a3d78eb Nuxoul <Xfiend@qq.com> 1788952748 +0800	commit: chore(release): refresh release binary manifest after packaging
+1e88f952c5ccc48a77305344d55746e75a3d78eb 14167fe13d601d4019c7f24de306b9b1353bbf58 Nuxoul <Xfiend@qq.com> 1788959411 +0800	commit: feat(tools): tool cards open dedicated settings windows; click diagnostics; boot DPI workaround
+14167fe13d601d4019c7f24de306b9b1353bbf58 08f8965008521f449bfa8efd98aa99745af685fe Nuxoul <Xfiend@qq.com> 1788960379 +0800	commit: chore(release): refresh release binary manifest after packaging
+08f8965008521f449bfa8efd98aa99745af685fe 93a80fc77bb61ef64870176df1c684f5a2d928e9 Nuxoul <Xfiend@qq.com> 1788965375 +0800	commit: fix(tools): close-before-copy with echo guard; singleton settings window
+93a80fc77bb61ef64870176df1c684f5a2d928e9 a915aec609749edc336f17731522448044d4688a Nuxoul <Xfiend@qq.com> 1788965521 +0800	commit: chore(release): refresh release binary manifest after packaging
+a915aec609749edc336f17731522448044d4688a d5f78a1e8c782e0f175c2699cca71f984a600b87 Nuxoul <Xfiend@qq.com> 1788967885 +0800	commit: feat(tools): link panel settings window gains dwell time, browser open and copy-only
+d5f78a1e8c782e0f175c2699cca71f984a600b87 83116dbca088654bd00895dde1543fade6bf9cea Nuxoul <Xfiend@qq.com> 1788968120 +0800	commit: chore(release): refresh release binary manifest after packaging
+83116dbca088654bd00895dde1543fade6bf9cea aebce96d2e77948d0a5a2129564273878727e51b Nuxoul <Xfiend@qq.com> 1788969410 +0800	commit: fix(tools): settings window centered and draggable; panel at upper quarter; close logging
+aebce96d2e77948d0a5a2129564273878727e51b e690e6b744b4b92a4f007a217e42d542d7022d80 Nuxoul <Xfiend@qq.com> 1788969508 +0800	commit: chore(release): refresh release binary manifest after packaging
+e690e6b744b4b92a4f007a217e42d542d7022d80 3d1b3607e56ffd7cdead21ce901caf277d22f9ca Nuxoul <Xfiend@qq.com> 1789039514 +0800	commit: fix(tools): probe resize via native centered command; clipboard panel grace 900ms
+3d1b3607e56ffd7cdead21ce901caf277d22f9ca e22d6049527d96679764031a655688b1e3f1a0ba Nuxoul <Xfiend@qq.com> 1789039635 +0800	commit: chore(release): refresh release binary manifest after packaging
+e22d6049527d96679764031a655688b1e3f1a0ba 5d6d2eb191ea4c50fa22809cbab82c9a77b0dd75 Nuxoul <Xfiend@qq.com> 1789039943 +0800	commit: chore(tools): log the browser-open action with its resolved url
+5d6d2eb191ea4c50fa22809cbab82c9a77b0dd75 3c4d36bec2941fbad272497ce3a164bdd4776a92 Nuxoul <Xfiend@qq.com> 1789040037 +0800	commit: chore(release): refresh release binary manifest after packaging
+3c4d36bec2941fbad272497ce3a164bdd4776a92 25e21fe7851503e8c31e2af438a862d6b5612fef Nuxoul <Xfiend@qq.com> 1789042953 +0800	commit: fix(platform-host): re-apply centered resizes swallowed by drag modal loops
+25e21fe7851503e8c31e2af438a862d6b5612fef 88d97f797b7a7bc5c767b173f26725c1c3dfaa48 Nuxoul <Xfiend@qq.com> 1789043741 +0800	commit: fix(tools): expander grows the panel window; settings window gains a close button
+88d97f797b7a7bc5c767b173f26725c1c3dfaa48 364db25bdd75553352b9b0fb8f1b3fdbac8f2a3f Nuxoul <Xfiend@qq.com> 1789043841 +0800	commit: chore(release): refresh release binary manifest after packaging
+364db25bdd75553352b9b0fb8f1b3fdbac8f2a3f 55a8b050786e1466580e046852fd6541031e1794 Nuxoul <Xfiend@qq.com> 1789045406 +0800	commit: fix(tools): restaged link panel resizes to the new capture's collapsed height
+55a8b050786e1466580e046852fd6541031e1794 16ae480b62b1bfe7fd7ea2790e6c591eabe0314a Nuxoul <Xfiend@qq.com> 1789045509 +0800	commit: chore(release): refresh release binary manifest after packaging
+16ae480b62b1bfe7fd7ea2790e6c591eabe0314a 8d55d6b78bbc8828b764f319b106af9e0699ebec Nuxoul <Xfiend@qq.com> 1789047124 +0800	commit: fix(platform-host): verify centered resizes stuck and retry on a timer
+8d55d6b78bbc8828b764f319b106af9e0699ebec 41459438e963bd1018131a400601c5c56a87b853 Nuxoul <Xfiend@qq.com> 1789048402 +0800	commit: fix(tools): panel click closes via direct window removal
+41459438e963bd1018131a400601c5c56a87b853 080d41cb045309d17b531aa436999a619cb5712f Nuxoul <Xfiend@qq.com> 1789048504 +0800	commit: chore(release): refresh release binary manifest after packaging

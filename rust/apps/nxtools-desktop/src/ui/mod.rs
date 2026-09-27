@@ -12,18 +12,19 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Bounds, Context, Div, Entity, Focusable, ImageSource, ListAlignment,
-    ListState, Pixels, Point, Render, ScrollHandle, Subscription, WeakEntity, Window, div, list,
-    point, prelude::*, px, size,
+    App, AppContext, Bounds, Context, Div, Entity, Focusable, ImageSource, KeystrokeEvent,
+    ListAlignment, ListState, MouseButton, Pixels, Point, Render, ScrollHandle, Subscription,
+    WeakEntity, Window, div, list, point, prelude::*, px, size,
 };
 use gpui_component::Icon;
 use gpui_component::PixelsExt;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::ContextMenuExt;
+use gpui_component::scroll::ScrollableElement;
 use gpui_component::tooltip::Tooltip;
 use nxtools_clipboard::{
     BUILTIN_ALL_CATEGORY_ID, ClipboardAction, ClipboardCategory, ClipboardCategoryKind,
-    ClipboardHistoryError, ClipboardHistoryPage, ClipboardItem, ClipboardKind,
+    ClipboardHistoryError, ClipboardHistoryPage, ClipboardItem, ClipboardKind, ClipboardPageCursor,
     ClipboardSearchScope,
 };
 use nxtools_core::{ClipboardClickAction, ClipboardClickModifier, ClipboardModifierActions};
@@ -33,11 +34,13 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::clipboard::ClipboardApplication;
 use crate::icons::MaterialIcon;
+use crate::popup_lifecycle::PopupCloseReason;
 use crate::theme::{Theme, UI_FONT_FAMILY};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
-use crate::ui::components::state::empty_state;
+use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::metrics::{
-    BADGE_HEIGHT, GROUP_HEADER_HEIGHT, NOTIFICATION_META_BLOCK_HEIGHT, RADIUS_CONTROL,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, GROUP_HEADER_HEIGHT,
+    NOTIFICATION_META_BLOCK_HEIGHT, RADIUS_CONTROL,
 };
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META};
 use history::{
@@ -54,13 +57,19 @@ const CATEGORY_ICON_TEXT_GAP: f32 = 4.0;
 const CATEGORY_HORIZONTAL_PADDING: f32 = 14.0;
 const CATEGORY_TEXT_CELL_WIDTH: f32 = 7.0;
 const PANEL_CONTENT_INSET: f32 = 8.0;
-const PANEL_SECTION_GAP: f32 = 6.0;
+const CATEGORY_EDITOR_TOP: f32 = 104.0;
+const CATEGORY_EDITOR_HEIGHT: f32 = 244.0;
+const CATEGORY_EDITOR_SOURCE_LIST_HEIGHT: f32 = 72.0;
 // 180 ms lost the race against the OS returning focus to the summoning
 // app after a hotkey summon: the foreground-changed dismissal fired before
 // the user could move the mouse in, so the panel opened and instantly hid.
 const POPUP_OPEN_GRACE: Duration = Duration::from_millis(900);
 const HISTORY_PAGE_PREFETCH_ITEMS: usize = 8;
+pub(crate) const HOVER_ACTION_RAIL_WIDTH: f32 = 112.0;
 const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;
+const CLIPBOARD_SEARCH_DEBOUNCE: Duration = Duration::from_millis(100);
+const HISTORY_PAGE_SIZE: usize = 80;
+const HISTORY_WINDOW_SIZE: usize = HISTORY_PAGE_SIZE * 4;
 
 fn schedule_entity_update<T, F>(entity: WeakEntity<T>, update: F, cx: &mut App)
 where
@@ -74,6 +83,56 @@ where
 
 fn panel_list_width(viewport_width: f32) -> f32 {
     (viewport_width - PANEL_CONTENT_INSET * 2.0).max(28.0)
+}
+
+fn source_process_names_from_entries(entries: &[ClipboardItem]) -> Vec<String> {
+    let mut names = HashMap::new();
+    for entry in entries {
+        let source = entry.source.process_name.trim();
+        if !source.is_empty() {
+            names
+                .entry(source.to_lowercase())
+                .or_insert_with(|| source.to_owned());
+        }
+    }
+    let mut names = names.into_values().collect::<Vec<_>>();
+    names.sort_by_key(|source| source.to_lowercase());
+    names
+}
+
+fn next_clipboard_selection(current: Option<usize>, delta: isize, count: usize) -> Option<usize> {
+    if count == 0 {
+        return None;
+    }
+    let Some(current) = current else {
+        return Some(if delta < 0 { count - 1 } else { 0 });
+    };
+    Some((current as isize + delta).rem_euclid(count as isize) as usize)
+}
+
+fn clipboard_search_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    captured_query: &str,
+    current_query: &str,
+) -> bool {
+    captured_generation == current_generation && captured_query == current_query
+}
+#[allow(clippy::too_many_arguments)]
+fn clipboard_query_state_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    captured_query: &str,
+    current_query: &str,
+    captured_category: &str,
+    current_category: &str,
+    captured_scope: ClipboardSearchScope,
+    current_scope: ClipboardSearchScope,
+) -> bool {
+    captured_generation == current_generation
+        && captured_query == current_query
+        && captured_category == current_category
+        && captured_scope == current_scope
 }
 
 fn inset_panel_section<T: gpui::Styled>(section: T) -> T {
@@ -91,10 +150,17 @@ enum PanelStatus {
     Pending(&'static str),
     Error(String),
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipboardPageRequest {
+    Replace,
+    Append,
+    Prepend,
+}
 
 #[derive(Debug, Clone)]
 struct CategoryEditorState {
     category_id: Option<String>,
+    selected_sources: HashSet<String>,
 }
 
 #[derive(Debug)]
@@ -227,9 +293,13 @@ pub(crate) fn native_window_handle(_window: &Window) -> Option<i64> {
 
 pub(crate) struct ClipboardPanel {
     theme: Theme,
+    history_worker: crate::clipboard_worker::ClipboardCaptureWorkerHandle,
     application: WeakEntity<ClipboardApplication>,
+    session_id: uuid::Uuid,
     target: nxtools_protocol::ForegroundContext,
-    entries: Rc<Vec<ClipboardItem>>,
+    entries: Rc<RefCell<Vec<ClipboardItem>>>,
+    window_start_offset: usize,
+    next_page_cursor: Option<ClipboardPageCursor>,
     total_entries: usize,
     has_more_entries: bool,
     page_request_pending: bool,
@@ -238,10 +308,12 @@ pub(crate) struct ClipboardPanel {
     is_open: bool,
     hide_suppressed_until: Instant,
     categories: Vec<ClipboardCategory>,
-    category_sources: HashMap<String, HashSet<String>>,
+    source_process_names: Vec<String>,
+    category_editor: Option<CategoryEditorState>,
     active_category_id: String,
     category_scroll: ScrollHandle,
-    category_editor: Option<CategoryEditorState>,
+    category_sources: HashMap<String, HashSet<String>>,
+    category_request_generation: u64,
     modifier_actions: ClipboardModifierActions,
     active_modifier_action: Option<(ClipboardClickModifier, ClipboardClickAction)>,
     list_scroll: ListState,
@@ -250,13 +322,16 @@ pub(crate) struct ClipboardPanel {
     list_width: f32,
     search_input: Entity<InputState>,
     search_scope: ClipboardSearchScope,
+    selected_entry_index: Option<usize>,
+    query_dispatch_generation: u64,
+    search_pending: bool,
+    query_error: Option<String>,
     edit_input: Entity<InputState>,
     category_name_input: Entity<InputState>,
     editing_item_id: Option<i64>,
     last_deleted_item_id: Option<i64>,
     _subscriptions: Vec<Subscription>,
 }
-
 impl ClipboardPanel {
     /// Puts keyboard focus into the clipboard search box so typed text lands
     /// there by default, even when the panel window was re-shown after the OS
@@ -265,13 +340,86 @@ impl ClipboardPanel {
         self.search_input.focus_handle(cx).focus(window);
         cx.notify();
     }
+    pub(crate) fn handle_platform_reconnected(&mut self, cx: &mut Context<Self>) {
+        if self.pending_action.take().is_some() {
+            self.status = PanelStatus::Error("Windows 适配器已重连，请重试粘贴".into());
+            cx.notify();
+        }
+    }
+    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        let Some(next) = next_clipboard_selection(
+            self.selected_entry_index,
+            delta,
+            self.entries.borrow().len(),
+        ) else {
+            return false;
+        };
+        self.selected_entry_index = Some(next);
+        self.list_scroll.scroll_to_reveal_item(next);
+        cx.notify();
+        true
+    }
 
+    fn activate_selected_from_keyboard(
+        &mut self,
+        action: ClipboardAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = self.selected_entry_index else {
+            return false;
+        };
+        let Some(entry) = self.entries.borrow().get(index).cloned() else {
+            return false;
+        };
+        self.activate_entry(&entry, action, window, cx);
+        true
+    }
+
+    fn schedule_search(&mut self, query: String, generation: u64, cx: &mut Context<Self>) {
+        let panel = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            cx.background_executor()
+                .timer(CLIPBOARD_SEARCH_DEBOUNCE)
+                .await;
+            let _ = panel.update(cx, |panel, cx| {
+                let current_query = panel.search_input.read(cx).value().to_string();
+                if !panel.is_open
+                    || !clipboard_search_is_current(
+                        generation,
+                        panel.query_dispatch_generation,
+                        &query,
+                        &current_query,
+                    )
+                {
+                    return;
+                }
+                panel.request_entries(
+                    query.clone(),
+                    generation,
+                    0,
+                    ClipboardPageRequest::Replace,
+                    None,
+                    None,
+                    cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         page: ClipboardHistoryPage,
         categories: Vec<ClipboardCategory>,
+        category_sources: HashMap<String, HashSet<String>>,
+        source_process_names: Vec<String>,
         modifier_actions: ClipboardModifierActions,
         target: nxtools_protocol::ForegroundContext,
+        history_worker: crate::clipboard_worker::ClipboardCaptureWorkerHandle,
         application: WeakEntity<ClipboardApplication>,
+        session_id: uuid::Uuid,
+        initial_error: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -290,11 +438,48 @@ impl ClipboardPanel {
             |this, state, event: &InputEvent, _window, cx| {
                 if matches!(event, InputEvent::Change) {
                     let query = state.read(cx).value().to_string();
-                    this.reload_entries(&query, cx);
+                    this.query_dispatch_generation =
+                        this.query_dispatch_generation.wrapping_add(1).max(1);
+                    let generation = this.query_dispatch_generation;
+                    this.search_pending = true;
+                    this.schedule_search(query, generation, cx);
                     cx.notify();
                 }
             },
         );
+        let key_listener = cx.listener(|this, event: &KeystrokeEvent, window, cx| {
+            if !this.is_open
+                || this.category_editor.is_some()
+                || this.editing_item_id.is_some()
+                || !this.search_input.focus_handle(cx).is_focused(window)
+            {
+                return;
+            }
+            let key = event.keystroke.key.as_str();
+            if event.keystroke.modifiers.modified()
+                && !(key.eq_ignore_ascii_case("enter") && event.keystroke.modifiers.control)
+            {
+                return;
+            }
+            let handled = match key.to_ascii_lowercase().as_str() {
+                "up" => this.move_selection(-1, cx),
+                "down" => this.move_selection(1, cx),
+                "enter" => this.activate_selected_from_keyboard(
+                    if event.keystroke.modifiers.control {
+                        ClipboardAction::CopyOnly
+                    } else {
+                        ClipboardAction::OriginalPaste
+                    },
+                    window,
+                    cx,
+                ),
+                _ => false,
+            };
+            if handled {
+                cx.stop_propagation();
+            }
+        });
+        let navigation_subscription = cx.intercept_keystrokes(key_listener);
         let keystroke_subscription = cx.observe_keystrokes(|this, event, window, cx| {
             if event.keystroke.key.eq_ignore_ascii_case("escape") {
                 if this.category_editor.is_some() {
@@ -302,7 +487,7 @@ impl ClipboardPanel {
                 } else if this.editing_item_id.is_some() {
                     this.cancel_edit(window, cx);
                 } else {
-                    this.close(window, cx);
+                    this.close_with_reason(window, cx, PopupCloseReason::Escape);
                 }
             } else if this.category_editor.is_some()
                 && event.keystroke.key.eq_ignore_ascii_case("enter")
@@ -316,24 +501,22 @@ impl ClipboardPanel {
                 this.save_edit(window, cx);
             }
         });
-        let size_application = application.clone();
-        let size_subscription = cx.observe_window_bounds(window, move |_panel, window, cx| {
-            let viewport = window.viewport_size();
-            let _ = size_application.update(cx, |application, cx| {
-                application.record_panel_size(
-                    viewport.width.as_f32(),
-                    viewport.height.as_f32(),
-                    cx,
-                );
-            });
-        });
 
         let mut status = if target.process_name.is_empty() {
             PanelStatus::Ready("选择一条记录进行粘贴".into())
         } else {
             PanelStatus::Ready(format!("将粘贴到 {}", target.process_name))
         };
+        if let Some(error) = initial_error.clone() {
+            status = PanelStatus::Error(error);
+        }
         let entries = page.items;
+        let source_process_names = if source_process_names.is_empty() {
+            source_process_names_from_entries(&entries)
+        } else {
+            source_process_names
+        };
+        let next_page_cursor = entries.last().map(ClipboardPageCursor::from);
         let list_scroll = ListState::new(entries.len(), ListAlignment::Top, px(180.0));
         let panel = cx.entity().downgrade();
         let preview_application = application.clone();
@@ -343,47 +526,70 @@ impl ClipboardPanel {
                 |application, cx| application.suspend_preview_for_scroll(cx),
                 app,
             );
-            let load_next_page = panel.update(app, |panel, cx| {
+            let load_request = panel.update(app, |panel, cx| {
                 if panel.list_is_scrolled != event.is_scrolled {
                     panel.list_is_scrolled = event.is_scrolled;
                     cx.notify();
                 }
-                let should_load = panel.has_more_entries
+                let should_load_previous = panel.window_start_offset > 0
                     && !panel.page_request_pending
+                    && !panel.search_pending
+                    && event.visible_range.start <= HISTORY_PAGE_PREFETCH_ITEMS;
+                let should_load_next = panel.has_more_entries
+                    && !panel.page_request_pending
+                    && !panel.search_pending
                     && event
                         .visible_range
                         .end
                         .saturating_add(HISTORY_PAGE_PREFETCH_ITEMS)
                         >= event.count;
-                if should_load {
+                let request = if should_load_previous {
+                    Some(ClipboardPageRequest::Prepend)
+                } else if should_load_next {
+                    Some(ClipboardPageRequest::Append)
+                } else {
+                    None
+                };
+                if request.is_some() {
                     panel.page_request_pending = true;
                 }
-                should_load
+                request
             });
-            if matches!(load_next_page, Ok(true)) {
-                schedule_entity_update(panel.clone(), |panel, cx| panel.load_next_page(cx), app);
+            match load_request {
+                Ok(Some(ClipboardPageRequest::Append)) => {
+                    schedule_entity_update(
+                        panel.clone(),
+                        |panel, cx| panel.load_next_page(cx),
+                        app,
+                    );
+                }
+                Ok(Some(ClipboardPageRequest::Prepend)) => {
+                    schedule_entity_update(
+                        panel.clone(),
+                        |panel, cx| panel.load_previous_page(cx),
+                        app,
+                    );
+                }
+                _ => {}
             }
         });
-        let category_sources =
-            match Self::load_category_source_snapshot(&application, &categories, cx) {
-                Ok(sources) => sources,
-                Err(reason) => {
-                    error!(%reason, "failed to load clipboard category sources");
-                    status = PanelStatus::Error("分类来源加载失败，请查看日志".into());
-                    HashMap::new()
-                }
-            };
+        let category_sources = category_sources;
         let active_category_id = categories
             .iter()
             .find(|category| category.id == BUILTIN_ALL_CATEGORY_ID)
             .or_else(|| categories.first())
             .map(|category| category.id.clone())
             .unwrap_or_else(|| BUILTIN_ALL_CATEGORY_ID.into());
+        let has_entries = !entries.is_empty();
         Self {
+            history_worker,
             theme: Theme::zed_dark(),
             application,
+            session_id,
             target,
-            entries: Rc::new(entries),
+            entries: Rc::new(RefCell::new(entries)),
+            window_start_offset: 0,
+            next_page_cursor,
             total_entries: page.total,
             has_more_entries: page.has_more,
             page_request_pending: false,
@@ -393,6 +599,8 @@ impl ClipboardPanel {
             hide_suppressed_until: Instant::now() + POPUP_OPEN_GRACE,
             categories,
             category_sources,
+            source_process_names,
+            category_request_generation: 0,
             active_category_id,
             category_scroll: ScrollHandle::new(),
             category_editor: None,
@@ -406,6 +614,10 @@ impl ClipboardPanel {
             list_width: 0.0,
             search_input,
             search_scope: ClipboardSearchScope::Content,
+            selected_entry_index: has_entries.then_some(0),
+            query_dispatch_generation: 0,
+            search_pending: false,
+            query_error: initial_error,
             edit_input,
             category_name_input,
             editing_item_id: None,
@@ -413,65 +625,220 @@ impl ClipboardPanel {
             _subscriptions: vec![
                 search_subscription,
                 keystroke_subscription,
-                size_subscription,
+                navigation_subscription,
             ],
         }
     }
 
-    fn load_category_source_snapshot(
-        application: &WeakEntity<ClipboardApplication>,
-        categories: &[ClipboardCategory],
-        cx: &mut Context<Self>,
-    ) -> Result<HashMap<String, HashSet<String>>, String> {
-        categories
-            .iter()
-            .filter(|category| category.kind == ClipboardCategoryKind::Custom)
-            .map(|category| {
-                let sources = application
-                    .update(cx, |application, _| {
-                        application.category_sources(&category.id)
-                    })
-                    .map_err(|error| format!("clipboard application unavailable: {error}"))?
-                    .map_err(|error| error.to_string())?
-                    .into_iter()
-                    .map(|source| source.to_lowercase())
-                    .collect();
-                Ok((category.id.clone(), sources))
-            })
-            .collect()
+    fn update_next_page_cursor(&mut self) {
+        self.next_page_cursor = self.entries.borrow().last().map(ClipboardPageCursor::from);
     }
 
-    fn reload_entries(&mut self, query: &str, cx: &mut Context<Self>) {
+    fn trim_history_window_from_front(&mut self) {
+        let current_len = self.entries.borrow().len();
+        let removed = current_len.saturating_sub(HISTORY_WINDOW_SIZE);
+        if removed == 0 {
+            return;
+        }
+        self.entries.borrow_mut().drain(..removed);
+        self.list_scroll.splice(0..removed, 0);
+        self.window_start_offset = self.window_start_offset.saturating_add(removed);
+        self.selected_entry_index = self
+            .selected_entry_index
+            .and_then(|index| index.checked_sub(removed));
+        self.update_next_page_cursor();
+    }
+
+    fn trim_history_window_from_back(&mut self) {
+        let current_len = self.entries.borrow().len();
+        let keep_len = current_len.min(HISTORY_WINDOW_SIZE);
+        let removed = current_len.saturating_sub(keep_len);
+        if removed == 0 {
+            return;
+        }
+        self.entries.borrow_mut().truncate(keep_len);
+        self.list_scroll.splice(keep_len..current_len, 0);
+        if self
+            .selected_entry_index
+            .is_some_and(|index| index >= keep_len)
+        {
+            self.selected_entry_index = None;
+        }
+        self.update_next_page_cursor();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn request_entries(
+        &mut self,
+        query: String,
+        generation: u64,
+        offset: usize,
+        request: ClipboardPageRequest,
+        known_total: Option<usize>,
+        cursor: Option<ClipboardPageCursor>,
+        cx: &mut Context<Self>,
+    ) {
         let category_id = self.active_category_id.clone();
         let search_scope = self.search_scope;
-        match self.application.update(cx, |application, _| {
-            application.query_entries_page(query, &category_id, search_scope, 0)
-        }) {
-            Ok(Ok(page)) => {
-                self.entries = Rc::new(page.items);
-                self.total_entries = page.total;
-                self.has_more_entries = page.has_more;
-                self.page_request_pending = false;
-                self.list_scroll.reset(self.entries.len());
-                self.list_is_scrolled = false;
-            }
-            Ok(Err(error)) => {
-                self.page_request_pending = false;
-                error!(%error, "failed to query clipboard popup history");
-                self.entries = Rc::new(Vec::new());
-                self.total_entries = 0;
-                self.has_more_entries = false;
-                self.status = PanelStatus::Error("查询失败，请查看日志".into());
-            }
-            Err(error) => {
-                self.page_request_pending = false;
-                error!(%error, "clipboard application became unavailable");
-                self.entries = Rc::new(Vec::new());
-                self.total_entries = 0;
-                self.has_more_entries = false;
-                self.status = PanelStatus::Error("剪贴板核心不可用".into());
-            }
+        let replacing = request == ClipboardPageRequest::Replace;
+        self.query_error = None;
+        if replacing {
+            self.search_pending = true;
+            self.page_request_pending = false;
+            self.status = PanelStatus::Pending("正在搜索…");
+        } else {
+            self.page_request_pending = true;
+            self.status = PanelStatus::Pending("正在加载更多…");
         }
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        let captured_category = category_id.clone();
+        cx.spawn(async move |_, cx| {
+            let result = if let Some(cursor) = cursor {
+                worker
+                    .query_category_page_after_async(
+                        &query,
+                        &category_id,
+                        search_scope,
+                        cursor,
+                        HISTORY_PAGE_SIZE,
+                        known_total,
+                    )
+                    .await
+            } else {
+                worker
+                    .query_category_page_async(
+                        &query,
+                        &category_id,
+                        search_scope,
+                        offset,
+                        HISTORY_PAGE_SIZE,
+                        known_total,
+                    )
+                    .await
+            };
+            let _ = panel.update(cx, |panel, cx| {
+                let current_query = panel.search_input.read(cx).value().to_string();
+                if !clipboard_query_state_is_current(
+                    generation,
+                    panel.query_dispatch_generation,
+                    &query,
+                    &current_query,
+                    &captured_category,
+                    &panel.active_category_id,
+                    search_scope,
+                    panel.search_scope,
+                ) {
+                    return;
+                }
+                let request_is_stale = match request {
+                    ClipboardPageRequest::Replace => false,
+                    ClipboardPageRequest::Append => {
+                        offset
+                            != panel
+                                .window_start_offset
+                                .saturating_add(panel.entries.borrow().len())
+                    }
+                    ClipboardPageRequest::Prepend => offset >= panel.window_start_offset,
+                };
+                if request_is_stale {
+                    panel.page_request_pending = false;
+                    panel.status = PanelStatus::Ready(String::new());
+                    cx.notify();
+                    return;
+                }
+                match result {
+                    Ok(page) => match request {
+                        ClipboardPageRequest::Append => {
+                            let appended = page.items.len();
+                            let old_len = panel.entries.borrow().len();
+                            panel.entries.borrow_mut().extend(page.items);
+                            if appended > 0 {
+                                panel.list_scroll.splice(old_len..old_len, appended);
+                            }
+                            panel.total_entries = page.total;
+                            panel.page_request_pending = false;
+                            panel.query_error = None;
+                            panel.status = PanelStatus::Ready(String::new());
+                            panel.trim_history_window_from_front();
+                            panel.update_next_page_cursor();
+                            panel.has_more_entries = panel
+                                .window_start_offset
+                                .saturating_add(panel.entries.borrow().len())
+                                < panel.total_entries;
+                        }
+                        ClipboardPageRequest::Prepend => {
+                            let prepended = page.items.len();
+                            panel.entries.borrow_mut().splice(0..0, page.items);
+                            if prepended > 0 {
+                                panel.list_scroll.splice(0..0, prepended);
+                                panel.selected_entry_index = panel
+                                    .selected_entry_index
+                                    .map(|index| index.saturating_add(prepended));
+                            }
+                            panel.window_start_offset = offset;
+                            panel.total_entries = page.total;
+                            panel.page_request_pending = false;
+                            panel.query_error = None;
+                            panel.status = PanelStatus::Ready(String::new());
+                            panel.trim_history_window_from_back();
+                            panel.update_next_page_cursor();
+                            panel.has_more_entries = panel
+                                .window_start_offset
+                                .saturating_add(panel.entries.borrow().len())
+                                < panel.total_entries;
+                        }
+                        ClipboardPageRequest::Replace => {
+                            let has_entries = !page.items.is_empty();
+                            let next_page_cursor = page.items.last().map(ClipboardPageCursor::from);
+                            *panel.entries.borrow_mut() = page.items;
+                            panel.window_start_offset = 0;
+                            panel.next_page_cursor = next_page_cursor;
+                            panel.total_entries = page.total;
+                            panel.has_more_entries = page.has_more;
+                            panel.page_request_pending = false;
+                            panel.search_pending = false;
+                            panel.selected_entry_index = has_entries.then_some(0);
+                            panel.list_scroll.reset(panel.entries.borrow().len());
+                            panel.list_is_scrolled = false;
+                            panel.query_error = None;
+                            panel.status = PanelStatus::Ready(String::new());
+                        }
+                    },
+                    Err(ClipboardHistoryError::QuerySuperseded) => {
+                        panel.page_request_pending = false;
+                        if replacing {
+                            panel.search_pending = false;
+                        }
+                        panel.query_error = None;
+                        panel.status = PanelStatus::Ready(String::new());
+                    }
+                    Err(error) => {
+                        let message = error.to_string();
+                        error!(%error, offset, ?request, "clipboard worker query failed");
+                        panel.page_request_pending = false;
+                        panel.search_pending = false;
+                        panel.query_error = Some(message.clone());
+                        if replacing {
+                            panel.selected_entry_index = None;
+                            *panel.entries.borrow_mut() = Vec::new();
+                            panel.window_start_offset = 0;
+                            panel.next_page_cursor = None;
+                            panel.total_entries = 0;
+                            panel.has_more_entries = false;
+                            panel.list_scroll.reset(0);
+                        }
+                        panel.status = PanelStatus::Error(if replacing {
+                            "查询失败，请查看日志".into()
+                        } else {
+                            format!("加载更多失败：{message}")
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn load_next_page(&mut self, cx: &mut Context<Self>) {
@@ -480,34 +847,39 @@ impl ClipboardPanel {
             return;
         }
         let query = self.search_input.read(cx).value().to_string();
-        let category_id = self.active_category_id.clone();
-        let search_scope = self.search_scope;
-        let offset = self.entries.len();
-        match self.application.update(cx, |application, _| {
-            application.query_entries_page(&query, &category_id, search_scope, offset)
-        }) {
-            Ok(Ok(page)) => {
-                let appended = page.items.len();
-                Rc::make_mut(&mut self.entries).extend(page.items);
-                self.total_entries = page.total;
-                self.has_more_entries = page.has_more;
-                self.page_request_pending = false;
-                if appended > 0 {
-                    self.list_scroll.splice(offset..offset, appended);
-                }
-            }
-            Ok(Err(error)) => {
-                self.page_request_pending = false;
-                error!(%error, offset, "failed to load next clipboard history page");
-                self.status = PanelStatus::Error("加载更多记录失败，请查看日志".into());
-            }
-            Err(error) => {
-                self.page_request_pending = false;
-                error!(%error, offset, "clipboard application unavailable while paging");
-                self.status = PanelStatus::Error("剪贴板核心不可用".into());
-            }
+        let generation = self.query_dispatch_generation;
+        let offset = self
+            .window_start_offset
+            .saturating_add(self.entries.borrow().len());
+        let cursor = self.next_page_cursor;
+        self.request_entries(
+            query,
+            generation,
+            offset,
+            ClipboardPageRequest::Append,
+            Some(self.total_entries),
+            cursor,
+            cx,
+        );
+    }
+
+    fn load_previous_page(&mut self, cx: &mut Context<Self>) {
+        if self.window_start_offset == 0 {
+            self.page_request_pending = false;
+            return;
         }
-        cx.notify();
+        let query = self.search_input.read(cx).value().to_string();
+        let generation = self.query_dispatch_generation;
+        let offset = self.window_start_offset.saturating_sub(HISTORY_PAGE_SIZE);
+        self.request_entries(
+            query,
+            generation,
+            offset,
+            ClipboardPageRequest::Prepend,
+            Some(self.total_entries),
+            None,
+            cx,
+        );
     }
 
     fn toggle_search_scope(&mut self, cx: &mut Context<Self>) {
@@ -515,8 +887,20 @@ impl ClipboardPanel {
             ClipboardSearchScope::Content => ClipboardSearchScope::Extended,
             ClipboardSearchScope::Extended => ClipboardSearchScope::Content,
         };
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.page_request_pending = false;
         let query = self.search_input.read(cx).value().to_string();
-        self.reload_entries(&query, cx);
+        let generation = self.query_dispatch_generation;
+        self.request_entries(
+            query,
+            generation,
+            0,
+            ClipboardPageRequest::Replace,
+            None,
+            None,
+            cx,
+        );
         cx.notify();
     }
 
@@ -529,8 +913,20 @@ impl ClipboardPanel {
             return;
         }
         self.active_category_id = category_id;
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.page_request_pending = false;
         let query = self.search_input.read(cx).value().to_string();
-        self.reload_entries(&query, cx);
+        let generation = self.query_dispatch_generation;
+        self.request_entries(
+            query,
+            generation,
+            0,
+            ClipboardPageRequest::Replace,
+            None,
+            None,
+            cx,
+        );
         cx.notify();
     }
 
@@ -538,6 +934,45 @@ impl ClipboardPanel {
         self.categories
             .iter()
             .find(|category| category.id == self.active_category_id)
+    }
+
+    fn category_source_choices(&self) -> Vec<String> {
+        let mut choices = HashMap::new();
+        for source in &self.source_process_names {
+            let source = source.trim();
+            if !source.is_empty() {
+                choices
+                    .entry(source.to_lowercase())
+                    .or_insert_with(|| source.to_owned());
+            }
+        }
+        for sources in self.category_sources.values() {
+            for source in sources {
+                let source = source.trim();
+                if !source.is_empty() {
+                    choices
+                        .entry(source.to_lowercase())
+                        .or_insert_with(|| source.to_owned());
+                }
+            }
+        }
+        let mut choices = choices.into_values().collect::<Vec<_>>();
+        choices.sort_by_key(|source| source.to_lowercase());
+        choices
+    }
+
+    fn toggle_category_editor_source(&mut self, process_name: &str, cx: &mut Context<Self>) {
+        let process_name = process_name.trim().to_lowercase();
+        if process_name.is_empty() {
+            return;
+        }
+        let Some(editor) = self.category_editor.as_mut() else {
+            return;
+        };
+        if !editor.selected_sources.remove(&process_name) {
+            editor.selected_sources.insert(process_name);
+        }
+        cx.notify();
     }
 
     fn begin_category_editor(
@@ -549,10 +984,22 @@ impl ClipboardPanel {
         let value = category
             .map(|category| category.name.clone())
             .unwrap_or_default();
+        let category_id = category.map(|category| category.id.clone());
+        let selected_sources = category_id
+            .as_deref()
+            .and_then(|category_id| self.category_sources.get(category_id))
+            .cloned()
+            .unwrap_or_default();
         self.editing_item_id = None;
         self.category_editor = Some(CategoryEditorState {
-            category_id: category.map(|category| category.id.clone()),
+            category_id,
+            selected_sources,
         });
+        schedule_entity_update(
+            self.application.clone(),
+            |application, cx| application.dismiss_preview(cx),
+            cx,
+        );
         self.category_name_input
             .update(cx, |state, cx| state.set_value(value, window, cx));
         self.category_name_input.focus_handle(cx).focus(window);
@@ -570,38 +1017,97 @@ impl ClipboardPanel {
             return;
         };
         let name = self.category_name_input.read(cx).value().to_string();
-        let result = if let Some(category_id) = editor.category_id.as_deref() {
-            self.application.update(cx, |application, _| {
-                application.rename_category(category_id, &name)
-            })
-        } else {
-            self.application
-                .update(cx, |application, _| application.create_category(&name))
-        };
-        if let Some(category) = self.resolve_item_action("保存分类", result, cx) {
-            self.category_editor = None;
-            self.reload_categories(cx);
-            self.active_category_id = category.id;
-            self.refresh_entries(cx);
-            self.search_input.focus_handle(cx).focus(window);
-            self.status = PanelStatus::Notice("分类已保存".into());
-        }
-        cx.notify();
+        let selected_sources = editor.selected_sources.iter().cloned().collect::<Vec<_>>();
+        let source_count = selected_sources.len();
+        let operation_id = uuid::Uuid::new_v4();
+        let category_id_for_log = editor.category_id.clone().unwrap_or_default();
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        let window_handle = window.window_handle();
+        self.status = PanelStatus::Pending("正在保存分类…");
+        info!(
+            correlation_id = %operation_id,
+            category_id = %category_id_for_log,
+            source_count,
+            "clipboard.category.save_started"
+        );
+        cx.spawn(async move |_, cx| {
+            let result = async {
+                let category = if let Some(category_id) = editor.category_id.as_deref() {
+                    worker.rename_category_async(category_id, &name).await?
+                } else {
+                    worker.create_category_async(&name).await?
+                };
+                worker
+                    .replace_category_sources_async(&category.id, &selected_sources)
+                    .await?;
+                Ok::<_, ClipboardHistoryError>(category)
+            }
+            .await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(category) => {
+                        info!(
+                            correlation_id = %operation_id,
+                            category_id = %category.id,
+                            source_count,
+                            "clipboard.category.save_completed"
+                        );
+                        panel.category_editor = None;
+                        panel.active_category_id = category.id;
+                        panel.status = PanelStatus::Notice("分类已保存".into());
+                        panel.reload_categories(cx);
+                        let panel_for_focus = cx.entity().downgrade();
+                        cx.defer(move |cx| {
+                            let _ = window_handle.update(cx, |_, window, app| {
+                                let _ = panel_for_focus.update(app, |panel, cx| {
+                                    panel.search_input.focus_handle(cx).focus(window);
+                                });
+                            });
+                        });
+                    }
+                    Err(error) => {
+                        error!(
+                            correlation_id = %operation_id,
+                            category_id = %category_id_for_log,
+                            source_count,
+                            error = %error,
+                            "clipboard.category.save_failed"
+                        );
+                        panel.status = PanelStatus::Error(format!("保存分类失败：{error}"));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn delete_category(&mut self, category_id: &str, cx: &mut Context<Self>) {
-        let result = self.application.update(cx, |application, _| {
-            application.delete_category(category_id)
-        });
-        if self.resolve_item_action("删除分类", result, cx).is_some() {
-            if self.active_category_id == category_id {
-                self.active_category_id = BUILTIN_ALL_CATEGORY_ID.into();
-            }
-            self.reload_categories(cx);
-            self.refresh_entries(cx);
-            self.status = PanelStatus::Notice("分类已删除".into());
-        }
-        cx.notify();
+        let category_id = category_id.to_owned();
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        self.status = PanelStatus::Pending("正在删除分类…");
+        cx.spawn(async move |_, cx| {
+            let result = worker.delete_category_async(&category_id).await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(()) => {
+                        if panel.active_category_id == category_id {
+                            panel.active_category_id = BUILTIN_ALL_CATEGORY_ID.into();
+                        }
+                        panel.status = PanelStatus::Notice("分类已删除".into());
+                        panel.reload_categories(cx);
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to delete clipboard category");
+                        panel.status = PanelStatus::Error(format!("删除分类失败：{error}"));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn reorder_category(
@@ -621,38 +1127,100 @@ impl ClipboardPanel {
         let Some(ordered_ids) = reordered_category_ids(&current_ids, source_id, target_id) else {
             return;
         };
-        let result = self.application.update(cx, |application, _| {
-            application.reorder_categories(&ordered_ids)
-        });
-        if let Some(categories) = self.resolve_item_action("分类排序", result, cx) {
-            self.categories = categories;
-        }
-        cx.notify();
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        self.status = PanelStatus::Pending("正在保存分类排序…");
+        cx.spawn(async move |_, cx| {
+            let result = worker.reorder_categories_async(&ordered_ids).await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(categories) => {
+                        panel.categories = categories;
+                        panel.status = PanelStatus::Ready(String::new());
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to reorder clipboard categories");
+                        panel.status = PanelStatus::Error(format!("分类排序失败：{error}"));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn reload_categories(&mut self, cx: &mut Context<Self>) {
-        let result = self
-            .application
-            .update(cx, |application, _| application.categories());
-        let Some(categories) = self.resolve_item_action("加载分类", result, cx) else {
-            return;
-        };
-        let category_sources =
-            match Self::load_category_source_snapshot(&self.application, &categories, cx) {
-                Ok(sources) => sources,
-                Err(reason) => {
-                    error!(%reason, "failed to reload clipboard category sources");
-                    self.status = PanelStatus::Error("分类来源加载失败，请查看日志".into());
+        self.category_request_generation = self.category_request_generation.wrapping_add(1).max(1);
+        let generation = self.category_request_generation;
+        self.status = PanelStatus::Pending("正在加载分类…");
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            let result = async {
+                let categories = worker.categories_async().await?;
+                let mut sources = HashMap::new();
+                for category in categories
+                    .iter()
+                    .filter(|category| category.kind == ClipboardCategoryKind::Custom)
+                {
+                    let values = worker.category_sources_async(&category.id).await?;
+                    sources.insert(
+                        category.id.clone(),
+                        values
+                            .into_iter()
+                            .map(|source| source.to_lowercase())
+                            .collect(),
+                    );
+                }
+                let source_process_names = worker.source_process_names_async().await?;
+                Ok::<_, ClipboardHistoryError>((categories, sources, source_process_names))
+            }
+            .await;
+            let _ = panel.update(cx, |panel, cx| {
+                if panel.category_request_generation != generation {
                     return;
                 }
-            };
-        self.categories = categories;
-        self.category_sources = category_sources;
+                match result {
+                    Ok((categories, sources, source_process_names)) => {
+                        panel.categories = categories;
+                        panel.category_sources = sources;
+                        panel.source_process_names = source_process_names;
+                        if !panel
+                            .categories
+                            .iter()
+                            .any(|category| category.id == panel.active_category_id)
+                        {
+                            panel.active_category_id = BUILTIN_ALL_CATEGORY_ID.into();
+                        }
+                        panel.status = PanelStatus::Ready(String::new());
+                        panel.refresh_entries(cx);
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to load clipboard categories");
+                        panel.status = PanelStatus::Error("分类加载失败，请查看日志".into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn refresh_entries(&mut self, cx: &mut Context<Self>) {
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.page_request_pending = false;
         let query = self.search_input.read(cx).value().to_string();
-        self.reload_entries(&query, cx);
+        let generation = self.query_dispatch_generation;
+        self.request_entries(
+            query,
+            generation,
+            0,
+            ClipboardPageRequest::Replace,
+            None,
+            None,
+            cx,
+        );
     }
 
     fn handle_item_action(
@@ -665,77 +1233,139 @@ impl ClipboardPanel {
         match action {
             ClipboardItemAction::Edit => self.begin_edit(entry, window, cx),
             ClipboardItemAction::TogglePinned => {
-                let result = self.application.update(cx, |application, _| {
-                    application.set_item_pinned(entry.id, !entry.is_pinned)
-                });
-                if self.resolve_item_action("置顶", result, cx).is_some() {
-                    self.status = PanelStatus::Notice(if entry.is_pinned {
-                        "已取消置顶".into()
-                    } else {
-                        "已置顶".into()
+                let worker = self.history_worker.clone();
+                let panel = cx.entity().downgrade();
+                let item_id = entry.id;
+                let value = !entry.is_pinned;
+                self.status = PanelStatus::Pending("正在更新置顶…");
+                cx.spawn(async move |_, cx| {
+                    let result = worker.set_pinned_async(item_id, value).await;
+                    let _ = panel.update(cx, |panel, cx| {
+                        match result {
+                            Ok(_) => {
+                                panel.status = PanelStatus::Notice(if value {
+                                    "已置顶".into()
+                                } else {
+                                    "已取消置顶".into()
+                                });
+                                panel.refresh_entries(cx);
+                            }
+                            Err(error) => {
+                                error!(%error, "failed to update clipboard pinned state");
+                                panel.status = PanelStatus::Error(format!("置顶失败：{error}"));
+                            }
+                        }
+                        cx.notify();
                     });
-                    self.refresh_entries(cx);
-                }
+                })
+                .detach();
             }
             ClipboardItemAction::ToggleFavorite => {
-                let result = self.application.update(cx, |application, _| {
-                    application.set_item_favorite(entry.id, !entry.is_favorite)
-                });
-                if self.resolve_item_action("收藏", result, cx).is_some() {
-                    self.status = PanelStatus::Notice(if entry.is_favorite {
-                        "已取消收藏".into()
-                    } else {
-                        "已收藏".into()
+                let worker = self.history_worker.clone();
+                let panel = cx.entity().downgrade();
+                let item_id = entry.id;
+                let value = !entry.is_favorite;
+                self.status = PanelStatus::Pending("正在更新收藏…");
+                cx.spawn(async move |_, cx| {
+                    let result = worker.set_favorite_async(item_id, value).await;
+                    let _ = panel.update(cx, |panel, cx| {
+                        match result {
+                            Ok(_) => {
+                                panel.status = PanelStatus::Notice(if value {
+                                    "已收藏".into()
+                                } else {
+                                    "已取消收藏".into()
+                                });
+                                panel.refresh_entries(cx);
+                            }
+                            Err(error) => {
+                                error!(%error, "failed to update clipboard favorite state");
+                                panel.status = PanelStatus::Error(format!("收藏失败：{error}"));
+                            }
+                        }
+                        cx.notify();
                     });
-                    self.refresh_entries(cx);
-                }
+                })
+                .detach();
             }
             ClipboardItemAction::Delete => {
-                let result = self
-                    .application
-                    .update(cx, |application, _| application.delete_item(entry.id));
-                if self.resolve_item_action("删除", result, cx).is_some() {
-                    self.last_deleted_item_id = Some(entry.id);
-                    self.status = PanelStatus::Notice("已删除，可在底部撤销".into());
-                    self.refresh_entries(cx);
-                }
+                let worker = self.history_worker.clone();
+                let panel = cx.entity().downgrade();
+                let item_id = entry.id;
+                self.status = PanelStatus::Pending("正在删除…");
+                cx.spawn(async move |_, cx| {
+                    let result = worker
+                        .soft_delete_async(item_id, nxtools_ipc::unix_time_ms())
+                        .await;
+                    let _ = panel.update(cx, |panel, cx| {
+                        match result {
+                            Ok(()) => {
+                                panel.last_deleted_item_id = Some(item_id);
+                                panel.status = PanelStatus::Notice("已删除，可在底部撤销".into());
+                                panel.refresh_entries(cx);
+                            }
+                            Err(error) => {
+                                error!(%error, "failed to delete clipboard item");
+                                panel.status = PanelStatus::Error(format!("删除失败：{error}"));
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
             }
             ClipboardItemAction::ToggleCategorySource {
                 category_id,
                 remove,
             } => {
-                let process_name = entry.source.process_name.trim();
+                let process_name = entry.source.process_name.trim().to_owned();
                 if process_name.is_empty() {
                     self.status = PanelStatus::Error("该条目没有可用的来源程序".into());
                     cx.notify();
                     return;
                 }
-                let result = if remove {
-                    self.application.update(cx, |application, _| {
-                        application.remove_category_source(&category_id, process_name)
-                    })
-                } else {
-                    self.application.update(cx, |application, _| {
-                        application.add_category_source(&category_id, process_name)
-                    })
-                };
-                if let Some(sources) = self.resolve_item_action("更新来源分类", result, cx) {
-                    self.category_sources.insert(
-                        category_id.clone(),
-                        sources
-                            .into_iter()
-                            .map(|source| source.to_lowercase())
-                            .collect(),
-                    );
-                    if self.active_category_id == category_id {
-                        self.refresh_entries(cx);
-                    }
-                    self.status = PanelStatus::Notice(if remove {
-                        "已从分类移除来源".into()
+                let worker = self.history_worker.clone();
+                let panel = cx.entity().downgrade();
+                self.status = PanelStatus::Pending("正在更新来源分类…");
+                cx.spawn(async move |_, cx| {
+                    let result = if remove {
+                        worker
+                            .remove_category_source_async(&category_id, &process_name)
+                            .await
                     } else {
-                        "已将来源加入分类".into()
+                        worker
+                            .add_category_source_async(&category_id, &process_name)
+                            .await
+                    };
+                    let _ = panel.update(cx, |panel, cx| {
+                        match result {
+                            Ok(sources) => {
+                                panel.category_sources.insert(
+                                    category_id.clone(),
+                                    sources
+                                        .into_iter()
+                                        .map(|source| source.to_lowercase())
+                                        .collect(),
+                                );
+                                if panel.active_category_id == category_id {
+                                    panel.refresh_entries(cx);
+                                }
+                                panel.status = PanelStatus::Notice(if remove {
+                                    "已从分类移除来源".into()
+                                } else {
+                                    "已将来源加入分类".into()
+                                });
+                            }
+                            Err(error) => {
+                                error!(%error, "failed to update clipboard category source");
+                                panel.status =
+                                    PanelStatus::Error(format!("更新来源分类失败：{error}"));
+                            }
+                        }
+                        cx.notify();
                     });
-                }
+                })
+                .detach();
             }
         }
         cx.notify();
@@ -767,57 +1397,63 @@ impl ClipboardPanel {
             return;
         };
         let text = self.edit_input.read(cx).value().to_string();
-        let result = self.application.update(cx, |application, _| {
-            application.update_item_text(item_id, &text)
-        });
-        if self.resolve_item_action("保存", result, cx).is_some() {
-            self.editing_item_id = None;
-            self.status = PanelStatus::Notice("文本已保存为纯文本".into());
-            self.refresh_entries(cx);
-            self.search_input.focus_handle(cx).focus(window);
-        }
-        cx.notify();
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        let window_handle = window.window_handle();
+        self.status = PanelStatus::Pending("正在保存文本…");
+        cx.spawn(async move |_, cx| {
+            let result = worker.update_text_async(item_id, &text).await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(_) => {
+                        panel.editing_item_id = None;
+                        panel.status = PanelStatus::Notice("文本已保存为纯文本".into());
+                        panel.refresh_entries(cx);
+                        let panel_for_focus = cx.entity().downgrade();
+                        cx.defer(move |cx| {
+                            let _ = window_handle.update(cx, |_, window, app| {
+                                let _ = panel_for_focus.update(app, |panel, cx| {
+                                    panel.search_input.focus_handle(cx).focus(window);
+                                });
+                            });
+                        });
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to update clipboard text");
+                        panel.status = PanelStatus::Error(format!("保存失败：{error}"));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn restore_last_deleted(&mut self, cx: &mut Context<Self>) {
         let Some(item_id) = self.last_deleted_item_id else {
             return;
         };
-        let result = self
-            .application
-            .update(cx, |application, _| application.restore_item(item_id));
-        if self.resolve_item_action("撤销删除", result, cx).is_some() {
-            self.last_deleted_item_id = None;
-            self.status = PanelStatus::Notice("已撤销删除".into());
-            self.refresh_entries(cx);
-        }
-        cx.notify();
-    }
-
-    fn resolve_item_action<T, E>(
-        &mut self,
-        action: &str,
-        result: Result<Result<T, ClipboardHistoryError>, E>,
-        cx: &mut Context<Self>,
-    ) -> Option<T>
-    where
-        E: std::fmt::Display,
-    {
-        match result {
-            Ok(Ok(value)) => Some(value),
-            Ok(Err(error)) => {
-                error!(%error, %action, "clipboard item action failed");
-                self.status = PanelStatus::Error(format!("{action}失败：{error}"));
+        let worker = self.history_worker.clone();
+        let panel = cx.entity().downgrade();
+        self.status = PanelStatus::Pending("正在撤销删除…");
+        cx.spawn(async move |_, cx| {
+            let result = worker.restore_async(item_id).await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(_) => {
+                        panel.last_deleted_item_id = None;
+                        panel.status = PanelStatus::Notice("已撤销删除".into());
+                        panel.refresh_entries(cx);
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to restore clipboard item");
+                        panel.status = PanelStatus::Error(format!("撤销删除失败：{error}"));
+                    }
+                }
                 cx.notify();
-                None
-            }
-            Err(error) => {
-                error!(%error, %action, "clipboard application became unavailable");
-                self.status = PanelStatus::Error(format!("{action}失败：剪贴板核心不可用"));
-                cx.notify();
-                None
-            }
-        }
+            });
+        })
+        .detach();
     }
 
     fn activate_entry(
@@ -842,30 +1478,57 @@ impl ClipboardPanel {
             cx.notify();
             return;
         }
-        let target = self.target.clone();
+        let worker = self.history_worker.clone();
+        let application = self.application.clone();
+        let panel = cx.entity().downgrade();
         let entry = entry.clone();
-        match self.application.update(cx, |application, _| {
-            application.request_clipboard_action(&entry, &target, action)
-        }) {
-            Ok(Ok(command_id)) => {
-                self.pending_action = Some((command_id, action, entry.id));
-                self.status = PanelStatus::Pending(if action == ClipboardAction::CopyOnly {
-                    "正在复制…"
+        let target = self.target.clone();
+        self.status = PanelStatus::Pending(if action == ClipboardAction::CopyOnly {
+            "正在复制…"
+        } else {
+            "正在粘贴…"
+        });
+        cx.spawn(async move |_, cx| {
+            let result = async {
+                let native_formats = if matches!(
+                    action,
+                    ClipboardAction::OriginalPaste | ClipboardAction::CopyOnly
+                ) {
+                    worker
+                        .native_formats_async(entry.id)
+                        .await
+                        .map_err(anyhow::Error::from)?
                 } else {
-                    "正在粘贴…"
-                });
-                cx.notify();
+                    Vec::new()
+                };
+                application
+                    .update(cx, |application, _| {
+                        application.send_clipboard_action_with_native_formats(
+                            &entry,
+                            &target,
+                            action,
+                            native_formats,
+                        )
+                    })
+                    .map_err(|error| {
+                        anyhow::anyhow!("clipboard application unavailable: {error}")
+                    })?
             }
-            Ok(Err(error)) => {
-                self.status = PanelStatus::Error(format!("无法粘贴：{error}"));
+            .await;
+            let _ = panel.update(cx, |panel, cx| {
+                match result {
+                    Ok(command_id) => {
+                        panel.pending_action = Some((command_id, action, entry.id));
+                    }
+                    Err(error) => {
+                        error!(%error, "failed to prepare clipboard action");
+                        panel.status = PanelStatus::Error(format!("无法粘贴：{error}"));
+                    }
+                }
                 cx.notify();
-            }
-            Err(error) => {
-                error!(%error, "clipboard application became unavailable");
-                self.status = PanelStatus::Error("无法粘贴：剪贴板核心不可用".into());
-                cx.notify();
-            }
-        }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn handle_command_result(
@@ -884,26 +1547,32 @@ impl ClipboardPanel {
         self.pending_action = None;
         if result.success {
             info!(%correlation_id, ?action, "clipboard action completed");
-            let application = self.application.clone();
+            let worker = self.history_worker.clone();
             let panel = (action == ClipboardAction::CopyOnly).then(|| cx.entity().downgrade());
-            schedule_entity_update(
-                application,
-                move |application, cx| {
-                    if let Err(error) = application.mark_item_used(item_id) {
-                        warn!(%error, item_id, "clipboard action succeeded but usage could not be recorded");
-                    }
-                    if let Some(panel) = panel {
-                        schedule_entity_update(panel, |panel, cx| panel.refresh_entries(cx), cx);
-                    }
-                },
-                cx,
-            );
+            cx.spawn(async move |_, cx| {
+                let result = worker
+                    .mark_used_async(item_id, nxtools_ipc::unix_time_ms())
+                    .await;
+                if let Err(error) = result {
+                    warn!(%error, item_id, "clipboard action succeeded but usage could not be recorded");
+                }
+                if let Some(panel) = panel {
+                    let _ = panel.update(cx, |panel, cx| panel.refresh_entries(cx));
+                }
+            })
+            .detach();
             if action == ClipboardAction::CopyOnly {
                 self.status = PanelStatus::Notice("已复制".into());
                 window.activate_window();
                 cx.notify();
             } else {
-                self.close(window, cx);
+                self.close_with_reason(
+                    window,
+                    cx,
+                    PopupCloseReason::PasteSuccess {
+                        command_id: correlation_id,
+                    },
+                );
             }
         } else {
             let reason = result.error.unwrap_or_else(|| "Windows 未返回原因".into());
@@ -959,7 +1628,15 @@ impl ClipboardPanel {
             &foreground.process_name,
             Instant::now() < self.hide_suppressed_until,
         ) {
-            self.close(window, cx);
+            self.close_with_reason(
+                window,
+                cx,
+                PopupCloseReason::Foreground {
+                    window_handle: foreground.window_handle,
+                    process_id: foreground.process_id,
+                    process_name: foreground.process_name.clone(),
+                },
+            );
             return;
         }
         if foreground_kept_panel_without_focus(
@@ -984,36 +1661,59 @@ impl ClipboardPanel {
 
     pub(crate) fn handle_pointer_pressed(
         &mut self,
-        popup_window_handle: i64,
-        preview_window_handle: i64,
-        pressed_root_window_handle: i64,
-        pressed_process_id: u32,
+        press: PopupPointerPressContext,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let dismiss = PopupDismissContext {
-            popup_window_handle,
-            preview_window_handle,
+            popup_window_handle: press.popup_window_handle,
+            preview_window_handle: press.preview_window_handle,
             current_process_id: std::process::id(),
             paste_pending: self.pending_action.is_some(),
             is_open: self.is_open,
         };
-        if should_hide_for_pointer_press(dismiss, pressed_root_window_handle, pressed_process_id) {
-            self.close(window, cx);
+        if should_hide_for_pointer_press_with_session(
+            dismiss,
+            press.pressed_root_window_handle,
+            press.pressed_process_id,
+            press.popup_requested_at_unix_ms,
+            press.popup_event_sequence,
+            press.pressed_at_unix_ms,
+            press.pressed_event_sequence,
+        ) {
+            self.close_with_reason(
+                window,
+                cx,
+                PopupCloseReason::Pointer {
+                    window_handle: press.pressed_window_handle,
+                    root_window_handle: press.pressed_root_window_handle,
+                    process_id: press.pressed_process_id,
+                },
+            );
         }
     }
 
-    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn close_with_reason(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        reason: PopupCloseReason,
+    ) {
         if !self.is_open {
             return;
         }
         let Some(window_handle) = native_window_handle(window) else {
-            error!("cannot hide clipboard popup because its native window handle is unavailable");
+            warn!(
+                session_id = %self.session_id,
+                reason = reason.kind(),
+                "clipboard.popup.close_failed"
+            );
             self.status = PanelStatus::Error("无法隐藏面板：窗口句柄不可用".into());
             cx.notify();
             return;
         };
         let popup_window = window.window_handle();
+        let session_id = self.session_id;
         self.is_open = false;
         let application = self.application.clone();
         let panel = cx.entity().downgrade();
@@ -1021,18 +1721,15 @@ impl ClipboardPanel {
             application,
             move |application, cx| {
                 application.dismiss_preview(cx);
-                let reason = match application.hide_popup(popup_window, window_handle) {
-                    Ok(_) => return,
-                    Err(error) => {
-                        error!(%error, "failed to request clipboard popup hide");
-                        format!("无法隐藏面板：{error}")
-                    }
-                };
-                let _ = panel.update(cx, |panel, cx| {
-                    panel.is_open = true;
-                    panel.status = PanelStatus::Error(reason);
-                    cx.notify();
-                });
+                let result =
+                    application.hide_popup(popup_window, window_handle, session_id, reason);
+                if let Err(error) = result {
+                    let _ = panel.update(cx, |panel, cx| {
+                        panel.is_open = true;
+                        panel.status = PanelStatus::Error(format!("无法隐藏面板：{error}"));
+                        cx.notify();
+                    });
+                }
             },
             cx,
         );
@@ -1043,15 +1740,23 @@ impl Render for ClipboardPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let modifier_actions = self.modifier_actions;
-        let entries_empty = self.entries.is_empty();
+        let entries_empty = self.entries.borrow().is_empty();
         let search_query = self.search_input.read(cx).value().trim().to_owned();
         let status_is_error = self.status.is_error();
-        let status_should_render = self.status.should_render();
+        let search_loading = self.search_pending;
+        let page_loading = self.page_request_pending;
+        let status_should_render = self.status.should_render() || page_loading;
         let status_label = self.status.label().to_owned();
+        let query_failed = self.query_error.is_some();
+        let query_error_message = self
+            .query_error
+            .clone()
+            .unwrap_or_else(|| "剪贴板查询失败".into());
         let summary = self
             .active_category()
             .map(|category| category.name.clone())
             .unwrap_or_else(|| "全部".into());
+        let selected_entry_index = self.selected_entry_index;
         let header_summary = clipboard_header_summary(&summary, self.total_entries);
         let modifier_action = self.active_modifier_action;
         let is_scrolled = self.list_is_scrolled;
@@ -1068,10 +1773,16 @@ impl Render for ClipboardPanel {
                 }
             })
             .unwrap_or("新建分类");
+        let category_source_choices = self.category_source_choices();
+        let selected_category_sources = self
+            .category_editor
+            .as_ref()
+            .map(|editor| editor.selected_sources.clone())
+            .unwrap_or_default();
         let can_undo_delete = self.last_deleted_item_id.is_some();
         let list_width = panel_list_width(window.viewport_size().width.as_f32());
         if self.list_width > 0.0 && (self.list_width - list_width).abs() > 0.5 {
-            self.list_scroll.reset(self.entries.len());
+            self.list_scroll.reset(self.entries.borrow().len());
             self.list_is_scrolled = false;
         }
         self.list_width = list_width;
@@ -1090,6 +1801,7 @@ impl Render for ClipboardPanel {
         let save_edit_panel = cx.entity().downgrade();
         let cancel_category_panel = cx.entity().downgrade();
         let save_category_panel = cx.entity().downgrade();
+        let category_source_panel = cx.entity().downgrade();
         let search_scope_panel = cx.entity().downgrade();
         let extended_search = self.search_scope == ClipboardSearchScope::Extended;
         let move_application = self.application.clone();
@@ -1101,7 +1813,7 @@ impl Render for ClipboardPanel {
             .text_color(theme.text)
             .flex()
             .flex_col()
-            .gap(px(PANEL_SECTION_GAP))
+            .gap(px(0.0))
             .on_modifiers_changed(move |event, _window, app| {
                 let _ = modifier_panel.update(app, |panel, cx| {
                     let action =
@@ -1115,8 +1827,8 @@ impl Render for ClipboardPanel {
             .child(inset_panel_section(
                 div()
                     .id("clipboard-panel-header")
-                    .mt(px(PANEL_SECTION_GAP))
-                    .h(px(BADGE_HEIGHT))
+                    .mt(px(0.0))
+                    .h(px(CONTROL_HEIGHT_INPUT))
                     .flex()
                     .items_center()
                     .gap(px(6.0))
@@ -1132,9 +1844,20 @@ impl Render for ClipboardPanel {
                     })
                     .child(
                         div()
-                            .text_size(px(TEXT_BODY))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("剪贴板"),
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(
+                                Icon::new(MaterialIcon::ContentPaste)
+                                    .size(px(16.0))
+                                    .text_color(theme.accent),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_BODY))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child("剪贴板"),
+                            ),
                     )
                     .child(
                         div()
@@ -1194,7 +1917,7 @@ impl Render for ClipboardPanel {
             ))
             .child(inset_panel_section(
                 div()
-                    .h(px(26.0))
+                    .h(px(CONTROL_HEIGHT_ACTION))
                     .flex()
                     .items_center()
                     .gap_1()
@@ -1202,8 +1925,7 @@ impl Render for ClipboardPanel {
                         div()
                             .id("clipboard-category-scroll")
                             .min_w_0()
-                            .flex_1()
-                            .h(px(26.0))
+                            .h(px(CONTROL_HEIGHT_ACTION))
                             .overflow_x_scroll()
                             .track_scroll(&category_scroll)
                             .on_scroll_wheel({
@@ -1227,7 +1949,7 @@ impl Render for ClipboardPanel {
                             })
                             .child(
                                 div()
-                                    .h(px(26.0))
+                                    .h(px(CONTROL_HEIGHT_ACTION))
                                     .w(px(category_strip_width))
                                     .flex()
                                     .flex_none()
@@ -1246,7 +1968,7 @@ impl Render for ClipboardPanel {
                     .child(
                         div()
                             .id("add-clipboard-category")
-                            .size(px(24.0))
+                            .size(px(CONTROL_HEIGHT_ACTION))
                             .rounded(px(RADIUS_CONTROL))
                             .cursor_pointer()
                             .flex_none()
@@ -1276,73 +1998,78 @@ impl Render for ClipboardPanel {
                     ),
             ))
             .child(inset_panel_section(
-                div().h(px(28.0)).flex().items_center().gap_2().child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .h(px(28.0))
-                        .rounded(px(RADIUS_CONTROL))
-                        .border_1()
-                        .border_color(theme.border)
-                        .bg(theme.surface)
-                        .px_2()
-                        .flex()
-                        .items_center()
-                        .child(
-                            Icon::new(MaterialIcon::Search)
-                                .size(px(14.0))
-                                .text_color(theme.text_muted),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .text_size(px(TEXT_BODY))
-                                .text_color(theme.text)
-                                .child(
-                                    Input::new(&self.search_input)
-                                        .appearance(false)
-                                        .bordered(false)
-                                        .focus_bordered(false),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .id("search-scope-toggle")
-                                .size(px(20.0))
-                                .flex_none()
-                                .rounded(px(RADIUS_CONTROL))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .cursor_pointer()
-                                .bg(if extended_search {
-                                    theme.accent_soft
-                                } else {
-                                    gpui::rgba(0x00000000)
-                                })
-                                .text_color(if extended_search {
-                                    theme.accent_text
-                                } else {
-                                    theme.text_muted
-                                })
-                                .hover(move |style| style.bg(theme.surface_hover))
-                                .tooltip(move |window, cx| {
-                                    Tooltip::new(if extended_search {
-                                        "关闭扩展搜索"
+                div()
+                    .h(px(CONTROL_HEIGHT_INPUT))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .h(px(CONTROL_HEIGHT_INPUT))
+                            .rounded(px(RADIUS_CONTROL))
+                            .border_1()
+                            .border_color(theme.border_subtle)
+                            .bg(theme.surface)
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .child(
+                                Icon::new(MaterialIcon::Search)
+                                    .size(px(14.0))
+                                    .text_color(theme.text_muted),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .flex_1()
+                                    .text_size(px(TEXT_BODY))
+                                    .text_color(theme.text)
+                                    .child(
+                                        Input::new(&self.search_input)
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id("search-scope-toggle")
+                                    .size(px(20.0))
+                                    .flex_none()
+                                    .rounded(px(RADIUS_CONTROL))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .cursor_pointer()
+                                    .bg(if extended_search {
+                                        theme.accent_soft
                                     } else {
-                                        "扩展搜索：图片名、文件路径、来源进程和窗口标题"
+                                        gpui::rgba(0x00000000)
                                     })
-                                    .build(window, cx)
-                                })
-                                .on_click(move |_event, _window, app| {
-                                    let _ = search_scope_panel.update(app, |panel, cx| {
-                                        panel.toggle_search_scope(cx);
-                                    });
-                                })
-                                .child(Icon::new(MaterialIcon::ManageSearch).size(px(14.0))),
-                        ),
-                ),
+                                    .text_color(if extended_search {
+                                        theme.accent_text
+                                    } else {
+                                        theme.text_muted
+                                    })
+                                    .hover(move |style| style.bg(theme.surface_hover))
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(if extended_search {
+                                            "关闭扩展搜索"
+                                        } else {
+                                            "扩展搜索：图片名、文件路径、来源进程和窗口标题"
+                                        })
+                                        .build(window, cx)
+                                    })
+                                    .on_click(move |_event, _window, app| {
+                                        let _ = search_scope_panel.update(app, |panel, cx| {
+                                            panel.toggle_search_scope(cx);
+                                        });
+                                    })
+                                    .child(Icon::new(MaterialIcon::ManageSearch).size(px(14.0))),
+                            ),
+                    ),
             ))
             .child(inset_panel_section(
                 div()
@@ -1350,10 +2077,26 @@ impl Render for ClipboardPanel {
                     .mb(px(PANEL_CONTENT_INSET))
                     .relative()
                     .flex_1()
-                    .min_h_0()
-                    .bg(theme.canvas)
-                    .overflow_hidden()
-                    .when(entries_empty, |list| {
+                    .when(entries_empty && search_loading, |list| {
+                        list.child(progress_state(
+                            theme,
+                            "clipboard-history-loading",
+                            "正在查询剪贴板",
+                            "搜索结果加载中…",
+                        ))
+                    })
+                    .when(
+                        entries_empty && !search_loading && query_failed,
+                        move |list| {
+                            list.child(inline_error_state(
+                                theme,
+                                "clipboard-history-query-error",
+                                "查询失败",
+                                query_error_message,
+                            ))
+                        },
+                    )
+                    .when(entries_empty && !search_loading && !query_failed, |list| {
                         list.child(empty_state(
                             theme,
                             "clipboard-history-empty",
@@ -1375,7 +2118,7 @@ impl Render for ClipboardPanel {
                         ))
                     })
                     .when(!entries_empty, |container| {
-                        let entries = self.entries.clone();
+                        let entries = Rc::clone(&self.entries);
                         let custom_categories = self
                             .categories
                             .iter()
@@ -1389,7 +2132,7 @@ impl Render for ClipboardPanel {
                         let theme = self.theme;
                         container.child(
                             list(self.list_scroll.clone(), move |index, _window, app| {
-                                let Some(entry) = entries.get(index).cloned() else {
+                                let Some(entry) = entries.borrow().get(index).cloned() else {
                                     return div().into_any_element();
                                 };
                                 for resource_path in [
@@ -1471,6 +2214,7 @@ impl Render for ClipboardPanel {
                                         });
                                     },
                                 );
+                                let preview_enabled = !is_editing_category;
                                 let preview_application = shell_application.clone();
                                 let on_preview = Rc::new(
                                     move |entered: bool,
@@ -1479,6 +2223,9 @@ impl Render for ClipboardPanel {
                                           pointer_position: Point<Pixels>,
                                           panel_scale_factor: f32,
                                           app: &mut App| {
+                                        if !preview_enabled {
+                                            return;
+                                        }
                                         let _ =
                                             preview_application.update(app, |application, cx| {
                                                 application.schedule_preview(
@@ -1496,6 +2243,7 @@ impl Render for ClipboardPanel {
                                     theme,
                                     entry,
                                     index,
+                                    selected_entry_index == Some(index),
                                     available_image_width,
                                     modifier_actions,
                                     CategorySourceMenu {
@@ -1688,79 +2436,244 @@ impl Render for ClipboardPanel {
                 )
             })
             .when(is_editing_category, |panel| {
-                panel.child(
-                    div()
-                        .absolute()
-                        .top(px(104.0))
-                        .left_3()
-                        .right_3()
-                        .p_2()
-                        .rounded(px(RADIUS_CONTROL))
-                        .border_1()
-                        .border_color(theme.border)
-                        .bg(theme.surface_raised)
-                        .shadow_lg()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_size(px(TEXT_BODY))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .child(category_editor_title),
-                        )
-                        .child(
-                            div()
-                                .h(px(32.0))
-                                .px_2()
-                                .rounded(px(RADIUS_CONTROL))
-                                .border_1()
-                                .border_color(theme.border)
-                                .bg(theme.surface)
-                                .flex()
-                                .items_center()
-                                .child(
-                                    Input::new(&self.category_name_input)
-                                        .appearance(false)
-                                        .bordered(false)
-                                        .focus_bordered(false),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(TEXT_META))
-                                .text_color(theme.text_muted)
-                                .child("在条目右键菜单中把来源程序加入分类"),
-                        )
-                        .child(
-                            div()
-                                .h(px(GROUP_HEADER_HEIGHT))
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(div().flex_1())
-                                .child(dialog_button(
-                                    theme,
-                                    "取消",
-                                    false,
-                                    move |_event, window, app| {
-                                        let _ = cancel_category_panel.update(app, |panel, cx| {
-                                            panel.cancel_category_editor(window, cx);
-                                        });
-                                    },
-                                ))
-                                .child(dialog_button(
-                                    theme,
-                                    "保存",
-                                    true,
-                                    move |_event, window, app| {
-                                        let _ = save_category_panel.update(app, |panel, cx| {
-                                            panel.save_category_editor(window, cx);
-                                        });
-                                    },
-                                )),
-                        ),
-                )
+                let source_panel = category_source_panel.clone();
+                let selected_sources = selected_category_sources.clone();
+                panel
+                    .child(
+                        div()
+                            .id("clipboard-category-editor-backdrop")
+                            .debug_selector(|| "clipboard-category-editor-backdrop".into())
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0()
+                            .occlude()
+                            .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                                cx.stop_propagation();
+                            })
+                            .on_click(|_event, _window, cx| {
+                                cx.stop_propagation();
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id("clipboard-category-editor")
+                            .debug_selector(|| "clipboard-category-editor".into())
+                            .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                                cx.stop_propagation();
+                            })
+                            .on_click(|_event, _window, cx| {
+                                cx.stop_propagation();
+                            })
+                            .absolute()
+                            .top(px(CATEGORY_EDITOR_TOP))
+                            .left_3()
+                            .right_3()
+                            .h(px(CATEGORY_EDITOR_HEIGHT))
+                            .occlude()
+                            .p_2()
+                            .rounded(px(RADIUS_CONTROL))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface_raised)
+                            .shadow_lg()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_BODY))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child(category_editor_title),
+                            )
+                            .child(
+                                div()
+                                    .h(px(32.0))
+                                    .px_2()
+                                    .rounded(px(RADIUS_CONTROL))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .bg(theme.surface)
+                                    .flex()
+                                    .items_center()
+                                    .child(
+                                        Input::new(&self.category_name_input)
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(TEXT_META))
+                                    .text_color(theme.text_muted)
+                                    .child("选择来源应用后，新捕获的内容会自动进入此分类"),
+                            )
+                            .child(
+                                div()
+                                    .h(px(GROUP_HEADER_HEIGHT))
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .text_size(px(TEXT_LABEL))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .child("自动归类来源应用"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(TEXT_META))
+                                            .text_color(theme.text_muted)
+                                            .child(format!("已选 {} 个", selected_sources.len())),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id("clipboard-category-source-list")
+                                    .debug_selector(|| "clipboard-category-source-list".into())
+                                    .h(px(CATEGORY_EDITOR_SOURCE_LIST_HEIGHT))
+                                    .min_h_0()
+                                    .flex_none()
+                                    .overflow_y_scrollbar()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.0))
+                                    .when(category_source_choices.is_empty(), |list| {
+                                        list.child(
+                                            div()
+                                                .h(px(28.0))
+                                                .flex()
+                                                .items_center()
+                                                .text_size(px(TEXT_META))
+                                                .text_color(theme.text_muted)
+                                                .child("暂无已捕获的来源应用"),
+                                        )
+                                    })
+                                    .children(category_source_choices.into_iter().enumerate().map(
+                                        {
+                                            let selected_sources = selected_sources.clone();
+                                            let source_panel = source_panel.clone();
+                                            move |(index, source)| {
+                                                let selected = selected_sources
+                                                    .contains(&source.to_lowercase());
+                                                let process_name = source.clone();
+                                                div()
+                                                    .id(gpui::SharedString::from(format!(
+                                                        "clipboard-category-source-{index}"
+                                                    )))
+                                                    .debug_selector(move || {
+                                                        format!(
+                                                            "clipboard-category-source-{index}"
+                                                        )
+                                                    })
+                                                    .h(px(26.0))
+                                                    .px_2()
+                                                    .rounded(px(RADIUS_CONTROL))
+                                                    .cursor_pointer()
+                                                    .bg(if selected {
+                                                        theme.accent_soft
+                                                    } else {
+                                                        gpui::rgba(0x00000000)
+                                                    })
+                                                    .on_mouse_down(
+                                                        MouseButton::Left,
+                                                        |_event, _window, cx| {
+                                                            cx.stop_propagation();
+                                                        },
+                                                    )
+                                                    .on_click({
+                                                        let source_panel = source_panel.clone();
+                                                        move |_event, _window, app| {
+                                                            app.stop_propagation();
+                                                            let _ = source_panel.update(
+                                                                app,
+                                                                |panel, cx| {
+                                                                    panel
+                                                                        .toggle_category_editor_source(
+                                                                            &process_name,
+                                                                            cx,
+                                                                        );
+                                                                },
+                                                            );
+                                                        }
+                                                    })
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .size(px(14.0))
+                                                            .rounded(px(2.0))
+                                                            .border_1()
+                                                            .border_color(if selected {
+                                                                theme.accent
+                                                            } else {
+                                                                theme.border
+                                                            })
+                                                            .bg(if selected {
+                                                                theme.accent
+                                                            } else {
+                                                                theme.surface
+                                                            })
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
+                                                            .when(selected, |checkbox| {
+                                                                checkbox.child(
+                                                                    Icon::new(MaterialIcon::Check)
+                                                                        .size(px(11.0))
+                                                                        .text_color(theme.accent_text),
+                                                                )
+                                                            }),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .min_w_0()
+                                                            .truncate()
+                                                            .text_size(px(TEXT_LABEL))
+                                                            .text_color(if selected {
+                                                                theme.accent_text
+                                                            } else {
+                                                                theme.text_secondary
+                                                            })
+                                                            .child(source),
+                                                    )
+                                            }
+                                        },
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .h(px(GROUP_HEADER_HEIGHT))
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(div().flex_1())
+                                    .child(dialog_button(
+                                        theme,
+                                        "取消",
+                                        false,
+                                        move |_event, window, app| {
+                                            let _ = cancel_category_panel.update(app, |panel, cx| {
+                                                panel.cancel_category_editor(window, cx);
+                                            });
+                                        },
+                                    ))
+                                    .child(dialog_button(
+                                        theme,
+                                        "保存",
+                                        true,
+                                        move |_event, window, app| {
+                                            let _ = save_category_panel.update(app, |panel, cx| {
+                                                panel.save_category_editor(window, cx);
+                                            });
+                                        },
+                                    )),
+                            ),
+                    )
             })
             .child(panel_resize_hitbox(
                 div()
@@ -1797,7 +2710,6 @@ fn panel_window_frame(theme: Theme, content: impl IntoElement) -> gpui::AnyEleme
             div()
                 .id("clipboard-panel-shell")
                 .size_full()
-                .overflow_hidden()
                 .border_1()
                 .border_color(theme.border)
                 .bg(theme.canvas)
@@ -1814,11 +2726,23 @@ struct PopupDismissContext {
     paste_pending: bool,
     is_open: bool,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PopupPointerPressContext {
+    pub(crate) popup_window_handle: i64,
+    pub(crate) preview_window_handle: i64,
+    pub(crate) pressed_window_handle: i64,
+    pub(crate) pressed_root_window_handle: i64,
+    pub(crate) pressed_process_id: u32,
+    pub(crate) popup_requested_at_unix_ms: i64,
+    pub(crate) popup_event_sequence: u64,
+    pub(crate) pressed_at_unix_ms: i64,
+    pub(crate) pressed_event_sequence: u64,
+}
 
 fn should_hide_for_foreground_change(
     dismiss: PopupDismissContext,
     foreground_window_handle: i64,
-    foreground_process_id: u32,
+    _foreground_process_id: u32,
     foreground_process_name: &str,
     within_open_grace: bool,
 ) -> bool {
@@ -1827,7 +2751,6 @@ fn should_hide_for_foreground_change(
         && !within_open_grace
         && dismiss.popup_window_handle != 0
         && foreground_window_handle != 0
-        && foreground_process_id != dismiss.current_process_id
         && foreground_window_handle != dismiss.popup_window_handle
         && foreground_window_handle != dismiss.preview_window_handle
         && !is_transient_foreground_host(foreground_process_name)
@@ -1855,21 +2778,58 @@ fn foreground_kept_panel_without_focus(
 /// types with an IME inside the panel's search box; treating them as a real
 /// foreground change hid the panel mid-typing.
 fn is_transient_foreground_host(process_name: &str) -> bool {
-    const TRANSIENT_HOSTS: [&str; 2] = ["textinputhost.exe", "ctfmon.exe"];
-    let name = process_name.rsplit(['\\', '/']).next().unwrap_or(process_name);
+    const TRANSIENT_HOSTS: [&str; 2] = ["textinputhost", "ctfmon"];
+    let name = process_name
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(process_name);
+    let name = name.strip_suffix(".exe").unwrap_or(name);
     TRANSIENT_HOSTS
         .iter()
         .any(|host| name.eq_ignore_ascii_case(host))
 }
 
+#[cfg(test)]
 fn should_hide_for_pointer_press(
     dismiss: PopupDismissContext,
     pressed_root_window_handle: i64,
-    _pressed_process_id: u32,
+    pressed_process_id: u32,
 ) -> bool {
+    should_hide_for_pointer_press_with_session(
+        dismiss,
+        pressed_root_window_handle,
+        pressed_process_id,
+        0,
+        0,
+        0,
+        0,
+    )
+}
+
+fn should_hide_for_pointer_press_with_session(
+    dismiss: PopupDismissContext,
+    pressed_root_window_handle: i64,
+    _pressed_process_id: u32,
+    popup_requested_at_unix_ms: i64,
+    popup_event_sequence: u64,
+    pressed_at_unix_ms: i64,
+    pressed_event_sequence: u64,
+) -> bool {
+    // A pointer sampled before this popup session began must not dismiss the
+    // newly opened popup merely because IPC delivered it afterward. Zero is
+    // the compatibility value used by older PlatformHost peers.
+    let sampled_before_popup = (popup_event_sequence != 0
+        && pressed_event_sequence != 0
+        && pressed_event_sequence <= popup_event_sequence)
+        || (popup_requested_at_unix_ms != 0
+            && pressed_at_unix_ms != 0
+            && pressed_at_unix_ms < popup_requested_at_unix_ms);
+    if sampled_before_popup {
+        return false;
+    }
+
     // Presses anywhere outside the panel and its preview dismiss the panel —
-    // including presses inside THIS application's other windows (the user
-    // report: clicking elsewhere in the app left the panel stuck on top).
+    // including presses inside THIS application's other windows.
     dismiss.is_open
         && !dismiss.paste_pending
         && dismiss.popup_window_handle != 0
@@ -2030,22 +2990,17 @@ fn category_tab(
     let is_custom = category.kind == ClipboardCategoryKind::Custom;
     let tab = div()
         .id(gpui::SharedString::from(format!("category-{category_id}")))
-        .h(px(BADGE_HEIGHT))
+        .h(px(CONTROL_HEIGHT_ACTION))
         .w(px(tab_width))
         .flex_none()
         .px(px(7.0))
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
+        .border_b_2()
         .border_color(if selected {
             theme.accent
         } else {
             gpui::rgba(0x00000000)
         })
-        .bg(if selected {
-            theme.accent_soft
-        } else {
-            gpui::rgba(0x00000000)
-        })
+        .bg(gpui::rgba(0x00000000))
         .text_size(px(TEXT_LABEL))
         .line_height(px(LINE_HEIGHT_LABEL))
         .text_color(if selected {

@@ -39,14 +39,19 @@ public static class BrowserExtensionPackageService
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
 
-    public static string Export(string format, string destinationPath) =>
-        Export(format, destinationPath, ResolveExtensionDirectory());
+    public static string Export(
+        string format,
+        string destinationPath,
+        CancellationToken cancellationToken = default) =>
+        Export(format, destinationPath, ResolveExtensionDirectory(), cancellationToken);
 
     internal static string Export(
         string format,
         string destinationPath,
-        string sourceDirectory)
+        string sourceDirectory,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(destinationPath))
         {
             var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -82,6 +87,7 @@ public static class BrowserExtensionPackageService
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.Equals(format, FirefoxFormat, StringComparison.OrdinalIgnoreCase))
             {
                 var manifest = CreateFirefoxManifest(sourceDirectory);
@@ -90,10 +96,13 @@ public static class BrowserExtensionPackageService
             else
             {
                 var zipBytes = CreateZipBytesForCrx(sourceDirectory);
+                cancellationToken.ThrowIfCancellationRequested();
                 var crxBytes = CreateCrx3Bytes(zipBytes);
+                cancellationToken.ThrowIfCancellationRequested();
                 File.WriteAllBytes(tempFile, crxBytes);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return MovePackageToDestination(tempFile, destinationPath);
         }
         finally

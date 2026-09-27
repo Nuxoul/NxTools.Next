@@ -312,6 +312,8 @@ pub struct DownloadTaskSummary {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub file_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_path: Option<std::path::PathBuf>,
     pub source_url: String,
     pub category_name: Option<String>,
     pub category_id: Option<String>,

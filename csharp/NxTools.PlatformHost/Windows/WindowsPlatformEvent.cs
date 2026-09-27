@@ -11,7 +11,9 @@ internal sealed record ForegroundChangedEvent(ForegroundContext Context) : Windo
 internal sealed record GlobalPointerPressedEvent(
     long WindowHandle,
     long RootWindowHandle,
-    uint ProcessId) : WindowsPlatformEvent;
+    uint ProcessId,
+    long SampledAtUnixMs = 0,
+    ulong EventSequence = 0) : WindowsPlatformEvent;
 
 internal sealed record ClipboardImageData(
     string StagingPath,
@@ -33,7 +35,8 @@ internal sealed record ClipboardPanelRequestedEvent(
     int CursorY,
     uint CursorDisplayIndex,
     uint CursorMonitorDpi,
-    long RequestedAtUnixMs) : WindowsPlatformEvent;
+    long RequestedAtUnixMs,
+    ulong EventSequence = 0) : WindowsPlatformEvent;
 
 internal sealed record ExplorerContext(
     long WindowHandle,

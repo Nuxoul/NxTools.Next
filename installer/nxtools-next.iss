@@ -59,6 +59,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "NxTools.Next"; \
     ValueData: """{app}\{#MyAppExeName}"" --silent-start"; \
     Tasks: autostart; Flags: uninsdeletevalue
+; Remove the pre-NxTools.Next startup value so one install cannot launch twice.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: none; ValueName: "NxTools"; Flags: deletevalue
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; \

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::components::tooltip::bounded_text_tooltip;
 use nxtools_protocol::SetWindowBoundsCenteredCommand;
 
 /// Translates raw engine failure text into guidance the user can act on.
@@ -21,6 +22,25 @@ pub(crate) fn humanize_download_fault(message: &str) -> String {
         "域名解析失败。检查链接拼写与网络连接。".into()
     } else {
         message.to_owned()
+    }
+}
+fn apply_new_download_window_resize(
+    platform: &PlatformBridge,
+    window: &mut Window,
+    window_size: gpui::Size<gpui::Pixels>,
+) -> bool {
+    if let Some(handle) = crate::ui::native_window_handle(window) {
+        let _ = platform.send_command(PlatformCommand::SetWindowBoundsCentered(
+            SetWindowBoundsCenteredCommand {
+                window_handle: handle,
+                width: (window_size.width.as_f32() * window.scale_factor()).round() as i32,
+                height: (window_size.height.as_f32() * window.scale_factor()).round() as i32,
+            },
+        ));
+        true
+    } else {
+        window.resize(window_size);
+        false
     }
 }
 
@@ -112,6 +132,7 @@ pub(crate) struct NewDownloadView {
     pub(crate) external_request: Option<DownloadRequest>,
     pub(crate) external_blob: Option<BrowserBlobDialogContext>,
     pub(crate) confirmed_request: Option<DownloadRequest>,
+    pub(crate) submission_idempotency_key: uuid::Uuid,
     pub(crate) probe: Option<DownloadProbe>,
     pub(crate) selected_hls_variant: Option<usize>,
     pub(crate) selected_dash_video_track: Option<usize>,
@@ -327,6 +348,7 @@ impl NewDownloadView {
             external_request,
             external_blob: external_blob.clone(),
             confirmed_request: None,
+            submission_idempotency_key: uuid::Uuid::new_v4(),
             probe: external_blob.as_ref().map(|context| DownloadProbe {
                 final_url: "browser-blob://staged".into(),
                 file_name: Some(context.blob.file_name.clone()),
@@ -445,10 +467,7 @@ impl NewDownloadView {
                 self.error = Some(humanize_download_fault(&error));
                 self.confirmed_request = None;
                 self.probe = None;
-                window.resize(size(
-                    px(560.0),
-                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-                ));
+                window.resize(new_download_error_window_size(false));
                 cx.notify();
                 return;
             }
@@ -464,10 +483,7 @@ impl NewDownloadView {
         let engine = self.application.read(cx).engine.clone();
         let background = cx.background_executor().clone();
         let source_window = window.window_handle();
-        let platform_for_resize = self
-            .application
-            .read(cx)
-            .platform_bridge();
+        let platform_for_resize = self.application.read(cx).platform_bridge();
         cx.spawn(async move |this, cx| {
             let request_for_probe = request.clone();
             let outcome = background
@@ -547,9 +563,7 @@ impl NewDownloadView {
                     .probe
                     .as_ref()
                     .map(new_download_window_size_for_probe)
-                    .unwrap_or_else(|| {
-                        size(px(560.0), px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT)
-                    });
+                    .unwrap_or_else(|| new_download_error_window_size(false));
                 Some((
                     this.file_name.clone(),
                     resolved_file_name,
@@ -558,33 +572,39 @@ impl NewDownloadView {
                 ))
             });
             if let Ok(Some((file_name, resolved_file_name, _confirmed, window_size))) = applied {
-                let _ = source_window.update(cx, move |_, window, cx| {
-                    if let Some(resolved_file_name) = resolved_file_name {
-                        file_name.update(cx, |input, cx| {
-                            input.set_value(resolved_file_name, window, cx);
+                let initial_platform = Rc::clone(&platform_for_resize);
+                let native_resize = source_window
+                    .update(cx, move |_, window, cx| {
+                        if let Some(resolved_file_name) = resolved_file_name {
+                            file_name.update(cx, |input, cx| {
+                                input.set_value(resolved_file_name, window, cx);
+                            });
+                        }
+                        apply_new_download_window_resize(&initial_platform, window, window_size)
+                    })
+                    .unwrap_or(false);
+
+                if native_resize {
+                    for retry_delay in [
+                        Duration::from_millis(250),
+                        Duration::from_millis(500),
+                        Duration::from_millis(1_000),
+                        Duration::from_millis(2_000),
+                        Duration::from_millis(4_000),
+                    ] {
+                        gpui::Timer::after(retry_delay).await;
+                        let still_current = this
+                            .update(cx, |view, _| view.probe_generation == generation)
+                            .unwrap_or(false);
+                        if !still_current {
+                            break;
+                        }
+                        let retry_platform = Rc::clone(&platform_for_resize);
+                        let _ = source_window.update(cx, move |_, window, _| {
+                            apply_new_download_window_resize(&retry_platform, window, window_size);
                         });
                     }
-                    // Resize through the native centered command: gpui's own
-                    // resize uses the stale-cached origin and misplaces or
-                    // clips the window when the user dragged it mid-probe.
-                    if let Some(handle) = crate::ui::native_window_handle(window) {
-                        let _ = platform_for_resize.send_command(
-                            PlatformCommand::SetWindowBoundsCentered(
-                                SetWindowBoundsCenteredCommand {
-                                    window_handle: handle,
-                                    width: (window_size.width.as_f32()
-                                        * window.scale_factor())
-                                    .round() as i32,
-                                    height: (window_size.height.as_f32()
-                                        * window.scale_factor())
-                                    .round() as i32,
-                                },
-                            ),
-                        );
-                    } else {
-                        window.resize(window_size);
-                    }
-                });
+                }
             }
         })
         .detach();
@@ -644,10 +664,8 @@ impl NewDownloadView {
                     }
                     Err(message) => {
                         let _ = source_window.update(cx, |_, window, _| {
-                            window.resize(size(
-                                px(560.0),
-                                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-                            ));
+                            // A blob dialog is always in the confirmed layout.
+                            window.resize(new_download_error_window_size(true));
                         });
                         let _ = view.update(cx, |view, cx| {
                             view.submitting = false;
@@ -663,20 +681,14 @@ impl NewDownloadView {
             Ok(request) => request,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
-                window.resize(size(
-                    px(560.0),
-                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-                ));
+                window.resize(new_download_error_window_size(self.probe.is_some()));
                 cx.notify();
                 return;
             }
         };
         let Some(confirmed) = self.confirmed_request.clone() else {
             self.error = Some("请先探测链接并确认文件信息".into());
-            window.resize(size(
-                px(560.0),
-                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-            ));
+            window.resize(new_download_error_window_size(self.probe.is_some()));
             cx.notify();
             return;
         };
@@ -689,10 +701,7 @@ impl NewDownloadView {
             Ok(media) => media,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
-                window.resize(size(
-                    px(560.0),
-                    px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-                ));
+                window.resize(new_download_error_window_size(self.probe.is_some()));
                 cx.notify();
                 return;
             }
@@ -701,45 +710,41 @@ impl NewDownloadView {
             self.confirmed_request = None;
             self.probe = None;
             self.error = Some("下载地址已变更，请重新探测".into());
-            window.resize(size(
-                px(560.0),
-                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-            ));
+            window.resize(new_download_error_window_size(self.probe.is_some()));
             cx.notify();
             return;
         };
         request.media = media;
         if let Err(error) = request.validate() {
             self.error = Some(error.to_string());
-            window.resize(size(
-                px(560.0),
-                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-            ));
+            window.resize(new_download_error_window_size(self.probe.is_some()));
             cx.notify();
             return;
         }
         if request.save_directory.exists() && !request.save_directory.is_dir() {
             self.error = Some("保存位置不是文件夹，请重新选择".into());
-            window.resize(size(
-                px(560.0),
-                px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-            ));
+            window.resize(new_download_error_window_size(self.probe.is_some()));
             cx.notify();
             return;
         }
         self.submitting = true;
         self.error = None;
         cx.notify();
-
         let application = self.application.clone();
+        let idempotency_key = self.submission_idempotency_key;
         let source_window = window.window_handle();
         let source_native_handle = native_window_handle(window).unwrap_or_default();
         let view = cx.entity().downgrade();
+        // Submission only reaches this point with a confirmed probe, so the
+        // error reserve must stack onto the confirmed layout height, not the
+        // compact one.
+        let error_confirmed = self.probe.is_some();
         info!(?mode, "scheduling download task submission");
         cx.defer(move |cx| {
             let delayed = request.scheduled_at_unix_ms.is_some();
-            let result =
-                application.update(cx, |application, cx| application.submit(request, mode, cx));
+            let result = application.update(cx, |application, cx| {
+                application.submit_with_idempotency(request, mode, Some(idempotency_key), cx)
+            });
             match result {
                 Ok(task_id) => {
                     let show_progress_window = application.read(cx).show_progress_window;
@@ -771,10 +776,7 @@ impl NewDownloadView {
                 Err(message) => {
                     error!(error = %message, ?mode, "download task submission rejected");
                     let _ = source_window.update(cx, |_, window, _| {
-                        window.resize(size(
-                            px(560.0),
-                            px(176.0) + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
-                        ));
+                        window.resize(new_download_error_window_size(error_confirmed));
                     });
                     let _ = view.update(cx, |view, cx| {
                         view.submitting = false;
@@ -1265,24 +1267,11 @@ impl Render for NewDownloadView {
                                             selected,
                                             highlighted,
                                         ))
-                                        .tooltip(move |window, cx| {
-                                            let directory_tooltip = directory_tooltip.clone();
-                                            Tooltip::element(move |_, _| {
-                                                div()
-                                                    .debug_selector(move || {
-                                                        format!(
-                                                            "download-new-category-option-tooltip-{index}"
-                                                        )
-                                                    })
-                                                    .max_w(px(720.0))
-                                                    .whitespace_normal()
-                                                    .font_family(UI_MONO_FONT_FAMILY)
-                                                    .text_size(px(TEXT_LABEL))
-                                                    .line_height(px(LINE_HEIGHT_LABEL))
-                                                    .child(directory_tooltip.clone())
-                                            })
-                                            .build(window, cx)
-                                        })
+                                        .tooltip(bounded_text_tooltip(
+                                            format!("download-new-category-option-tooltip-{index}"),
+                                            directory_tooltip,
+                                            true,
+                                        ))
                                         .cursor_pointer()
                                         .flex()
                                         .flex_col()
@@ -1470,6 +1459,11 @@ impl Render for NewDownloadView {
             div()
                 .debug_selector(|| "download-new-form-grid".into())
                 .flex_1()
+                // Clamp like the compact body below: if any future content
+                // exceeds the fixed window budget this body clips instead of
+                // pushing the footer out of the fixed-size window.
+                .min_h_0()
+                .overflow_hidden()
                 .px(px(16.0))
                 .py(px(10.0))
                 .flex()
@@ -2357,8 +2351,20 @@ pub(crate) fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixe
 
 /// Height reserved for one bounded inline error row (two Chinese lines plus
 /// padding and the form gap) so the footer buttons never get squeezed off the
-/// fixed-height unconfirmed dialog when a probe error appears.
+/// fixed-height dialog when an error appears.
 pub(crate) const NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT: gpui::Pixels = px(38.0);
+
+/// Window size while one bounded inline error row is visible. The reserve
+/// must stack onto the layout that is actually rendered: the confirmed
+/// (probe result) form is one full field row taller than the compact one,
+/// so reusing the compact error height for a confirmed dialog pushed the
+/// file-name/category row and the footer out of the fixed window.
+pub(crate) fn new_download_error_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
+    size(
+        px(560.0),
+        new_download_window_size(confirmed).height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+    )
+}
 
 pub(crate) fn new_download_window_size_for_probe(
     probe: &DownloadProbe,

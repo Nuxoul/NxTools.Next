@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use async_channel::{Receiver, Sender};
@@ -15,6 +16,7 @@ use thiserror::Error;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
 #[cfg(windows)]
@@ -25,32 +27,83 @@ pub use local_pipe::{
     connect_local_indexer_pipe, connect_local_pipe,
 };
 
+const PENDING_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+const PENDING_COMMAND_SWEEP: Duration = Duration::from_secs(1);
+
+struct PendingCommand {
+    generation: u64,
+    accepted_at: Instant,
+    summon_reply: Option<Sender<PlatformCommandResult>>,
+}
+
+#[derive(Debug)]
+struct PendingTerminal {
+    id: uuid::Uuid,
+    summon_reply: Option<Sender<PlatformCommandResult>>,
+}
+
+struct ActiveConnection {
+    generation: u64,
+    commands: Sender<Envelope>,
+}
+
+struct CommandRouter {
+    capacity: usize,
+    active: Option<ActiveConnection>,
+    pending: HashMap<uuid::Uuid, PendingCommand>,
+}
+
+type ReplacedConnection = Option<(u64, Vec<PendingTerminal>)>;
+type OpenConnection = (u64, Receiver<Envelope>, ReplacedConnection);
+
+fn failed_platform_result(error: impl Into<String>) -> PlatformCommandResult {
+    PlatformCommandResult {
+        success: false,
+        error: Some(error.into()),
+        native_error_code: None,
+        data: None,
+    }
+}
 pub struct PlatformBridge {
     notifications: Receiver<PlatformNotification>,
-    commands: Sender<Envelope>,
+    router: Arc<Mutex<CommandRouter>>,
     connected: Arc<AtomicBool>,
 }
 
+#[derive(Clone)]
 pub struct PlatformServerEndpoint {
     notifications: Sender<PlatformNotification>,
-    commands: Receiver<Envelope>,
+    router: Arc<Mutex<CommandRouter>>,
     connected: Arc<AtomicBool>,
+    connection_generation: Arc<AtomicU64>,
+    contract_receiver: Arc<Mutex<Option<Receiver<Envelope>>>>,
+    primary_connection_lock: Arc<AsyncMutex<()>>,
 }
 
 pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoint) {
     let (notification_sender, notification_receiver) = async_channel::bounded(capacity);
-    let (command_sender, command_receiver) = async_channel::bounded(capacity);
     let connected = Arc::new(AtomicBool::new(false));
+    let connection_generation = Arc::new(AtomicU64::new(0));
+    let router = Arc::new(Mutex::new(CommandRouter {
+        capacity,
+        active: None,
+        pending: HashMap::new(),
+    }));
+    let primary_connection_lock = Arc::new(AsyncMutex::new(()));
+    let contract_receiver = Arc::new(Mutex::new(None));
     (
         PlatformBridge {
             notifications: notification_receiver,
-            commands: command_sender,
+            router: Arc::clone(&router),
             connected: Arc::clone(&connected),
         },
         PlatformServerEndpoint {
             notifications: notification_sender,
-            commands: command_receiver,
+            router,
             connected,
+            connection_generation,
+            contract_receiver,
+            primary_connection_lock,
         },
     )
 }
@@ -59,13 +112,43 @@ impl PlatformServerEndpoint {
     /// In-memory lifecycle seam used by GPUI/native-boundary contract tests.
     #[doc(hidden)]
     pub fn set_connected_for_contract_test(&self, connected: bool) {
-        self.connected.store(connected, Ordering::Release);
+        if connected {
+            let (_, _, replaced) = self.open_connection();
+            self.try_send_disconnected(replaced);
+            return;
+        }
+        let generation = self
+            .router
+            .lock()
+            .ok()
+            .and_then(|router| router.active.as_ref().map(|active| active.generation));
+        if let Some(generation) = generation {
+            if let Some(pending_command_ids) = self.disconnect_connection(generation) {
+                self.try_send_disconnected(Some((generation, pending_command_ids)));
+            }
+        } else {
+            self.connected.store(false, Ordering::Release);
+        }
     }
 
-    /// Receives one command from the in-memory side of the bounded platform transport.
+    /// Opens an isolated command queue for a contract test or a live pipe connection.
+    #[doc(hidden)]
+    pub fn open_connection_for_contract_test(&self) -> Receiver<Envelope> {
+        let (_, receiver, replaced) = self.open_connection();
+        self.try_send_disconnected(replaced);
+        receiver
+    }
+
+    /// Receives one command from the active contract-test connection queue.
     #[doc(hidden)]
     pub fn try_receive_command_for_contract_test(&self) -> Result<Envelope, String> {
-        self.commands.try_recv().map_err(|error| error.to_string())
+        let receiver = self
+            .contract_receiver
+            .lock()
+            .map_err(|error| error.to_string())?
+            .clone()
+            .ok_or_else(|| "no contract-test connection is open".to_owned())?;
+        receiver.try_recv().map_err(|error| error.to_string())
     }
 
     /// Publishes one observed notification through the same bounded transport as PlatformHost.
@@ -77,6 +160,210 @@ impl PlatformServerEndpoint {
         self.notifications
             .try_send(notification)
             .map_err(|error| error.to_string())
+    }
+
+    fn open_connection(&self) -> OpenConnection {
+        let Ok(mut router) = self.router.lock() else {
+            self.connected.store(false, Ordering::Release);
+            let generation = self
+                .connection_generation
+                .fetch_add(1, Ordering::AcqRel)
+                .wrapping_add(1);
+            let (_, receiver) = async_channel::bounded(0);
+            return (generation, receiver, None);
+        };
+        let generation = self
+            .connection_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        let (sender, receiver) = async_channel::bounded(router.capacity);
+        let replaced = router.active.take().map(|active| {
+            let pending_command_ids = router
+                .pending
+                .extract_if(|_, pending| pending.generation == active.generation)
+                .map(|(id, pending)| PendingTerminal {
+                    id,
+                    summon_reply: pending.summon_reply,
+                })
+                .collect::<Vec<_>>();
+            (active.generation, pending_command_ids)
+        });
+        router.active = Some(ActiveConnection {
+            generation,
+            commands: sender,
+        });
+        drop(router);
+        self.connected.store(true, Ordering::Release);
+        if let Ok(mut contract_receiver) = self.contract_receiver.lock() {
+            *contract_receiver = Some(receiver.clone());
+        }
+        (generation, receiver, replaced)
+    }
+
+    fn try_send_disconnected(&self, disconnected: ReplacedConnection) {
+        if let Some((generation, pending)) = disconnected {
+            let pending_command_ids = pending.iter().map(|pending| pending.id).collect::<Vec<_>>();
+            for pending_command in pending {
+                if let Some(reply) = pending_command.summon_reply {
+                    let _ = reply.try_send(failed_platform_result("platform host disconnected"));
+                }
+            }
+            let _ = self
+                .notifications
+                .try_send(PlatformNotification::Disconnected {
+                    generation,
+                    pending_command_ids,
+                });
+        }
+    }
+
+    async fn send_notification(&self, notification: PlatformNotification) -> Result<()> {
+        self.notifications
+            .send(notification)
+            .await
+            .context("desktop platform notification receiver closed")
+    }
+
+    async fn send_summon_command(
+        &self,
+        envelope: Envelope,
+        reply: Sender<PlatformCommandResult>,
+    ) -> Result<()> {
+        let command_id = envelope.id;
+        let mut router = self
+            .router
+            .lock()
+            .map_err(|_| anyhow::anyhow!("platform command router is poisoned"))?;
+        let active = router
+            .active
+            .as_ref()
+            .map(|active| (active.generation, active.commands.clone()))
+            .context("platform host is disconnected")?;
+        router.pending.insert(
+            command_id,
+            PendingCommand {
+                generation: active.0,
+                accepted_at: Instant::now(),
+                summon_reply: Some(reply),
+            },
+        );
+        match active.1.try_send(envelope) {
+            Ok(()) => Ok(()),
+            Err(async_channel::TrySendError::Full(_)) => {
+                router.pending.remove(&command_id);
+                Err(anyhow::anyhow!("platform host command queue is full"))
+            }
+            Err(async_channel::TrySendError::Closed(_)) => {
+                router.pending.remove(&command_id);
+                Err(anyhow::anyhow!("platform host command queue is closed"))
+            }
+        }
+    }
+
+    fn complete_command(&self, generation: u64, command_id: uuid::Uuid) -> Option<PendingCommand> {
+        self.router.lock().ok().and_then(|mut router| {
+            router
+                .pending
+                .get(&command_id)
+                .is_some_and(|pending| pending.generation == generation)
+                .then(|| {
+                    router
+                        .pending
+                        .remove(&command_id)
+                        .expect("pending command exists")
+                })
+        })
+    }
+
+    fn disconnect_connection(&self, generation: u64) -> Option<Vec<PendingTerminal>> {
+        let pending = self.router.lock().ok().and_then(|mut router| {
+            if router
+                .active
+                .as_ref()
+                .is_none_or(|active| active.generation != generation)
+            {
+                return None;
+            }
+            router.active = None;
+            Some(
+                router
+                    .pending
+                    .extract_if(|_, pending| pending.generation == generation)
+                    .map(|(id, pending)| PendingTerminal {
+                        id,
+                        summon_reply: pending.summon_reply,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        if pending.is_some() {
+            self.connected.store(false, Ordering::Release);
+        }
+        pending
+    }
+
+    fn is_active_generation(&self, generation: u64) -> bool {
+        self.router.lock().ok().is_some_and(|router| {
+            router
+                .active
+                .as_ref()
+                .is_some_and(|active| active.generation == generation)
+        })
+    }
+
+    fn expire_pending_commands(&self, generation: u64, now: Instant) -> Vec<PendingTerminal> {
+        self.router
+            .lock()
+            .map(|mut router| {
+                router
+                    .pending
+                    .extract_if(|_, pending| {
+                        pending.generation == generation
+                            && now.duration_since(pending.accepted_at) >= PENDING_COMMAND_TIMEOUT
+                    })
+                    .map(|(id, pending)| PendingTerminal {
+                        id,
+                        summon_reply: pending.summon_reply,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    }
+
+    async fn send_timeout_results(&self, pending: Vec<PendingTerminal>) -> Result<()> {
+        for pending in pending {
+            let result = failed_platform_result("platform command timed out");
+            if let Some(reply) = pending.summon_reply {
+                let _ = reply.send(result).await;
+            } else {
+                self.send_notification(PlatformNotification::CommandResult {
+                    correlation_id: pending.id,
+                    result,
+                })
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn send_disconnected_terminals(
+        &self,
+        generation: u64,
+        pending: Vec<PendingTerminal>,
+    ) -> Result<()> {
+        let pending_command_ids = pending.iter().map(|pending| pending.id).collect();
+        for pending in pending {
+            if let Some(reply) = pending.summon_reply {
+                let _ = reply
+                    .send(failed_platform_result("platform host disconnected"))
+                    .await;
+            }
+        }
+        self.send_notification(PlatformNotification::Disconnected {
+            generation,
+            pending_command_ids,
+        })
+        .await
     }
 }
 
@@ -107,23 +394,45 @@ impl PlatformBridge {
     }
 
     fn send_command_envelope(&self, envelope: Envelope) -> Result<uuid::Uuid, PlatformBridgeError> {
-        if !self.is_connected() {
-            return Err(PlatformBridgeError::Disconnected);
-        }
         let command_id = envelope.id;
-        self.commands
-            .try_send(envelope)
-            .map_err(|error| match error {
-                async_channel::TrySendError::Full(_) => PlatformBridgeError::Busy,
-                async_channel::TrySendError::Closed(_) => PlatformBridgeError::Disconnected,
-            })?;
-        Ok(command_id)
+        let mut router = self
+            .router
+            .lock()
+            .map_err(|_| PlatformBridgeError::Disconnected)?;
+        let active = router
+            .active
+            .as_ref()
+            .map(|active| (active.generation, active.commands.clone()))
+            .ok_or(PlatformBridgeError::Disconnected)?;
+        router.pending.insert(
+            command_id,
+            PendingCommand {
+                generation: active.0,
+                accepted_at: Instant::now(),
+                summon_reply: None,
+            },
+        );
+        match active.1.try_send(envelope) {
+            Ok(()) => Ok(command_id),
+            Err(async_channel::TrySendError::Full(_)) => {
+                router.pending.remove(&command_id);
+                Err(PlatformBridgeError::Busy)
+            }
+            Err(async_channel::TrySendError::Closed(_)) => {
+                router.pending.remove(&command_id);
+                Err(PlatformBridgeError::Disconnected)
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformNotification {
     Connected,
+    Disconnected {
+        generation: u64,
+        pending_command_ids: Vec<uuid::Uuid>,
+    },
     Event(PlatformEvent),
     CommandResult {
         correlation_id: uuid::Uuid,
@@ -223,9 +532,12 @@ pub async fn run_platform_server(pipe_name: &str, endpoint: PlatformServerEndpoi
             .await
             .with_context(|| format!("failed to accept named pipe {pipe_path}"))?;
 
-        if let Err(error) = handle_connection(server, &endpoint).await {
-            warn!(%error, "platform host connection ended with an error");
-        }
+        let connection_endpoint = endpoint.clone();
+        tokio::spawn(async move {
+            if let Err(error) = handle_connection(server, &connection_endpoint).await {
+                warn!(%error, "platform connection ended with an error");
+            }
+        });
     }
 }
 
@@ -250,59 +562,130 @@ async fn handle_connection(
         anyhow::bail!("platform host disconnected before handshake");
     };
     let handshake = Envelope::decode_line(&handshake_frame).context("invalid handshake frame")?;
-    if !matches!(handshake.message, Message::Hello(_)) {
+    let Message::Hello(hello) = &handshake.message else {
         anyhow::bail!("platform host did not begin with a hello message");
-    }
+    };
     let acknowledgement =
         dispatch(&handshake).context("hello did not produce an acknowledgement")?;
     write_envelope(&mut writer, &acknowledgement).await?;
 
-    endpoint.connected.store(true, Ordering::Release);
-    let _connection = ConnectionState::new(endpoint);
-    endpoint
-        .notifications
-        .send(PlatformNotification::Connected)
-        .await
-        .context("desktop platform notification receiver closed")?;
+    if hello.client_name == "nxtools-desktop-summon" {
+        return handle_summon_connection(reader, &mut writer, endpoint).await;
+    }
+    let _primary_connection_guard = endpoint.primary_connection_lock.lock().await;
 
-    loop {
-        tokio::select! {
-            frame = read_bounded_frame(&mut reader) => {
-                let Some(frame) = frame? else {
-                    info!("platform host disconnected");
-                    return Ok(());
-                };
-                let envelope = Envelope::decode_line(&frame).context("invalid platform frame")?;
-                match &envelope.message {
-                    Message::PlatformEvent(event) => endpoint
-                        .notifications
-                        .send(PlatformNotification::Event(event.clone()))
-                        .await
-                        .context("desktop platform event receiver closed")?,
-                    Message::PlatformCommandResult(result) => {
-                        let correlation_id = envelope
-                            .correlation_id
-                            .context("platform command result had no correlation ID")?;
-                        endpoint
-                            .notifications
-                            .send(PlatformNotification::CommandResult {
-                                correlation_id,
-                                result: result.clone(),
-                            })
-                            .await
-                            .context("desktop platform notification receiver closed")?;
-                    }
-                    _ => {
-                        if let Some(response) = dispatch(&envelope) {
-                            write_envelope(&mut writer, &response).await?;
+    let (generation, command_receiver, replaced) = endpoint.open_connection();
+    if let Some((old_generation, pending)) = replaced
+        && let Err(error) = endpoint
+            .send_disconnected_terminals(old_generation, pending)
+            .await
+    {
+        let _ = endpoint.disconnect_connection(generation);
+        return Err(error);
+    }
+    if let Err(error) = endpoint
+        .send_notification(PlatformNotification::Connected)
+        .await
+    {
+        let _ = endpoint.disconnect_connection(generation);
+        return Err(error);
+    }
+
+    let mut sweep = tokio::time::interval(PENDING_COMMAND_SWEEP);
+    let connection_result: Result<()> = async {
+        loop {
+            tokio::select! {
+                _ = sweep.tick() => {
+                    let expired = endpoint.expire_pending_commands(generation, Instant::now());
+                    endpoint.send_timeout_results(expired).await?;
+                }
+                frame = read_bounded_frame(&mut reader) => {
+                    let Some(frame) = frame? else {
+                        info!(generation, "platform host disconnected");
+                        break Ok(());
+                    };
+                    let envelope = Envelope::decode_line(&frame).context("invalid platform frame")?;
+                    match &envelope.message {
+                        Message::PlatformEvent(event) => {
+                            if endpoint.is_active_generation(generation) {
+                                endpoint
+                                    .send_notification(PlatformNotification::Event(event.clone()))
+                                    .await?;
+                            } else {
+                                warn!(generation, "ignored platform event from a stale connection");
+                            }
+                        }
+                        Message::PlatformCommandResult(result) => {
+                            let correlation_id = envelope
+                                .correlation_id
+                                .context("platform command result had no correlation ID")?;
+                            if let Some(pending) = endpoint.complete_command(generation, correlation_id) {
+                                if let Some(reply) = pending.summon_reply {
+                                    let _ = reply.send(result.clone()).await;
+                                } else {
+                                    endpoint
+                                        .send_notification(PlatformNotification::CommandResult {
+                                            correlation_id,
+                                            result: result.clone(),
+                                        })
+                                        .await?;
+                                }
+                            } else {
+                                warn!(
+                                    generation,
+                                    %correlation_id,
+                                    "ignored platform command result for a stale or unknown command"
+                                );
+                            }
+                        }
+                        _ => {
+                            if let Some(response) = dispatch(&envelope) {
+                                write_envelope(&mut writer, &response).await?;
+                            }
                         }
                     }
                 }
+                command = command_receiver.recv() => {
+                    let envelope = command.context("desktop platform command sender closed")?;
+                    write_envelope(&mut writer, &envelope).await?;
+                }
             }
-            command = endpoint.commands.recv() => {
-                let envelope = command.context("desktop platform command sender closed")?;
-                write_envelope(&mut writer, &envelope).await?;
-            }
+        }
+    }
+    .await;
+
+    if let Some(pending) = endpoint.disconnect_connection(generation) {
+        let disconnect_result = endpoint
+            .send_disconnected_terminals(generation, pending)
+            .await;
+        return connection_result.and(disconnect_result);
+    }
+    connection_result
+}
+
+#[cfg(windows)]
+async fn handle_summon_connection(
+    mut reader: BufReader<tokio::io::ReadHalf<NamedPipeServer>>,
+    writer: &mut tokio::io::WriteHalf<NamedPipeServer>,
+    endpoint: &PlatformServerEndpoint,
+) -> Result<()> {
+    loop {
+        let Some(frame) = read_bounded_frame(&mut reader).await? else {
+            return Ok(());
+        };
+        let envelope = Envelope::decode_line(&frame).context("invalid summon frame")?;
+        if matches!(envelope.message, Message::PlatformCommand(_)) {
+            let request = envelope.clone();
+            let (reply_sender, reply_receiver) = async_channel::bounded(1);
+            let result = match endpoint.send_summon_command(envelope, reply_sender).await {
+                Ok(()) => reply_receiver
+                    .recv()
+                    .await
+                    .unwrap_or_else(|_| failed_platform_result("summon result channel closed")),
+                Err(error) => failed_platform_result(error.to_string()),
+            };
+            let response = Envelope::reply_to(&request, Message::PlatformCommandResult(result));
+            write_envelope(writer, &response).await?;
         }
     }
 }
@@ -320,23 +703,6 @@ where
         .flush()
         .await
         .context("failed to flush platform frame")
-}
-
-struct ConnectionState<'a> {
-    endpoint: &'a PlatformServerEndpoint,
-}
-
-impl<'a> ConnectionState<'a> {
-    fn new(endpoint: &'a PlatformServerEndpoint) -> Self {
-        Self { endpoint }
-    }
-}
-
-impl Drop for ConnectionState<'_> {
-    fn drop(&mut self) {
-        self.endpoint.connected.store(false, Ordering::Release);
-        while self.endpoint.commands.try_recv().is_ok() {}
-    }
 }
 
 async fn read_bounded_frame<R>(reader: &mut R) -> Result<Option<String>>
@@ -414,6 +780,154 @@ mod tests {
     use tokio::io::BufReader;
 
     use super::*;
+    fn summon_request(text: &str) -> Envelope {
+        Envelope::new(Message::PlatformCommand(PlatformCommand::PasteText(
+            PasteTextCommand {
+                text: text.into(),
+                paste_after_write: true,
+                target_window_handle: 42,
+                target_focus_window_handle: 43,
+            },
+        )))
+    }
+
+    #[tokio::test]
+    async fn summon_pending_routes_the_actual_result_with_original_request_id() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let mut request = summon_request("summon actual result");
+        let original_request_id = request.id;
+        request.correlation_id = Some(uuid::Uuid::new_v4());
+        let (reply_sender, reply_receiver) = async_channel::bounded(1);
+
+        server
+            .send_summon_command(request.clone(), reply_sender)
+            .await
+            .expect("queue summon command");
+        assert_eq!(
+            server
+                .try_receive_command_for_contract_test()
+                .expect("summon queue command")
+                .id,
+            original_request_id
+        );
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let pending = server
+            .complete_command(generation, original_request_id)
+            .expect("summon pending command");
+        let actual_result = PlatformCommandResult {
+            success: false,
+            error: Some("C# native operation failed".into()),
+            native_error_code: Some(5),
+            data: None,
+        };
+        pending
+            .summon_reply
+            .expect("summon reply channel")
+            .send(actual_result.clone())
+            .await
+            .expect("deliver summon result");
+        let received = reply_receiver.recv().await.expect("receive summon result");
+        let response =
+            Envelope::reply_to(&request, Message::PlatformCommandResult(received.clone()));
+        assert_eq!(response.correlation_id, Some(original_request_id));
+        assert_eq!(received, actual_result);
+        assert!(!bridge.is_connected() || server.is_active_generation(generation));
+    }
+
+    #[tokio::test]
+    async fn summon_queue_rejection_returns_failure_without_pending_state() {
+        let (bridge, server) = platform_bridge(1);
+        server.set_connected_for_contract_test(true);
+        bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "fill queue".into(),
+                paste_after_write: true,
+                target_window_handle: 1,
+                target_focus_window_handle: 2,
+            }))
+            .expect("fill primary queue");
+        let request = summon_request("queue rejection");
+        let (reply_sender, _reply_receiver) = async_channel::bounded(1);
+        let error = server
+            .send_summon_command(request, reply_sender)
+            .await
+            .expect_err("full summon queue must reject");
+        assert!(error.to_string().contains("queue is full"));
+    }
+
+    #[tokio::test]
+    async fn summon_disconnect_and_timeout_deliver_terminal_failures() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let request = summon_request("disconnect");
+        let (reply_sender, reply_receiver) = async_channel::bounded(1);
+        server
+            .send_summon_command(request.clone(), reply_sender)
+            .await
+            .expect("queue disconnect summon");
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let pending = server
+            .disconnect_connection(generation)
+            .expect("disconnect active connection");
+        server
+            .send_disconnected_terminals(generation, pending)
+            .await
+            .expect("send disconnect terminals");
+        let disconnect_failure = reply_receiver.recv().await.expect("disconnect failure");
+        assert!(!disconnect_failure.success);
+        assert_eq!(
+            disconnect_failure.error.as_deref(),
+            Some("platform host disconnected")
+        );
+        assert!(matches!(
+            bridge.notification_receiver().recv().await.expect("disconnect notice"),
+            PlatformNotification::Disconnected { generation: 1, pending_command_ids }
+                if pending_command_ids == vec![request.id]
+        ));
+
+        server.set_connected_for_contract_test(true);
+        let timeout_request = summon_request("timeout");
+        let (timeout_sender, timeout_receiver) = async_channel::bounded(1);
+        server
+            .send_summon_command(timeout_request, timeout_sender)
+            .await
+            .expect("queue timeout summon");
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let pending = server.expire_pending_commands(
+            generation,
+            Instant::now() + PENDING_COMMAND_TIMEOUT + Duration::from_millis(1),
+        );
+        server
+            .send_timeout_results(pending)
+            .await
+            .expect("send timeout terminal");
+        let timeout_failure = timeout_receiver.recv().await.expect("timeout failure");
+        assert!(!timeout_failure.success);
+        assert_eq!(
+            timeout_failure.error.as_deref(),
+            Some("platform command timed out")
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_generation_cannot_complete_a_new_generation_summon_command() {
+        let (_bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let old_request = summon_request("old generation");
+        let (reply_sender, _reply_receiver) = async_channel::bounded(1);
+        server
+            .send_summon_command(old_request.clone(), reply_sender)
+            .await
+            .expect("queue old summon command");
+        let old_generation = server.connection_generation.load(Ordering::Acquire);
+        server.open_connection_for_contract_test();
+        assert!(
+            server
+                .complete_command(old_generation, old_request.id)
+                .is_none()
+        );
+    }
 
     #[test]
     fn hello_negotiates_requested_capabilities() {
@@ -496,7 +1010,7 @@ mod tests {
     #[test]
     fn bridge_preserves_a_caller_owned_lifecycle_correlation() {
         let (bridge, server) = platform_bridge(4);
-        server.connected.store(true, Ordering::Release);
+        server.set_connected_for_contract_test(true);
         let lifecycle_id = uuid::Uuid::new_v4();
 
         bridge
@@ -511,9 +1025,188 @@ mod tests {
             )
             .expect("connected command");
 
-        let envelope = server.commands.try_recv().expect("queued command");
+        let envelope = server
+            .try_receive_command_for_contract_test()
+            .expect("queued command");
         assert_eq!(envelope.correlation_id, Some(lifecycle_id));
         assert_ne!(envelope.id, lifecycle_id);
+    }
+
+    #[test]
+    fn old_connection_queue_is_not_consumed_by_a_new_connection() {
+        let (bridge, server) = platform_bridge(4);
+        let old_receiver = server.open_connection_for_contract_test();
+        let old_id = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "old".into(),
+                paste_after_write: true,
+                target_window_handle: 1,
+                target_focus_window_handle: 2,
+            }))
+            .expect("old command");
+
+        let new_receiver = server.open_connection_for_contract_test();
+        let new_id = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "new".into(),
+                paste_after_write: true,
+                target_window_handle: 3,
+                target_focus_window_handle: 4,
+            }))
+            .expect("new command");
+
+        assert_eq!(
+            old_receiver.try_recv().expect("old queue command").id,
+            old_id
+        );
+        assert_eq!(
+            new_receiver.try_recv().expect("new queue command").id,
+            new_id
+        );
+        assert!(old_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn disconnect_emits_pending_command_ids_for_the_active_generation() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let command_id = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "disconnect".into(),
+                paste_after_write: true,
+                target_window_handle: 5,
+                target_focus_window_handle: 6,
+            }))
+            .expect("pending command");
+
+        server.set_connected_for_contract_test(false);
+        let notification = bridge
+            .notification_receiver()
+            .try_recv()
+            .expect("disconnect notification");
+        assert!(matches!(
+            notification,
+            PlatformNotification::Disconnected {
+                generation: 1,
+                pending_command_ids
+            } if pending_command_ids == vec![command_id]
+        ));
+        assert!(!bridge.is_connected());
+    }
+
+    #[test]
+    fn full_command_queue_returns_busy_without_leaking_pending_state() {
+        let (bridge, server) = platform_bridge(1);
+        server.set_connected_for_contract_test(true);
+        bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "fills queue".into(),
+                paste_after_write: true,
+                target_window_handle: 7,
+                target_focus_window_handle: 8,
+            }))
+            .expect("first command");
+        let error = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "busy".into(),
+                paste_after_write: true,
+                target_window_handle: 9,
+                target_focus_window_handle: 10,
+            }))
+            .expect_err("full queue must reject the command");
+        assert_eq!(error, PlatformBridgeError::Busy);
+    }
+
+    #[tokio::test]
+    async fn pending_command_timeout_emits_a_correlated_failure() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let command_id = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "timeout".into(),
+                paste_after_write: true,
+                target_window_handle: 11,
+                target_focus_window_handle: 12,
+            }))
+            .expect("pending command");
+
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let expired = server.expire_pending_commands(
+            generation,
+            Instant::now() + PENDING_COMMAND_TIMEOUT + Duration::from_millis(1),
+        );
+        assert_eq!(
+            expired.iter().map(|pending| pending.id).collect::<Vec<_>>(),
+            vec![command_id]
+        );
+        server
+            .send_timeout_results(expired)
+            .await
+            .expect("timeout notification");
+        let notification = bridge
+            .notification_receiver()
+            .recv()
+            .await
+            .expect("timeout result");
+        assert!(matches!(
+            notification,
+            PlatformNotification::CommandResult {
+                correlation_id,
+                result
+            } if correlation_id == command_id
+                && !result.success
+                && result.error.as_deref() == Some("platform command timed out")
+        ));
+    }
+
+    #[test]
+    fn timeout_sweep_is_scoped_to_the_connection_generation() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let old_generation = server.connection_generation.load(Ordering::Acquire);
+        bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "old generation".into(),
+                paste_after_write: true,
+                target_window_handle: 13,
+                target_focus_window_handle: 14,
+            }))
+            .expect("old generation command");
+
+        server.open_connection_for_contract_test();
+        let new_generation = server.connection_generation.load(Ordering::Acquire);
+        let new_command_id = bridge
+            .send_command(PlatformCommand::PasteText(PasteTextCommand {
+                text: "new generation".into(),
+                paste_after_write: true,
+                target_window_handle: 15,
+                target_focus_window_handle: 16,
+            }))
+            .expect("new generation command");
+        let expiration = Instant::now() + PENDING_COMMAND_TIMEOUT + Duration::from_millis(1);
+        assert!(
+            server
+                .expire_pending_commands(old_generation, expiration)
+                .is_empty()
+        );
+        assert_eq!(
+            server
+                .expire_pending_commands(new_generation, expiration)
+                .into_iter()
+                .map(|pending| pending.id)
+                .collect::<Vec<_>>(),
+            vec![new_command_id]
+        );
+    }
+
+    #[test]
+    fn stale_connection_disconnect_does_not_clear_a_newer_connection() {
+        let (bridge, server) = platform_bridge(4);
+        let _old_receiver = server.open_connection_for_contract_test();
+        let old_generation = server.connection_generation.load(Ordering::Acquire);
+        let _new_receiver = server.open_connection_for_contract_test();
+        assert!(server.disconnect_connection(old_generation).is_none());
+        assert!(bridge.is_connected());
     }
 
     #[tokio::test]

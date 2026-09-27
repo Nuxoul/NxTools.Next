@@ -42,14 +42,11 @@ pub(crate) const RADIUS_CONTROL: f32 = 4.0;
 pub(crate) const RADIUS_FLOATING: f32 = 6.0;
 
 pub(crate) const SPACING_2: f32 = 2.0;
-#[allow(dead_code)]
 pub(crate) const SPACING_4: f32 = 4.0;
 pub(crate) const SPACING_6: f32 = 6.0;
 pub(crate) const SPACING_8: f32 = 8.0;
 pub(crate) const SPACING_12: f32 = 12.0;
-#[allow(dead_code)]
 pub(crate) const SPACING_16: f32 = 16.0;
-#[allow(dead_code)]
 pub(crate) const SPACING_24: f32 = 24.0;
 
 #[cfg(test)]

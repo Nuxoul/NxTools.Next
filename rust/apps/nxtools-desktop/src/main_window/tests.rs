@@ -3041,6 +3041,17 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
 
     let mut unfinished_with_target = tasks[0].clone();
     unfinished_with_target.final_path = Some(r"C:\Downloads\Zeta.bin".into());
+    let final_path_search = download_tasks_for_view(
+        std::slice::from_ref(&unfinished_with_target),
+        DownloadTaskFilter::All,
+        r"c:\downloads",
+        DownloadSortState::default(),
+    );
+    assert_eq!(
+        final_path_search.len(),
+        1,
+        "download search must include the compact task's final path"
+    );
     let capabilities = download_context_capabilities(&[unfinished_with_target], &[first]);
     assert_eq!(
         capabilities.single_artifact, None,

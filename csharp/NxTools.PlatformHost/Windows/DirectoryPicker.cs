@@ -8,10 +8,24 @@ namespace NxTools.PlatformHost.Windows;
 internal static class DirectoryPicker
 {
     public static WindowsCommandResult Pick(PickDirectoryCommand command) =>
-        StaDialogRunner.Run("NxTools directory picker", () => PickOnStaThread(command));
+        Pick(command, CancellationToken.None);
 
-    private static WindowsCommandResult PickOnStaThread(PickDirectoryCommand command)
+    public static WindowsCommandResult Pick(
+        PickDirectoryCommand command,
+        CancellationToken cancellationToken) =>
+        StaDialogRunner.Run(
+            "NxTools directory picker",
+            () => PickOnStaThread(command, cancellationToken),
+            cancellationToken);
+
+    private static WindowsCommandResult PickOnStaThread(
+        PickDirectoryCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         try
         {
             using var dialog = new FolderBrowserDialog
@@ -25,15 +39,23 @@ internal static class DirectoryPicker
                 ShowNewFolderButton = true,
                 UseDescriptionForTitle = true
             };
-            return dialog.ShowDialog(NativeForegroundWindow()) == DialogResult.OK
+            var result = dialog.ShowDialog(NativeForegroundWindow()) == DialogResult.OK
                 ? new WindowsCommandResult(true, Data: dialog.SelectedPath)
                 : new WindowsCommandResult(true, Data: string.Empty);
+            return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
         }
         catch (Exception error)
         {
             return new WindowsCommandResult(false, error.Message);
         }
     }
+
+    private static WindowsCommandResult CancelledResult() =>
+        new(false, "Windows dialog operation was cancelled.");
 
     // FolderBrowserDialog opened without an owner on a background STA thread lands
     // behind the GPUI window: the click looks dead while the dialog waits for input

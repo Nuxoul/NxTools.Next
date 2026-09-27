@@ -18,7 +18,9 @@ internal sealed class PlatformLog : IPlatformLog, IDisposable
     private const int RetentionDays = 14;
     private static readonly HashSet<string> SensitiveFieldNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "text", "content", "clipboard_text", "payload"
+        "text", "content", "clipboard_text", "payload", "message", "path", "file_path",
+        "data_path", "image_path", "file_paths", "window_title", "source_window_title",
+        "url", "cookie", "headers"
     };
 
     private readonly string _logDirectory;
@@ -59,6 +61,22 @@ internal sealed class PlatformLog : IPlatformLog, IDisposable
         Guid? correlationId = null,
         IReadOnlyDictionary<string, object?>? fields = null)
     {
+        try
+        {
+            WriteCore(level, eventName, correlationId, fields);
+        }
+        catch
+        {
+            Interlocked.Increment(ref _droppedEntries);
+        }
+    }
+
+    private void WriteCore(
+        string level,
+        string eventName,
+        Guid? correlationId,
+        IReadOnlyDictionary<string, object?>? fields)
+    {
         if (Volatile.Read(ref _disposed) != 0)
         {
             return;
@@ -68,7 +86,7 @@ internal sealed class PlatformLog : IPlatformLog, IDisposable
             ["timestamp"] = DateTimeOffset.Now.ToString("O"),
             ["level"] = level,
             ["process"] = "platform_host",
-            ["process_id"] = Environment.ProcessId,
+            ["platform_host_pid"] = Environment.ProcessId,
             ["thread_id"] = Environment.CurrentManagedThreadId,
             ["event"] = eventName,
             ["correlation_id"] = correlationId
@@ -105,7 +123,7 @@ internal sealed class PlatformLog : IPlatformLog, IDisposable
                 ["timestamp"] = DateTimeOffset.Now.ToString("O"),
                 ["level"] = "warning",
                 ["process"] = "platform_host",
-                ["process_id"] = Environment.ProcessId,
+                ["platform_host_pid"] = Environment.ProcessId,
                 ["thread_id"] = Environment.CurrentManagedThreadId,
                 ["event"] = "log.entries_dropped",
                 ["correlation_id"] = null,

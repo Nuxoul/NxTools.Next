@@ -20,6 +20,7 @@ use nxtools_core::ClipboardModifierActions;
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
+use crate::ui::HOVER_ACTION_RAIL_WIDTH;
 use crate::ui::action_from_modifiers;
 use crate::ui::components::list::compact_result_row;
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
@@ -27,7 +28,9 @@ use crate::ui::metrics::RADIUS_CONTROL;
 use crate::ui::typography::{TEXT_BODY, TEXT_META};
 
 pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
-pub const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
+#[cfg(test)]
+const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
+pub const IMAGE_LIST_MAX_HEIGHT: f32 = 144.0;
 const ROW_VERTICAL_PADDING: f32 = 8.0;
 const METADATA_HEIGHT: f32 = 20.0;
 const CONTENT_GAP: f32 = 4.0;
@@ -74,10 +77,12 @@ pub struct CategorySourceMenu {
     pub unavailable_hint: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn history_row(
     theme: Theme,
     entry: ClipboardItem,
     index: usize,
+    selected: bool,
     available_image_width: f32,
     modifier_actions: ClipboardModifierActions,
     category_menu: CategorySourceMenu,
@@ -136,6 +141,7 @@ pub fn history_row(
                 ("history-row", index),
                 group_name.clone(),
                 card_height,
+                selected,
             )
             .on_hover(move |hovered, window, cx| {
                 let panel_bounds = window.bounds();
@@ -183,13 +189,14 @@ pub fn history_row(
                             .absolute()
                             .top_0()
                             .right_0()
+                            .w(px(HOVER_ACTION_RAIL_WIDTH))
                             .invisible()
                             .group_hover(group_name, |style| style.visible())
                             .h(px(METADATA_HEIGHT))
                             .pl_1()
-                            .bg(theme.surface_hover)
                             .flex()
                             .items_center()
+                            .justify_end()
                             .gap(px(2.0))
                             .when(!open_targets.is_empty(), |actions| {
                                 actions.child(open_targets_button(
@@ -444,8 +451,6 @@ fn open_targets_button(
         button
             .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
                 targets.clone().into_iter().fold(
-                    // Kept wider than the shared 192-240 shell: these rows carry
-                    // whole registry paths and file locations that must stay readable.
                     menu.min_w(px(180.0)).max_w(px(320.0)),
                     |menu, target| {
                         let handler = Rc::clone(&handler);
@@ -490,7 +495,6 @@ fn open_target_tooltip(target: &ClipboardOpenTarget) -> &'static str {
         ClipboardOpenTargetKind::Web => "打开链接",
     }
 }
-
 fn open_target_menu_prefix(kind: &ClipboardOpenTargetKind) -> &'static str {
     match kind {
         ClipboardOpenTargetKind::RegistryKey => "注册表",
@@ -511,7 +515,6 @@ fn compact_target_label(value: &str) -> String {
         prefix
     }
 }
-
 fn management_button(
     theme: Theme,
     icon: MaterialIcon,
@@ -546,7 +549,6 @@ fn management_button(
             handler(action.clone(), event, window, cx);
         })
 }
-
 fn state_icon(theme: Theme, icon: MaterialIcon, tooltip: &'static str) -> impl IntoElement {
     div()
         .id(gpui::SharedString::from(format!(
@@ -637,7 +639,7 @@ fn image_content(
     available_image_width: f32,
 ) -> gpui::AnyElement {
     let preview_height =
-        image_preview_height(entry.image_width, entry.image_height, available_image_width);
+        image_list_preview_height(entry.image_width, entry.image_height, available_image_width);
     let image_path = PathBuf::from(&entry.image_path);
     let image_exists = image_path.is_file();
     div()
@@ -699,11 +701,8 @@ fn usage_badge(theme: Theme, text: String) -> impl IntoElement {
     div()
         .min_w(px(20.0))
         .h(px(16.0))
-        .px(px(4.0))
-        .rounded(px(RADIUS_CONTROL))
-        .bg(theme.element)
         .text_size(px(TEXT_META))
-        .text_color(theme.text_secondary)
+        .text_color(theme.text_muted)
         .flex()
         .items_center()
         .justify_center()
@@ -727,9 +726,6 @@ fn time_label(theme: Theme, text: String) -> impl IntoElement {
 fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
     div()
         .h(px(18.0))
-        .px(px(5.0))
-        .rounded(px(RADIUS_CONTROL))
-        .bg(theme.element)
         .text_size(px(TEXT_META))
         .text_color(theme.text_muted)
         .flex()
@@ -739,20 +735,33 @@ fn metric_chip(theme: Theme, text: String) -> impl IntoElement {
 
 fn row_card_height(entry: &ClipboardItem, available_image_width: f32) -> f32 {
     if entry.kind == ClipboardKind::Image {
-        image_preview_height(entry.image_width, entry.image_height, available_image_width)
+        image_list_preview_height(entry.image_width, entry.image_height, available_image_width)
             + IMAGE_ROW_CHROME_HEIGHT
     } else {
         TEXT_ROW_HEIGHT
     }
 }
 
+fn image_list_preview_height(width: u32, height: u32, available_width: f32) -> f32 {
+    image_preview_height_with_cap(width, height, available_width, IMAGE_LIST_MAX_HEIGHT)
+}
+#[cfg(test)]
 fn image_preview_height(width: u32, height: u32, available_width: f32) -> f32 {
+    image_preview_height_with_cap(width, height, available_width, IMAGE_PREVIEW_MAX_HEIGHT)
+}
+
+fn image_preview_height_with_cap(
+    width: u32,
+    height: u32,
+    available_width: f32,
+    max_height: f32,
+) -> f32 {
     if width == 0 || height == 0 || available_width <= 0.0 {
-        return IMAGE_PREVIEW_FALLBACK_HEIGHT;
+        return IMAGE_PREVIEW_FALLBACK_HEIGHT.min(max_height);
     }
     let scale = 1.0_f32
         .min(available_width / width as f32)
-        .min(IMAGE_PREVIEW_MAX_HEIGHT / height as f32);
+        .min(max_height / height as f32);
     (height as f32 * scale).max(1.0)
 }
 
@@ -775,10 +784,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn row_metrics_keep_large_preview_and_compact_list_caps_separate() {
+        assert_eq!(IMAGE_PREVIEW_MAX_HEIGHT, 270.0);
+        assert_eq!(IMAGE_LIST_MAX_HEIGHT, 144.0);
+        assert_eq!(image_preview_height(1_000, 2_000, 246.0), 270.0);
+        assert_eq!(image_list_preview_height(1_000, 2_000, 246.0), 144.0);
+    }
+
+    #[test]
     fn row_metrics_match_the_reference_panel() {
         assert_eq!(TEXT_ROW_HEIGHT, 55.0);
         assert_eq!(ROW_GAP, 4.0);
-        assert_eq!(IMAGE_PREVIEW_MAX_HEIGHT, 270.0);
         assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 40.0);
     }
 
@@ -802,19 +818,31 @@ mod tests {
     }
 
     #[test]
-    fn history_rows_use_launcher_style_neutral_layering() {
-        // The row shell now lives in the shared compact_result_row component;
-        // assert its neutral layering contract instead of retired helpers.
+    fn history_rows_keep_multiple_hover_actions() {
+        let source = include_str!("history.rs");
+        let row = source
+            .split("pub fn history_row(")
+            .nth(1)
+            .and_then(|source| source.split("fn open_targets_button(").next())
+            .expect("history row implementation");
+        assert!(row.contains("open_targets_button("));
+        assert!(row.contains("management_button("));
+    }
+    #[test]
+    fn history_rows_use_continuous_list_layering() {
+        // The shared shell deliberately avoids nested cards: rows sit on the
+        // panel canvas and use one quiet separator, with hover as the lift.
         let shell_source = include_str!("components/list.rs");
         let shell = shell_source
             .split("pub(crate) fn compact_result_row(")
             .nth(1)
             .and_then(|source| source.split("\n}\n").next())
             .expect("shared compact result row shell source");
+        assert!(shell.contains(".border_b_1()"));
         assert!(shell.contains(".border_color(theme.border_subtle)"));
-        assert!(shell.contains(".bg(theme.surface_raised)"));
-        assert!(shell.contains(".bg(theme.surface_hover)"));
-        assert!(shell.contains(".border_color(theme.border)"));
+        assert!(shell.contains("theme.canvas"));
+        assert!(!shell.contains(".rounded("));
+        assert!(shell.contains("theme.surface_hover"));
 
         let source = include_str!("history.rs");
         for function in ["fn image_content(", "fn time_label(", "fn metric_chip("] {

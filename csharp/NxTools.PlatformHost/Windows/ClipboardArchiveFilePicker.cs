@@ -7,21 +7,38 @@ internal static class ClipboardArchiveFilePicker
 {
     private const string Filter = "NxTools clipboard archive (*.nxtclip)|*.nxtclip";
 
-    public static WindowsCommandResult Pick(PickClipboardArchivePathCommand command)
+    public static WindowsCommandResult Pick(PickClipboardArchivePathCommand command) =>
+        Pick(command, CancellationToken.None);
+
+    public static WindowsCommandResult Pick(
+        PickClipboardArchivePathCommand command,
+        CancellationToken cancellationToken)
         => StaDialogRunner.Run(
             "NxTools clipboard archive picker",
-            () => PickOnStaThread(command));
+            () => PickOnStaThread(command, cancellationToken),
+            cancellationToken);
 
-    private static WindowsCommandResult PickOnStaThread(PickClipboardArchivePathCommand command)
+    private static WindowsCommandResult PickOnStaThread(
+        PickClipboardArchivePathCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         try
         {
-            return command.Mode.ToLowerInvariant() switch
+            var result = command.Mode.ToLowerInvariant() switch
             {
-                "export" => PickExport(command.SuggestedFileName),
-                "import" => PickImport(),
+                "export" => PickExport(command.SuggestedFileName, cancellationToken),
+                "import" => PickImport(cancellationToken),
                 _ => new WindowsCommandResult(false, $"Unsupported clipboard archive picker mode '{command.Mode}'.")
             };
+            return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
@@ -29,8 +46,14 @@ internal static class ClipboardArchiveFilePicker
         }
     }
 
-    private static WindowsCommandResult PickExport(string suggestedFileName)
+    private static WindowsCommandResult PickExport(
+        string suggestedFileName,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
@@ -43,13 +66,18 @@ internal static class ClipboardArchiveFilePicker
             RestoreDirectory = true,
             Title = "导出剪贴板归档"
         };
-        return dialog.ShowDialog() == DialogResult.OK
+        var result = dialog.ShowDialog() == DialogResult.OK
             ? new WindowsCommandResult(true, Data: dialog.FileName)
             : new WindowsCommandResult(true, Data: string.Empty);
+        return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
     }
 
-    private static WindowsCommandResult PickImport()
+    private static WindowsCommandResult PickImport(CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         using var dialog = new OpenFileDialog
         {
             AddExtension = true,
@@ -62,10 +90,14 @@ internal static class ClipboardArchiveFilePicker
             RestoreDirectory = true,
             Title = "导入剪贴板归档"
         };
-        return dialog.ShowDialog() == DialogResult.OK
+        var result = dialog.ShowDialog() == DialogResult.OK
             ? new WindowsCommandResult(true, Data: dialog.FileName)
             : new WindowsCommandResult(true, Data: string.Empty);
+        return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
     }
+
+    private static WindowsCommandResult CancelledResult() =>
+        new(false, "Windows dialog operation was cancelled.");
 
     private static string SafeSuggestedName(string value)
     {

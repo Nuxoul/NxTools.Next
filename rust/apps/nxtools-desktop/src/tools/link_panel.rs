@@ -4,20 +4,47 @@
 
 use crate::clipboard::ClipboardApplication;
 use gpui::{
-    div, px, rgb, AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div, px, rgb,
 };
 use gpui_component::Icon;
 
 pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
 
 pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
-const LINK_PANEL_ROW_HEIGHT: f32 = 30.0;
-const LINK_PANEL_VERTICAL_PADDING: f32 = 12.0;
+/// Rendered row height (`.h(px(28.0))` on each link row below).
+const LINK_PANEL_ROW_HEIGHT: f32 = 28.0;
+/// Rendered expander height (`.h(px(24.0))` on the expander row below).
+const LINK_PANEL_EXPANDER_HEIGHT: f32 = 24.0;
+/// Rendered footer height (`.h(px(22.0))` on the footer below).
+const LINK_PANEL_FOOTER_HEIGHT: f32 = 22.0;
+/// Footer's `.mt(px(2.0))`.
+const LINK_PANEL_FOOTER_MARGIN_TOP: f32 = 2.0;
+/// Container's `.py(px(4.0))` top and bottom.
+const LINK_PANEL_VERTICAL_PADDING: f32 = 8.0;
 
-pub(crate) const fn link_panel_height(rows: usize) -> f32 {
-    // +1 row slot for the expander when multiple links collapse the panel.
-    LINK_PANEL_VERTICAL_PADDING * 2.0 + rows as f32 * LINK_PANEL_ROW_HEIGHT
+/// Exact window height for the panel's rendered chrome. The window is
+/// fixed-size and non-resizable, so this must mirror the render below row
+/// for row: a collapsed multi-link panel shows ONE row plus the expander,
+/// never the hidden rows. Sizing the window for all rows (the old
+/// `rows * 30 + 24` budget) left dead empty space below the footer —
+/// the reported "multiple links break the layout" bug.
+pub(crate) fn link_panel_height(total_rows: usize, expanded: bool) -> f32 {
+    let visible_rows = if expanded || total_rows <= 1 {
+        total_rows
+    } else {
+        1
+    };
+    let expander = if total_rows > 1 && !expanded {
+        LINK_PANEL_EXPANDER_HEIGHT
+    } else {
+        0.0
+    };
+    LINK_PANEL_VERTICAL_PADDING
+        + visible_rows as f32 * LINK_PANEL_ROW_HEIGHT
+        + expander
+        + LINK_PANEL_FOOTER_MARGIN_TOP
+        + LINK_PANEL_FOOTER_HEIGHT
 }
 
 #[derive(Default)]
@@ -160,9 +187,7 @@ impl Render for LinkPanelView {
                                 }
                             });
                         }
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                            copy_value.clone(),
-                        ));
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_value.clone()));
                         window.refresh();
                     })
                     .child(
@@ -186,7 +211,7 @@ impl Render for LinkPanelView {
                 div()
                     .id("link-panel-expander")
                     .debug_selector(|| "link-panel-expander".into())
-                    .h(px(24.0))
+                    .h(px(LINK_PANEL_EXPANDER_HEIGHT))
                     .mx(px(4.0))
                     .px(px(8.0))
                     .rounded(px(6.0))
@@ -199,10 +224,10 @@ impl Render for LinkPanelView {
                     .hover(move |style| style.bg(rgb(0x3f3f46)))
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.expanded = true;
-                        // Grow the window to fit every row plus the footer.
+                        // Grow the window to the expanded layout: every row
+                        // plus the footer, no expander slot.
                         if let Some(handle) = this.window_handle {
-                            let new_height = link_panel_height(this.links.len())
-                                + 22.0; // footer
+                            let new_height = link_panel_height(this.links.len(), true);
                             let _ = handle.update(cx, |_, window, _| {
                                 let mut bounds = window.window_bounds().get_bounds();
                                 bounds.size.height = px(new_height);
@@ -229,16 +254,13 @@ impl Render for LinkPanelView {
                 .justify_between()
                 .border_t_1()
                 .border_color(border)
-                .child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(text_secondary)
-                        .child(if self.links.len() > 1 {
-                            format!("{} 个链接", self.links.len())
-                        } else {
-                            "1 个链接".to_owned()
-                        }),
-                )
+                .child(div().text_size(px(10.0)).text_color(text_secondary).child(
+                    if self.links.len() > 1 {
+                        format!("{} 个链接", self.links.len())
+                    } else {
+                        "1 个链接".to_owned()
+                    },
+                ))
                 .child(
                     div()
                         .flex()
@@ -260,5 +282,39 @@ impl Render for LinkPanelView {
         );
         let _ = (accent, accent_hover, application);
         container
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_height_matches_the_rendered_chrome_exactly() {
+        // py(4)+py(4) + one 28px row + footer(2px margin + 22px).
+        assert_eq!(link_panel_height(1, false), 60.0);
+        // Collapsed multi-link: one row + the 24px expander, never the
+        // hidden rows. The old `rows * 30 + 24` budget reserved space for
+        // rows it did not render and left dead empty space below the footer.
+        assert_eq!(link_panel_height(3, false), 84.0);
+        // Expanded: every row, no expander slot.
+        assert_eq!(link_panel_height(3, true), 116.0);
+    }
+
+    #[test]
+    fn collapsed_height_never_depends_on_hidden_rows_and_expanding_grows() {
+        for rows in 2..=12 {
+            let collapsed = link_panel_height(rows, false);
+            let expanded = link_panel_height(rows, true);
+            assert_eq!(
+                collapsed,
+                link_panel_height(2, false),
+                "a collapsed {rows}-link panel must reserve no space for its hidden rows"
+            );
+            assert!(
+                expanded > collapsed,
+                "expanding {rows} links must grow the window past the collapsed height"
+            );
+        }
     }
 }

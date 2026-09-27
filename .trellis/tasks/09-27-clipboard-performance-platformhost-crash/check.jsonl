@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/nxtools-clipboard/backend/index.md", "reason": "Quality review for SQLite pagination, retention and worker state"}
+{"file": ".trellis/spec/nxtools-desktop/backend/index.md", "reason": "Quality review for GPUI rendering, async generations and bounded list state"}
+{"file": ".trellis/spec/nxtools-ipc/backend/index.md", "reason": "Quality review for event backpressure and typed IPC"}
+{"file": ".trellis/spec/nxtools-protocol/backend/index.md", "reason": "Quality review for clipboard payload compatibility and diagnostics"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review data flow and failure boundaries across processes"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Review reuse before introducing query/cache abstractions"}
+{"file": ".trellis/tasks/09-27-clipboard-performance-platformhost-crash/research/ecopaste-clipboard-performance.md", "reason": "Verify claims against the read-only reference audit"}
+{"file": ".trellis/tasks/09-27-clipboard-performance-platformhost-crash/research/nxtools-clipboard-evidence.md", "reason": "Verify current-code findings and red-capable test seams"}

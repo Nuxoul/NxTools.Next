@@ -22,6 +22,22 @@ pub(crate) fn pending_action_targets_session(
     pending_action.popup_session_id == popup_session_id
 }
 
+pub(crate) fn partition_actions_for_disconnect(
+    actions: std::collections::HashMap<uuid::Uuid, PendingQuickLaunchAction>,
+    current_session_id: uuid::Uuid,
+) -> (Vec<PendingQuickLaunchAction>, usize) {
+    let mut current = Vec::new();
+    let mut stale_count = 0_usize;
+    for (_, pending) in actions {
+        if pending_action_targets_session(&pending, current_session_id) {
+            current.push(pending);
+        } else {
+            stale_count = stale_count.saturating_add(1);
+        }
+    }
+    (current, stale_count)
+}
+
 pub(crate) fn pending_action_owns_foreground(
     pending_action: &PendingQuickLaunchAction,
     popup_session_id: uuid::Uuid,
@@ -442,19 +458,6 @@ impl QuickLaunchActionMode {
                     icon: MaterialIcon::ContentCopy,
                 },
             )]
-        } else if target.entry.source == ApplicationSource::WebUrl {
-            vec![
-                QuickLaunchActionItem::builtin(QuickLaunchBuiltinActionItem {
-                    action: QuickLaunchAction::Open,
-                    label: "打开网址",
-                    icon: MaterialIcon::OpenInNew,
-                }),
-                QuickLaunchActionItem::builtin(QuickLaunchBuiltinActionItem {
-                    action: QuickLaunchAction::CopyPath,
-                    label: "复制网址",
-                    icon: MaterialIcon::ContentCopy,
-                }),
-            ]
         } else {
             QUICK_LAUNCH_ACTIONS
                 .iter()
@@ -705,11 +708,7 @@ pub(crate) fn quick_launch_action_available(
                     || host_context_id.is_some())
         }
         QuickLaunchAction::Reveal => {
-            result.opens_target()
-                && !matches!(
-                    result.entry.source,
-                    ApplicationSource::System | ApplicationSource::WebUrl
-                )
+            result.opens_target() && !matches!(result.entry.source, ApplicationSource::System)
         }
         QuickLaunchAction::CopyPath => {
             result.opens_target() && !result.entry.target.trim().is_empty()
@@ -754,8 +753,6 @@ pub(crate) fn quick_launch_primary_action(
         QuickLaunchAction::Open
     } else if result.copy_text().is_some() {
         QuickLaunchAction::CopyResult
-    } else if result.entry.source == ApplicationSource::WebUrl {
-        QuickLaunchAction::Open
     } else {
         quick_launch_action_for_enter(secondary, shift)
     }
@@ -771,8 +768,7 @@ pub(crate) struct QuickLaunchResultCapabilities {
 pub(crate) fn quick_launch_result_capabilities(
     result: &SearchResult,
 ) -> QuickLaunchResultCapabilities {
-    let uses_native_file_integration =
-        result.opens_target() && result.entry.source != ApplicationSource::WebUrl;
+    let uses_native_file_integration = result.opens_target();
     QuickLaunchResultCapabilities {
         preview: uses_native_file_integration,
         shell_actions: uses_native_file_integration,

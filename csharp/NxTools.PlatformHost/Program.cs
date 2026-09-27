@@ -15,9 +15,11 @@ internal static class Program
                 out var helperPipeName,
                 out var helperAuthenticationToken))
         {
-            return ElevatedDirectoryNavigationHelper.Run(
-                helperPipeName!,
-                helperAuthenticationToken!);
+            return RunProcessRole(
+                "elevated_directory_helper",
+                () => ElevatedDirectoryNavigationHelper.Run(
+                    helperPipeName!,
+                    helperAuthenticationToken!));
         }
         if (TryParseElevatedDirectoryHelperBroker(
                 args,
@@ -25,10 +27,12 @@ internal static class Program
                 out helperPipeName,
                 out helperAuthenticationToken))
         {
-            return ElevatedHelperProcessBroker.Launch(
-                helperSessionId,
-                helperPipeName!,
-                helperAuthenticationToken!);
+            return RunProcessRole(
+                "elevated_directory_helper_broker",
+                () => ElevatedHelperProcessBroker.Launch(
+                    helperSessionId,
+                    helperPipeName!,
+                    helperAuthenticationToken!));
         }
         if (ErrorDialog.TryParseArguments(args, out var errorReportPath))
         {
@@ -45,7 +49,8 @@ internal static class Program
         {
             ["version"] = typeof(Program).Assembly.GetName().Version?.ToString(),
             ["is_64_bit"] = Environment.Is64BitProcess,
-            ["os_version"] = Environment.OSVersion.VersionString
+            ["os_version"] = Environment.OSVersion.VersionString,
+            ["process_role"] = "platform_host",
         });
         if (!Application.SetHighDpiMode(HighDpiMode.PerMonitorV2))
         {
@@ -54,6 +59,7 @@ internal static class Program
         }
 
         using var shutdown = new CancellationTokenSource();
+        PlatformExceptionDiagnostics.Register(log, shutdown);
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
@@ -76,11 +82,54 @@ internal static class Program
         {
             return 0;
         }
+        catch (Exception error)
+        {
+            PlatformExceptionDiagnostics.Record(log, "process.pipe_loop_failed", error);
+            return 1;
+        }
         finally
         {
             await shutdown.CancelAsync();
             await parentMonitor;
-            log.Write("info", "process.stop");
+            log.Write("info", "process.stop", fields: new Dictionary<string, object?>
+            {
+                ["process_role"] = "platform_host"
+            });
+        }
+    }
+
+    private static int RunProcessRole(string processRole, Func<int> run)
+    {
+        using var log = PlatformLog.CreateDefault();
+        log.Write("info", "process.start", fields: new Dictionary<string, object?>
+        {
+            ["process_role"] = processRole
+        });
+        int? exitCode = null;
+        try
+        {
+            exitCode = run();
+            return exitCode.Value;
+        }
+        catch (Exception error)
+        {
+            PlatformExceptionDiagnostics.Record(
+                log,
+                "process.role_failed",
+                error,
+                new Dictionary<string, object?>
+                {
+                    ["process_role"] = processRole
+                });
+            throw;
+        }
+        finally
+        {
+            log.Write("info", "process.stop", fields: new Dictionary<string, object?>
+            {
+                ["process_role"] = processRole,
+                ["exit_code"] = exitCode
+            });
         }
     }
 

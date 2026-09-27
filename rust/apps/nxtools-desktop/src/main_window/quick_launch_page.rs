@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::components::tooltip::bounded_text_tooltip;
 
 pub(crate) fn quick_find_scroll_target(
     current: f32,
@@ -1173,36 +1174,58 @@ impl MainWindow {
     }
 }
 
+fn compact_setting_tooltip(
+    message: gpui::SharedString,
+) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView {
+    bounded_text_tooltip("compact-setting-description-tooltip", message, false)
+}
+
 pub(crate) fn compact_setting_row(
     theme: Theme,
     title: impl Into<gpui::SharedString>,
     description: impl Into<gpui::SharedString>,
     control: AnyElement,
 ) -> AnyElement {
+    let title = title.into();
+    let description = description.into();
+    let description_selector = title.clone();
     div()
-        .min_h(px(42.0))
+        .min_h(px(48.0))
         .py(px(6.0))
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
-        .items_center()
-        .gap(px(12.0))
+        .flex_col()
+        .gap(px(3.0))
         .child(
             div()
+                .w_full()
                 .min_w_0()
-                .flex_1()
                 .flex()
-                .flex_col()
-                .gap(px(2.0))
-                .child(div().text_size(px(TEXT_BODY)).child(title.into()))
+                .items_center()
+                .gap(px(12.0))
                 .child(
                     div()
-                        .text_size(px(TEXT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child(description.into()),
-                ),
+                        .min_w_0()
+                        .flex_1()
+                        .truncate()
+                        .text_size(px(TEXT_BODY))
+                        .child(title.clone()),
+                )
+                .child(control),
         )
-        .child(control)
+        .child(
+            div()
+                .id(title)
+                .debug_selector(move || description_selector.to_string())
+                .w_full()
+                .tooltip(compact_setting_tooltip(description.clone()))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
+                .whitespace_normal()
+                .text_color(theme.text_muted)
+                .child(description),
+        )
         .into_any_element()
 }
 

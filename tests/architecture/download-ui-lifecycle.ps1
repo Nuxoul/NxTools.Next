@@ -7,11 +7,14 @@ $ErrorActionPreference = "Stop"
 $downloadsFiles = @(
     'downloads.rs',
     'downloads\delete_confirmation.rs',
+    'downloads\browser_handoff_impl.rs',
+    'downloads\completion_shutdown_impl.rs',
     'downloads\new_download_view.rs',
     'downloads\schedule_view.rs',
     'downloads\shutdown_window.rs',
     'downloads\settings_view.rs',
-    'downloads\task_window.rs'
+    'downloads\task_window.rs',
+    'downloads\window_support.rs'
 )
 $source = ($downloadsFiles | ForEach-Object {
     Get-Content -LiteralPath (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\$_") -Raw
@@ -81,6 +84,15 @@ Assert-SourceContains `
 Assert-SourceContains `
     -Pattern 'window.resize(window_size);' `
     -Message "The add window must apply the probe-state size at the real GPUI window boundary."
+Assert-SourceContains `
+    -Pattern 'gpui::Timer::after(retry_delay)' `
+    -Message "Probe completion must retry native resizing after a move/size modal loop."
+Assert-SourceContains `
+    -Pattern 'view.probe_generation == generation' `
+    -Message "A stale probe generation must not resize a newer add window state."
+Assert-SourceContains `
+    -Pattern 'Duration::from_millis(4_000)' `
+    -Message "Probe completion must keep retrying long enough to outlive a dragged window move loop."
 Assert-SourceContains `
     -Pattern 'window_min_size: Some(new_download_window_size(false))' `
     -Message "The add window minimum must allow browser and retry probes to return to compact height."
@@ -208,7 +220,7 @@ if ($completedStart -lt 0 -or $failedStart -le $completedStart) {
 }
 $completedBody = $source.Substring($completedStart, $failedStart - $completedStart)
 $completedActionStart = $source.IndexOf("enum CompletedTaskWindowAction")
-$completedActionEnd = $source.IndexOf("#[allow(", $completedActionStart)
+$completedActionEnd = $source.IndexOf("pub(crate) fn download_window_metric", $completedActionStart)
 if ($completedActionStart -lt 0 -or $completedActionEnd -le $completedActionStart) {
     throw "Could not isolate the completed action model."
 }

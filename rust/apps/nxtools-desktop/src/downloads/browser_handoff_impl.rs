@@ -91,6 +91,7 @@ impl DownloadApplication {
             )) {
             Ok(command_id) => {
                 self.pending_extension_export = Some(PendingExtensionExport {
+                    command_id,
                     format,
                     started_at: Instant::now(),
                 });

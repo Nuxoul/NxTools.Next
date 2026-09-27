@@ -11,4 +11,5 @@ pub(crate) mod quick_launch_diagnostics;
 pub(crate) mod settings;
 pub(crate) mod state;
 pub(crate) mod titlebar;
+pub(crate) mod tooltip;
 pub(crate) mod volume_scope;

@@ -2,11 +2,15 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
+$mainWindowTestsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\tests.rs'
 $settingsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\settings.rs'
 $mainWindowSource = Get-Content -Raw -LiteralPath $mainWindowPath
+$mainWindowTestsSource = Get-Content -Raw -LiteralPath $mainWindowTestsPath
+$uiTestsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\tests.rs'
 $settingsSource = Get-Content -Raw -LiteralPath $settingsPath
 $clipboardPagePath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\clipboard_page.rs'
 $clipboardPageSource = Get-Content -Raw -LiteralPath $clipboardPagePath
+$uiTestsSource = Get-Content -Raw -LiteralPath $uiTestsPath
 
 $splitSurfaceStart = $settingsSource.IndexOf('pub(crate) fn settings_split_surface(')
 $splitSurfaceEnd = $settingsSource.IndexOf('pub(crate) fn settings_shell(', $splitSurfaceStart)
@@ -78,7 +82,7 @@ foreach ($requiredProductionEvidence in @(
     'secondary.size.width',
     'primary.size.width > secondary.size.width'
 )) {
-    if (-not $mainWindowSource.Contains($requiredProductionEvidence)) {
+    if (-not $mainWindowTestsSource.Contains($requiredProductionEvidence)) {
         throw 'CL-01 requires a real production-window regression for the protected split geometry.'
     }
 }
@@ -139,13 +143,11 @@ foreach ($previewContract in @(
         throw "CL-05 shared preview contract missing: $previewContract"
     }
 }
-foreach ($previewCapContract in @(
-    'const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;',
-    'fn image_resource_cache_evicts_the_oldest_entry_beyond_capacity()'
-)) {
-    if (-not $popupModSource.Contains($previewCapContract)) {
-        throw "CL-05 preview resource cap contract missing: $previewCapContract"
-    }
+if (-not $popupModSource.Contains('const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;')) {
+    throw 'CL-05 preview resource cap constant is missing.'
+}
+if (-not $uiTestsSource.Contains('fn image_resource_cache_evicts_the_oldest_entry_beyond_capacity()')) {
+    throw 'CL-05 preview resource cap regression is missing.'
 }
 
 Write-Host 'PASS clipboard preview shares the QL preview shell with a bounded 96-entry resource cache'

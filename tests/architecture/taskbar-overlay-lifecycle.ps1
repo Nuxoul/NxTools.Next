@@ -79,6 +79,8 @@ if ($render.Contains('this.application.update(cx') -or
 
 $downloadsPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads.rs"
 $downloads = Get-Content -LiteralPath $downloadsPath -Raw
+$downloadsTestsPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads\tests.rs"
+$downloadsTests = Get-Content -LiteralPath $downloadsTestsPath -Raw
 $handlerStart = $downloads.IndexOf('pub(crate) fn handle_platform_notification')
 $handlerEnd = $downloads.IndexOf('fn handle_directory_result', $handlerStart)
 if ($handlerStart -lt 0 -or $handlerEnd -le $handlerStart) {
@@ -127,7 +129,7 @@ foreach ($requiredNativeCloseGuard in @(
         throw "Deferred taskbar overlay close cleanup must reject stale window and edit identities."
     }
 }
-if (-not $downloads.Contains('fn stale_native_taskbar_overlay_close_cannot_cancel_the_current_edit(')) {
+if (-not $downloadsTests.Contains('fn stale_native_taskbar_overlay_close_cannot_cancel_the_current_edit(')) {
     throw "Taskbar overlay native-close correlation requires a real stale-window lifecycle regression test."
 }
 

@@ -10,10 +10,24 @@ internal static class ProgramPicker
         "程序 (*.exe;*.com;*.bat;*.cmd;*.ps1;*.lnk)|*.exe;*.com;*.bat;*.cmd;*.ps1;*.lnk|所有文件 (*.*)|*.*";
 
     public static WindowsCommandResult Pick(PickProgramCommand command) =>
-        StaDialogRunner.Run("NxTools program picker", () => PickOnStaThread(command));
+        Pick(command, CancellationToken.None);
 
-    private static WindowsCommandResult PickOnStaThread(PickProgramCommand command)
+    public static WindowsCommandResult Pick(
+        PickProgramCommand command,
+        CancellationToken cancellationToken) =>
+        StaDialogRunner.Run(
+            "NxTools program picker",
+            () => PickOnStaThread(command, cancellationToken),
+            cancellationToken);
+
+    private static WindowsCommandResult PickOnStaThread(
+        PickProgramCommand command,
+        CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
+        }
         try
         {
             var currentPath = Environment.ExpandEnvironmentVariables(command.CurrentPath.Trim());
@@ -32,9 +46,14 @@ internal static class ProgramPicker
                 RestoreDirectory = true,
                 Title = "选择命令程序"
             };
-            return dialog.ShowDialog() == DialogResult.OK
+            var result = dialog.ShowDialog() == DialogResult.OK
                 ? new WindowsCommandResult(true, Data: dialog.FileName)
                 : new WindowsCommandResult(true, Data: string.Empty);
+            return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledResult();
         }
         catch (Win32Exception error)
         {
@@ -51,4 +70,7 @@ internal static class ProgramPicker
             return new WindowsCommandResult(false, error.Message);
         }
     }
+
+    private static WindowsCommandResult CancelledResult() =>
+        new(false, "Windows dialog operation was cancelled.");
 }

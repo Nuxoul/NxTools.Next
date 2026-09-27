@@ -5,53 +5,13 @@ use gpui::{
 use gpui_component::tooltip::Tooltip;
 
 use crate::theme::Theme;
-use crate::ui::metrics::{
-    CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8,
-};
+use crate::ui::metrics::{SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 const COMPACT_RESULT_ROW_PADDING_X: f32 = 7.0;
 const COMPACT_RESULT_ROW_PADDING_Y: f32 = 4.0;
 const COMPACT_RESULT_ROW_CONTENT_GAP: f32 = 4.0;
 
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub(crate) enum StatusTone {
-    Neutral,
-    Accent,
-    Success,
-    Warning,
-    Danger,
-}
-
-#[allow(dead_code)]
-pub(crate) fn status_badge(
-    theme: Theme,
-    label: impl Into<gpui::SharedString>,
-    tone: StatusTone,
-) -> AnyElement {
-    let color = match tone {
-        StatusTone::Neutral => theme.text_muted,
-        StatusTone::Accent => theme.accent,
-        StatusTone::Success => theme.success,
-        StatusTone::Warning => theme.warning,
-        StatusTone::Danger => theme.danger,
-    };
-    div()
-        .h(px(CONTROL_HEIGHT_DEFAULT))
-        .px(px(SPACING_8))
-        .rounded(px(CONTROL_HEIGHT_DEFAULT / 2.0))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .text_size(px(TEXT_LABEL))
-        .text_color(color)
-        .flex()
-        .items_center()
-        .child(label.into())
-        .into_any_element()
-}
-
-#[allow(dead_code)]
 pub(crate) fn compact_list_row(
     theme: Theme,
     selector: SharedString,
@@ -140,14 +100,14 @@ pub(crate) fn compact_list_row(
 
 /// Shared shell for result-style rows (clipboard history today; other result
 /// surfaces may adopt it later). The caller owns interactions and content
-/// children; the shell owns the neutral raised surface, hover semantics and
+/// children; the shell owns the continuous list surface, hover semantics and
 /// the compact padding rhythm. Content-driven rows keep their own height.
-#[allow(dead_code)]
 pub(crate) fn compact_result_row(
     theme: Theme,
     id: impl Into<ElementId>,
     group: impl Into<SharedString>,
     height: f32,
+    selected: bool,
 ) -> Stateful<Div> {
     div()
         .id(id)
@@ -155,13 +115,24 @@ pub(crate) fn compact_result_row(
         .h(px(height))
         .px(px(COMPACT_RESULT_ROW_PADDING_X))
         .py(px(COMPACT_RESULT_ROW_PADDING_Y))
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
+        .border_b_1()
         .border_color(theme.border_subtle)
-        .bg(theme.surface_raised)
+        .bg(if selected {
+            theme.element_selected
+        } else {
+            theme.canvas
+        })
         .overflow_hidden()
         .cursor_pointer()
-        .hover(move |style| style.bg(theme.surface_hover).border_color(theme.border))
+        .hover(move |style| {
+            style
+                .bg(if selected {
+                    theme.element_selected
+                } else {
+                    theme.surface_hover
+                })
+                .border_color(theme.border)
+        })
         .flex()
         .flex_col()
         .gap(px(COMPACT_RESULT_ROW_CONTENT_GAP))

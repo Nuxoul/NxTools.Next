@@ -149,6 +149,10 @@ pub struct PointerPressContext {
     pub window_handle: i64,
     pub root_window_handle: i64,
     pub process_id: u32,
+    #[serde(default)]
+    pub sampled_at_unix_ms: i64,
+    #[serde(default)]
+    pub event_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,6 +191,8 @@ pub struct ClipboardPanelRequest {
     pub cursor_display_index: u32,
     pub cursor_monitor_dpi: u32,
     pub requested_at_unix_ms: i64,
+    #[serde(default)]
+    pub event_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -419,6 +425,12 @@ pub struct ConfigureClipboardCommand {
     pub hotkey_key: String,
     pub hotkey_display: String,
     pub excluded_processes: Vec<String>,
+    #[serde(default = "default_clipboard_max_text_bytes")]
+    pub max_text_bytes: u64,
+    #[serde(default = "default_clipboard_max_image_bytes")]
+    pub max_image_bytes: u64,
+    #[serde(default = "default_clipboard_max_image_pixels")]
+    pub max_image_pixels: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -512,10 +524,21 @@ pub struct PasteImageCommand {
     pub target_focus_window_handle: i64,
 }
 
+const fn default_clipboard_max_text_bytes() -> u64 {
+    8 * 1024 * 1024
+}
+
+const fn default_clipboard_max_image_bytes() -> u64 {
+    64 * 1024 * 1024
+}
+
+const fn default_clipboard_max_image_pixels() -> u64 {
+    100_000_000
+}
+
 const fn default_true() -> bool {
     true
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetWindowTopmostCommand {
     pub window_handle: i64,
@@ -527,7 +550,6 @@ pub struct SetWindowNoActivateCommand {
     pub window_handle: i64,
     pub enabled: bool,
 }
-
 
 /// Toggles the DWM drop shadow on one window. The 链接识别 panel turns it
 /// off: a floating hint card reads cleaner without the system shadow.
@@ -1333,6 +1355,9 @@ mod tests {
                 hotkey_key: "V".into(),
                 hotkey_display: "Ctrl+Shift+V".into(),
                 excluded_processes: vec!["KeePass.exe".into(), "Bitwarden.exe".into()],
+                max_text_bytes: 12 * 1024 * 1024,
+                max_image_bytes: 96 * 1024 * 1024,
+                max_image_pixels: 120_000_000,
             }),
         ));
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
@@ -1632,6 +1657,7 @@ mod tests {
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
                 requested_at_unix_ms: 1_700_000_000_500,
+                event_sequence: 41,
             }),
         ));
 
@@ -1647,6 +1673,8 @@ mod tests {
                 window_handle: 90,
                 root_window_handle: 80,
                 process_id: 7,
+                sampled_at_unix_ms: 1_700_000_000_400,
+                event_sequence: 42,
             },
         )));
 

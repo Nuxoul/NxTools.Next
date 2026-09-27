@@ -518,6 +518,8 @@ pub(crate) async fn run_hls_task(
         return Ok(());
     }
     if cancelled {
+        let _ = validate_hls_artifact(&working_directory, true)?;
+        let _ = validate_hls_artifact(&temporary_path, false)?;
         let cleanup_started = Instant::now();
         let staging_cleanup = remove_hls_cancel_artifact(
             &working_directory,
@@ -720,6 +722,7 @@ pub(crate) async fn remove_hls_cancel_artifact(
     correlation_id: uuid::Uuid,
     started_at: Instant,
 ) -> Result<(), std::io::Error> {
+    let _ = validate_hls_artifact(path, directory)?;
     let result = if directory {
         tokio::fs::remove_dir_all(path).await
     } else {
@@ -752,6 +755,8 @@ pub(crate) async fn cleanup_hls_segment_attempt_files(
     segment_index: u32,
     reason: &'static str,
 ) -> Result<(), HttpDownloadError> {
+    let _ = validate_hls_artifact(staging_path, false)?;
+    let _ = validate_hls_artifact(ciphertext_path, false)?;
     let started_at = Instant::now();
     let mut first_error = None;
     for (path, artifact_kind) in [
@@ -968,6 +973,27 @@ pub(crate) fn hls_working_directory(request: &DownloadRequest, task_id: Download
         .join(format!(".nxtools-hls-{}", task_id.as_uuid()))
 }
 
+fn validate_hls_artifact(path: &Path, directory: bool) -> Result<bool, std::io::Error> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if metadata.is_dir() != directory {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "HLS cleanup artifact has an unexpected type",
+        ));
+    }
+    if metadata.permissions().readonly() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "HLS cleanup artifact is read-only",
+        ));
+    }
+    Ok(true)
+}
+
 pub(crate) fn remove_hls_owned_artifacts(
     request: &DownloadRequest,
     task_id: DownloadTaskId,
@@ -977,16 +1003,9 @@ pub(crate) fn remove_hls_owned_artifacts(
     started_at: Instant,
 ) -> Result<(), std::io::Error> {
     let working_directory = hls_working_directory(request, task_id);
-    let segment_cleanup = remove_hls_artifact(
-        &working_directory,
-        "segment_directory",
-        true,
-        task_id,
-        correlation_id,
-        reason,
-        started_at,
-    );
-    let merge_cleanup = temporary_path.map_or(Ok(()), |path| {
+    let _ = validate_hls_artifact(&working_directory, true)?;
+    if let Some(path) = temporary_path {
+        let _ = validate_hls_artifact(path, false)?;
         remove_hls_artifact(
             path,
             "merge_temporary",
@@ -995,10 +1014,18 @@ pub(crate) fn remove_hls_owned_artifacts(
             correlation_id,
             reason,
             started_at,
-        )
-    });
-    segment_cleanup?;
-    merge_cleanup
+        )?;
+    }
+    remove_hls_artifact(
+        &working_directory,
+        "segment_directory",
+        true,
+        task_id,
+        correlation_id,
+        reason,
+        started_at,
+    )?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

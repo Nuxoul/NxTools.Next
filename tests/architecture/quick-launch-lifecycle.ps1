@@ -11,7 +11,10 @@ $quickLaunchSource = (@(
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'actions.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'search.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'icon.rs')),
-        (Get-Content -Raw -LiteralPath $quickLaunchPath)
+        (Get-Content -Raw -LiteralPath $quickLaunchPath),
+        # The module's production-window regressions live in its test submodule;
+        # they are part of the lifecycle contract this gate enforces.
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'tests.rs'))
     )) -join "`n"
 $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
@@ -775,7 +778,7 @@ if ($panelRender.Contains('.bg(theme.element)') -or
 }
 $exitActionModeStart = $quickLaunchSource.IndexOf('fn exit_action_mode(')
 $exitActionModeEnd = $quickLaunchSource.IndexOf(
-    'fn replace_results(',
+    'pub(crate) fn reset_after_history_clear',
     $exitActionModeStart
 )
 if ($exitActionModeStart -lt 0 -or $exitActionModeEnd -le $exitActionModeStart) {
@@ -794,10 +797,10 @@ if ($exitActionMode.Contains('base_handle') -or
     throw 'Quick Launch action-mode return must preserve the parent viewport on its first frame.'
 }
 $firstFrameTestStart = $quickLaunchSource.IndexOf(
-    '    fn action_mode_returns_to_the_parent_viewport_on_its_first_frame('
+    'fn action_mode_returns_to_the_parent_viewport_on_its_first_frame('
 )
 $firstFrameTestEnd = $quickLaunchSource.IndexOf(
-    '    #[gpui::test]',
+    '#[gpui::test]',
     $firstFrameTestStart + 20
 )
 if ($firstFrameTestStart -lt 0 -or $firstFrameTestEnd -le $firstFrameTestStart) {
@@ -1024,7 +1027,13 @@ $platformParserSource = Get-Content -Raw -LiteralPath $platformParserPath
 $platformPipePath = Join-Path $root 'csharp\NxTools.PlatformHost\Protocol\PlatformPipeClient.cs'
 $platformPipeSource = Get-Content -Raw -LiteralPath $platformPipePath
 $windowsAdapterPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs'
-$windowsAdapterSource = Get-Content -Raw -LiteralPath $windowsAdapterPath
+$nativeMethodsPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.NativeMethods.cs'
+$eventWindowPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.EventWindow.cs'
+$platformEventPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformEvent.cs'
+$windowsAdapterSource = ((Get-Content -Raw -LiteralPath $windowsAdapterPath) +
+    (Get-Content -Raw -LiteralPath $nativeMethodsPath) +
+    (Get-Content -Raw -LiteralPath $eventWindowPath) +
+    (Get-Content -Raw -LiteralPath $platformEventPath))
 $shellMenuPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\ShellContextMenuSession.cs'
 $shellMenuSource = Get-Content -Raw -LiteralPath $shellMenuPath
 $shellIconPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\ShellIconExtractor.cs'
@@ -1632,7 +1641,7 @@ if ($protocolSource -notmatch '(?s)DirectoryNavigationHost\s*\{.*?ThirdPartyFile
     $oneCommanderAdapterSource -notmatch 'AutomationElement\.FromHandle' -or
     $oneCommanderAdapterSource -match '(?s)CapturePane\(.*?AutomationElement\.FocusedElement.*?private static OneCommanderNavigationResult' -or
     $oneCommanderAdapterSource -notmatch 'BoundedStaOperationRunner\.TryRun' -or
-    $boundedStaRunnerSource -notmatch 'completed\.Wait\(timeout\)' -or
+    $boundedStaRunnerSource -notmatch 'completed\.Wait\(timeout(?:,\s*cancellationToken)?\)' -or
     $boundedStaRunnerSource -notmatch 'cancellation\.Cancel\(\)' -or
     $boundedStaRunnerSource -notmatch 'ActiveOperations' -or
     $thirdPartyAdapterSource -notmatch '_sessionOrderNodes' -or
@@ -1828,7 +1837,7 @@ if ($protocolSource -notmatch 'QueryShellSubmenu' -or
     $platformParserSource -notmatch 'QueryShellSubmenu' -or
     $shellMenuSource -notmatch 'IconPath' -or
     $shellMenuSource -notmatch 'SubmenuId' -or
-    $shellMenuSource -notmatch 'ShellMenuIconStager\.Stage\(info\.ItemBitmap\)' -or
+    $shellMenuSource -notmatch 'ShellMenuIconStager\.Stage\(info\.ItemBitmap(?:,\s*cancellationToken)?\)' -or
     $quickLaunchSource -notmatch 'icon_path' -or
     $shellMenuSource -match 'EnumerateMenu\(info\.SubMenu') {
     throw @'

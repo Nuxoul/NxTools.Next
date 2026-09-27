@@ -320,18 +320,59 @@ impl QuickLaunchApplication {
         let clear_result = self.catalog.borrow_mut().clear_history();
         match clear_result {
             Ok(()) => {
-                let panel = self.popup.as_ref().map(|popup| popup.panel.clone());
+                self.index_search.invalidate();
+                self.pending_icons.clear();
+                self.pending_icon_resources.clear();
+                let popup = self.popup.clone();
+                let application = cx.entity().downgrade();
                 let notifications = self.notifications.clone();
                 cx.defer(move |cx| {
-                    if let Some(panel) = panel {
-                        let _ = panel.update(cx, |panel, cx| {
-                            panel.recent_directories.clear();
-                            if panel.recent_directory_mode {
-                                panel.recent_directory_mode = false;
-                                panel.results.clear();
-                                panel.selected = 0;
-                            }
-                            cx.notify();
+                    let reset = popup.as_ref().and_then(|popup| {
+                        popup
+                            .window
+                            .update(cx, |_, window, app| {
+                                popup.panel.update(app, |panel, cx| {
+                                    panel.reset_after_history_clear(window, cx)
+                                })
+                            })
+                            .ok()
+                            .and_then(Result::ok)
+                    });
+                    if let Some((query, panel_generation)) = reset {
+                        let popup = popup.clone();
+                        let application = application.clone();
+                        cx.defer(move |cx| {
+                            let Some(application_entity) = application.upgrade() else {
+                                return;
+                            };
+                            let update = application_entity.update(cx, |application, cx| {
+                                if query.trim().is_empty() {
+                                    QuickLaunchSearchUpdate {
+                                        results: Vec::new(),
+                                        pending: false,
+                                    }
+                                } else {
+                                    application.search_and_request_icons(&query, cx)
+                                }
+                            });
+                            let Some(popup) = popup else {
+                                return;
+                            };
+                            cx.defer(move |cx| {
+                                let _ = popup.window.update(cx, |_, _, app| {
+                                    let _ = popup.panel.update(app, |panel, cx| {
+                                        if panel.query_dispatch_generation != panel_generation
+                                            || panel.recent_directory_mode
+                                            || panel.search_input.read(cx).value().as_ref() != query
+                                        {
+                                            return;
+                                        }
+                                        panel.replace_results(update.results, cx);
+                                        panel.search_pending = update.pending;
+                                        cx.notify();
+                                    });
+                                });
+                            });
                         });
                     }
                     notifications.update(cx, |notifications, cx| {
@@ -947,6 +988,96 @@ impl QuickLaunchApplication {
                 if prepare_indexer {
                     self.ensure_indexer_service(true, cx);
                 }
+            }
+            PlatformNotification::Disconnected {
+                generation,
+                pending_command_ids,
+            } => {
+                warn!(
+                    event = "quick_launch.platform_disconnected",
+                    generation,
+                    pending_command_count = pending_command_ids.len(),
+                    "quick-launch invalidated commands from the disconnected PlatformHost session"
+                );
+                self.pending_configuration.clear();
+                self.pending_hotkey = None;
+                self.pending_recording = None;
+                self.recording_active = false;
+                self.recording_desired = false;
+                self.hotkey_error = Some("等待 Windows 适配器".into());
+                let current_session_id = self.popup_session_id;
+                let (disconnected_current_actions, stale_action_count) =
+                    partition_actions_for_disconnect(
+                        std::mem::take(&mut self.pending_actions),
+                        current_session_id,
+                    );
+                if stale_action_count > 0 {
+                    warn!(
+                        event = "quick_launch.action.disconnected_stale_discarded",
+                        generation,
+                        stale_action_count,
+                        "discarded accepted actions from an older popup session"
+                    );
+                }
+                if !disconnected_current_actions.is_empty() {
+                    let action_count = disconnected_current_actions.len();
+                    let action_label = disconnected_current_actions
+                        .first()
+                        .map(|pending| quick_launch_action_label(&pending.action))
+                        .unwrap_or("速启动作");
+                    for pending in &disconnected_current_actions {
+                        error!(
+                            event = "quick_launch.action.completed",
+                            correlation_id = %pending.correlation_id,
+                            action = quick_launch_action_diagnostic_label(&pending.action),
+                            trigger = pending.trigger.diagnostic_label(),
+                            source = pending.source.label(),
+                            outcome = "failure",
+                            failure_kind = "platform_disconnected",
+                            elapsed_ms = pending.started_at.elapsed().as_millis() as u64,
+                            error_reported = true,
+                            "quick-launch action failed because PlatformHost disconnected"
+                        );
+                    }
+                    let notifications = self.notifications.clone();
+                    let message = if action_count == 1 {
+                        format!(
+                            "{action_label}未完成，Windows 适配器已断开；重新呼出速启后可重试。"
+                        )
+                    } else {
+                        format!(
+                            "{action_count} 个速启动作未完成，Windows 适配器已断开；重新呼出速启后可重试。"
+                        )
+                    };
+                    cx.defer(move |cx| {
+                        notifications.update(cx, |notifications, cx| {
+                            notifications.show_error(
+                                "quick-launch-action-disconnected",
+                                "速启动作未完成",
+                                message,
+                                cx,
+                            );
+                        });
+                    });
+                }
+                self.pending_auto_quick_switches.clear();
+                self.navigation_foreground_guard = None;
+                self.pending_shell_queries.clear();
+                self.pending_window_activation.clear();
+                self.pending_panel_hides.clear();
+                self.pending_icons.clear();
+                self.pending_icon_resources.clear();
+                self.pending_exclusion_picker = None;
+                self.pending_program_picker = None;
+                self.elevated_helper_request = None;
+                self.pending_elevated_helper = None;
+                self.acknowledged_elevated_helper_pipe = None;
+                self.configuration_status = "等待 Windows 适配器".into();
+                self.preview.generation = self.preview.generation.wrapping_add(1).max(1);
+                self.preview.hovered_entry_id = None;
+                self.preview.pointer_inside = false;
+                self.hide_quick_launch_preview_window(cx);
+                cx.notify();
             }
             PlatformNotification::Event(event) => self.handle_platform_event(event, cx),
             PlatformNotification::CommandResult {
@@ -3199,10 +3330,8 @@ impl QuickLaunchApplication {
             restore_window_handle = ?restore_window_handle,
             "quick-launch hide commands queued"
         );
-        let commands = quick_launch_dismiss_commands(
-            popup.native_window_handle,
-            restore_window_handle,
-        );
+        let commands =
+            quick_launch_dismiss_commands(popup.native_window_handle, restore_window_handle);
         for (index, command) in commands.into_iter().enumerate() {
             if index == 0 {
                 // The visibility hide is the one command whose loss makes the
@@ -3219,8 +3348,7 @@ impl QuickLaunchApplication {
                     .send_command_correlated(command, guard.correlation_id())
                 {
                     Ok(command_id) => {
-                        self.pending_panel_hides
-                            .insert(command_id, guard);
+                        self.pending_panel_hides.insert(command_id, guard);
                         self.schedule_panel_hide_recheck(guard, cx);
                     }
                     Err(error) => {
@@ -3275,11 +3403,7 @@ impl QuickLaunchApplication {
     /// The user report: the panel sometimes never disappears. A lost command
     /// result must not leave that state undetected, so one bounded recheck
     /// re-sends the hide when no confirmation arrived in time.
-    fn schedule_panel_hide_recheck(
-        &mut self,
-        guard: PendingPanelHide,
-        cx: &mut Context<Self>,
-    ) {
+    fn schedule_panel_hide_recheck(&mut self, guard: PendingPanelHide, cx: &mut Context<Self>) {
         let session_id = guard.session_id;
         let popup_window_handle = guard.popup_window_handle;
         cx.spawn(async move |this, cx| {
@@ -3299,8 +3423,7 @@ impl QuickLaunchApplication {
                 }
                 warn!(
                     event = "quick_launch.panel.hide_unconfirmed",
-                    popup_window_handle,
-                    "panel hide was not confirmed in time; re-sending"
+                    popup_window_handle, "panel hide was not confirmed in time; re-sending"
                 );
                 let stale: Vec<uuid::Uuid> = this
                     .pending_panel_hides

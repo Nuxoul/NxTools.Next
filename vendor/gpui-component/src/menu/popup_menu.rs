@@ -3,12 +3,12 @@ use crate::actions::{SelectLeft, SelectRight};
 use crate::menu::menu_item::MenuItemElement;
 use crate::scroll::ScrollableElement;
 use crate::{ActiveTheme, Icon, IconName, Sizable as _, h_flex, v_flex};
-use crate::{Side, Size, StyledExt, kbd::Kbd};
+use crate::{PixelsExt, Side, Size, StyledExt, kbd::Kbd};
 use gpui::{
     Action, AnyElement, App, AppContext, Bounds, Context, Corner, DismissEvent, Edges, Entity,
     EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
-    ParentElement, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
-    WeakEntity, Window, anchored, canvas, div, prelude::FluentBuilder, px, rems,
+    ParentElement, Pixels, Point, Render, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, WeakEntity, Window, anchored, canvas, div, point, prelude::FluentBuilder, px, rems,
 };
 use gpui::{ClickEvent, Half, MouseDownEvent, OwnedMenuItem, Subscription};
 use std::rc::Rc;
@@ -289,8 +289,29 @@ pub struct PopupMenu {
     scroll_handle: ScrollHandle,
     // This will update on render
     submenu_anchor: (Corner, Pixels),
-
+    submenu_position: Point<Pixels>,
     _subscriptions: Vec<Subscription>,
+}
+
+fn resolve_submenu_x(
+    parent_bounds: Bounds<Pixels>,
+    viewport_width: Pixels,
+    requested_width: Pixels,
+) -> (Pixels, bool) {
+    let edge = 4.0;
+    let gap = 4.0;
+    let submenu_width = requested_width
+        .as_f32()
+        .min((viewport_width.as_f32() - edge * 2.0).max(1.0));
+    let left_space = parent_bounds.origin.x.as_f32() - edge;
+    let open_left = left_space >= submenu_width;
+    let desired_x = if open_left {
+        parent_bounds.origin.x.as_f32() - submenu_width - gap
+    } else {
+        parent_bounds.right().as_f32() + gap
+    };
+    let max_x = (viewport_width.as_f32() - edge - submenu_width).max(edge);
+    (px(desired_x.clamp(edge, max_x)), open_left)
 }
 
 impl PopupMenu {
@@ -311,6 +332,7 @@ impl PopupMenu {
             external_link_icon: true,
             size: Size::default(),
             submenu_anchor: (Corner::TopLeft, Pixels::ZERO),
+            submenu_position: point(px(0.0), px(0.0)),
             _subscriptions: vec![],
         }
     }
@@ -993,17 +1015,43 @@ impl PopupMenu {
         self.max_width.unwrap_or(px(500.))
     }
 
-    /// Calculate the anchor corner and left offset for child submenu
+    /// Calculate a window-space submenu position. The submenu must remain
+    /// inside the native popup HWND because a GPUI popup cannot paint outside
+    /// that window's client area.
     fn update_submenu_menu_anchor(&mut self, window: &Window) {
         let bounds = self.bounds;
-        let max_width = self.max_width();
-        let (anchor, left) = if max_width + bounds.origin.x > window.bounds().size.width {
-            (Corner::TopRight, -px(16.))
-        } else {
-            (Corner::TopLeft, bounds.size.width - px(8.))
-        };
+        let viewport = window.viewport_size();
+        let edge = 4.0;
+        let (x, open_left) = resolve_submenu_x(bounds, viewport.width, self.max_width());
 
-        let is_bottom_pos = bounds.origin.y + bounds.size.height > window.bounds().size.height;
+        let mut y = bounds.origin.y.as_f32() + edge;
+        if let Some(selected_index) = self.selected_index {
+            for item in self.menu_items.iter().take(selected_index) {
+                let height = if item.is_separator() {
+                    1.0
+                } else {
+                    match self.size {
+                        Size::Small => 20.0,
+                        _ => 26.0,
+                    }
+                };
+                y += height + 2.0;
+            }
+        }
+        let y = y.clamp(edge, (viewport.height.as_f32() - edge).max(edge));
+        self.submenu_position = point(x, px(y));
+
+        let anchor = if open_left {
+            Corner::TopRight
+        } else {
+            Corner::TopLeft
+        };
+        let left = if open_left {
+            -px(16.)
+        } else {
+            bounds.size.width - px(8.)
+        };
+        let is_bottom_pos = bounds.origin.y + bounds.size.height > viewport.height;
         self.submenu_anchor = if is_bottom_pos {
             (anchor.other_side_corner_along(gpui::Axis::Vertical), left)
         } else {
@@ -1028,6 +1076,7 @@ impl PopupMenu {
         };
 
         let selected = self.selected_index == Some(ix);
+        let submenu_position = self.submenu_position;
         const EDGE_PADDING: Pixels = px(4.);
         const INNER_PADDING: Pixels = px(8.);
 
@@ -1188,23 +1237,13 @@ impl PopupMenu {
                         ),
                 )
                 .when(selected, |this| {
-                    this.child({
-                        let (anchor, left) = self.submenu_anchor;
-                        let is_bottom_pos =
-                            matches!(anchor, Corner::BottomLeft | Corner::BottomRight);
+                    this.child(
                         anchored()
-                            .anchor(anchor)
-                            .child(
-                                div()
-                                    .id("submenu")
-                                    .occlude()
-                                    .when(is_bottom_pos, |this| this.bottom_0())
-                                    .when(!is_bottom_pos, |this| this.top_neg_1())
-                                    .left(left)
-                                    .child(menu.clone()),
-                            )
+                            .position(submenu_position)
+                            .anchor(Corner::TopLeft)
                             .snap_to_window_with_margin(Edges::all(EDGE_PADDING))
-                    })
+                            .child(div().id("submenu").occlude().child(menu.clone())),
+                    )
                 }),
         }
     }
@@ -1274,6 +1313,7 @@ impl Render for PopupMenu {
             .popover_style(cx)
             .text_color(cx.theme().popover_foreground)
             .relative()
+            .occlude()
             .child(
                 v_flex()
                     .id("items")
@@ -1308,5 +1348,28 @@ impl Render for PopupMenu {
                 // TODO: When the menu is limited by `overflow_y_scroll`, the sub-menu will cannot be displayed.
                 this.vertical_scrollbar(&self.scroll_handle)
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn submenu_x_stays_inside_a_narrow_popup_window() {
+        let viewport_width = px(300.0);
+        let parent = Bounds::new(point(px(100.0), px(40.0)), size(px(192.0), px(26.0)));
+        let (right_x, opened_left) = resolve_submenu_x(parent, viewport_width, px(240.0));
+        assert!(!opened_left);
+        assert_eq!(right_x, px(56.0));
+        assert!(right_x >= px(4.0));
+        assert!(right_x + px(240.0) <= viewport_width - px(4.0));
+
+        let parent_near_right = Bounds::new(point(px(250.0), px(40.0)), size(px(40.0), px(26.0)));
+        let (left_x, opened_left) = resolve_submenu_x(parent_near_right, viewport_width, px(240.0));
+        assert!(opened_left);
+        assert_eq!(left_x, px(6.0));
+        assert!(left_x >= px(4.0));
+        assert!(left_x + px(240.0) <= viewport_width - px(4.0));
     }
 }

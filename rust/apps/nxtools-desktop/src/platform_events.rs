@@ -121,6 +121,25 @@ impl PlatformEventDispatcher {
                 }
                 self.begin_browser_startup_minimize(cx);
             }
+            PlatformNotification::Disconnected {
+                generation,
+                pending_command_ids,
+            } => {
+                warn!(
+                    event = "product.shell.platform_disconnected",
+                    generation,
+                    pending_command_count = pending_command_ids.len(),
+                    "platform-dependent shell operations were invalidated"
+                );
+                self.pending_tray_restore = None;
+                if let Some(startup) = self.browser_startup_window.as_mut()
+                    && startup
+                        .pending_command_id
+                        .is_some_and(|command_id| pending_command_ids.contains(&command_id))
+                {
+                    startup.pending_command_id = None;
+                }
+            }
             PlatformNotification::CommandResult {
                 correlation_id,
                 result,

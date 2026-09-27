@@ -406,6 +406,31 @@ impl NetworkSettingsApplication {
                     }
                 }
             }
+            PlatformNotification::Disconnected {
+                generation,
+                pending_command_ids,
+            } => {
+                if self
+                    .pending_apply
+                    .as_ref()
+                    .is_some_and(|pending| pending_command_ids.contains(&pending.command_id))
+                {
+                    let pending = self
+                        .pending_apply
+                        .take()
+                        .expect("pending apply checked above");
+                    self.fail_close_live_shell_policy();
+                    warn!(
+                        event = "product.shell.reconcile_failed",
+                        generation,
+                        correlation_id = %pending.correlation_id,
+                        failure_kind = "platform_disconnected",
+                        elapsed_ms = pending.started_at.elapsed().as_millis(),
+                        "platform disconnected before Windows confirmed shell settings"
+                    );
+                    self.finish_platform_apply_failure(pending, "platform_disconnected", None, cx);
+                }
+            }
             PlatformNotification::CommandResult {
                 correlation_id,
                 result,

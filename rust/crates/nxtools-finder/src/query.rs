@@ -454,6 +454,10 @@ mod tests {
         assert!(query.score_name("hume").is_some());
         assert!(query.score_name("Humanoid").is_some());
         assert!(query.score_name("Helium").is_some());
-        assert!(FileQuery::parse("HeLiUm").score_name("helium.exe").is_some());
+        assert!(
+            FileQuery::parse("HeLiUm")
+                .score_name("helium.exe")
+                .is_some()
+        );
     }
 }

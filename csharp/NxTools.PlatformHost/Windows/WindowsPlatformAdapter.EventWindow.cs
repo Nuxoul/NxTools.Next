@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -12,7 +13,7 @@ namespace NxTools.PlatformHost.Windows;
 
 internal sealed partial class WindowsPlatformAdapter
 {
-    private sealed class EventWindow : NativeWindow, IWindowsPasteOperations
+    internal sealed class EventWindow : NativeWindow, IWindowsPasteOperations
     {
         private const int WmClipboardUpdate = 0x031D;
         private const int WmExitSizeMove = 0x0232;
@@ -51,6 +52,7 @@ internal sealed partial class WindowsPlatformAdapter
         private const int FileDialogRecognitionMaxAttempts = 200;
         private const int DirectorySourceRecognitionMaxAttempts = 20;
         private const int MaxClipboardReadAttempts = 5;
+        private const int MaxClipboardPublishTail = 64;
         private const int ClipboardHotKeyId = 1;
         private const int QuickLaunchHotKeyId = 2;
         private const uint ModAlt = 0x0001;
@@ -65,6 +67,7 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly ForegroundContextProvider _foregroundContextProvider;
         private readonly IElevatedDirectoryNavigationChannel _elevatedDirectoryNavigation;
         private readonly IPlatformLog _log;
+        private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate;
         private readonly AutoQuickSwitchTracker _autoQuickSwitch = new();
         private readonly FileDialogRecognitionRetry _fileDialogRecognitionRetry =
             new(FileDialogRecognitionMaxAttempts);
@@ -91,6 +94,7 @@ internal sealed partial class WindowsPlatformAdapter
         private IntPtr _taskbarOverlayMoveSizeEndHook;
         private ForegroundContext? _pendingClipboardSource;
         private Task _capturePublishTail = Task.CompletedTask;
+        private int _capturePublishPending;
         private int _clipboardReadAttempts;
         // A centered resize requested while the window is inside a drag/size
         // modal loop: SetWindowPos is swallowed (or misapplied) during the
@@ -100,8 +104,12 @@ internal sealed partial class WindowsPlatformAdapter
         private bool _primaryPointerDown;
         private bool _secondaryPointerDown;
         private int _fileDialogStructureRetryPosted;
+        private ulong _platformEventSequence;
+
+        private ulong NextPlatformEventSequence() => ++_platformEventSequence;
         private ClipboardHotKeyRegistration _hotKeyRegistration = null!;
         private ClipboardHotKeyRegistration _quickLaunchHotKeyRegistration = null!;
+        private readonly ClipboardHotKeyDebouncer _clipboardHotKeyDebouncer = new();
         // The measured interval spans FIRST press to SECOND press, which
         // includes how long the first Ctrl is held. A deliberate user tap
         // easily exceeds 500 ms of combined hold+gap, so use Listary-grade
@@ -131,6 +139,7 @@ internal sealed partial class WindowsPlatformAdapter
         private ClipboardCaptureExclusions _captureExclusions = ClipboardCaptureExclusions.Create(
             ["KeePass.exe", "1Password.exe", "Bitwarden.exe"]);
         private readonly DesktopTrayController _desktopTray = new();
+        private ClipboardCaptureLimits _captureLimits = ClipboardCaptureLimits.Default;
 
         public bool ClipboardHotKeyAvailable => _hotKeyRegistration?.IsAvailable == true;
         public bool QuickLaunchHotKeyAvailable => _quickLaunchTriggerEnabled && !_quickLaunchRecording &&
@@ -142,12 +151,14 @@ internal sealed partial class WindowsPlatformAdapter
             ChannelWriter<WindowsPlatformEvent> events,
             ForegroundContextProvider foregroundContextProvider,
             IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation,
-            IPlatformLog log)
+            IPlatformLog log,
+            ClipboardCaptureDropDiagnosticGate clipboardCaptureDropDiagnosticGate)
         {
             _events = events;
             _foregroundContextProvider = foregroundContextProvider;
             _elevatedDirectoryNavigation = elevatedDirectoryNavigation;
             _log = log;
+            _clipboardCaptureDropDiagnosticGate = clipboardCaptureDropDiagnosticGate;
             _foregroundCallback = OnForegroundChanged;
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
             CreateHandle(new CreateParams
@@ -389,7 +400,10 @@ internal sealed partial class WindowsPlatformAdapter
                     TryPublishClipboardContent();
                     return;
                 case WmHotKey when message.WParam.ToInt32() == ClipboardHotKeyId:
-                    PublishPanelRequest();
+                    if (_clipboardHotKeyDebouncer.TryAccept(Environment.TickCount64))
+                    {
+                        PublishPanelRequest();
+                    }
                     return;
                 case WmHotKey when message.WParam.ToInt32() == QuickLaunchHotKeyId:
                     PublishQuickLaunchPanelRequest();
@@ -479,6 +493,14 @@ internal sealed partial class WindowsPlatformAdapter
             base.WndProc(ref message);
         }
 
+        internal static bool HasUserClipboardContent(
+            string? text,
+            ClipboardImageData? imageData,
+            IReadOnlyCollection<string> paths) =>
+            imageData is not null ||
+            paths.Count > 0 ||
+            !string.IsNullOrWhiteSpace(text);
+
         private void TryPublishClipboardContent()
         {
             try
@@ -503,6 +525,7 @@ internal sealed partial class WindowsPlatformAdapter
                         .Take(1024)
                         .ToArray()
                     : [];
+                string? promotedFilePath = paths.Length == 1 ? paths[0] : null;
                 ClipboardImageData? imageData = null;
                 var stagingDirectory = Path.Combine(
                     Path.GetTempPath(), "NxTools.Next", "clipboard-staging");
@@ -540,7 +563,43 @@ internal sealed partial class WindowsPlatformAdapter
                         paths = promoted.RemainingPaths;
                     }
                 }
-                if (paths.Length > 0 || imageData is not null || !string.IsNullOrEmpty(text))
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var textBytes = (ulong)Encoding.UTF8.GetByteCount(text);
+                    if (!_captureLimits.AllowsText(textBytes))
+                    {
+                        LogCaptureLimitSkip("text", "max_text_bytes", textBytes, _captureLimits.MaxTextBytes);
+                        text = null;
+                    }
+                }
+                if (imageData is not null)
+                {
+                    var outputBytes = File.Exists(imageData.StagingPath)
+                        ? (ulong)new FileInfo(imageData.StagingPath).Length
+                        : 0;
+                    var reason = _captureLimits.ImageRejectionReason(
+                        imageData.Width, imageData.Height, outputBytes);
+                    if (reason is not null)
+                    {
+                        LogCaptureLimitSkip(
+                            "image",
+                            reason,
+                            reason == "max_image_pixels"
+                                ? checked((ulong)imageData.Width * imageData.Height)
+                                : outputBytes,
+                            reason == "max_image_pixels"
+                                ? _captureLimits.MaxImagePixels
+                                : _captureLimits.MaxImageBytes);
+                        if (promotedFilePath is not null && paths.Length == 0)
+                        {
+                            paths = [promotedFilePath];
+                        }
+                        TryDeleteStagedImage(imageData.StagingPath);
+                        imageData = null;
+                    }
+                }
+
+                if (HasUserClipboardContent(text, imageData, paths))
                 {
                     var compatibilityFallbackAdded = TryAddImageCompatibilityFallbacks(
                         sequenceBefore,
@@ -563,6 +622,15 @@ internal sealed partial class WindowsPlatformAdapter
                         });
                     QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt);
                 }
+                else
+                {
+                    _log.Write("info", "clipboard.capture_skipped", null,
+                        new Dictionary<string, object?>
+                        {
+                            ["reason"] = "no_content",
+                            ["native_format_count"] = nativeFormats.Count
+                        });
+                }
             }
             catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
             {
@@ -573,10 +641,39 @@ internal sealed partial class WindowsPlatformAdapter
                 _log.Write("error", "clipboard.capture_failed", null, new Dictionary<string, object?>
                 {
                     ["exception_type"] = error.GetType().FullName,
-                    ["message"] = error.Message
+                    ["hresult"] = $"0x{error.HResult:X8}"
                 });
             }
         }
+        private void LogCaptureLimitSkip(string kind, string reason, ulong sizeBytesOrPixels, ulong limit)
+        {
+            _log.Write("info", "clipboard.capture_limit_skipped", null,
+                new Dictionary<string, object?>
+                {
+                    ["kind"] = kind,
+                    ["reason"] = reason,
+                    ["size"] = sizeBytesOrPixels,
+                    ["limit"] = limit
+                });
+        }
+
+        private static void TryDeleteStagedImage(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
 
         private bool TryAddImageCompatibilityFallbacks(
             uint expectedSequence,
@@ -616,6 +713,7 @@ internal sealed partial class WindowsPlatformAdapter
                     nativeFormats,
                     pngData,
                     fallbackPath,
+                    expectedSequence,
                     out var rewrittenFormats,
                     out var error,
                     out var hresult))
@@ -635,11 +733,20 @@ internal sealed partial class WindowsPlatformAdapter
             }
 
             _suppressNextClipboardUpdate = false;
-            _log.Write("warning", "clipboard.image_fallback_failed", null,
+            var clipboardChanged = string.Equals(
+                error,
+                "clipboard_changed",
+                StringComparison.Ordinal);
+            _log.Write(
+                clipboardChanged ? "info" : "warning",
+                clipboardChanged
+                    ? "clipboard.image_fallback_skipped"
+                    : "clipboard.image_fallback_failed",
+                null,
                 new Dictionary<string, object?>
                 {
                     ["hresult"] = $"0x{hresult:X8}",
-                    ["reason"] = error,
+                    ["reason"] = clipboardChanged ? "clipboard_changed" : "native_format_rewrite_failed",
                     ["source_process_name"] = source.ProcessName
                 });
             return false;
@@ -653,25 +760,86 @@ internal sealed partial class WindowsPlatformAdapter
             ForegroundContext source,
             long capturedAt)
         {
+            var pending = Interlocked.Increment(ref _capturePublishPending);
+            if (pending > MaxClipboardPublishTail)
+            {
+                Interlocked.Decrement(ref _capturePublishPending);
+                if (imageData is not null)
+                {
+                    TryDeleteStagedImage(imageData.StagingPath);
+                }
+                if (_clipboardCaptureDropDiagnosticGate.TryAcquire(out var suppressedDropCount))
+                {
+                    _log.Write("warning", "clipboard.capture_event_dropped", null,
+                        new Dictionary<string, object?>
+                        {
+                            ["reason"] = "publication_tail_full",
+                            ["suppressed_drop_count"] = suppressedDropCount
+                        });
+                }
+                return;
+            }
             _capturePublishTail = _capturePublishTail.ContinueWith(
                 _ =>
                 {
-                    var sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(
-                        source.ProcessId,
-                        out var iconError);
-                    if (iconError is not null)
+                    string? sourceIconPath = null;
+                    ClipboardCapturedEvent? captured = null;
+                    try
                     {
-                        _log.Write("warning", "clipboard.source_icon_failed", null,
-                            new Dictionary<string, object?>
-                            {
-                                ["source_process_id"] = source.ProcessId,
-                                ["source_process_name"] = source.ProcessName,
-                                ["reason"] = iconError
-                            });
+                        sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(
+                            source.ProcessId,
+                            out var iconError);
+                        if (iconError is not null)
+                        {
+                            _log.Write("warning", "clipboard.source_icon_failed", null,
+                                new Dictionary<string, object?>
+                                {
+                                    ["source_process_id"] = source.ProcessId,
+                                    ["source_process_name"] = source.ProcessName,
+                                    ["reason"] = "source_icon_stage_failed"
+                                });
+                        }
+                        var stagedFormats = StageNativeFormats(nativeFormats);
+                        captured = new ClipboardCapturedEvent(
+                            text,
+                            imageData,
+                            paths,
+                            sourceIconPath,
+                            source,
+                            capturedAt,
+                            stagedFormats);
+                        WindowsPlatformAdapter.TryPublishClipboardCapturedEvent(
+                            _events,
+                            captured,
+                            _log,
+                            _clipboardCaptureDropDiagnosticGate);
                     }
-                    var stagedFormats = StageNativeFormats(nativeFormats);
-                    _events.TryWrite(new ClipboardCapturedEvent(
-                        text, imageData, paths, sourceIconPath, source, capturedAt, stagedFormats));
+                    catch (Exception error)
+                    {
+                        if (captured is not null)
+                        {
+                            WindowsPlatformAdapter.CleanupClipboardCapturedStaging(captured);
+                        }
+                        else
+                        {
+                            if (imageData is not null)
+                            {
+                                TryDeleteStagedImage(imageData.StagingPath);
+                            }
+                            if (!string.IsNullOrWhiteSpace(sourceIconPath))
+                            {
+                                TryDeleteStagedImage(sourceIconPath);
+                            }
+                        }
+                        PlatformExceptionDiagnostics.Record(
+                            _log,
+                            "clipboard.capture_publish_failed",
+                            error);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _capturePublishPending);
+                    }
                 },
                 CancellationToken.None,
                 TaskContinuationOptions.None,
@@ -706,7 +874,7 @@ internal sealed partial class WindowsPlatformAdapter
                             ["format_id"] = format.FormatId,
                             ["size_bytes"] = format.Data.LongLength,
                             ["exception_type"] = error.GetType().FullName,
-                            ["message"] = error.Message
+                            ["hresult"] = $"0x{error.HResult:X8}"
                         });
                 }
             }
@@ -722,9 +890,19 @@ internal sealed partial class WindowsPlatformAdapter
             uint eventThread,
             uint eventTime)
         {
-            if (window != IntPtr.Zero)
+            try
             {
-                ProcessForeground(_foregroundContextProvider.Capture(window));
+                if (window != IntPtr.Zero)
+                {
+                    ProcessForeground(_foregroundContextProvider.Capture(window));
+                }
+            }
+            catch (Exception error)
+            {
+                PlatformExceptionDiagnostics.Record(
+                    _log,
+                    "platform.foreground_callback_failed",
+                    error);
             }
         }
 
@@ -1187,6 +1365,35 @@ internal sealed partial class WindowsPlatformAdapter
             uint eventThread,
             uint eventTime)
         {
+            try
+            {
+                OnFileDialogWindowChangedCore(
+                    hook,
+                    eventType,
+                    window,
+                    objectId,
+                    childId,
+                    eventThread,
+                    eventTime);
+            }
+            catch (Exception error)
+            {
+                PlatformExceptionDiagnostics.Record(
+                    _log,
+                    "platform.file_dialog_callback_failed",
+                    error);
+            }
+        }
+
+        private void OnFileDialogWindowChangedCore(
+            IntPtr hook,
+            uint eventType,
+            IntPtr window,
+            int objectId,
+            int childId,
+            uint eventThread,
+            uint eventTime)
+        {
             if (eventType == EventSystemMoveSizeEnd)
             {
                 var overlay = Volatile.Read(ref _taskbarOverlayPlacement);
@@ -1445,24 +1652,31 @@ internal sealed partial class WindowsPlatformAdapter
                 return;
             }
 
+            var sampledAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var eventSequence = NextPlatformEventSequence();
             var target = NativeMethods.GetPointerTarget();
             _events.TryWrite(new GlobalPointerPressedEvent(
                 target.WindowHandle,
                 target.RootWindowHandle,
-                target.ProcessId));
+                target.ProcessId,
+                sampledAtUnixMs,
+                eventSequence));
         }
 
         private void PublishPanelRequest()
         {
             var target = _foregroundContextProvider.Capture();
             var cursor = NativeMethods.GetCursorLocation();
+            var requestedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var eventSequence = NextPlatformEventSequence();
             _events.TryWrite(new ClipboardPanelRequestedEvent(
                 target,
                 cursor.Position.X,
                 cursor.Position.Y,
                 cursor.DisplayIndex,
                 cursor.Dpi,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                requestedAtUnixMs,
+                eventSequence));
         }
 
         private void PublishQuickLaunchPanelRequest()
@@ -1632,6 +1846,7 @@ internal sealed partial class WindowsPlatformAdapter
         private WindowsCommandResult ApplyClipboardConfiguration(ConfigureClipboardCommand command)
         {
             var requestedExclusions = ClipboardCaptureExclusions.Create(command.ExcludedProcesses);
+            var requestedLimits = ClipboardCaptureLimits.From(command);
             if (!ClipboardHotKeyBinding.TryCreate(command, out var binding, out var error))
             {
                 return new WindowsCommandResult(false, error);
@@ -1645,11 +1860,15 @@ internal sealed partial class WindowsPlatformAdapter
             {
                 return registration;
             }
+            _captureLimits = requestedLimits;
             _log.Write("info", "clipboard.configuration_applied", null,
                 new Dictionary<string, object?>
                 {
                     ["hotkey"] = binding.Display,
-                    ["excluded_process_count"] = _captureExclusions.ProcessNames.Count
+                    ["excluded_process_count"] = _captureExclusions.ProcessNames.Count,
+                    ["max_text_bytes"] = _captureLimits.MaxTextBytes,
+                    ["max_image_bytes"] = _captureLimits.MaxImageBytes,
+                    ["max_image_pixels"] = _captureLimits.MaxImagePixels
                 });
             return new WindowsCommandResult(true);
         }
@@ -1698,7 +1917,18 @@ internal sealed partial class WindowsPlatformAdapter
         {
             try
             {
-                var desktopExecutable = Path.Combine(AppContext.BaseDirectory, "NxTools.exe");
+                var requiresDesktopExecutable =
+                    command.StartOnLoginSilently || command.TrayIconVisible;
+                var desktopExecutable = requiresDesktopExecutable
+                    ? WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath()
+                    : null;
+                if (requiresDesktopExecutable && desktopExecutable is null)
+                {
+                    return new WindowsCommandResult(
+                        false,
+                        "The approved protected NxTools desktop executable is unavailable.");
+                }
+
                 using (var runKey = Registry.CurrentUser.CreateSubKey(
                            @"Software\Microsoft\Windows\CurrentVersion\Run",
                            writable: true))
@@ -1709,7 +1939,7 @@ internal sealed partial class WindowsPlatformAdapter
                     }
                     var startup = ApplyStartupRegistration(
                         runKey,
-                        desktopExecutable,
+                        desktopExecutable ?? string.Empty,
                         command.StartOnLoginSilently);
                     if (!startup.Success)
                     {
@@ -1717,11 +1947,22 @@ internal sealed partial class WindowsPlatformAdapter
                     }
                 }
 
-                return ConfigureTrayIcon(command.TrayIconVisible, desktopExecutable);
+                return ConfigureTrayIcon(
+                    command.TrayIconVisible,
+                    desktopExecutable ?? string.Empty);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            catch (Exception error)
             {
-                return new WindowsCommandResult(false, error.Message, NativeErrorCode: error.HResult);
+                var nativeErrorCode = error switch
+                {
+                    Win32Exception win32 => win32.NativeErrorCode,
+                    ExternalException external => external.ErrorCode,
+                    _ => error.HResult
+                };
+                return new WindowsCommandResult(
+                    false,
+                    error.Message,
+                    NativeErrorCode: nativeErrorCode);
             }
         }
 
@@ -2096,4 +2337,42 @@ internal sealed partial class WindowsPlatformAdapter
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 
+}
+
+internal readonly record struct ClipboardCaptureLimits(
+    ulong MaxTextBytes,
+    ulong MaxImageBytes,
+    ulong MaxImagePixels)
+{
+    public const ulong MinTextBytes = 64 * 1024;
+    public const ulong MaxAllowedTextBytes = 64 * 1024 * 1024;
+    public const ulong MinImageBytes = 1024 * 1024;
+    public const ulong MaxAllowedImageBytes = 256 * 1024 * 1024;
+    public const ulong MinImagePixels = 1_000_000;
+    public const ulong MaxAllowedImagePixels = 500_000_000;
+
+    public static ClipboardCaptureLimits Default => new(
+        8 * 1024 * 1024,
+        64 * 1024 * 1024,
+        100_000_000);
+
+    public static ClipboardCaptureLimits From(ConfigureClipboardCommand command) => new(
+        Clamp(command.MaxTextBytes, MinTextBytes, MaxAllowedTextBytes),
+        Clamp(command.MaxImageBytes, MinImageBytes, MaxAllowedImageBytes),
+        Clamp(command.MaxImagePixels, MinImagePixels, MaxAllowedImagePixels));
+
+    public bool AllowsText(ulong utf8Bytes) => utf8Bytes <= MaxTextBytes;
+
+    public string? ImageRejectionReason(uint width, uint height, ulong outputBytes)
+    {
+        var pixels = (ulong)width * height;
+        if (pixels > MaxImagePixels)
+        {
+            return "max_image_pixels";
+        }
+        return outputBytes > MaxImageBytes ? "max_image_bytes" : null;
+    }
+
+    private static ulong Clamp(ulong value, ulong minimum, ulong maximum) =>
+        Math.Clamp(value, minimum, maximum);
 }

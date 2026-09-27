@@ -463,6 +463,7 @@ pub(crate) async fn run_dash_task(
         return Ok(());
     }
     if cancelled {
+        let _ = validate_dash_artifact(&working_directory, true)?;
         if let Err(error) = tokio::fs::remove_dir_all(&working_directory).await
             && error.kind() != std::io::ErrorKind::NotFound
         {
@@ -1234,10 +1235,34 @@ pub(crate) fn spawn_dash_fragment_transfer(
     });
 }
 
-pub(crate) fn dash_working_directory(request: &DownloadRequest, task_id: DownloadTaskId) -> PathBuf {
+pub(crate) fn dash_working_directory(
+    request: &DownloadRequest,
+    task_id: DownloadTaskId,
+) -> PathBuf {
     request
         .save_directory
         .join(format!(".nxtools-dash-{}", task_id.as_uuid()))
+}
+
+fn validate_dash_artifact(path: &Path, directory: bool) -> Result<bool, std::io::Error> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if metadata.is_dir() != directory {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "DASH cleanup artifact has an unexpected type",
+        ));
+    }
+    if metadata.permissions().readonly() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "DASH cleanup artifact is read-only",
+        ));
+    }
+    Ok(true)
 }
 
 pub(crate) fn remove_dash_owned_artifacts(
@@ -1249,9 +1274,32 @@ pub(crate) fn remove_dash_owned_artifacts(
     started_at: Instant,
 ) -> Result<(), std::io::Error> {
     let working_directory = dash_working_directory(request, task_id);
-    let directory_result = match std::fs::remove_dir_all(&working_directory) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+    let _ = validate_dash_artifact(&working_directory, true)?;
+    if let Some(path) = temporary_path {
+        let _ = validate_dash_artifact(path, false)?;
+    }
+    if let Some(path) = temporary_path {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                warn!(
+                    event = "download.dash_cleanup.failed",
+                    %correlation_id,
+                    ?task_id,
+                    reason,
+                    artifact_kind = "mux_temporary",
+                    native_error_code = error.raw_os_error(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "DASH task-owned artifact cleanup failed"
+                );
+                return Err(error);
+            }
+        }
+    }
+    match std::fs::remove_dir_all(&working_directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
             warn!(
                 event = "download.dash_cleanup.failed",
@@ -1263,26 +1311,8 @@ pub(crate) fn remove_dash_owned_artifacts(
                 elapsed_ms = started_at.elapsed().as_millis(),
                 "DASH task-owned artifact cleanup failed"
             );
-            Err(error)
+            return Err(error);
         }
-    };
-    let temporary_result = temporary_path.map_or(Ok(()), |path| match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => {
-            warn!(
-                event = "download.dash_cleanup.failed",
-                %correlation_id,
-                ?task_id,
-                reason,
-                artifact_kind = "mux_temporary",
-                native_error_code = error.raw_os_error(),
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "DASH task-owned artifact cleanup failed"
-            );
-            Err(error)
-        }
-    });
-    directory_result?;
-    temporary_result
+    }
+    Ok(())
 }

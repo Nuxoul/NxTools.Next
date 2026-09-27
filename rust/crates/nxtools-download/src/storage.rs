@@ -20,7 +20,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 11;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 12;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
@@ -95,6 +95,11 @@ fn quarantine_empty_database_file(path: &Path) -> Result<(), DownloadStorageErro
 
 pub struct SqliteDownloadStore {
     connection: Mutex<Connection>,
+}
+
+pub(crate) struct QueueAdmission<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) eligible: bool,
 }
 
 impl SqliteDownloadStore {
@@ -181,6 +186,9 @@ impl SqliteDownloadStore {
 
         if current < 11 {
             connection.execute_batch(SCHEMA_V11)?;
+        }
+        if current < 12 {
+            connection.execute_batch(SCHEMA_V12)?;
         }
 
         Ok(Self {
@@ -1277,8 +1285,7 @@ impl SqliteDownloadStore {
         request_fingerprint: &str,
         task: &DownloadTask,
         state: &StoredTransferState,
-        queue_id: &str,
-        is_eligible: bool,
+        queue: QueueAdmission<'_>,
     ) -> Result<IdempotentSubmissionSave, DownloadStorageError> {
         let origin_name = enum_name(&origin)?;
         let mut connection = self.lock()?;
@@ -1320,7 +1327,7 @@ impl SqliteDownloadStore {
 
         save_task_row(&transaction, task)?;
         save_transfer_state_row(&transaction, task.id(), state)?;
-        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        append_to_queue_row(&transaction, queue.id, task.id(), queue.eligible)?;
         transaction.execute(
             r#"
          INSERT INTO download_submission_receipts(
@@ -1338,6 +1345,132 @@ impl SqliteDownloadStore {
         )?;
         transaction.commit()?;
         Ok(IdempotentSubmissionSave::Inserted(task.id()))
+    }
+
+    pub(crate) fn save_redownload_task_with_transfer_and_queue(
+        &self,
+        old_task_id: DownloadTaskId,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        is_eligible: bool,
+    ) -> Result<RedownloadOperationSave, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing = transaction
+            .query_row(
+                "SELECT replacement_task_id FROM download_redownload_operations WHERE old_task_id = ?1",
+                [old_task_id.as_uuid().to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(replacement_task_id) = existing {
+            let replacement_task_id = Uuid::parse_str(&replacement_task_id)
+                .map(DownloadTaskId::from_uuid)
+                .map_err(|_| DownloadStorageError::InvalidTaskId(replacement_task_id))?;
+            transaction.commit()?;
+            return Ok(RedownloadOperationSave::Existing(replacement_task_id));
+        }
+        let old_exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM download_tasks WHERE task_id = ?1)",
+            [old_task_id.as_uuid().to_string()],
+            |row| row.get(0),
+        )?;
+        if !old_exists {
+            return Err(DownloadStorageError::TaskNotFound(old_task_id));
+        }
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), is_eligible)?;
+        transaction.execute(
+            r#"
+            INSERT INTO download_redownload_operations(
+                old_task_id, replacement_task_id, created_at_unix_ms
+            )
+            VALUES (?1, ?2, ?3)
+            "#,
+            params![
+                old_task_id.as_uuid().to_string(),
+                task.id().as_uuid().to_string(),
+                now_unix_ms(),
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(RedownloadOperationSave::Inserted(task.id()))
+    }
+
+    pub(crate) fn load_redownload_operations(
+        &self,
+    ) -> Result<Vec<(DownloadTaskId, DownloadTaskId)>, DownloadStorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT old_task_id, replacement_task_id FROM download_redownload_operations",
+        )?;
+        statement
+            .query_map([], |row| {
+                let old_task_id = row.get::<_, String>(0)?;
+                let replacement_task_id = row.get::<_, String>(1)?;
+                let old_task_id = Uuid::parse_str(&old_task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|_| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(DownloadStorageError::InvalidTaskId(old_task_id)),
+                        )
+                    })?;
+                let replacement_task_id = Uuid::parse_str(&replacement_task_id)
+                    .map(DownloadTaskId::from_uuid)
+                    .map_err(|_| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            1,
+                            rusqlite::types::Type::Text,
+                            Box::new(DownloadStorageError::InvalidTaskId(replacement_task_id)),
+                        )
+                    })?;
+                Ok((old_task_id, replacement_task_id))
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn complete_redownload_operation(
+        &self,
+        old_task_id: DownloadTaskId,
+        replacement_task_id: DownloadTaskId,
+    ) -> Result<bool, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let Some(stored_replacement_task_id) = transaction
+            .query_row(
+                "SELECT replacement_task_id FROM download_redownload_operations WHERE old_task_id = ?1",
+                [old_task_id.as_uuid().to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        else {
+            transaction.commit()?;
+            return Ok(false);
+        };
+        if stored_replacement_task_id != replacement_task_id.as_uuid().to_string() {
+            return Err(DownloadStorageError::TaskNotFound(replacement_task_id));
+        }
+        let changed = transaction.execute(
+            "UPDATE download_queue_items SET is_eligible = 1, is_user_paused = 0 WHERE task_id = ?1",
+            [replacement_task_id.as_uuid().to_string()],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(replacement_task_id));
+        }
+        let removed = transaction.execute(
+            "DELETE FROM download_tasks WHERE task_id = ?1",
+            [old_task_id.as_uuid().to_string()],
+        )?;
+        if removed == 0 {
+            return Err(DownloadStorageError::TaskNotFound(old_task_id));
+        }
+        transaction.commit()?;
+        Ok(true)
     }
 
     pub(crate) fn save_browser_task_with_transfer_and_queue(
@@ -1748,6 +1881,12 @@ pub(crate) struct StoredDashFragment {
     pub segment_index: Option<u32>,
     pub downloaded_bytes: u64,
     pub state: DownloadSegmentState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RedownloadOperationSave {
+    Inserted(DownloadTaskId),
+    Existing(DownloadTaskId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2486,6 +2625,22 @@ PRAGMA user_version = 11;
 COMMIT;
 "#;
 
+const SCHEMA_V12: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_redownload_operations (
+    old_task_id TEXT PRIMARY KEY NOT NULL REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    replacement_task_id TEXT NOT NULL UNIQUE REFERENCES download_tasks(task_id) ON DELETE CASCADE,
+    created_at_unix_ms INTEGER NOT NULL
+);
+
+CREATE INDEX download_redownload_operations_replacement_idx
+    ON download_redownload_operations(replacement_task_id);
+
+PRAGMA user_version = 12;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2499,7 +2654,7 @@ mod tests {
         std::fs::File::create(&database).expect("create empty database placeholder");
 
         let store = SqliteDownloadStore::open(&database).expect("recreate empty database");
-        assert_eq!(store.schema_version().expect("read schema version"), 11);
+        assert_eq!(store.schema_version().expect("read schema version"), 12);
         assert!(
             std::fs::read_dir(directory.path())
                 .expect("read database directory")
@@ -2691,7 +2846,7 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 11);
+            assert_eq!(store.schema_version().expect("schema version"), 12);
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -2747,7 +2902,7 @@ mod tests {
         save_task_row(&connection, &task).expect("save existing task");
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 11);
+        assert_eq!(store.schema_version().expect("schema version"), 12);
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -2801,7 +2956,7 @@ mod tests {
             .expect("load upgraded HLS plan")
             .expect("upgraded HLS plan exists");
 
-        assert_eq!(store.schema_version().expect("schema version"), 11);
+        assert_eq!(store.schema_version().expect("schema version"), 12);
         assert_eq!(
             restored.segments[0].media.encryption,
             HlsSegmentEncryption::None
@@ -3044,8 +3199,10 @@ mod tests {
                     "fingerprint-a",
                     &first,
                     &transfer,
-                    "default",
-                    true,
+                    QueueAdmission {
+                        id: "default",
+                        eligible: true,
+                    },
                 )
                 .expect("save first idempotent task"),
             IdempotentSubmissionSave::Inserted(first.id())
@@ -3058,8 +3215,10 @@ mod tests {
                     "fingerprint-a",
                     &second,
                     &transfer,
-                    "default",
-                    true,
+                    QueueAdmission {
+                        id: "default",
+                        eligible: true,
+                    },
                 )
                 .expect("replay idempotent task"),
             IdempotentSubmissionSave::Duplicate(first.id())
@@ -3071,8 +3230,10 @@ mod tests {
                 "fingerprint-b",
                 &second,
                 &transfer,
-                "default",
-                true,
+                QueueAdmission {
+                    id: "default",
+                    eligible: true,
+                },
             ),
             Err(DownloadStorageError::IdempotencyConflict { key: conflict })
                 if conflict == key
@@ -3100,8 +3261,10 @@ mod tests {
                 "fingerprint",
                 &first,
                 &transfer,
-                "default",
-                true,
+                QueueAdmission {
+                    id: "default",
+                    eligible: true,
+                },
             ),
             Ok(IdempotentSubmissionSave::Inserted(task_id)) if task_id == first.id()
         ));
@@ -3112,8 +3275,10 @@ mod tests {
                 "fingerprint",
                 &second,
                 &transfer,
-                "default",
-                true,
+                QueueAdmission {
+                    id: "default",
+                    eligible: true,
+                },
             ),
             Ok(IdempotentSubmissionSave::Inserted(task_id)) if task_id == second.id()
         ));
@@ -3142,8 +3307,10 @@ mod tests {
             "fingerprint",
             &task,
             &StoredTransferState::default(),
-            "default",
-            true,
+            QueueAdmission {
+                id: "default",
+                eligible: true,
+            },
         );
 
         assert!(result.is_err());

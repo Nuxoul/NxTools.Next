@@ -9,9 +9,10 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crate::clipboard_worker::ClipboardCaptureWorkerHandle;
 use anyhow::{Context, Result};
 use async_channel::{Receiver as AsyncReceiver, Sender as AsyncSender};
-use nxtools_clipboard::ClipboardHistory;
+use nxtools_clipboard::ClipboardRetentionPolicy;
 use nxtools_core::{AppConfig, AppPaths, LogGuard, SingleInstanceGuard, init_file_logging};
 use nxtools_download::DownloadStatus;
 use nxtools_download::{DownloadEngine, DownloadHttpPolicy};
@@ -103,8 +104,7 @@ pub struct DesktopRuntime {
     pub log_dir: PathBuf,
     pub platform_bridge: Option<nxtools_ipc::PlatformBridge>,
     pub indexer_bridge: Option<IndexerBridge>,
-    pub clipboard_history: Option<ClipboardHistory>,
-    pub clipboard_asset_dir: Option<PathBuf>,
+    pub clipboard_worker: Option<ClipboardCaptureWorkerHandle>,
     pub finder_catalog: Option<FinderCatalog>,
     pub download_engine: Option<DownloadEngine>,
     pub network_policy: NetworkPolicy,
@@ -116,7 +116,6 @@ pub struct DesktopRuntime {
     _platform_host: Option<PlatformHostSupervisor>,
     _indexer: Option<IndexerSupervisor>,
 }
-
 impl DesktopRuntime {
     pub fn initialize(instance_wait: Duration) -> Result<Self> {
         let paths = AppPaths::discover()?;
@@ -131,12 +130,20 @@ impl DesktopRuntime {
         };
         std::fs::create_dir_all(&clipboard_storage_root)
             .context("failed to create clipboard storage directory")?;
-        let clipboard_history = ClipboardHistory::open(clipboard_storage_root.join("clipboard.db"))
-            .context("failed to open clipboard history")?;
         // Keep the existing directory name so upgrades retain previously captured images.
         let clipboard_asset_dir = clipboard_storage_root.join("clipboard-images");
         std::fs::create_dir_all(&clipboard_asset_dir)
             .context("failed to create clipboard image directory")?;
+        let clipboard_worker = ClipboardCaptureWorkerHandle::spawn(
+            clipboard_storage_root.join("clipboard.db"),
+            &clipboard_asset_dir,
+            ClipboardRetentionPolicy {
+                max_items: config.clipboard.max_items,
+                retention_days: config.clipboard.retention_days,
+            },
+            nxtools_ipc::unix_time_ms(),
+        )
+        .context("failed to start clipboard capture worker")?;
         let finder_catalog = FinderCatalog::open(
             paths.data_dir.join("quick-launch.db"),
             &default_application_roots(),
@@ -158,15 +165,13 @@ impl DesktopRuntime {
         let (indexer_bridge, indexer_endpoint) = indexer_bridge(256);
         let indexer = IndexerSupervisor::launch_if_packaged(indexer_endpoint)?;
         info!("desktop runtime initialized");
-
         Ok(Self {
             config,
             config_path,
             log_dir: paths.log_dir,
             platform_bridge: Some(platform_bridge),
             indexer_bridge: Some(indexer_bridge),
-            clipboard_history: Some(clipboard_history),
-            clipboard_asset_dir: Some(clipboard_asset_dir),
+            clipboard_worker: Some(clipboard_worker),
             finder_catalog: Some(finder_catalog),
             download_engine: Some(download_engine),
             network_policy,
@@ -222,6 +227,9 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
             && activity.connected_clients() == 0
             && idle_for >= IDLE_EXIT_AFTER.as_millis() as u64
         {
+            activity.begin_draining();
+            info!("background download host entered draining before idle exit");
+            activity.mark_stopped();
             info!("background download host exited after becoming idle");
             return Ok(());
         }
@@ -252,10 +260,14 @@ fn start_download_host_with_activity(
     engine: DownloadEngine,
     activity: DownloadHostActivity,
 ) -> Result<()> {
+    let activity_for_thread = activity.clone();
     thread::Builder::new()
         .name("download-ipc".into())
         .spawn(move || {
-            if let Err(error) = run_download_host(DOWNLOAD_PIPE_NAME, engine, activity) {
+            if let Err(error) =
+                run_download_host(DOWNLOAD_PIPE_NAME, engine, activity_for_thread.clone())
+            {
+                activity_for_thread.mark_failed("ipc_server_stopped");
                 error!(%error, "download IPC server stopped");
             }
         })
@@ -341,17 +353,21 @@ impl Drop for IndexerSupervisor {
     }
 }
 
+pub(crate) fn desktop_instance_is_running() -> Result<bool> {
+    let paths = AppPaths::discover()?;
+    Ok(SingleInstanceGuard::is_locked(&paths, "desktop"))
+}
+
 impl PlatformHostSupervisor {
     fn launch_if_packaged() -> Result<Option<Self>> {
         let executable = std::env::current_exe().context("failed to locate desktop executable")?;
-        let Some(directory) = executable.parent() else {
+        let Some(host_path) = platform_host_path(&executable) else {
+            info!(
+                desktop = %executable.display(),
+                "PlatformHost executable was not found beside the desktop or in the development output"
+            );
             return Ok(None);
         };
-        let host_path = directory.join("NxTools.PlatformHost.exe");
-        if !host_path.exists() {
-            info!(path = %host_path.display(), "packaged PlatformHost not present; development launcher owns it");
-            return Ok(None);
-        }
 
         let (stop, receiver) = mpsc::channel();
         let thread = thread::Builder::new()
@@ -363,6 +379,28 @@ impl PlatformHostSupervisor {
             thread: Some(thread),
         }))
     }
+}
+
+fn platform_host_path(executable: &Path) -> Option<PathBuf> {
+    let directory = executable.parent()?;
+    let packaged_path = directory.join("NxTools.PlatformHost.exe");
+    if packaged_path.is_file() {
+        return Some(packaged_path);
+    }
+
+    // Direct Debug launches run from target\debug while the .NET adapter is
+    // built under csharp\NxTools.PlatformHost\bin. Let the desktop supervise
+    // that development binary so the executable is self-starting for users.
+    let repository_root = directory.parent()?.parent()?;
+    let development_path = repository_root
+        .join("csharp")
+        .join("NxTools.PlatformHost")
+        .join("bin")
+        .join("Debug")
+        .join("net8.0-windows")
+        .join("win-x64")
+        .join("NxTools.PlatformHost.exe");
+    development_path.is_file().then_some(development_path)
 }
 
 impl Drop for PlatformHostSupervisor {
@@ -398,7 +436,7 @@ fn supervise_platform_host(host_path: PathBuf, receiver: Receiver<()>) {
                 }
                 Err(RecvTimeoutError::Timeout) => match child.try_wait() {
                     Ok(Some(status)) => {
-                        warn!(%status, "PlatformHost exited; restarting");
+                        warn!(pid = child.id(), %status, "PlatformHost exited; restarting");
                         break;
                     }
                     Ok(None) => {}
@@ -552,12 +590,16 @@ fn stop_child(child: &mut Child) {
     let _ = child.wait();
 }
 
+const DESKTOP_EXECUTABLE_ENVIRONMENT_VARIABLE: &str = "NXTOOLS_DESKTOP_EXECUTABLE";
+
 #[cfg(windows)]
 fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let desktop_executable = std::env::current_exe()?;
     Command::new(path)
+        .env(DESKTOP_EXECUTABLE_ENVIRONMENT_VARIABLE, desktop_executable)
         .args(["--parent-pid", &std::process::id().to_string()])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
@@ -570,6 +612,11 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
 /// attempted.
 pub(crate) fn summon_running_desktop() -> Result<bool> {
     let paths = AppPaths::discover()?;
+    if !SingleInstanceGuard::is_locked(&paths, "desktop") {
+        // A stale desktop.hints file is expected after a crash or forced
+        // termination. Only a live lock owner can be summoned.
+        return Ok(false);
+    }
     let main_window_handle = SingleInstanceGuard::read_main_window_handle(&paths, "desktop");
     if main_window_handle == 0 {
         return Ok(false);
@@ -577,42 +624,99 @@ pub(crate) fn summon_running_desktop() -> Result<bool> {
     let pipe_name = format!(r"\\.\pipe\{DEFAULT_PLATFORM_PIPE_NAME}");
     let mut connection = connect_local_pipe(&pipe_name, Duration::from_millis(800))?;
 
-    let mut send = |envelope: Envelope| -> Result<()> {
-        write_envelope_sync(&mut connection.writer, &envelope)?;
-        // The server answers the hello synchronously; command frames do not
-        // produce a same-connection reply, so only the hello result is read.
-        if let Some(frame) = read_bounded_sync_frame(&mut connection.reader)? {
-            let ack = Envelope::decode_line(&frame)
-                .context("summon handshake returned an invalid frame")?;
-            if !matches!(ack.message, Message::HelloAck { .. }) {
-                anyhow::bail!("summon handshake did not return a hello ack");
-            }
-        }
-        Ok(())
+    write_envelope_sync(
+        &mut connection.writer,
+        &Envelope::new(Message::Hello(Hello {
+            client_name: "nxtools-desktop-summon".into(),
+            client_version: env!("CARGO_PKG_VERSION").into(),
+            capabilities: vec!["desktop_shell".into()],
+        })),
+    )?;
+    let Some(frame) = read_bounded_sync_frame(&mut connection.reader)? else {
+        anyhow::bail!("summon handshake returned no acknowledgement");
     };
-
-    send(Envelope::new(Message::Hello(Hello {
-        client_name: "nxtools-desktop-summon".into(),
-        client_version: env!("CARGO_PKG_VERSION").into(),
-        capabilities: vec!["desktop_shell".into()],
-    })))?;
-    send(Envelope::new(Message::PlatformCommand(
+    let acknowledgement =
+        Envelope::decode_line(&frame).context("summon handshake returned an invalid frame")?;
+    if !matches!(acknowledgement.message, Message::HelloAck { .. }) {
+        anyhow::bail!("summon handshake did not return a hello ack");
+    }
+    let visibility = Envelope::new(Message::PlatformCommand(
         PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
             window_handle: main_window_handle,
             visible: true,
         }),
-    )))?;
-    send(Envelope::new(Message::PlatformCommand(
-        PlatformCommand::ActivateWindow(ActivateWindowCommand {
+    ));
+    let activation = Envelope::new(Message::PlatformCommand(PlatformCommand::ActivateWindow(
+        ActivateWindowCommand {
             window_handle: main_window_handle,
-        }),
-    )))?;
+        },
+    )));
+    for request in [&visibility, &activation] {
+        write_envelope_sync(&mut connection.writer, request)?;
+    }
+    for request in [&visibility, &activation] {
+        let Some(frame) = read_bounded_sync_frame(&mut connection.reader)? else {
+            anyhow::bail!("summon command returned no result");
+        };
+        let response =
+            Envelope::decode_line(&frame).context("summon command returned an invalid frame")?;
+        let correlation_id = response.correlation_id;
+        let Message::PlatformCommandResult(result) = response.message else {
+            anyhow::bail!("summon command returned an unexpected message");
+        };
+        if correlation_id != Some(request.id) || !result.success {
+            anyhow::bail!(
+                "summon command was rejected: {}",
+                result.error.as_deref().unwrap_or("unknown platform error")
+            );
+        }
+    }
     Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn platform_host_path_prefers_the_packaged_sibling() {
+        let root = tempfile::tempdir().expect("create runtime path fixture");
+        let bin = root.path().join("artifacts").join("win-x64");
+        std::fs::create_dir_all(&bin).expect("create package directory");
+        let executable = bin.join("NxTools.exe");
+        let packaged_host = bin.join("NxTools.PlatformHost.exe");
+        std::fs::File::create(&executable).expect("create desktop fixture");
+        std::fs::File::create(&packaged_host).expect("create host fixture");
+
+        assert_eq!(platform_host_path(&executable), Some(packaged_host));
+    }
+
+    #[test]
+    fn platform_host_path_falls_back_to_the_repository_debug_output() {
+        let root = tempfile::tempdir().expect("create runtime path fixture");
+        let executable = root
+            .path()
+            .join("target")
+            .join("debug")
+            .join("nxtools-desktop.exe");
+        let development_host = root
+            .path()
+            .join("csharp")
+            .join("NxTools.PlatformHost")
+            .join("bin")
+            .join("Debug")
+            .join("net8.0-windows")
+            .join("win-x64")
+            .join("NxTools.PlatformHost.exe");
+        std::fs::create_dir_all(executable.parent().expect("desktop parent"))
+            .expect("create target directory");
+        std::fs::create_dir_all(development_host.parent().expect("host parent"))
+            .expect("create host directory");
+        std::fs::File::create(&executable).expect("create desktop fixture");
+        std::fs::File::create(&development_host).expect("create host fixture");
+
+        assert_eq!(platform_host_path(&executable), Some(development_host));
+    }
 
     #[test]
     fn foreground_and_background_engine_factory_applies_download_http_settings_before_intake() {
@@ -737,7 +841,9 @@ mod tests {
 
 #[cfg(not(windows))]
 fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
+    let desktop_executable = std::env::current_exe()?;
     Command::new(path)
+        .env(DESKTOP_EXECUTABLE_ENVIRONMENT_VARIABLE, desktop_executable)
         .args(["--parent-pid", &std::process::id().to_string()])
         .spawn()
 }

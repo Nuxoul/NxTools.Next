@@ -9,6 +9,39 @@ pub(crate) enum TopmostResolution<T> {
     Rejected { previous: Option<T> },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PopupCloseReason {
+    Foreground {
+        window_handle: i64,
+        process_id: u32,
+        process_name: String,
+    },
+    Pointer {
+        window_handle: i64,
+        root_window_handle: i64,
+        process_id: u32,
+    },
+    PasteSuccess {
+        command_id: uuid::Uuid,
+    },
+    Escape,
+    /// Reserved for a future explicit close command; current UI commands use Escape or action reasons.
+    #[allow(dead_code)]
+    Explicit,
+}
+
+impl PopupCloseReason {
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            Self::Foreground { .. } => "foreground",
+            Self::Pointer { .. } => "pointer",
+            Self::PasteSuccess { .. } => "paste_success",
+            Self::Escape => "escape",
+            Self::Explicit => "explicit",
+        }
+    }
+}
+
 impl<T> Default for PopupLifecycle<T> {
     fn default() -> Self {
         Self {
@@ -54,9 +87,24 @@ impl<T> PopupLifecycle<T> {
         })
     }
 
+    pub(crate) fn reset_pending(&mut self) -> Option<T> {
+        self.pending_topmost = None;
+        self.retained.take()
+    }
+
+    pub(crate) fn replace_pending_topmost(&mut self, command_id: uuid::Uuid) {
+        if self.current.is_some() {
+            self.pending_topmost = Some(command_id);
+        }
+    }
     pub(crate) fn replace_without_topmost_confirmation(&mut self, popup: T) -> Option<T> {
         debug_assert!(self.retained.is_none());
         self.current.replace(popup)
+    }
+
+    pub(crate) fn take_current(&mut self) -> Option<T> {
+        self.pending_topmost = None;
+        self.current.take()
     }
 }
 
@@ -128,6 +176,20 @@ mod tests {
     }
 
     #[test]
+    fn reconnect_clears_old_topmost_and_retained_popup_state() {
+        let first_command = uuid::Uuid::new_v4();
+        let second_command = uuid::Uuid::new_v4();
+        let mut lifecycle = PopupLifecycle::default();
+        lifecycle.stage(1_u8, first_command);
+        let _ = lifecycle.resolve_topmost(first_command, true);
+        lifecycle.stage(2_u8, second_command);
+
+        assert_eq!(lifecycle.reset_pending(), Some(1));
+        assert!(!lifecycle.replacement_pending());
+        lifecycle.replace_pending_topmost(first_command);
+        assert!(lifecycle.replacement_pending());
+    }
+    #[test]
     fn unconfirmed_replacement_keeps_new_popup_and_releases_previous_popup() {
         let mut lifecycle = PopupLifecycle::default();
         let _ = lifecycle.replace_without_topmost_confirmation(1_u8);
@@ -136,5 +198,35 @@ mod tests {
 
         assert_eq!(previous, Some(1));
         assert_eq!(lifecycle.current(), Some(&2));
+    }
+    #[test]
+    fn popup_close_reasons_have_stable_diagnostic_kinds() {
+        assert_eq!(PopupCloseReason::Escape.kind(), "escape");
+        assert_eq!(PopupCloseReason::Explicit.kind(), "explicit");
+        assert_eq!(
+            PopupCloseReason::Foreground {
+                window_handle: 10,
+                process_id: 20,
+                process_name: "explorer".into(),
+            }
+            .kind(),
+            "foreground"
+        );
+        assert_eq!(
+            PopupCloseReason::Pointer {
+                window_handle: 11,
+                root_window_handle: 12,
+                process_id: 21,
+            }
+            .kind(),
+            "pointer"
+        );
+        assert_eq!(
+            PopupCloseReason::PasteSuccess {
+                command_id: uuid::Uuid::nil(),
+            }
+            .kind(),
+            "paste_success"
+        );
     }
 }

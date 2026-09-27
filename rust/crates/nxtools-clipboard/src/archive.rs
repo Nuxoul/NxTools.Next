@@ -352,6 +352,10 @@ pub(crate) fn import_archive(
                 report.updated += 1;
                 item
             }
+            CaptureOutcome::IgnoredEmpty => {
+                report.skipped += 1;
+                continue;
+            }
         };
         if item.is_favorite {
             history.set_favorite(imported.id, true)?;

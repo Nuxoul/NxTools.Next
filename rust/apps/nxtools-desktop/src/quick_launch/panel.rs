@@ -659,6 +659,41 @@ impl QuickLaunchPanel {
         cx.notify();
     }
 
+    pub(crate) fn reset_after_history_clear(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (String, u64) {
+        let was_recent_directory_mode = self.recent_directory_mode;
+        let query = if was_recent_directory_mode {
+            String::new()
+        } else {
+            self.search_input.read(cx).value().to_string()
+        };
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.recent_directory_mode = false;
+        self.recent_directories.clear();
+        self.results.clear();
+        self.selected = 0;
+        self.search_pending = false;
+        self.status = None;
+        self.reset_presented_results();
+        self.result_scroll
+            .0
+            .borrow()
+            .base_handle
+            .set_offset(point(px(0.0), px(0.0)));
+        if was_recent_directory_mode {
+            self.search_input.update(cx, |state, cx| {
+                state.set_placeholder("搜索应用、文件或文件夹", window, cx);
+                state.set_value(String::new(), window, cx);
+            });
+        }
+        self.sync_window_content_size(&query, window);
+        cx.notify();
+        (query, self.query_dispatch_generation)
+    }
+
     pub(crate) fn replace_results(&mut self, results: Vec<SearchResult>, cx: &mut Context<Self>) {
         self.dismiss_preview(cx);
         self.selected = selection_after_results_refresh(&self.results, self.selected, &results);
@@ -671,7 +706,6 @@ impl QuickLaunchPanel {
         self.status = None;
         cx.notify();
     }
-
     pub(crate) fn activate_selected(
         &mut self,
         action: QuickLaunchAction,
@@ -1466,7 +1500,6 @@ pub(crate) fn source_icon(source: ApplicationSource) -> MaterialIcon {
         ApplicationSource::Calculator => MaterialIcon::Calculate,
         ApplicationSource::EnvironmentVariable => MaterialIcon::DataObject,
         ApplicationSource::CustomCommand => MaterialIcon::Terminal,
-        ApplicationSource::WebUrl => MaterialIcon::Language,
         ApplicationSource::StartMenu => MaterialIcon::Dashboard,
         ApplicationSource::Desktop => MaterialIcon::OpenInNew,
         ApplicationSource::System => MaterialIcon::ProgressActivity,

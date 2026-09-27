@@ -24,7 +24,9 @@ internal static class PlatformEventEnvelopeFactory
                 {
                     pointer.WindowHandle,
                     pointer.RootWindowHandle,
-                    pointer.ProcessId
+                    pointer.ProcessId,
+                    pointer.SampledAtUnixMs,
+                    pointer.EventSequence
                 }
             }),
             ClipboardCapturedEvent clipboard => ProtocolEnvelope.Create("platform_event", new
@@ -51,7 +53,8 @@ internal static class PlatformEventEnvelopeFactory
                     panel.CursorY,
                     panel.CursorDisplayIndex,
                     panel.CursorMonitorDpi,
-                    panel.RequestedAtUnixMs
+                    panel.RequestedAtUnixMs,
+                    panel.EventSequence
                 }
             }),
             QuickLaunchPanelRequestedEvent panel => ProtocolEnvelope.Create("platform_event", new

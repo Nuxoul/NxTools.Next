@@ -63,6 +63,50 @@ Root: `D:\Code\zed-main`
 - SettingsShell owns one client titlebar, one scrollable content region and one fixed dialog footer.
   The shell does not own application persistence or native-window policy.
 - A compact settings shell must size its production client area to the content it actually owns.
+
+## Reusable feature settings window
+
+Verified current NxTools.Next call chain before extracting the tool-settings shell:
+
+- `rust/apps/nxtools-desktop/src/main_window/tools_page.rs::render_tools` opens one dedicated GPUI
+  window when a tool card is clicked; `open_tool_settings_window` snapshots the persisted link-detector
+  values from `ClipboardApplication` and creates `ToolSettingsWindowBody`.
+- `ToolSettingsWindowBody` owns the edit-time view snapshot. `ClipboardApplication` remains the sole
+  settings/persistence owner through `set_link_detector_enabled`, `set_link_panel_auto_hide_ms`,
+  `set_link_panel_auto_open_browser`, `set_link_panel_copy_only` and
+  `set_link_panel_position`.
+  `ClipboardSettings::link_panel_position` is a serde-compatible enum with `center` as the
+  default, so existing configuration files retain the current centered behavior.
+- The current tool window is a fixed 460×320 logical-pixel `WindowKind::Normal` surface. Closing it
+  is presentation-only; it must not disable the tool or stop clipboard capture.
+- There is no verified legacy NxTools feature with the same generic “other tool settings window”
+  contract. Keep the extraction presentation-only and preserve the link-detector-specific behavior.
+
+Template invariants:
+
+- One shared feature-settings shell owns the title/description header, enabled status, one binary
+  toggle and an icon-only close action with a visible tooltip. Feature-specific settings are passed
+  as content and remain owned by their existing Rust application.
+- The enabled toggle updates local view state synchronously, then defers the write to
+  `ClipboardApplication` until the next GPUI application turn. It must not synchronously re-enter a
+  parent/application entity from a window callback.
+- Closing removes only the settings window. Reopening a card reuses/raises its live settings window;
+  a stale handle is discarded before a replacement window is opened.
+- Keep the compact 460×320 client size, shared Body/Label typography, canvas/surface palette and
+  continuous content area. Do not add nested cards or move native window APIs into the GPUI shell.
+- Regression gates exercise the real tool card → settings window path, observe the initial enabled
+  state, toggle it through the shared switch, verify content remains mounted, and close the window.
+- The link-detector settings window exposes one position dropdown owned by
+  `ToolSettingsWindowBody`; selecting an option updates the local draft and defers the persisted
+  write to `ClipboardApplication`, just like the existing toggles.
+- Link-panel placement is computed in Rust from the selected display bounds and fixed panel size:
+  top-left and top-right use the shared 24 px display inset, while center uses both display axes.
+  The resulting rectangle is clamped to the selected display before crossing the typed native
+  position/bounds boundary. Reusing the panel must reapply both position and size for every capture.
+- A successful asynchronous download probe changes the add window's content and its required
+  height as one lifecycle transition. Native `SetWindowBoundsCentered` is the only production
+  resize boundary after a real HWND exists; the resize request is generation-scoped and retried at
+  bounded intervals so a Windows move/size modal loop cannot leave the confirmed body clipped.
   Conforming controls inside an oversized fixed viewport is not a valid Zed-like result: the final
   section/note keeps only the ordinary 12 px content inset above the fixed footer. The old NxTools
   `Views/SettingsWindow.axaml` used a 984×612 workspace because it contained many global sections;
@@ -96,6 +140,10 @@ Root: `D:\Code\zed-main`
   Empty is neutral, loading uses only the accent icon, and error uses only danger icon/text plus a
   narrow semantic edge. Loading is static unless the underlying operation already exposes bounded
   progress; rendering does not start a timer or animation loop.
+- Interactive empty states use the same `ui/components/state.rs` module as passive states. The
+  action wrapper is `flex_none` and delegates geometry to the 72 px work-state contract; callers
+  provide only the deferred action. A page must not wrap the state in `size_full()` to make it
+  clickable, because that turns a compact status row into a large empty panel.
 - Old NxTools clipboard history used a centered muted 12 px `暂无剪贴板历史` label, while the LAN
   history window used a decorative 38 px icon/title stack. SH-07 preserves the useful empty-state
   conditions and explanatory copy, but standardizes their presentation on the denser Zed list

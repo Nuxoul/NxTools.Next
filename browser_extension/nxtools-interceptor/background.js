@@ -3916,8 +3916,8 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
   const yieldToBrowser = () => {
     try {
       options.suggest?.();
-    } catch (error) {
-      console.debug("NxTools default download suggestion was not accepted.", error);
+    } catch {
+      // Chrome may already have resolved this one-shot suggestion callback.
     }
   };
   if (!settings.interceptDownloads || !isHttpUrl(url)) {

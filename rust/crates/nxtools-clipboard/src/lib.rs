@@ -209,10 +209,29 @@ pub struct ClipboardItem {
     pub file_paths: Vec<String>,
     pub source: CaptureSource,
     pub captured_at_unix_ms: i64,
+    pub last_used_at_unix_ms: i64,
     pub copy_count: u32,
     pub is_favorite: bool,
     pub is_pinned: bool,
     pub deleted_at_unix_ms: Option<i64>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardPageCursor {
+    pub is_pinned: bool,
+    pub last_used_at_unix_ms: i64,
+    pub captured_at_unix_ms: i64,
+    pub id: i64,
+}
+
+impl From<&ClipboardItem> for ClipboardPageCursor {
+    fn from(item: &ClipboardItem) -> Self {
+        Self {
+            is_pinned: item.is_pinned,
+            last_used_at_unix_ms: item.last_used_at_unix_ms,
+            captured_at_unix_ms: item.captured_at_unix_ms,
+            id: item.id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -434,6 +453,7 @@ pub fn action_text_payload(item: &ClipboardItem, action: ClipboardAction) -> Opt
 pub enum CaptureOutcome {
     Inserted(ClipboardItem),
     Updated(ClipboardItem),
+    IgnoredEmpty,
 }
 
 pub struct ClipboardHistory {
@@ -542,6 +562,13 @@ impl ClipboardHistory {
                                 captured_at_unix_ms DESC, id DESC)",
             [],
         )?;
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clipboard_items_active_usage
+             ON clipboard_items(is_pinned DESC, last_used_at_unix_ms DESC,
+                                captured_at_unix_ms DESC, id DESC)
+             WHERE deleted_at_unix_ms = 0",
+            [],
+        )?;
         seed_builtin_categories(&connection)?;
         promote_legacy_single_image_rows(&connection)?;
         Ok(Self {
@@ -640,6 +667,9 @@ impl ClipboardHistory {
         source: CaptureSource,
         captured_at_unix_ms: i64,
     ) -> Result<CaptureOutcome, ClipboardHistoryError> {
+        if text.trim().is_empty() && image_path.is_empty() && file_paths.is_empty() {
+            return Ok(CaptureOutcome::IgnoredEmpty);
+        }
         let file_paths_json = serde_json::to_string(&file_paths)?;
         let transaction = self.connection.transaction()?;
         let matching_payload_ids = {
@@ -946,6 +976,19 @@ impl ClipboardHistory {
             .map_err(Into::into)
     }
 
+    pub fn source_process_names(&self) -> Result<Vec<String>, ClipboardHistoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT DISTINCT source_process_name
+             FROM clipboard_items
+             WHERE deleted_at_unix_ms = 0 AND trim(source_process_name) != ''
+             ORDER BY source_process_name COLLATE NOCASE",
+        )?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
     pub fn add_category_source(
         &mut self,
         category_id: &str,
@@ -973,6 +1016,38 @@ impl ClipboardHistory {
              WHERE category_id = ?1 AND process_name = ?2 COLLATE NOCASE",
             params![category_id, process_name],
         )?;
+        self.category_sources(category_id)
+    }
+
+    pub fn replace_category_sources(
+        &mut self,
+        category_id: &str,
+        process_names: &[String],
+    ) -> Result<Vec<String>, ClipboardHistoryError> {
+        self.ensure_custom_category(category_id)?;
+        let mut normalized = HashSet::new();
+        let mut validated = Vec::new();
+        for process_name in process_names {
+            let process_name = validate_category_source(process_name)?.to_owned();
+            if normalized.insert(process_name.to_lowercase()) {
+                validated.push(process_name);
+            }
+        }
+        validated.sort_by_key(|value| value.to_lowercase());
+
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "DELETE FROM clipboard_category_sources WHERE category_id = ?1",
+            [category_id],
+        )?;
+        for process_name in &validated {
+            transaction.execute(
+                "INSERT OR IGNORE INTO clipboard_category_sources (category_id, process_name)
+                 VALUES (?1, ?2)",
+                params![category_id, process_name],
+            )?;
+        }
+        transaction.commit()?;
         self.category_sources(category_id)
     }
 
@@ -1070,14 +1145,84 @@ impl ClipboardHistory {
         offset: usize,
         limit: usize,
     ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
+        self.query_category_page_with_total(query, category_id, search_scope, offset, limit, None)
+    }
+
+    pub fn query_category_page_with_total(
+        &self,
+        query: &str,
+        category_id: &str,
+        search_scope: ClipboardSearchScope,
+        offset: usize,
+        limit: usize,
+        known_total: Option<usize>,
+    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
+        self.query_category_page_with_cursor(
+            query,
+            category_id,
+            search_scope,
+            offset,
+            limit,
+            None,
+            known_total,
+        )
+    }
+
+    pub fn query_category_page_after(
+        &self,
+        query: &str,
+        category_id: &str,
+        search_scope: ClipboardSearchScope,
+        cursor: ClipboardPageCursor,
+        limit: usize,
+        known_total: Option<usize>,
+    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
+        self.query_category_page_with_cursor(
+            query,
+            category_id,
+            search_scope,
+            0,
+            limit,
+            Some(cursor),
+            known_total,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn query_category_page_with_cursor(
+        &self,
+        query: &str,
+        category_id: &str,
+        search_scope: ClipboardSearchScope,
+        offset: usize,
+        limit: usize,
+        cursor: Option<ClipboardPageCursor>,
+        known_total: Option<usize>,
+    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
         let category = self.category_by_id(category_id)?;
         match category.kind {
-            ClipboardCategoryKind::All => {
-                self.query_page(query, None, false, None, search_scope, offset, limit)
-            }
-            ClipboardCategoryKind::Favorite => {
-                self.query_page(query, None, true, None, search_scope, offset, limit)
-            }
+            ClipboardCategoryKind::All => self.query_page(
+                query,
+                None,
+                false,
+                None,
+                search_scope,
+                offset,
+                limit,
+                known_total,
+                cursor,
+            ),
+            ClipboardCategoryKind::Favorite => self.query_page(
+                query,
+                None,
+                true,
+                None,
+                search_scope,
+                offset,
+                limit,
+                known_total,
+                cursor,
+            ),
             ClipboardCategoryKind::Text => self.query_page(
                 query,
                 Some(ClipboardKind::Text),
@@ -1086,6 +1231,8 @@ impl ClipboardHistory {
                 search_scope,
                 offset,
                 limit,
+                known_total,
+                cursor,
             ),
             ClipboardCategoryKind::Image => self.query_page(
                 query,
@@ -1095,6 +1242,8 @@ impl ClipboardHistory {
                 search_scope,
                 offset,
                 limit,
+                known_total,
+                cursor,
             ),
             ClipboardCategoryKind::Files => self.query_page(
                 query,
@@ -1104,6 +1253,8 @@ impl ClipboardHistory {
                 search_scope,
                 offset,
                 limit,
+                known_total,
+                cursor,
             ),
             ClipboardCategoryKind::Custom => self.query_page(
                 query,
@@ -1113,6 +1264,8 @@ impl ClipboardHistory {
                 search_scope,
                 offset,
                 limit,
+                known_total,
+                cursor,
             ),
         }
     }
@@ -1152,6 +1305,7 @@ impl ClipboardHistory {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn query_page(
         &self,
         query: &str,
@@ -1161,47 +1315,70 @@ impl ClipboardHistory {
         search_scope: ClipboardSearchScope,
         offset: usize,
         limit: usize,
+        known_total: Option<usize>,
+        cursor: Option<ClipboardPageCursor>,
     ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        let total = self.connection.query_row(
-            "SELECT COUNT(*)
-             FROM clipboard_items
-             WHERE deleted_at_unix_ms = 0
-               AND (?1 IS NULL OR content_type = ?1)
-               AND (?2 = 0 OR is_favorite = 1)
-               AND (?3 IS NULL OR EXISTS (
-                    SELECT 1 FROM clipboard_category_sources AS category_source
-                    WHERE category_source.category_id = ?3
-                      AND category_source.process_name = clipboard_items.source_process_name
-               ))
-               AND (?4 = ''
-                    OR instr(lower(text), lower(?4)) > 0
-                    OR (?5 = 1 AND (
-                        instr(lower(image_path), lower(?4)) > 0
-                        OR instr(lower(file_paths_json), lower(?4)) > 0
-                        OR instr(lower(source_process_name), lower(?4)) > 0
-                        OR instr(lower(source_window_title), lower(?4)) > 0
-                    )))",
-            params![
-                kind.map(ClipboardKind::as_str),
+        let total = match known_total {
+            Some(total) => total,
+            None => self.connection.query_row(
+                "SELECT COUNT(*)
+                 FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0
+                   AND (?1 IS NULL OR content_type = ?1)
+                   AND (?2 = 0 OR is_favorite = 1)
+                   AND (?3 IS NULL OR EXISTS (
+                        SELECT 1 FROM clipboard_category_sources AS category_source
+                        WHERE category_source.category_id = ?3
+                          AND category_source.process_name = clipboard_items.source_process_name
+                   ))
+                   AND (?4 = ''
+                        OR instr(lower(text), lower(?4)) > 0
+                        OR (?5 = 1 AND (
+                            instr(lower(image_path), lower(?4)) > 0
+                            OR instr(lower(file_paths_json), lower(?4)) > 0
+                            OR instr(lower(source_process_name), lower(?4)) > 0
+                            OR instr(lower(source_window_title), lower(?4)) > 0
+                        )))",
+                params![
+                    kind.map(ClipboardKind::as_str),
+                    favorite_only,
+                    source_category_id,
+                    query,
+                    search_scope == ClipboardSearchScope::Extended,
+                ],
+                |row| row.get::<_, i64>(0),
+            )? as usize,
+        };
+        let page_limit = limit.clamp(1, 500);
+        let (mut items, has_more) = if let Some(cursor) = cursor {
+            let mut items = self.query_items_after(
+                query,
+                kind,
                 favorite_only,
                 source_category_id,
+                search_scope,
+                cursor,
+                page_limit.saturating_add(1),
+            )?;
+            let has_more = items.len() > page_limit;
+            items.truncate(page_limit);
+            (items, has_more)
+        } else {
+            let items = self.query_items(
                 query,
-                search_scope == ClipboardSearchScope::Extended,
-            ],
-            |row| row.get::<_, i64>(0),
-        )? as usize;
-        let items = self.query_items(
-            query,
-            kind,
-            favorite_only,
-            source_category_id,
-            search_scope,
-            offset,
-            limit.clamp(1, 500),
-        )?;
+                kind,
+                favorite_only,
+                source_category_id,
+                search_scope,
+                offset,
+                page_limit,
+            )?;
+            let has_more = offset.saturating_add(items.len()) < total;
+            (items, has_more)
+        };
         Ok(ClipboardHistoryPage {
-            has_more: offset.saturating_add(items.len()) < total,
-            items,
+            has_more,
+            items: std::mem::take(&mut items),
             total,
         })
     }
@@ -1221,7 +1398,7 @@ impl ClipboardHistory {
             "SELECT id, content_type, text, image_path, image_width, image_height,
                     file_paths_json, source_window_handle, source_process_id,
                     source_process_name, source_process_icon_path, source_window_title,
-                    captured_at_unix_ms, copy_count, is_favorite, is_pinned,
+                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
                     deleted_at_unix_ms
              FROM clipboard_items
              WHERE deleted_at_unix_ms = 0
@@ -1258,6 +1435,69 @@ impl ClipboardHistory {
         )?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
+    #[allow(clippy::too_many_arguments)]
+    fn query_items_after(
+        &self,
+        query: &str,
+        kind: Option<ClipboardKind>,
+        favorite_only: bool,
+        source_category_id: Option<&str>,
+        search_scope: ClipboardSearchScope,
+        cursor: ClipboardPageCursor,
+        limit: usize,
+    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, content_type, text, image_path, image_width, image_height,
+                    file_paths_json, source_window_handle, source_process_id,
+                    source_process_name, source_process_icon_path, source_window_title,
+                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
+                    deleted_at_unix_ms
+             FROM clipboard_items
+             WHERE deleted_at_unix_ms = 0
+               AND (?1 IS NULL OR content_type = ?1)
+               AND (?2 = 0 OR is_favorite = 1)
+               AND (?3 IS NULL OR EXISTS (
+                    SELECT 1 FROM clipboard_category_sources AS category_source
+                    WHERE category_source.category_id = ?3
+                      AND category_source.process_name = clipboard_items.source_process_name
+               ))
+               AND (?4 = ''
+                    OR instr(lower(text), lower(?4)) > 0
+                    OR (?5 = 1 AND (
+                        instr(lower(image_path), lower(?4)) > 0
+                        OR instr(lower(file_paths_json), lower(?4)) > 0
+                        OR instr(lower(source_process_name), lower(?4)) > 0
+                        OR instr(lower(source_window_title), lower(?4)) > 0
+                    )))
+               AND (
+                    is_pinned < ?6
+                    OR (is_pinned = ?6 AND last_used_at_unix_ms < ?7)
+                    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7
+                        AND captured_at_unix_ms < ?8)
+                    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7
+                        AND captured_at_unix_ms = ?8 AND id < ?9)
+               )
+             ORDER BY is_pinned DESC, last_used_at_unix_ms DESC,
+                      captured_at_unix_ms DESC, id DESC
+             LIMIT ?10",
+        )?;
+        let rows = statement.query_map(
+            params![
+                kind.map(ClipboardKind::as_str),
+                favorite_only,
+                source_category_id,
+                query,
+                search_scope == ClipboardSearchScope::Extended,
+                i64::from(cursor.is_pinned),
+                cursor.last_used_at_unix_ms,
+                cursor.captured_at_unix_ms,
+                cursor.id,
+                limit as i64,
+            ],
+            map_item,
+        )?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
 
     fn item_by_id(&self, id: i64) -> Result<ClipboardItem, ClipboardHistoryError> {
         self.connection
@@ -1265,7 +1505,7 @@ impl ClipboardHistory {
                 "SELECT id, content_type, text, image_path, image_width, image_height,
                         file_paths_json, source_window_handle, source_process_id,
                         source_process_name, source_process_icon_path, source_window_title,
-                        captured_at_unix_ms, copy_count, is_favorite, is_pinned,
+                        captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
                         deleted_at_unix_ms
                  FROM clipboard_items WHERE id = ?1",
                 [id],
@@ -1508,6 +1748,33 @@ impl ClipboardHistory {
     ) -> Result<Vec<ClipboardNativeFormat>, ClipboardHistoryError> {
         read_native_formats(&self.connection, item_id).map_err(Into::into)
     }
+
+    pub fn referenced_asset_paths(&self) -> Result<HashSet<String>, ClipboardHistoryError> {
+        let mut paths = HashSet::new();
+        let mut statement = self.connection.prepare(
+            "SELECT image_path, source_process_icon_path
+             FROM clipboard_items
+             WHERE deleted_at_unix_ms = 0",
+        )?;
+        for row in statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })? {
+            let (image_path, source_icon_path) = row?;
+            if !image_path.is_empty() {
+                paths.insert(image_path);
+            }
+            if !source_icon_path.is_empty() {
+                paths.insert(source_icon_path);
+            }
+        }
+        let mut statement = self
+            .connection
+            .prepare("SELECT data_path FROM clipboard_item_formats WHERE data_path != ''")?;
+        for path in statement.query_map([], |row| row.get::<_, String>(0))? {
+            paths.insert(path?);
+        }
+        Ok(paths)
+    }
 }
 
 fn replace_native_formats(
@@ -1599,10 +1866,11 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
             window_title: row.get(11)?,
         },
         captured_at_unix_ms: row.get(12)?,
-        copy_count: row.get(13)?,
-        is_favorite: row.get::<_, i64>(14)? != 0,
-        is_pinned: row.get::<_, i64>(15)? != 0,
-        deleted_at_unix_ms: match row.get::<_, i64>(16)? {
+        last_used_at_unix_ms: row.get(13)?,
+        copy_count: row.get(14)?,
+        is_favorite: row.get::<_, i64>(15)? != 0,
+        is_pinned: row.get::<_, i64>(16)? != 0,
+        deleted_at_unix_ms: match row.get::<_, i64>(17)? {
             0 => None,
             timestamp => Some(timestamp),
         },
@@ -1745,6 +2013,8 @@ fn is_existing_image_path(value: &str) -> bool {
 
 #[derive(Debug, Error)]
 pub enum ClipboardHistoryError {
+    #[error("clipboard query superseded by a newer request")]
+    QuerySuperseded,
     #[error("clipboard database error: {0}")]
     Database(#[from] rusqlite::Error),
     #[error("clipboard data serialization error: {0}")]
@@ -1860,6 +2130,7 @@ mod tests {
             file_paths: Vec::new(),
             source: fixture_source(),
             captured_at_unix_ms: 1,
+            last_used_at_unix_ms: 1,
             copy_count: 1,
             is_favorite: false,
             is_pinned: false,
@@ -1886,6 +2157,7 @@ mod tests {
             file_paths: Vec::new(),
             source: fixture_source(),
             captured_at_unix_ms: 1,
+            last_used_at_unix_ms: 1,
             copy_count: 1,
             is_favorite: false,
             is_pinned: false,
@@ -1947,6 +2219,7 @@ mod tests {
             file_paths: Vec::new(),
             source: fixture_source(),
             captured_at_unix_ms: 1,
+            last_used_at_unix_ms: 1,
             copy_count: 1,
             is_favorite: false,
             is_pinned: false,
@@ -1962,6 +2235,7 @@ mod tests {
             file_paths: vec!["C:\\one.txt".into(), "D:\\two.txt".into()],
             source: fixture_source(),
             captured_at_unix_ms: 2,
+            last_used_at_unix_ms: 2,
             copy_count: 1,
             is_favorite: false,
             is_pinned: false,
@@ -1984,6 +2258,29 @@ mod tests {
             action_text_payload(&files, ClipboardAction::WithoutLineBreaks),
             None
         );
+    }
+
+    #[test]
+    fn empty_capture_with_native_formats_is_ignored() {
+        let directory = tempfile::tempdir().expect("create clipboard test directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let outcome = history
+            .capture(TextCapture {
+                text: " \r\n ".into(),
+                native_formats: vec![ClipboardNativeFormat {
+                    format_id: 13,
+                    format_name: String::new(),
+                    data_path: "C:/staging/empty-text.bin".into(),
+                    size_bytes: 2,
+                    sort_order: 0,
+                }],
+                source: fixture_source(),
+                captured_at_unix_ms: 10,
+            })
+            .expect("empty capture should be ignored without a database error");
+        assert!(matches!(outcome, CaptureOutcome::IgnoredEmpty));
+        assert!(history.recent(10).expect("read recent history").is_empty());
     }
 
     #[test]
@@ -2459,6 +2756,36 @@ mod tests {
     }
 
     #[test]
+    fn replacing_category_sources_persists_the_editor_selection_atomically() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let category = history.create_category("工作").expect("create category");
+
+        history
+            .add_category_source(&category.id, "old.exe")
+            .expect("seed old source");
+        let sources = history
+            .replace_category_sources(
+                &category.id,
+                &[
+                    "Editor.exe".into(),
+                    "editor.EXE".into(),
+                    "Browser.exe".into(),
+                ],
+            )
+            .expect("replace category sources");
+
+        assert_eq!(sources, ["Browser.exe", "Editor.exe"]);
+        assert_eq!(
+            history
+                .category_sources(&category.id)
+                .expect("read replaced sources"),
+            ["Browser.exe", "Editor.exe"]
+        );
+    }
+
+    #[test]
     fn soft_delete_hides_and_unpins_an_item_until_restore() {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("clipboard.db");
@@ -2714,6 +3041,149 @@ mod tests {
             .map(|item| item.id)
             .collect::<HashSet<_>>();
         assert_eq!(ids.len(), 105);
+    }
+    #[test]
+    fn cursor_pages_match_offset_pages_and_preserve_has_more() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        for index in 0..105 {
+            history
+                .capture(TextCapture {
+                    text: format!("cursor item {index:03}"),
+                    native_formats: Vec::new(),
+                    source: fixture_source(),
+                    captured_at_unix_ms: index + 1,
+                })
+                .expect("capture cursor fixture");
+        }
+
+        let first = history
+            .query_category_page(
+                "cursor item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                0,
+                40,
+            )
+            .expect("cursor first page");
+        let second = history
+            .query_category_page(
+                "cursor item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                40,
+                40,
+            )
+            .expect("cursor second offset page");
+        let cursor = ClipboardPageCursor::from(first.items.last().expect("first cursor item"));
+        let after = history
+            .query_category_page_after(
+                "cursor item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                cursor,
+                40,
+                Some(first.total),
+            )
+            .expect("cursor second page");
+
+        assert_eq!(after.items, second.items);
+        assert_eq!(after.total, second.total);
+        assert_eq!(after.has_more, second.has_more);
+        history
+            .mark_used(cursor.id, 10_000)
+            .expect("move cursor item after its page");
+        let after_mutation = history
+            .query_category_page_after(
+                "cursor item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                cursor,
+                40,
+                Some(first.total),
+            )
+            .expect("cursor page after ordering mutation");
+        assert_eq!(after_mutation.items, second.items);
+
+        history
+            .soft_delete(cursor.id, 10_001)
+            .expect("delete cursor item");
+        let after_delete = history
+            .query_category_page_after(
+                "cursor item",
+                BUILTIN_ALL_CATEGORY_ID,
+                ClipboardSearchScope::Content,
+                cursor,
+                40,
+                Some(first.total.saturating_sub(1)),
+            )
+            .expect("cursor page after cursor deletion");
+        assert!(!after_delete.items.is_empty());
+        assert!(!after_delete.items.iter().any(|item| item.id == cursor.id));
+    }
+
+    #[test]
+    fn search_plan_uses_index_for_deep_pages() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open history");
+        let transaction = history.connection.transaction().expect("seed transaction");
+        for index in 0..100_000_i64 {
+            transaction
+                .execute(
+                    "INSERT INTO clipboard_items (
+                        content_type, text, image_path, image_width, image_height,
+                        file_paths_json, source_window_handle, source_process_id,
+                        source_process_name, source_process_icon_path, source_window_title,
+                        captured_at_unix_ms, last_used_at_unix_ms, copy_count, use_count,
+                        is_favorite, is_pinned, deleted_at_unix_ms
+                    ) VALUES ('text', ?1, '', 0, 0, '[]', 1, 1, 'benchmark', '',
+                              '', ?2, ?2, 1, 0, 0, 0, 0)",
+                    rusqlite::params![format!("deep page item {index:05}"), index],
+                )
+                .expect("seed clipboard row");
+        }
+        transaction.commit().expect("commit seed rows");
+
+        let mut plan_statement = history
+            .connection
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT id FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0
+                   AND (?1 = '' OR instr(lower(text), lower(?1)) > 0)
+                 ORDER BY is_pinned DESC, last_used_at_unix_ms DESC,
+                          captured_at_unix_ms DESC, id DESC
+                 LIMIT ?2 OFFSET ?3",
+            )
+            .expect("prepare search query plan");
+        let plan = plan_statement
+            .query_map(rusqlite::params!["deep", 80_i64, 80_000_i64], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query search plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect search plan");
+        assert!(!plan.is_empty());
+        assert!(
+            plan.iter()
+                .all(|detail| !detail.contains("USE TEMP B-TREE")),
+            "search ordering should use the active usage index: {plan:?}"
+        );
+
+        for offset in [0_usize, 25_000, 80_000] {
+            let page = history
+                .query_category_page(
+                    "deep",
+                    BUILTIN_ALL_CATEGORY_ID,
+                    ClipboardSearchScope::Content,
+                    offset,
+                    80,
+                )
+                .expect("query deep page");
+            assert_eq!(page.items.len(), 80);
+        }
     }
 
     #[test]
@@ -3007,6 +3477,7 @@ mod tests {
                 .expect("capture text");
             match outcome {
                 CaptureOutcome::Inserted(item) | CaptureOutcome::Updated(item) => item.id,
+                CaptureOutcome::IgnoredEmpty => panic!("fixture must not be empty"),
             }
         };
 
@@ -3402,5 +3873,348 @@ mod tests {
             source.recent(10).expect("source remains readable")[0].text,
             "source remains current"
         );
+    }
+    const QUERY_BENCHMARK_PAGE_SIZE: usize = 40;
+
+    struct QueryBenchmarkFixture {
+        _directory: tempfile::TempDir,
+        history: ClipboardHistory,
+        content_matches: usize,
+        extended_matches: usize,
+    }
+
+    fn query_benchmark_fixture(row_count: usize) -> QueryBenchmarkFixture {
+        let directory = tempfile::tempdir().expect("create query benchmark directory");
+        let database = directory.path().join("clipboard.db");
+        let mut history = ClipboardHistory::open(&database).expect("open query benchmark history");
+        let transaction = history
+            .connection
+            .transaction()
+            .expect("start query benchmark transaction");
+        let mut insert = transaction
+            .prepare(
+                "INSERT INTO clipboard_items (
+                    content_type, text, image_path, image_width, image_height,
+                    file_paths_json, source_window_handle, source_process_id,
+                    source_process_name, source_process_icon_path, source_window_title,
+                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, use_count,
+                    is_favorite, is_pinned, deleted_at_unix_ms
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 1, ?7, '', ?8, ?9, ?9, 1, 0, 0, 0, 0)",
+            )
+            .expect("prepare query benchmark insert");
+        let mut content_matches = 0;
+        let mut extended_matches = 0;
+
+        for index in 0..row_count {
+            let content_type = match index % 3 {
+                0 => "text",
+                1 => "image",
+                _ => "files",
+            };
+            let content_match = content_type == "text" && index % 11 == 0;
+            let metadata_match = !content_match && index % 17 == 1;
+            if content_match {
+                content_matches += 1;
+            }
+            if content_match || metadata_match {
+                extended_matches += 1;
+            }
+
+            let text = if content_type == "text" {
+                if content_match {
+                    format!("benchmark query-marker content row {index}")
+                } else {
+                    format!("benchmark content row {index}")
+                }
+            } else {
+                String::new()
+            };
+            let (image_path, image_width, image_height, file_paths_json) = match content_type {
+                "image" => (
+                    if metadata_match {
+                        format!("C:/benchmark/query-marker-image-{index}.png")
+                    } else {
+                        format!("C:/benchmark/image-{index}.png")
+                    },
+                    640,
+                    360,
+                    "[]".to_owned(),
+                ),
+                "files" => (
+                    String::new(),
+                    0,
+                    0,
+                    if metadata_match {
+                        format!("[\"C:/benchmark/query-marker-file-{index}.txt\"]")
+                    } else {
+                        format!("[\"C:/benchmark/file-{index}.txt\"]")
+                    },
+                ),
+                _ => (String::new(), 0, 0, "[]".to_owned()),
+            };
+            let window_title = if metadata_match && content_type == "text" {
+                format!("benchmark query-marker metadata window {index}")
+            } else {
+                format!("benchmark window {index}")
+            };
+
+            insert
+                .execute(rusqlite::params![
+                    content_type,
+                    text,
+                    image_path,
+                    image_width,
+                    image_height,
+                    file_paths_json,
+                    "clipboard-benchmark",
+                    window_title,
+                    index as i64 + 1,
+                ])
+                .expect("insert query benchmark row");
+        }
+        drop(insert);
+        transaction.commit().expect("commit query benchmark rows");
+
+        QueryBenchmarkFixture {
+            _directory: directory,
+            history,
+            content_matches,
+            extended_matches,
+        }
+    }
+
+    fn benchmark_matching_count(
+        history: &ClipboardHistory,
+        query: &str,
+        search_scope: ClipboardSearchScope,
+    ) -> usize {
+        history
+            .connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM clipboard_items
+                 WHERE deleted_at_unix_ms = 0
+                   AND (?1 IS NULL OR content_type = ?1)
+                   AND (?2 = 0 OR is_favorite = 1)
+                   AND (?3 IS NULL OR EXISTS (
+                        SELECT 1 FROM clipboard_category_sources AS category_source
+                        WHERE category_source.category_id = ?3
+                          AND category_source.process_name = clipboard_items.source_process_name
+                   ))
+                   AND (?4 = ''
+                        OR instr(lower(text), lower(?4)) > 0
+                        OR (?5 = 1 AND (
+                            instr(lower(image_path), lower(?4)) > 0
+                            OR instr(lower(file_paths_json), lower(?4)) > 0
+                            OR instr(lower(source_process_name), lower(?4)) > 0
+                            OR instr(lower(source_window_title), lower(?4)) > 0
+                        )))",
+                rusqlite::params![
+                    Option::<&str>::None,
+                    false,
+                    Option::<&str>::None,
+                    query,
+                    search_scope == ClipboardSearchScope::Extended,
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count query benchmark rows") as usize
+    }
+
+    fn query_benchmark_deep_offset(total: usize) -> usize {
+        ((total - QUERY_BENCHMARK_PAGE_SIZE) / QUERY_BENCHMARK_PAGE_SIZE)
+            * QUERY_BENCHMARK_PAGE_SIZE
+    }
+
+    #[test]
+    fn clipboard_history_query_benchmark_emits_json_for_10k_and_100k_fixtures() {
+        for row_count in [10_000, 100_000] {
+            let fixture = query_benchmark_fixture(row_count);
+            let query_cases = [
+                ("recent", "", ClipboardSearchScope::Content, row_count),
+                (
+                    "content",
+                    "query-marker",
+                    ClipboardSearchScope::Content,
+                    fixture.content_matches,
+                ),
+                (
+                    "extended",
+                    "query-marker",
+                    ClipboardSearchScope::Extended,
+                    fixture.extended_matches,
+                ),
+            ];
+
+            assert!(fixture.content_matches < fixture.extended_matches);
+            assert!(fixture.extended_matches <= row_count);
+
+            for (case, query, search_scope, expected_total) in query_cases {
+                assert!(expected_total > QUERY_BENCHMARK_PAGE_SIZE);
+                let offsets = [0, query_benchmark_deep_offset(expected_total)];
+                let scope_name = match search_scope {
+                    ClipboardSearchScope::Content => "content",
+                    ClipboardSearchScope::Extended => "extended",
+                };
+
+                for offset in offsets {
+                    let warm_page = fixture
+                        .history
+                        .query_category_page(
+                            query,
+                            BUILTIN_ALL_CATEGORY_ID,
+                            search_scope,
+                            offset,
+                            QUERY_BENCHMARK_PAGE_SIZE,
+                        )
+                        .expect("warm query benchmark page");
+                    let warm_items = fixture
+                        .history
+                        .query_items(
+                            query,
+                            None,
+                            false,
+                            None,
+                            search_scope,
+                            offset,
+                            QUERY_BENCHMARK_PAGE_SIZE,
+                        )
+                        .expect("warm query benchmark items");
+                    let warm_count =
+                        benchmark_matching_count(&fixture.history, query, search_scope);
+                    assert_eq!(warm_page.total, expected_total);
+                    assert_eq!(warm_count, expected_total);
+                    assert_eq!(warm_page.items, warm_items);
+
+                    let page_started = std::time::Instant::now();
+                    let page = fixture
+                        .history
+                        .query_category_page(
+                            query,
+                            BUILTIN_ALL_CATEGORY_ID,
+                            search_scope,
+                            offset,
+                            QUERY_BENCHMARK_PAGE_SIZE,
+                        )
+                        .expect("measure query benchmark page");
+                    let page_with_count_us = page_started.elapsed().as_micros();
+                    let page_without_count_started = std::time::Instant::now();
+                    let page_without_count = fixture
+                        .history
+                        .query_category_page_with_total(
+                            query,
+                            BUILTIN_ALL_CATEGORY_ID,
+                            search_scope,
+                            offset,
+                            QUERY_BENCHMARK_PAGE_SIZE,
+                            Some(expected_total),
+                        )
+                        .expect("measure query benchmark page without count");
+                    let page_without_count_us = page_without_count_started.elapsed().as_micros();
+                    let page_after_cursor_us = if offset == 0 {
+                        None
+                    } else {
+                        let previous_page = fixture
+                            .history
+                            .query_category_page_with_total(
+                                query,
+                                BUILTIN_ALL_CATEGORY_ID,
+                                search_scope,
+                                offset.saturating_sub(QUERY_BENCHMARK_PAGE_SIZE),
+                                QUERY_BENCHMARK_PAGE_SIZE,
+                                Some(expected_total),
+                            )
+                            .expect("load cursor benchmark predecessor");
+                        let cursor = ClipboardPageCursor::from(
+                            previous_page
+                                .items
+                                .last()
+                                .expect("cursor benchmark predecessor"),
+                        );
+                        let warm_after = fixture
+                            .history
+                            .query_category_page_after(
+                                query,
+                                BUILTIN_ALL_CATEGORY_ID,
+                                search_scope,
+                                cursor,
+                                QUERY_BENCHMARK_PAGE_SIZE,
+                                Some(expected_total),
+                            )
+                            .expect("warm cursor benchmark page");
+                        assert_eq!(warm_after.items, page.items);
+                        let cursor_started = std::time::Instant::now();
+                        let after = fixture
+                            .history
+                            .query_category_page_after(
+                                query,
+                                BUILTIN_ALL_CATEGORY_ID,
+                                search_scope,
+                                cursor,
+                                QUERY_BENCHMARK_PAGE_SIZE,
+                                Some(expected_total),
+                            )
+                            .expect("measure cursor benchmark page");
+                        assert_eq!(after.items, page.items);
+                        assert_eq!(after.total, page.total);
+                        assert_eq!(after.has_more, page.has_more);
+                        Some(cursor_started.elapsed().as_micros())
+                    };
+
+                    let query_started = std::time::Instant::now();
+                    let items = fixture
+                        .history
+                        .query_items(
+                            query,
+                            None,
+                            false,
+                            None,
+                            search_scope,
+                            offset,
+                            QUERY_BENCHMARK_PAGE_SIZE,
+                        )
+                        .expect("measure query benchmark items");
+                    let query_us = query_started.elapsed().as_micros();
+
+                    let count_started = std::time::Instant::now();
+                    let count = benchmark_matching_count(&fixture.history, query, search_scope);
+                    let count_us = count_started.elapsed().as_micros();
+
+                    assert_eq!(page.total, expected_total);
+                    assert_eq!(page_without_count.total, expected_total);
+                    assert_eq!(page_without_count.items, page.items);
+                    assert_eq!(page_without_count.has_more, page.has_more);
+                    assert_eq!(page.total, count);
+                    assert_eq!(page.items, items);
+                    assert!(items.len() <= QUERY_BENCHMARK_PAGE_SIZE);
+                    assert_eq!(
+                        page.has_more,
+                        offset.saturating_add(items.len()) < expected_total
+                    );
+                    let item_ids = items.iter().map(|item| item.id).collect::<HashSet<_>>();
+                    assert_eq!(item_ids.len(), items.len());
+
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "benchmark": "clipboard_history_query",
+                            "fixture_rows": row_count,
+                            "case": case,
+                            "scope": scope_name,
+                            "offset": offset,
+                            "limit": QUERY_BENCHMARK_PAGE_SIZE,
+                            "items": items.len(),
+                            "total": page.total,
+                            "has_more": page.has_more,
+                            "query_us": query_us,
+                            "count_us": count_us,
+                            "page_with_count_us": page_with_count_us,
+                            "page_without_count_us": page_without_count_us,
+                            "page_after_cursor_us": page_after_cursor_us,
+                        })
+                    );
+                }
+            }
+        }
     }
 }

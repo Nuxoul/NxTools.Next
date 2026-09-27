@@ -1,93 +1,144 @@
+using System.Text;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
-using System.Security.Cryptography;
-using System.Text;
 using NxTools.PlatformHost.Protocol;
 
 namespace NxTools.PlatformHost.Windows;
 
 internal static class ShellIconExtractor
 {
-    private const int CacheTrimWriteInterval = 128;
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiLargeIcon = 0x000000000;
     private const uint ShgfiSmallIcon = 0x000000001;
     private const uint ShgfiUseFileAttributes = 0x000000010;
     private const uint FileAttributeNormal = 0x00000080;
-    private static int _writesSinceCacheTrim;
 
-    public static WindowsCommandResult Extract(ExtractShellIconCommand command)
+    internal static WindowsCommandResult ExtractOnSta(
+        ExtractShellIconCommand command,
+        Func<ExtractShellIconCommand, WindowsCommandResult>? extractor = null)
+        => ExtractOnSta(command, extractor, CancellationToken.None);
+
+    internal static WindowsCommandResult ExtractOnSta(
+        ExtractShellIconCommand command,
+        CancellationToken cancellationToken)
+        => ExtractOnSta(command, null, cancellationToken);
+
+    internal static WindowsCommandResult ExtractOnSta(
+        ExtractShellIconCommand command,
+        Func<ExtractShellIconCommand, WindowsCommandResult>? extractor,
+        CancellationToken cancellationToken)
     {
+        var operation = extractor ?? (value => Extract(value, cancellationToken));
+        if (!BoundedStaOperationRunner.TryRun(
+                "NxTools.ShellIconExtraction",
+                TimeSpan.FromSeconds(5),
+                maxConcurrency: 8,
+                operationCancellation =>
+                {
+                    operationCancellation.ThrowIfCancellationRequested();
+                    var result = operation(command);
+                    operationCancellation.ThrowIfCancellationRequested();
+                    return result;
+                },
+                out WindowsCommandResult? result,
+                out var error,
+                cancellationToken))
+        {
+            return new WindowsCommandResult(
+                false,
+                error ?? "Shell icon extraction timed out.",
+                Fatal: true);
+        }
+        return result ?? new WindowsCommandResult(false, "Shell icon extraction returned no result.");
+    }
+
+    public static WindowsCommandResult Extract(ExtractShellIconCommand command) =>
+        Extract(command, CancellationToken.None);
+
+    internal static WindowsCommandResult Extract(
+        ExtractShellIconCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         if (command.Size is < 16 or > 256)
         {
             return new WindowsCommandResult(false, "The requested shell icon size is unsupported.");
         }
         var target = ResolveIconTarget(command.Target);
+        cancellationToken.ThrowIfCancellationRequested();
         if (target is null)
         {
             return new WindowsCommandResult(false, "The shell icon target does not exist.");
         }
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NxTools", "NxTools.Next", "staging", "quick-launch-icons");
-        Directory.CreateDirectory(directory);
-        var fingerprint = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(
-                $"{target.Path}\n{target.IconIndex?.ToString() ?? "shell"}\n{command.Size}")))
-            .ToLowerInvariant();
-        var destination = Path.Combine(directory, $"{fingerprint}.png");
-        if (File.Exists(destination))
-        {
-            return new WindowsCommandResult(true, Data: destination);
-        }
 
-        var iconHandle = target.IconIndex is { } iconIndex
-            ? ExtractIndexedIcon(target.Path, iconIndex, command.Size)
-            : ExtractShellIcon(target, command.Size);
-        if (iconHandle == IntPtr.Zero && !target.UseFileAttributes)
+        var targetType = target.UseFileAttributes
+            ? "file-type"
+            : Directory.Exists(target.Path) ? "directory" : "file";
+        var lastWriteTicks = File.Exists(target.Path) || Directory.Exists(target.Path)
+            ? File.GetLastWriteTimeUtc(target.Path).Ticks
+            : 0;
+        var key = IconCacheKey.Create(
+            target.Path,
+            target.IconIndex,
+            command.Size,
+            lastWriteTicks,
+            targetType);
+        string? extractionError = null;
+        var cacheHitOrCreated = IconCache.Shared.TryGetOrCreate(key, destination =>
         {
-            var extension = Path.GetExtension(target.Path);
-            if (!string.IsNullOrWhiteSpace(extension))
+            cancellationToken.ThrowIfCancellationRequested();
+            var iconHandle = target.IconIndex is { } iconIndex
+                ? ExtractIndexedIcon(target.Path, iconIndex, command.Size)
+                : ExtractShellIcon(target, command.Size);
+            if (iconHandle == IntPtr.Zero && !target.UseFileAttributes)
             {
-                iconHandle = ExtractShellIcon(
-                    new ShellIconTarget(extension, null, true, FileAttributeNormal),
-                    command.Size);
+                var extension = Path.GetExtension(target.Path);
+                if (!string.IsNullOrWhiteSpace(extension))
+                {
+                    iconHandle = ExtractShellIcon(
+                        new ShellIconTarget(extension, null, true, FileAttributeNormal),
+                        command.Size);
+                }
             }
-        }
-        if (iconHandle == IntPtr.Zero)
-        {
-            return new WindowsCommandResult(
-                false,
-                $"Windows Shell did not return an icon (Win32={Marshal.GetLastWin32Error()}).");
-        }
-        try
-        {
-            var bitmap = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                iconHandle,
-                System.Windows.Int32Rect.Empty,
-                System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
-            bitmap.Freeze();
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-            using (var output = File.Create(destination))
+            if (iconHandle == IntPtr.Zero)
             {
+                extractionError =
+                    $"Windows Shell did not return an icon (Win32={Marshal.GetLastWin32Error()}).";
+                return false;
+            }
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var bitmap = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                    iconHandle,
+                    System.Windows.Int32Rect.Empty,
+                    System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                bitmap.Freeze();
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using var output = File.Create(destination);
                 encoder.Save(output);
+                cancellationToken.ThrowIfCancellationRequested();
+                return true;
             }
-            if (Interlocked.Increment(ref _writesSinceCacheTrim) >= CacheTrimWriteInterval)
+            catch (ExternalException error)
             {
-                Interlocked.Exchange(ref _writesSinceCacheTrim, 0);
-                TrimCache(directory, 2048);
+                extractionError = error.Message;
+                return false;
             }
-            return new WindowsCommandResult(true, Data: destination);
-        }
-        catch (ExternalException error)
+            finally
+            {
+                _ = DestroyIcon(iconHandle);
+            }
+        }, out var destinationPath);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (cacheHitOrCreated)
         {
-            return new WindowsCommandResult(false, error.Message);
+            return new WindowsCommandResult(true, Data: destinationPath);
         }
-        finally
-        {
-            _ = DestroyIcon(iconHandle);
-        }
+        return new WindowsCommandResult(false, extractionError ??
+            "The shell icon could not be cached.");
     }
 
     private static IntPtr ExtractShellIcon(ShellIconTarget target, uint size)
@@ -116,26 +167,6 @@ internal static class ShellIconExtractor
             : (large ?? small)?[0] ?? IntPtr.Zero;
     }
 
-    private static void TrimCache(string directory, int maximumFiles)
-    {
-        try
-        {
-            foreach (var stale in new DirectoryInfo(directory)
-                         .EnumerateFiles("*.png")
-                         .OrderByDescending(file => file.LastWriteTimeUtc)
-                         .Skip(maximumFiles))
-            {
-                stale.Delete();
-            }
-        }
-        catch (IOException)
-        {
-            // Staging cleanup is best effort and must never fail the icon request.
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
 
     internal static ShellIconTarget? ResolveIconTarget(string target)
     {

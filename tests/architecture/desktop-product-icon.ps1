@@ -18,7 +18,12 @@ if (-not [System.IO.File]::Exists($brandPath)) {
     throw "Expected brand icon does not exist: $brandPath"
 }
 
-Add-Type -AssemblyName System.Drawing.Common
+try {
+    Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop
+}
+catch {
+    Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+}
 $associated = [System.Drawing.Icon]::ExtractAssociatedIcon($desktopPath)
 if ($null -eq $associated) {
     throw 'NxTools.exe does not expose an associated Windows icon.'

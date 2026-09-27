@@ -1,5 +1,27 @@
-use nxtools_finder::{ApplicationSource, ExternalSearchEntry, FileQuery, FinderCatalog};
+use nxtools_finder::{
+    ApplicationSource, ExternalSearchEntry, FileQuery, FinderCatalog, query_requests_file_index,
+};
 
+#[test]
+fn browser_urls_are_not_quick_launch_results() {
+    let directory = tempfile::tempdir().expect("temporary finder catalog");
+    let catalog = FinderCatalog::open(directory.path().join("usage.db"), &[])
+        .expect("open empty application catalog");
+
+    for query in ["https://example.com/docs", "example.com/docs"] {
+        assert!(
+            catalog
+                .search(query, 20)
+                .expect("search URL-shaped query")
+                .is_empty(),
+            "URL-shaped queries must not create Quick Launch results"
+        );
+        assert!(
+            query_requests_file_index(query),
+            "URL-shaped queries must continue through the ordinary file-search path"
+        );
+    }
+}
 #[test]
 fn multiple_fuzzy_terms_all_match_regardless_of_term_order() {
     let query = FileQuery::parse("report final");

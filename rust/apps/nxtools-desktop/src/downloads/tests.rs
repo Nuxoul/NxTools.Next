@@ -173,6 +173,67 @@ fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
     let _ = std::fs::remove_dir_all(directory);
 }
 
+#[gpui::test]
+fn stale_progress_envelopes_are_rejected_before_touching_cached_progress(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let (application, _directory) = download_application_for_window_test(cx, "stale-progress");
+    let task_id = DownloadTaskId::new();
+    let cached = DownloadProgress {
+        task_id,
+        downloaded_bytes: 12,
+        total_bytes: Some(100),
+        bytes_per_second: 4,
+        active_connections: 1,
+        segments: Vec::new(),
+    };
+    let stale = DownloadProgress {
+        downloaded_bytes: 4,
+        ..cached.clone()
+    };
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.event_generation = 7;
+            application.last_event_sequence = 10;
+            application.latest_progress.insert(task_id, cached.clone());
+            application.handle_engine_event(
+                DownloadEventEnvelope {
+                    generation: 7,
+                    sequence: 9,
+                    emitted_at_unix_ms: 0,
+                    event: DownloadEvent::TaskProgress { progress: stale },
+                },
+                cx,
+            );
+            assert_eq!(application.progress(task_id), Some(&cached));
+            assert_eq!(application.last_event_sequence, 10);
+        });
+    });
+}
+
+#[gpui::test]
+fn authoritative_snapshot_refresh_discards_live_progress_cache(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let (application, _directory) = download_application_for_window_test(cx, "snapshot-progress");
+    let task_id = DownloadTaskId::new();
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.latest_progress.insert(
+                task_id,
+                DownloadProgress {
+                    task_id,
+                    downloaded_bytes: 8,
+                    total_bytes: Some(10),
+                    bytes_per_second: 2,
+                    active_connections: 1,
+                    segments: Vec::new(),
+                },
+            );
+            application.refresh_snapshot(false, cx);
+            assert!(application.latest_progress.is_empty());
+        });
+    });
+}
+
 #[test]
 fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite() {
     let engine = DownloadEngine::open_in_memory().expect("open engine");

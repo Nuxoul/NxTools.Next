@@ -996,12 +996,25 @@ fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
     ))
 }
 
+fn task_action_response(
+    request_id: String,
+    redownload: bool,
+    task_id: Option<DownloadTaskId>,
+) -> BrowserResponse {
+    let mut response = BrowserResponse::ok(request_id, None);
+    if redownload {
+        response.task_id = task_id.map(|task_id| task_id.as_uuid().to_string());
+    }
+    response
+}
+
 fn task_action(
     request_id: String,
     task_id: String,
     action: String,
     executable: &Path,
 ) -> Result<BrowserResponse> {
+    let is_redownload = action == "redownload";
     let task_id = Uuid::parse_str(&task_id)
         .map(DownloadTaskId::from_uuid)
         .context("taskId must be a UUID")?;
@@ -1022,7 +1035,9 @@ fn task_action(
         RequestOrigin::Browser,
     ))?;
     match result.outcome {
-        DownloadCommandOutcome::Accepted { .. } => Ok(BrowserResponse::ok(request_id, None)),
+        DownloadCommandOutcome::Accepted { task_id } => {
+            Ok(task_action_response(request_id, is_redownload, task_id))
+        }
         DownloadCommandOutcome::Rejected { fault } => Ok(BrowserResponse::failed(
             request_id,
             "task_action_rejected",
@@ -1608,6 +1623,20 @@ mod tests {
             correlation_id: Some("not-a-uuid".into()),
         };
         assert!(validate_extension_log_payload(&invalid_correlation).is_err());
+    }
+
+    #[test]
+    fn redownload_task_action_response_echoes_the_replacement_task_id() {
+        let replacement_task_id = DownloadTaskId::new();
+        let response =
+            task_action_response("request-redownload".into(), true, Some(replacement_task_id));
+        let value = serde_json::to_value(response).expect("serialize redownload response");
+        assert_eq!(value["taskId"], json!(replacement_task_id.as_uuid()));
+
+        let pause_response =
+            task_action_response("request-pause".into(), false, Some(replacement_task_id));
+        let pause_value = serde_json::to_value(pause_response).expect("serialize pause response");
+        assert!(pause_value.get("taskId").is_none());
     }
 
     #[test]

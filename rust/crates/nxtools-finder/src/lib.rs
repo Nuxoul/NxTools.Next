@@ -11,7 +11,6 @@ mod custom_command;
 mod environment_variable;
 mod pinyin;
 mod query;
-mod web_url;
 
 pub use calculator::{
     CalculatorAnswer, CalculatorOutput, CalculatorRepresentation, calculator_answer,
@@ -21,7 +20,6 @@ pub use custom_command::{
     query_matches_custom_command, validate_custom_command_template,
 };
 pub use query::{FileQuery, search_char_mask};
-pub use web_url::web_url_target;
 
 const APPLICATION_EXTENSIONS: [&str; 3] = ["lnk", "url", "exe"];
 type UsageRecord = (u64, Option<i64>);
@@ -41,7 +39,6 @@ pub enum ApplicationSource {
     Calculator,
     EnvironmentVariable,
     CustomCommand,
-    WebUrl,
     StartMenu,
     Desktop,
     System,
@@ -55,7 +52,6 @@ impl ApplicationSource {
             Self::Calculator => "计算",
             Self::EnvironmentVariable => "环境变量",
             Self::CustomCommand => "命令",
-            Self::WebUrl => "网址",
             Self::StartMenu => "开始菜单",
             Self::Desktop => "桌面",
             Self::System => "系统工具",
@@ -123,7 +119,6 @@ impl SearchResult {
 pub fn query_requests_file_index(query: &str) -> bool {
     calculator_answer(query).is_none()
         && environment_variable::environment_variable_name(query).is_none()
-        && web_url::web_url_target(query).is_none()
         && !query
             .trim()
             .strip_prefix('*')
@@ -395,7 +390,6 @@ impl FinderCatalog {
         let file_query = FileQuery::parse(raw_query);
         let calculator_answer = calculator_answer(query);
         let environment_variable = environment_variable::environment_variable_targets(query);
-        let web_url = web_url::web_url_target(query);
         let query = normalize(query);
         if query.is_empty() {
             return Ok(Vec::new());
@@ -486,23 +480,6 @@ impl FinderCatalog {
                         last_query_activation_at_unix_ms: None,
                     }),
             );
-        }
-        if let Some(target) = web_url {
-            matches.push(SearchResult {
-                entry: ApplicationEntry {
-                    id: format!("web-url:{}", normalize(&target)),
-                    name: target.clone(),
-                    target,
-                    source: ApplicationSource::WebUrl,
-                },
-                action: SearchResultAction::OpenTarget,
-                subtitle: Some("用浏览器打开".into()),
-                score: 1_000,
-                activation_count: 0,
-                last_activated_at_unix_ms: None,
-                query_activation_count: 0,
-                last_query_activation_at_unix_ms: None,
-            });
         }
         let mut seen_targets = matches
             .iter()
@@ -1008,7 +985,6 @@ fn unified_search_rank(result: &SearchResult) -> UnifiedSearchRank {
             ApplicationSource::Calculator
                 | ApplicationSource::EnvironmentVariable
                 | ApplicationSource::CustomCommand
-                | ApplicationSource::WebUrl
         ),
         has_query_history: result.query_activation_count > 0,
         query_activation_count: result.query_activation_count,
@@ -1027,8 +1003,8 @@ fn unified_search_rank(result: &SearchResult) -> UnifiedSearchRank {
             ApplicationSource::Calculator
             | ApplicationSource::EnvironmentVariable
             | ApplicationSource::CustomCommand
-            | ApplicationSource::WebUrl => 5,
-            ApplicationSource::System | ApplicationSource::StartMenu => 4,
+            | ApplicationSource::System
+            | ApplicationSource::StartMenu => 4,
             ApplicationSource::Desktop => 3,
             ApplicationSource::IndexedDirectory => 2,
             ApplicationSource::IndexedFile => 1,

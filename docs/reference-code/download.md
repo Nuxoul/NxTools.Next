@@ -1035,6 +1035,19 @@ Reverified on 2026-07-27 after the first packaged interaction pass:
   form height before its automatic probe begins. It must not rely on a later asynchronous native
   resize to make destination, file-name and footer controls reachable; a manual empty form keeps the
   compact URL-only height. This browser-specific correction was verified on 2026-08-10.
+- When a successful asynchronous probe changes the add window from its compact URL stage to the
+  confirmed form, the probe result and required window size are one generation-scoped transition.
+  The real HWND is resized through native `SetWindowBoundsCentered`, which derives the current
+  visual center from the native rectangle rather than GPUI's cached origin.
+- A user may keep moving the non-resizable add window while the probe is in flight. Probe completion
+  must not leave the confirmed body in the old compact client rectangle: the native resize request
+  is retried at bounded intervals after the move/size modal loop can release it, and stale probe
+  generations must not apply an old height.
+- Download storage startup is defensive at the SQLite boundary. `SqliteDownloadStore::open` avoids
+  rewriting an already-WAL database, retries bounded `SQLITE_IOERR_TRUNCATE`/busy/locked startup
+  failures, and quarantines a zero-byte database only when no `-wal`/`-shm` sidecars exist. A file
+  with sidecars is left untouched so SQLite can recover it; an isolated empty placeholder is kept
+  as a uniquely named `.empty-*.bak` artifact before a fresh schema is created.
 - Client-drawn close controls bind an explicit GPUI close action. Windows control-area hit testing is
   not accepted as the sole close path for the add, progress, failed or completed windows.
 - Submitting from the add-window entity must not synchronously open another GPUI window. The accepted

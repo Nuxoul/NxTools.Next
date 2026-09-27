@@ -2,6 +2,7 @@
 
 mod assets;
 mod clipboard;
+mod clipboard_worker;
 mod completion_actions;
 mod download_taskbar_overlay;
 mod download_window_lifecycle;
@@ -10,7 +11,6 @@ mod icons;
 mod main_window;
 mod network_settings;
 mod notifications;
-mod tools;
 mod platform_events;
 mod popup_lifecycle;
 mod quick_launch;
@@ -18,6 +18,7 @@ mod runtime;
 mod shell;
 mod startup_failure;
 mod theme;
+mod tools;
 mod ui;
 #[cfg(test)]
 mod windows_icon;
@@ -60,6 +61,50 @@ enum DesktopLaunchMode {
     SilentStart,
     BrowserDialog { correlation_id: Uuid },
     Background,
+}
+
+const MAIN_WINDOW_LOGICAL_WIDTH: f32 = 1060.0;
+const MAIN_WINDOW_LOGICAL_HEIGHT: f32 = 650.0;
+
+fn main_window_logical_size() -> gpui::Size<gpui::Pixels> {
+    size(
+        px(MAIN_WINDOW_LOGICAL_WIDTH),
+        px(MAIN_WINDOW_LOGICAL_HEIGHT),
+    )
+}
+
+struct MainWindowPlacement {
+    bounds: WindowBounds,
+    display_id: Option<gpui::DisplayId>,
+}
+
+fn main_window_placement_for_display(
+    display: Option<(gpui::DisplayId, gpui::Bounds<gpui::Pixels>)>,
+) -> MainWindowPlacement {
+    let window_size = main_window_logical_size();
+    match display {
+        Some((display_id, display_bounds)) => MainWindowPlacement {
+            bounds: WindowBounds::Windowed(gpui::Bounds::centered_at(
+                display_bounds.center(),
+                window_size,
+            )),
+            display_id: Some(display_id),
+        },
+        None => MainWindowPlacement {
+            bounds: WindowBounds::Windowed(gpui::Bounds::new(
+                gpui::point(px(0.0), px(0.0)),
+                window_size,
+            )),
+            display_id: None,
+        },
+    }
+}
+
+fn main_window_placement(cx: &App) -> MainWindowPlacement {
+    let display = cx
+        .primary_display()
+        .map(|display| (display.id(), display.bounds()));
+    main_window_placement_for_display(display)
 }
 
 impl DesktopLaunchMode {
@@ -108,6 +153,14 @@ impl DesktopLaunchMode {
         !matches!(self, Self::BrowserDialog { .. } | Self::SilentStart)
     }
 
+    const fn should_summon_running_instance(self) -> bool {
+        !matches!(self, Self::SilentStart)
+    }
+
+    const fn startup_failure_is_interactive(self) -> bool {
+        !matches!(self, Self::Background | Self::SilentStart)
+    }
+
     const fn correlation_id(self) -> Option<Uuid> {
         match self {
             Self::BrowserDialog { correlation_id } => Some(correlation_id),
@@ -127,14 +180,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
         .indexer_bridge
         .take()
         .context("desktop runtime did not provide an indexer bridge")?;
-    let clipboard_history = runtime
-        .clipboard_history
+    let clipboard_worker = runtime
+        .clipboard_worker
         .take()
-        .context("desktop runtime did not provide clipboard history")?;
-    let clipboard_asset_dir = runtime
-        .clipboard_asset_dir
-        .take()
-        .context("desktop runtime did not provide a clipboard image directory")?;
+        .context("desktop runtime did not provide clipboard history worker")?;
     let finder_catalog = runtime
         .finder_catalog
         .take()
@@ -152,6 +201,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
     let log_dir = runtime.log_dir.clone();
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
+    let worker_shutdown = clipboard_worker.clone();
     Application::new()
         .with_assets(NxToolsAssets)
         .run(move |cx: &mut App| {
@@ -235,8 +285,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             .detach();
             let clipboard = cx.new(|cx| {
                 ClipboardApplication::new(
-                    clipboard_history,
-                    clipboard_asset_dir,
+                    clipboard_worker,
                     Rc::clone(&platform_bridge),
                     app_config.clone(),
                     config_path.clone(),
@@ -273,19 +322,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let close_platform = Rc::clone(&platform_bridge);
             let close_behavior = Rc::clone(&system_settings);
             let startup_started_at = Instant::now();
+            let placement = main_window_placement(cx);
             let window = cx.open_window(
                 WindowOptions {
-                    // Boot DPI race: gpui's monitor-check multiplies our
-                    // logical center by the primary display's scale factor.
-                    // When that read races the session DPI settle it fails
-                    // and gpui falls back to its full default bounds
-                    // (1536x864), which the user sees as a giant window.
-                    // Pre-scale the logical bounds so the physical center is
-                    // exact and the monitor check succeeds.
-                    window_bounds: Some(WindowBounds::centered(
-                        boot_dpi_compensated_size(cx),
-                        cx,
-                    )),
+                    window_bounds: Some(placement.bounds),
                     titlebar: Some(TitlebarOptions {
                         title: Some("NxTools".into()),
                         appears_transparent: true,
@@ -297,7 +337,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                     is_movable: true,
                     is_resizable: true,
                     is_minimizable: true,
-                    display_id: None,
+                    display_id: placement.display_id,
                     window_background: WindowBackgroundAppearance::Opaque,
                     app_id: Some("NxTools.Next".into()),
                     window_min_size: Some(size(px(920.0), px(480.0))),
@@ -407,6 +447,9 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             });
             cx.set_global(PlatformEventDispatcherGlobal::new(dispatcher));
         });
+    worker_shutdown
+        .shutdown()
+        .context("failed to flush clipboard history worker during shutdown")?;
 
     drop(runtime);
     Ok(())
@@ -428,36 +471,6 @@ fn install_panic_logging() {
     });
 }
 
-/// Boot DPI race: gpui's monitor-check multiplies our logical center by the
-/// display's scale factor; when that read races the session DPI settle at
-/// login it fails and gpui falls back to its full default bounds
-/// (1536x864), which reads as a giant main window. Pre-scale the logical
-/// size with the current system DPI so the physical center is exact and the
-/// monitor check succeeds.
-    #[allow(unsafe_code)] // GetDeviceCaps DPI read has no safe wrapper.
-fn boot_dpi_compensated_size(cx: &App) -> gpui::Size<gpui::Pixels> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Graphics::Gdi::{
-            GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX,
-        };
-        let hdc = unsafe { GetDC(std::ptr::null_mut()) };
-        if !hdc.is_null() {
-            let dpi = unsafe { GetDeviceCaps(hdc, LOGPIXELSX as i32) } as u32;
-            unsafe { ReleaseDC(std::ptr::null_mut(), hdc) };
-            if dpi > 0 && dpi != 96 {
-                let scale = dpi as f32 / 96.0;
-                return gpui::size(
-                    gpui::px(1060.0 / scale),
-                    gpui::px(650.0 / scale),
-                );
-            }
-        }
-    }
-    let _ = cx;
-    gpui::size(gpui::px(1060.0), gpui::px(650.0))
-}
-
 fn main() {
     let instance_wait = protected_restart_instance_wait();
     let launch_mode = match DesktopLaunchMode::from_arguments(std::env::args()) {
@@ -472,12 +485,22 @@ fn main() {
         Ok(false) => {}
         Err(error) => eprintln!("NxTools could not use the protected desktop copy: {error:#}"),
     }
-    // A second desktop launch while one is already running is not a failure:
-    // summon the running instance's main window and exit cleanly.
-    match runtime::summon_running_desktop() {
-        Ok(true) => return,
-        Ok(false) => {}
-        Err(error) => eprintln!("NxTools could not summon the running instance: {error:#}"),
+    if launch_mode.should_summon_running_instance() {
+        // A second ordinary desktop launch is not a failure: summon the
+        // running instance's main window and exit cleanly.
+        match runtime::summon_running_desktop() {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => eprintln!("NxTools could not summon the running instance: {error:#}"),
+        }
+    } else {
+        match runtime::desktop_instance_is_running() {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("NxTools could not check the existing desktop instance: {error:#}");
+            }
+        }
     }
     let result = match launch_mode {
         DesktopLaunchMode::Background => runtime::run_background_download_host(instance_wait)
@@ -494,7 +517,7 @@ fn main() {
         // report or raising a native dialog.
         let error_text = format!("{error:#}");
         if error_text.contains("another desktop instance is already running") {
-            eprintln!("NxTools is already running; the existing window was focused.");
+            eprintln!("NxTools is already running; no new window was opened.");
             std::process::exit(0);
         }
         let log_dir = AppPaths::discover().ok().map(|paths| paths.log_dir);
@@ -502,7 +525,7 @@ fn main() {
             let host = executable.parent()?.join("NxTools.PlatformHost.exe");
             host.exists().then_some(host)
         });
-        let interactive = !matches!(launch_mode, DesktopLaunchMode::Background);
+        let interactive = launch_mode.startup_failure_is_interactive();
         startup_failure::report(
             log_dir.as_deref(),
             platform_host.as_deref(),
@@ -636,6 +659,7 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod protected_desktop_tests {
     use super::*;
+    use gpui::TestAppContext;
 
     #[test]
     fn browser_dialog_launch_minimizes_main_window_without_claiming_focus() {
@@ -684,6 +708,63 @@ mod protected_desktop_tests {
         assert_eq!(silent, DesktopLaunchMode::SilentStart);
         assert!(!silent.main_window_focus());
         assert!(!silent.main_window_show());
+    }
+
+    #[test]
+    fn silent_start_never_summons_or_surfaces_an_interactive_failure() {
+        let silent = DesktopLaunchMode::SilentStart;
+        let normal = DesktopLaunchMode::Normal;
+
+        assert!(!silent.should_summon_running_instance());
+        assert!(normal.should_summon_running_instance());
+        assert!(!silent.startup_failure_is_interactive());
+        assert!(normal.startup_failure_is_interactive());
+    }
+
+    #[test]
+    fn main_window_size_remains_logical_at_common_boot_dpi_scales() {
+        let expected = size(px(1060.0), px(650.0));
+        for dpi_scale in [1.0_f32, 1.25, 1.5] {
+            assert_eq!(
+                main_window_logical_size(),
+                expected,
+                "initial size must not be pre-scaled at {dpi_scale:.2}x DPI"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn initial_window_placement_binds_bounds_to_the_native_display(cx: &mut TestAppContext) {
+        let display_id = cx.update(|app| {
+            app.primary_display()
+                .expect("test platform primary display")
+                .id()
+        });
+        for dpi_scale in [1.0_f32, 1.25, 1.5] {
+            let logical_display_bounds = gpui::Bounds::new(
+                gpui::point(px(0.0), px(0.0)),
+                size(px(2560.0 / dpi_scale), px(1440.0 / dpi_scale)),
+            );
+            let placement =
+                main_window_placement_for_display(Some((display_id, logical_display_bounds)));
+            let bounds = placement.bounds.get_bounds();
+
+            assert_eq!(placement.display_id, Some(display_id));
+            assert_eq!(bounds.size, main_window_logical_size());
+            assert_eq!(bounds.center().x * dpi_scale, px(1280.0));
+            assert_eq!(bounds.center().y * dpi_scale, px(720.0));
+        }
+
+        let fallback = main_window_placement_for_display(None);
+        assert_eq!(fallback.display_id, None);
+        assert_eq!(
+            fallback.bounds.get_bounds().size,
+            main_window_logical_size()
+        );
+        assert_eq!(
+            fallback.bounds.get_bounds().origin,
+            gpui::point(px(0.0), px(0.0))
+        );
     }
 
     #[test]

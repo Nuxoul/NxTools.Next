@@ -355,6 +355,7 @@ mod tests {
                 window_title: String::new(),
             },
             captured_at_unix_ms: 1,
+            last_used_at_unix_ms: 1,
             copy_count: 1,
             is_favorite: false,
             is_pinned: false,
