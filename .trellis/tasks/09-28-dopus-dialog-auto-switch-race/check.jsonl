@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Quality checks for the desktop slice"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Diagnostic review constraints"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
+{"file": "docs/reference-code/system-shell.md", "reason": "DOpus lifecycle acceptance reference"}

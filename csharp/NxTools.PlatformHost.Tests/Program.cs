@@ -54,6 +54,8 @@ internal static class Program
             ("Directory Opus frame focus keeps captured pane navigable", DirectoryOpusFrameFocusKeepsCapturedPaneNavigable),
             ("Directory Opus pane selection uses title and geometry before cached pane", DirectoryOpusPaneSelectionUsesReferenceEvidence),
             ("Directory source recognition failure clears stale source", DirectorySourceRecognitionFailureClearsStaleSource),
+            ("Directory source recognition survives return to a known file dialog", DirectorySourceRecognitionSurvivesReturnToKnownFileDialog),
+            ("pending directory source recognition is bounded and superseded safely", PendingDirectorySourceRecognitionIsBoundedAndSuperseded),
             ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
             ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
             ("Total Commander adapter uses the captured source panel", TotalCommanderAdapterPreservesSourcePanel),
@@ -1927,6 +1929,58 @@ internal static class Program
                 @"C:\\Dialog",
                 null));
         Assert(candidate is null);
+        return Task.CompletedTask;
+    }
+
+    private static Task DirectorySourceRecognitionSurvivesReturnToKnownFileDialog()
+    {
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(enabled: true);
+        var dialog = new DirectoryNavigationContext(
+            DirectoryNavigationAdapter.FileDialogHost,
+            77,
+            @"C:\Dialog",
+            null);
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        var retry = new FileDialogRecognitionRetry(maxAttempts: 3);
+        Assert(retry.Begin(88));
+        Assert(!retry.TryBeginAttempt(77, out var deferredTarget));
+        Assert(deferredTarget == 88);
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        Assert(retry.TryBeginPendingAttempt(out var backgroundTarget));
+        Assert(backgroundTarget == 88);
+        tracker.ObserveDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                backgroundTarget,
+                @"D:\Workspace",
+                "dopus:lister-88"),
+            "Workspace (Directory Opus)");
+        var candidate = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException(
+                "A source recognized after the dialog returned should be consumed immediately.");
+        Assert(candidate.SourceWindowHandle == 88);
+        Assert(tracker.IsCurrent(candidate));
+        return Task.CompletedTask;
+    }
+
+    private static Task PendingDirectorySourceRecognitionIsBoundedAndSuperseded()
+    {
+        var retry = new FileDialogRecognitionRetry(maxAttempts: 2);
+        Assert(!retry.HasPendingAttempt(0));
+        Assert(retry.Begin(88));
+        Assert(retry.TryBeginPendingAttempt(out var firstTarget));
+        Assert(firstTarget == 88);
+        Assert(retry.Begin(99));
+        Assert(retry.TryBeginPendingAttempt(out var supersededTarget));
+        Assert(supersededTarget == 99);
+        retry.Complete(99);
+        Assert(!retry.TryBeginPendingAttempt(out _));
+        Assert(retry.Begin(77));
+        Assert(retry.TryBeginPendingAttempt(out _));
+        Assert(retry.TryBeginPendingAttempt(out _));
+        Assert(!retry.TryBeginPendingAttempt(out var exhaustedTarget));
+        Assert(exhaustedTarget == 0);
         return Task.CompletedTask;
     }
 

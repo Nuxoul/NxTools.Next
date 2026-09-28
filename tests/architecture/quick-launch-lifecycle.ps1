@@ -1769,18 +1769,25 @@ if ($protocolSource -notmatch 'QuickLaunchAutoSwitchRequested' -or
     $autoQuickSwitchSource -notmatch 'KnownDialogLimit' -or
     $autoQuickSwitchSource -notmatch 'IsCurrent' -or
     $fileDialogRecognitionRetrySource -notmatch 'MaxAttempts|_maxAttempts' -or
+    $fileDialogRecognitionRetrySource -notmatch 'TryBeginPendingAttempt' -or
     $windowsAdapterSource -notmatch 'FileDialogRecognitionTimerId' -or
     $windowsAdapterSource -notmatch 'IsPotentialHost' -or
     $windowsAdapterSource -notmatch 'RetryFileDialogRecognition' -or
+    $windowsAdapterSource -notmatch 'TryBeginPendingAttempt' -or
+    $windowsAdapterSource -notmatch 'Capture\(new IntPtr\(windowHandle\)\)' -or
+    $windowsAdapterSource -notmatch 'ProcessRecognizedFileDialog\(fileDialog\)' -or
+    $windowsAdapterSource -notmatch 'target_destroyed' -or
+    $windowsAdapterSource -notmatch 'DiscardPendingSource\(\)' -or
     $windowsAdapterSource -notmatch 'TryGetCurrentDirectory' -or
     $windowsAdapterSource -notmatch 'QuickLaunchAutoSwitchRequestedEvent') {
     throw @'
 Quick-launch automatic-switch regression: the Windows adapter must recognize
-a previously known file-dialog -> Explorer -> same-dialog round trip, freeze
-the Explorer path off the foreground hook, preserve that source while a newly
-created dialog finishes initializing, and publish a generation-scoped request.
-Rust must retain settings/freshness validation and issue the shared directory
-navigation command instead of letting C# navigate implicitly.
+a previously known file-dialog -> Directory Opus/Explorer -> same-dialog round
+trip, bind delayed source recognition to the saved source HWND, clear stale
+source state before a new recognition attempt, stop when the source HWND is
+destroyed, and publish a generation-scoped request. Rust must retain
+settings/freshness validation and issue the shared directory navigation command
+instead of letting C# navigate implicitly.
 '@
 }
 

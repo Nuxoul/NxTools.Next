@@ -96,3 +96,66 @@ if panel.has_more_entries && !panel.page_request_pending && !panel.search_pendin
 }
 ```
 (To be filled by the team)
+
+## Scenario: Foreground-independent Directory Opus source recognition
+
+### 1. Scope / Trigger
+
+- Trigger: changes to PlatformHost Directory Opus/third-party source recognition, file-dialog foreground handling, or Auto Quick Switch dirty-state consumption.
+- Purpose: prevent a delayed source capture from being replaced by the file dialog's foreground HWND and prevent a stale source from causing duplicate navigation.
+
+### 2. Signatures
+
+- `FileDialogRecognitionRetry.TryBeginAttempt(foregroundWindowHandle, out windowHandle)` remains foreground-gated for file-dialog recognition.
+- `FileDialogRecognitionRetry.TryBeginPendingAttempt(out windowHandle)` is reserved for passive retries against a previously saved source HWND.
+- `WindowsPlatformAdapter.EventWindow.RetryDirectorySourceRecognition()` captures the saved HWND, not the current foreground HWND.
+
+### 3. Contracts
+
+- When a third-party source capture is delayed, clear the previous Auto Quick Switch dirty source before scheduling the new bounded attempt.
+- A passive source retry may read the saved lister while the file dialog is foreground, but must not activate, focus, navigate, send `WM_COPYDATA`, or send Rust IPC during recognition.
+- On source success, publish one source and immediately re-consume the currently known file dialog if it is still foreground.
+- On destroy, supersession, timer failure, or budget exhaustion, clear the pending source and never publish the retired HWND.
+- Recognition diagnostics may include HWND, attempt count, elapsed time, terminal reason, and native error code; never include paths, titles, or payload data.
+
+### 4. Validation & Error Matrix
+
+- Current foreground differs from pending source HWND -> probe the pending HWND through `TryBeginPendingAttempt`; do not replace the target.
+- Pending source HWND is destroyed -> terminate with `target_destroyed` and clear dirty state.
+- Capture remains unavailable until the retry budget expires -> terminate with `attempt_budget_exhausted` and clear dirty state.
+- File dialog returns before source success -> source success must yield one candidate for that same dialog, not zero or two candidates.
+- HWND `0` -> never report a pending retry.
+
+### 5. Good / Base / Bad Cases
+
+- Good: DOpus capture settles after the file dialog returns; the saved lister is read passively and the dialog navigates once.
+- Base: DOpus capture succeeds while DOpus remains foreground; the existing source-to-dialog path is unchanged.
+- Bad: return to the dialog consumes an old source, then the delayed DOpus source is consumed again.
+
+### 6. Tests Required
+
+- Regression asserts a known dialog plus delayed source capture produces exactly one candidate after the pending HWND is probed in the background.
+- Retry test asserts supersession, budget exhaustion, and `HasPendingAttempt(0) == false`.
+- Architecture gate asserts the EventWindow caller uses `TryBeginPendingAttempt`, saved-HWND capture, stale-source clearing, dialog re-consumption, and destroy termination.
+- Full PlatformHost suite and interactive DOpus/file-dialog soak are required when the environment provides DOpus.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```csharp
+var foreground = _foregroundContextProvider.Capture();
+_directorySourceRecognitionRetry.TryBeginAttempt(
+    foreground.WindowHandle,
+    out var windowHandle);
+var attempt = DirectoryNavigationAdapter.TryCaptureLocalAttempt(foreground);
+```
+
+#### Correct
+
+```csharp
+var foreground = _foregroundContextProvider.Capture();
+_directorySourceRecognitionRetry.TryBeginPendingAttempt(out var windowHandle);
+var target = _foregroundContextProvider.Capture(new IntPtr(windowHandle));
+var attempt = DirectoryNavigationAdapter.TryCaptureLocalAttempt(target);
+```

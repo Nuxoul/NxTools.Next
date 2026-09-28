@@ -53,11 +53,42 @@ internal sealed class FileDialogRecognitionRetry
         }
     }
 
+    public bool TryBeginPendingAttempt(out long windowHandle)
+    {
+        lock (_gate)
+        {
+            windowHandle = _windowHandle;
+            if (_windowHandle == 0)
+            {
+                return false;
+            }
+            if (_attempts >= _maxAttempts)
+            {
+                CancelLocked();
+                windowHandle = 0;
+                return false;
+            }
+            _attempts++;
+            return true;
+        }
+    }
+
+    public int AttemptCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _attempts;
+            }
+        }
+    }
+
     public bool HasPendingAttempt(long windowHandle)
     {
         lock (_gate)
         {
-            return _windowHandle == windowHandle && _attempts < _maxAttempts;
+            return windowHandle != 0 && _windowHandle == windowHandle && _attempts < _maxAttempts;
         }
     }
 

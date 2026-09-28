@@ -132,6 +132,8 @@ internal sealed partial class WindowsPlatformAdapter
         private bool _fileDialogSearchHostVisible;
         private long _fileDialogRecognitionWindowHandle;
         private long _fileDialogRecognitionStartedAt;
+        private long _directorySourceRecognitionStartedAt;
+        private long _directorySourceRecognitionWindowHandle;
         private PlaceFileDialogSearchWindowCommand? _fileDialogSearchPlacement;
         private PlaceTaskbarProgressOverlayCommand? _taskbarOverlayPlacement;
         private Guid? _taskbarOverlayCorrelationId;
@@ -966,6 +968,7 @@ internal sealed partial class WindowsPlatformAdapter
                 directoryAttempt.Failure?.Fatal != true &&
                 ThirdPartyFileManagerAdapter.IsPotentialHost(context))
             {
+                _autoQuickSwitch.DiscardPendingSource();
                 ScheduleDirectorySourceRecognition(context.WindowHandle);
                 return;
             }
@@ -987,37 +990,50 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void ScheduleDirectorySourceRecognition(long windowHandle)
         {
+            var newTarget = _directorySourceRecognitionWindowHandle != windowHandle;
             if (!_directorySourceRecognitionRetry.Begin(windowHandle))
             {
                 return;
             }
-            _ = NativeMethods.SetTimer(
-                Handle,
-                (UIntPtr)DirectorySourceRecognitionTimerId,
-                FileDialogRecognitionIntervalMs,
-                IntPtr.Zero);
+            if (newTarget)
+            {
+                _directorySourceRecognitionWindowHandle = windowHandle;
+                _directorySourceRecognitionStartedAt = Stopwatch.GetTimestamp();
+                _log.Write(
+                    "info",
+                    "quick_launch.directory_source_recognition_started",
+                    fields: new Dictionary<string, object?>
+                    {
+                        ["target_window_handle"] = windowHandle,
+                        ["max_attempts"] = DirectorySourceRecognitionMaxAttempts
+                    });
+            }
+            if (NativeMethods.SetTimer(
+                    Handle,
+                    (UIntPtr)DirectorySourceRecognitionTimerId,
+                    FileDialogRecognitionIntervalMs,
+                    IntPtr.Zero) == UIntPtr.Zero)
+            {
+                FailDirectorySourceRecognition(
+                    "timer_unavailable",
+                    Marshal.GetLastWin32Error());
+            }
         }
 
         private void RetryDirectorySourceRecognition()
         {
             var foreground = _foregroundContextProvider.Capture();
-            if (!_directorySourceRecognitionRetry.TryBeginAttempt(
-                    foreground.WindowHandle,
+            if (!_directorySourceRecognitionRetry.TryBeginPendingAttempt(
                     out var windowHandle))
             {
-                if (windowHandle != 0 &&
-                    _directorySourceRecognitionRetry.HasPendingAttempt(windowHandle))
-                {
-                    ScheduleDirectorySourceRecognition(windowHandle);
-                }
-                else
-                {
-                    _autoQuickSwitch.DiscardPendingSource();
-                }
+                _autoQuickSwitch.DiscardPendingSource();
                 return;
             }
+            var targetContext = foreground.WindowHandle == windowHandle
+                ? foreground
+                : _foregroundContextProvider.Capture(new IntPtr(windowHandle));
             var attempt = DirectoryNavigationAdapter.TryCaptureLocalAttempt(
-                foreground);
+                targetContext);
             var source = attempt.Context;
             if (source is not null &&
                 source.Host.Equals(
@@ -1025,15 +1041,26 @@ internal sealed partial class WindowsPlatformAdapter
                     StringComparison.Ordinal))
             {
                 var displayName = DirectorySourceDisplayName(
-                    foreground.ProcessName,
+                    targetContext.ProcessName,
                     source);
                 _autoQuickSwitch.ObserveDirectorySource(source, displayName);
                 CompleteDirectorySourceRecognition(windowHandle);
+                if (foreground.WindowHandle != windowHandle)
+                {
+                    var fileDialog = FileDialogWindowAdapter.TryCapture(foreground);
+                    if (fileDialog is not null)
+                    {
+                        ProcessFileDialogSearchHost(foreground, fileDialog);
+                        ProcessRecognizedFileDialog(fileDialog);
+                    }
+                }
                 return;
             }
             if (attempt.Failure?.Fatal == true)
             {
-                CancelDirectorySourceRecognition();
+                FailDirectorySourceRecognition(
+                    "fatal_capture_failure",
+                    attempt.Failure.NativeErrorCode);
                 _autoQuickSwitch.DiscardPendingSource();
                 return;
             }
@@ -1042,15 +1069,60 @@ internal sealed partial class WindowsPlatformAdapter
                 ScheduleDirectorySourceRecognition(windowHandle);
                 return;
             }
+            FailDirectorySourceRecognition("attempt_budget_exhausted", null);
             _autoQuickSwitch.DiscardPendingSource();
         }
 
         private void CompleteDirectorySourceRecognition(long windowHandle)
         {
+            var attempts = _directorySourceRecognitionRetry.AttemptCount;
+            var elapsed = _directorySourceRecognitionStartedAt == 0
+                ? 0
+                : Stopwatch.GetElapsedTime(_directorySourceRecognitionStartedAt)
+                    .TotalMilliseconds;
+            _log.Write(
+                "info",
+                "quick_launch.directory_source_recognition_completed",
+                fields: new Dictionary<string, object?>
+                {
+                    ["target_window_handle"] = windowHandle,
+                    ["attempts"] = attempts,
+                    ["elapsed_ms"] = elapsed
+                });
             _directorySourceRecognitionRetry.Complete(windowHandle);
             _ = NativeMethods.KillTimer(
                 Handle,
                 (UIntPtr)DirectorySourceRecognitionTimerId);
+            _directorySourceRecognitionStartedAt = 0;
+            _directorySourceRecognitionWindowHandle = 0;
+        }
+
+        private void FailDirectorySourceRecognition(
+            string reason,
+            int? nativeErrorCode)
+        {
+            var windowHandle = _directorySourceRecognitionWindowHandle;
+            if (windowHandle != 0)
+            {
+                var attempts = _directorySourceRecognitionRetry.AttemptCount;
+                var elapsed = _directorySourceRecognitionStartedAt == 0
+                    ? 0
+                    : Stopwatch.GetElapsedTime(_directorySourceRecognitionStartedAt)
+                        .TotalMilliseconds;
+                _log.Write(
+                    "warning",
+                    "quick_launch.directory_source_recognition_failed",
+                    fields: new Dictionary<string, object?>
+                    {
+                        ["target_window_handle"] = windowHandle,
+                        ["attempts"] = attempts,
+                        ["elapsed_ms"] = elapsed,
+                        ["reason"] = reason,
+                        ["native_error_code"] = nativeErrorCode
+                    });
+            }
+            CancelDirectorySourceRecognition();
+            _autoQuickSwitch.DiscardPendingSource();
         }
 
         private void CancelDirectorySourceRecognition()
@@ -1059,6 +1131,8 @@ internal sealed partial class WindowsPlatformAdapter
             _ = NativeMethods.KillTimer(
                 Handle,
                 (UIntPtr)DirectorySourceRecognitionTimerId);
+            _directorySourceRecognitionStartedAt = 0;
+            _directorySourceRecognitionWindowHandle = 0;
         }
 
         private void ProcessRecognizedFileDialog(FileDialogContext fileDialog)
@@ -1424,6 +1498,13 @@ internal sealed partial class WindowsPlatformAdapter
                     WmTaskbarOverlayChanged,
                     IntPtr.Zero,
                     IntPtr.Zero);
+            }
+            if (eventType == EventObjectDestroy &&
+                objectId == ObjIdWindow &&
+                window.ToInt64() == _directorySourceRecognitionWindowHandle)
+            {
+                FailDirectorySourceRecognition("target_destroyed", null);
+                return;
             }
             if ((eventType is EventObjectCreate or EventObjectShow) &&
                 (_fileDialogRecognitionRetry.ShouldRetryForStructureChange(

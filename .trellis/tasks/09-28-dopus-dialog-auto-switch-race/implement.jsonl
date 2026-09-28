@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Desktop regression and cross-layer quality constraints"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "PlatformHost diagnostic boundary"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Rust, C# and IPC ownership boundary"}
+{"file": "docs/reference-code/listary-file-dialog-quick-switch.md", "reason": "Behavioral source for file-dialog and source synchronization"}
+{"file": "docs/reference-code/system-shell.md", "reason": "DOpus lifecycle and regression invariants"}
