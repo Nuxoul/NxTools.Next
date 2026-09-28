@@ -573,7 +573,7 @@ impl NewDownloadView {
             });
             if let Ok(Some((file_name, resolved_file_name, _confirmed, window_size))) = applied {
                 let initial_platform = Rc::clone(&platform_for_resize);
-                let native_resize = source_window
+                let _ = source_window
                     .update(cx, move |_, window, cx| {
                         if let Some(resolved_file_name) = resolved_file_name {
                             file_name.update(cx, |input, cx| {
@@ -583,28 +583,6 @@ impl NewDownloadView {
                         apply_new_download_window_resize(&initial_platform, window, window_size)
                     })
                     .unwrap_or(false);
-
-                if native_resize {
-                    for retry_delay in [
-                        Duration::from_millis(250),
-                        Duration::from_millis(500),
-                        Duration::from_millis(1_000),
-                        Duration::from_millis(2_000),
-                        Duration::from_millis(4_000),
-                    ] {
-                        gpui::Timer::after(retry_delay).await;
-                        let still_current = this
-                            .update(cx, |view, _| view.probe_generation == generation)
-                            .unwrap_or(false);
-                        if !still_current {
-                            break;
-                        }
-                        let retry_platform = Rc::clone(&platform_for_resize);
-                        let _ = source_window.update(cx, move |_, window, _| {
-                            apply_new_download_window_resize(&retry_platform, window, window_size);
-                        });
-                    }
-                }
             }
         })
         .detach();
@@ -649,17 +627,15 @@ impl NewDownloadView {
                     )
                 }) {
                     Ok(task_id) => {
-                        // Preserve the dialog's real position for the progress
-                        // window before this window is destroyed.
                         application.update(cx, |application, _cx| {
                             application.stash_task_window_anchor(task_id, source_native_handle);
                         });
-                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
                         let application = application.clone();
                         cx.defer(move |cx| {
                             application.update(cx, |application, cx| {
                                 application.request_task_window(task_id, cx);
                             });
+                            let _ = source_window.update(cx, |_, window, _| window.remove_window());
                         });
                     }
                     Err(message) => {
@@ -757,11 +733,9 @@ impl NewDownloadView {
                             application.stash_task_window_anchor(task_id, source_native_handle);
                         });
                     }
-                    if plan.close_source_window {
-                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
-                    }
                     if let Some(task_id) = plan.deferred_task_window {
                         let application = application.clone();
+                        let close_source_window = plan.close_source_window;
                         cx.defer(move |cx| {
                             info!(
                                 task_id = %task_id.as_uuid(),
@@ -770,7 +744,13 @@ impl NewDownloadView {
                             application.update(cx, |application, cx| {
                                 application.request_task_window(task_id, cx);
                             });
+                            if close_source_window {
+                                let _ =
+                                    source_window.update(cx, |_, window, _| window.remove_window());
+                            }
                         });
+                    } else if plan.close_source_window {
+                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
                     }
                 }
                 Err(message) => {

@@ -3,13 +3,49 @@
 //! dwell time; clicking a row copies the value and closes the panel.
 
 use crate::clipboard::ClipboardApplication;
+use crate::tools::link_detector::DetectedLinkKind;
 use gpui::{
     AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, px, rgb,
 };
 use gpui_component::Icon;
+use tracing::info;
 
 pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkPanelRoute {
+    CopyOnly,
+    Browser,
+    OpenShell {
+        action: nxtools_protocol::ShellOpenAction,
+    },
+}
+
+pub(crate) fn link_panel_route(
+    kind: DetectedLinkKind,
+    auto_open_browser: bool,
+    copy_only: bool,
+) -> LinkPanelRoute {
+    if copy_only {
+        return LinkPanelRoute::CopyOnly;
+    }
+    match kind {
+        DetectedLinkKind::Web => {
+            if auto_open_browser {
+                LinkPanelRoute::Browser
+            } else {
+                LinkPanelRoute::CopyOnly
+            }
+        }
+        DetectedLinkKind::LocalFile => LinkPanelRoute::OpenShell {
+            action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
+        },
+        DetectedLinkKind::LocalDirectory => LinkPanelRoute::OpenShell {
+            action: nxtools_protocol::ShellOpenAction::Open,
+        },
+    }
+}
 
 pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
 /// Rendered row height (`.h(px(28.0))` on each link row below).
@@ -66,6 +102,8 @@ pub(crate) struct LinkPanelView {
     pub(crate) expanded: bool,
     pub(crate) auto_hide_ms: u64,
     pub(crate) window_handle: Option<AnyWindowHandle>,
+    pub(crate) auto_open_browser: bool,
+    pub(crate) copy_only: bool,
 }
 
 impl LinkPanelView {
@@ -75,10 +113,14 @@ impl LinkPanelView {
         &mut self,
         links: Vec<DetectedLinkRow>,
         window_handle: AnyWindowHandle,
+        auto_open_browser: bool,
+        copy_only: bool,
         cx: &mut Context<Self>,
     ) {
         self.links = links;
         self.expanded = false;
+        self.auto_open_browser = auto_open_browser;
+        self.copy_only = copy_only;
         self.arm_auto_hide(window_handle, cx);
     }
 
@@ -136,6 +178,8 @@ impl Render for LinkPanelView {
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
             let copy_value = link.copy_value.clone();
+            let kind = link.kind;
+            let route = link_panel_route(kind, self.auto_open_browser, self.copy_only);
             container = container.child(
                 div()
                     .id(("link-panel-row", index))
@@ -151,44 +195,35 @@ impl Render for LinkPanelView {
                     .cursor_pointer()
                     .hover(move |style| style.bg(rgb(0x3f3f46)))
                     .on_click(move |_event, window, cx| {
-                        tracing::info!(
+                        let route = route;
+                        let copy_value = copy_value.clone();
+                        let value_length = copy_value.len();
+                        info!(
                             event = "tools.link_panel.row_clicked",
-                            %copy_value,
+                            target_kind = kind.label(),
+                            value_length,
+                            route = ?route,
                             "link panel row clicked"
                         );
-                        // Close FIRST. Writing the link to the clipboard
-                        // raises a fresh capture; if the panel is still open
-                        // the echo capture restages it and the click looks
-                        // like a no-op.
-                        // Close via the window's own remove_window: bouncing
-                        // through the app entity re-enters THIS window's update
-                        // context, which errors and left the panel on screen.
+                        // Close FIRST. The panel's own clipboard echo must not
+                        // be able to restage this window.
                         window.remove_window();
-                        if let Some(application) = application.upgrade() {
-                            application.update(cx, |application, _cx| {
-                                application.note_panel_copied(copy_value.clone());
-                                application.forget_link_panel();
-                                if application.link_panel_should_open_browser() {
-                                    let url = if copy_value.contains("://") {
-                                        copy_value.clone()
-                                    } else {
-                                        format!("https://{}", copy_value)
-                                    };
-                                    use std::os::windows::process::CommandExt as _;
-                                    tracing::info!(
-                                        event = "tools.link_panel.browser_opened",
-                                        %url,
-                                        "opening the clicked link in the browser"
+                        let application = application.clone();
+                        cx.defer(move |cx| {
+                            if let Some(application) = application.upgrade() {
+                                application.update(cx, |application, _cx| {
+                                    application.note_panel_copied(copy_value.clone());
+                                    application.forget_link_panel();
+                                    application.dispatch_link_panel_route(
+                                        route,
+                                        &copy_value,
+                                        kind,
+                                        value_length,
                                     );
-                                    let _ = std::process::Command::new("cmd")
-                                        .args(["/C", "start", "", &url])
-                                        .creation_flags(0x0800_0000)
-                                        .spawn();
-                                }
-                            });
-                        }
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_value.clone()));
-                        window.refresh();
+                                });
+                            }
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_value));
+                        });
                     })
                     .child(
                         Icon::new(crate::icons::MaterialIcon::ContentCopy)
@@ -316,5 +351,36 @@ mod tests {
                 "expanding {rows} links must grow the window past the collapsed height"
             );
         }
+    }
+    #[test]
+    fn local_files_and_directories_use_shell_routes() {
+        assert_eq!(
+            link_panel_route(DetectedLinkKind::LocalFile, true, false),
+            LinkPanelRoute::OpenShell {
+                action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
+            }
+        );
+        assert_eq!(
+            link_panel_route(DetectedLinkKind::LocalDirectory, true, false),
+            LinkPanelRoute::OpenShell {
+                action: nxtools_protocol::ShellOpenAction::Open,
+            }
+        );
+    }
+
+    #[test]
+    fn web_targets_keep_browser_behavior_but_copy_only_never_launches() {
+        assert_eq!(
+            link_panel_route(DetectedLinkKind::Web, true, false),
+            LinkPanelRoute::Browser
+        );
+        assert_eq!(
+            link_panel_route(DetectedLinkKind::Web, false, false),
+            LinkPanelRoute::CopyOnly
+        );
+        assert_eq!(
+            link_panel_route(DetectedLinkKind::LocalFile, true, true),
+            LinkPanelRoute::CopyOnly
+        );
     }
 }

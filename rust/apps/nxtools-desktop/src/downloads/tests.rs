@@ -6449,10 +6449,13 @@ fn add_window_submission_never_opens_a_gpui_window_while_the_view_is_leased() {
     let close = view_submit
         .find("source_window.update")
         .expect("source add window is closed after acceptance");
-    let deferred_open = view_submit[close..]
-        .find("cx.defer(move |cx|")
-        .expect("task window opening is scheduled after source close");
-    assert!(deferred_open > 0);
+    let deferred_open = view_submit
+        .find("application.request_task_window")
+        .expect("task window opening is scheduled after acceptance");
+    assert!(
+        deferred_open < close,
+        "the replacement task window must be requested before the source window is retired"
+    );
 }
 
 #[test]
@@ -6501,6 +6504,25 @@ fn task_window_handoff_inherits_the_predecessor_position_natively() {
     );
 }
 
+#[test]
+fn task_window_handoff_places_before_revealing_the_replacement() {
+    let source = include_str!("../downloads/task_windows_impl.rs");
+    let open_body = source
+        .split("    pub(crate) fn open_task_window(")
+        .nth(1)
+        .and_then(|body| body.split("\n    pub(crate) fn update_task_window").next())
+        .expect("open_task_window body");
+    let hidden = open_body
+        .find("show: false")
+        .expect("replacement starts hidden");
+    let placement = open_body
+        .find("MoveWindowCenteredOverKey")
+        .expect("replacement is placed over the native anchor");
+    let reveal = open_body
+        .find("SetWindowVisibility")
+        .expect("replacement is revealed through the native visibility boundary");
+    assert!(hidden < placement && placement < reveal);
+}
 #[test]
 fn task_window_render_never_reads_the_parent_download_application() {
     let source = include_str!("../downloads/task_window.rs");
@@ -6552,20 +6574,13 @@ fn task_windows_use_compact_content_driven_phase_sizes() {
 }
 
 #[test]
-fn probe_resize_retries_after_a_user_move_and_rejects_stale_generations() {
+fn probe_resize_delegates_move_size_recovery_to_platform_host() {
     let source = include_str!("../downloads/new_download_view.rs");
-    for marker in [
-        "fn apply_new_download_window_resize(",
-        "PlatformCommand::SetWindowBoundsCentered",
-        "Duration::from_millis(4_000)",
-        "gpui::Timer::after(retry_delay)",
-        "view.probe_generation == generation",
-    ] {
-        assert!(
-            source.contains(marker),
-            "probe completion resize must preserve {marker}"
-        );
-    }
+    assert!(source.contains("fn apply_new_download_window_resize("));
+    assert!(source.contains("PlatformCommand::SetWindowBoundsCentered"));
+    assert!(source.contains("this.probe_generation != generation"));
+    assert!(!source.contains("gpui::Timer::after(retry_delay)"));
+    assert!(!source.contains("Duration::from_millis(4_000)"));
 }
 
 #[test]

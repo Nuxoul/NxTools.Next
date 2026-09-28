@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::metrics::PILL_PADDING_X;
-
+use gpui::{Animation, AnimationExt, ease_out_quint};
 pub(crate) struct DownloadTaskWindowPhaseLayout {
     pub(crate) size: gpui::Size<gpui::Pixels>,
     pub(crate) selector: &'static str,
@@ -62,6 +62,26 @@ pub(crate) fn details_expanded_after_phase_transition(
     }
 }
 
+fn download_task_window_phase_content(
+    phase_selector: &'static str,
+    phase_key: u64,
+    body: impl IntoElement,
+) -> impl IntoElement {
+    let animated = div().size_full().child(body).with_animation(
+        ("download-task-window-phase", phase_key),
+        Animation::new(std::time::Duration::from_millis(120)).with_easing(ease_out_quint()),
+        |surface, delta| {
+            surface
+                .opacity(0.94 + 0.06 * delta)
+                .relative()
+                .top(px(3.0 * (1.0 - delta)))
+        },
+    );
+    div()
+        .debug_selector(move || phase_selector.into())
+        .size_full()
+        .child(animated)
+}
 pub(crate) fn download_task_window_shell(
     theme: Theme,
     phase: DownloadWindowPhase,
@@ -69,6 +89,11 @@ pub(crate) fn download_task_window_shell(
     body: impl IntoElement,
     footer: impl IntoElement,
 ) -> impl IntoElement {
+    let phase_key = match phase {
+        DownloadWindowPhase::Progress => 1,
+        DownloadWindowPhase::Failed => 2,
+        DownloadWindowPhase::Completed => 3,
+    };
     let phase_selector = download_task_window_phase_layout(phase).selector;
     div()
         .debug_selector(|| "download-task-window-shell".into())
@@ -89,12 +114,11 @@ pub(crate) fn download_task_window_shell(
                 .debug_selector(|| "download-task-window-body".into())
                 .flex_1()
                 .min_h_0()
-                .child(
-                    div()
-                        .debug_selector(move || phase_selector.into())
-                        .size_full()
-                        .child(body),
-                ),
+                .child(download_task_window_phase_content(
+                    phase_selector,
+                    phase_key,
+                    body,
+                )),
         )
         .child(
             div()

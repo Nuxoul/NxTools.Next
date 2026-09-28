@@ -2,12 +2,33 @@
 //! Matching is deliberately conservative — the panel appears on every
 //! matching copy, so false positives are worse than misses.
 
+/// The kind determines the action taken after the row is clicked. It is kept
+/// separate from the display/copy strings so local paths never enter the URL
+/// construction branch in the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DetectedLinkKind {
+    Web,
+    LocalFile,
+    LocalDirectory,
+}
+
+impl DetectedLinkKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::LocalFile => "local_file",
+            Self::LocalDirectory => "local_directory",
+        }
+    }
+}
+
 /// One recognized target. `display` is what the panel shows; `copy_value` is
 /// what clicking the row puts back on the clipboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DetectedLink {
     pub display: String,
     pub copy_value: String,
+    pub kind: DetectedLinkKind,
 }
 
 const MAX_DETECTED_LINKS: usize = 8;
@@ -52,6 +73,7 @@ fn classify(candidate: &str) -> Option<DetectedLink> {
         return Some(DetectedLink {
             display: trimmed.to_owned(),
             copy_value: trimmed.to_owned(),
+            kind: DetectedLinkKind::Web,
         });
     }
     // Bare domains ("image.routerapi.net", optionally with a path) are
@@ -60,18 +82,21 @@ fn classify(candidate: &str) -> Option<DetectedLink> {
         return Some(DetectedLink {
             display: candidate.to_owned(),
             copy_value: candidate.to_owned(),
+            kind: DetectedLinkKind::Web,
         });
     }
-    if looks_like_drive_path(candidate) && std::path::Path::new(candidate).exists() {
+    if (looks_like_drive_path(candidate) || looks_like_unc_path(candidate))
+        && std::path::Path::new(candidate).exists()
+    {
+        let path = std::path::Path::new(candidate);
         return Some(DetectedLink {
             display: candidate.to_owned(),
             copy_value: candidate.to_owned(),
-        });
-    }
-    if looks_like_unc_path(candidate) && std::path::Path::new(candidate).exists() {
-        return Some(DetectedLink {
-            display: candidate.to_owned(),
-            copy_value: candidate.to_owned(),
+            kind: if path.is_dir() {
+                DetectedLinkKind::LocalDirectory
+            } else {
+                DetectedLinkKind::LocalFile
+            },
         });
     }
     None
@@ -126,18 +151,41 @@ mod tests {
         let links = detect_links("看这个 https://example.com/a?b=1。 还有 https://x.test/p,");
         assert_eq!(links.len(), 2);
         assert_eq!(links[0].copy_value, "https://example.com/a?b=1");
+        assert_eq!(links[0].kind, DetectedLinkKind::Web);
         assert_eq!(links[1].copy_value, "https://x.test/p");
+        assert_eq!(links[1].kind, DetectedLinkKind::Web);
     }
 
     #[test]
-    fn bare_domains_with_a_path_are_recognized() {
-        // The user's missed case: scheme-less CDN hosts.
+    fn bare_domains_with_a_path_are_recognized_as_web_targets() {
         let links = detect_links("image.routerapi.net");
         let bare = links
             .iter()
             .find(|link| link.copy_value.contains("routerapi.net"))
             .expect("bare domain with a path must be recognized");
         assert_eq!(bare.copy_value, "image.routerapi.net");
+        assert_eq!(bare.kind, DetectedLinkKind::Web);
+    }
+
+    #[test]
+    fn existing_executable_and_directory_paths_keep_distinct_local_kinds() {
+        let directory = tempfile::tempdir().expect("local-path fixture directory");
+        let executable = directory.path().join("Throne.exe");
+        std::fs::write(&executable, b"fixture").expect("local executable fixture");
+        let executable_text = executable.to_string_lossy().into_owned();
+        let directory_text = directory.path().to_string_lossy().into_owned();
+        let links = detect_links(&format!("{executable_text} {directory_text}"));
+
+        let file = links
+            .iter()
+            .find(|link| link.copy_value == executable_text)
+            .expect("existing executable must be recognized");
+        assert_eq!(file.kind, DetectedLinkKind::LocalFile);
+        let folder = links
+            .iter()
+            .find(|link| link.copy_value == directory_text)
+            .expect("existing directory must be recognized");
+        assert_eq!(folder.kind, DetectedLinkKind::LocalDirectory);
     }
 
     #[test]
@@ -147,6 +195,7 @@ mod tests {
         let links = detect_links(&format!("文件在 {}", path));
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].copy_value, path);
+        assert_eq!(links[0].kind, DetectedLinkKind::LocalFile);
     }
 
     #[test]

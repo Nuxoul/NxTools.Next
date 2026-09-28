@@ -41,6 +41,8 @@ use tracing::{error, info, warn};
 
 use crate::notifications::{NotificationAction, NotificationCenter, NotificationDetail};
 use crate::popup_lifecycle::{PopupCloseReason, PopupLifecycle, TopmostResolution};
+use crate::tools::link_detector::DetectedLinkKind;
+use crate::tools::link_panel::LinkPanelRoute;
 use crate::ui::metrics::SPACING_24;
 use crate::ui::{
     ClipboardPanel, ClipboardPreview, PreviewLayout, native_window_handle, panel_bounds,
@@ -112,6 +114,7 @@ pub struct ClipboardApplication {
     popup: PopupSession,
     preview: PreviewSession,
     link_panel: crate::tools::link_panel::LinkPanelSession,
+    pending_link_panel_actions: HashMap<uuid::Uuid, PendingLinkPanelAction>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +213,15 @@ struct ClipboardCaptureSuppression {
     since_unix_ms: i64,
     until_unix_ms: i64,
     action: ClipboardAction,
+}
+
+#[derive(Debug)]
+struct PendingLinkPanelAction {
+    correlation_id: uuid::Uuid,
+    target_kind: DetectedLinkKind,
+    action: ShellOpenAction,
+    value_length: usize,
+    started_at: Instant,
 }
 
 struct PreviewWindow {
@@ -398,6 +410,7 @@ impl ClipboardApplication {
             popup: PopupSession::default(),
             preview: PreviewSession::default(),
             link_panel: crate::tools::link_panel::LinkPanelSession::default(),
+            pending_link_panel_actions: HashMap::new(),
         };
         application
     }
@@ -907,12 +920,6 @@ impl ClipboardApplication {
         self.link_panel.generation += 1;
     }
 
-    /// The panel's requested post-click action, from user settings.
-    pub(crate) fn link_panel_should_open_browser(&self) -> bool {
-        self.config.clipboard.link_panel_auto_open_browser
-            && !self.config.clipboard.link_panel_copy_only
-    }
-
     /// Snapshot of the link panel user settings for the settings window.
     pub(crate) fn link_panel_settings(&self) -> (bool, u64, bool, bool, LinkPanelPosition) {
         (
@@ -935,6 +942,8 @@ impl ClipboardApplication {
         let application = cx.entity().downgrade();
         let platform = Rc::clone(&self.platform);
         let link_panel_auto_hide_ms = self.config.clipboard.link_panel_auto_hide_ms;
+        let link_panel_auto_open_browser = self.config.clipboard.link_panel_auto_open_browser;
+        let link_panel_copy_only = self.config.clipboard.link_panel_copy_only;
         let link_panel_position = self.config.clipboard.link_panel_position;
         let panel_size = size(
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
@@ -962,7 +971,13 @@ impl ClipboardApplication {
                     Ok(view) => {
                         view.update(cx, |view, cx| {
                             if let Some(handle) = window_handle_for_swap {
-                                view.swap_links(links.clone(), handle, cx);
+                                view.swap_links(
+                                    links.clone(),
+                                    handle,
+                                    link_panel_auto_open_browser,
+                                    link_panel_copy_only,
+                                    cx,
+                                );
                             } else {
                                 window.remove_window();
                             }
@@ -1052,6 +1067,8 @@ impl ClipboardApplication {
                         expanded: false,
                         auto_hide_ms: link_panel_auto_hide_ms,
                         window_handle: Some(window_handle),
+                        auto_open_browser: link_panel_auto_open_browser,
+                        copy_only: link_panel_copy_only,
                     };
                     view.arm_auto_hide(window_handle, cx);
                     view
@@ -1103,6 +1120,164 @@ impl ClipboardApplication {
     ) {
         self.config.clipboard.link_panel_position = position;
         self.persist_clipboard_config(cx);
+    }
+
+    pub(crate) fn dispatch_link_panel_route(
+        &mut self,
+        route: LinkPanelRoute,
+        target: &str,
+        target_kind: DetectedLinkKind,
+        value_length: usize,
+    ) {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        match route {
+            LinkPanelRoute::CopyOnly => {
+                info!(
+                    event = "tools.link_panel.copy_only",
+                    %correlation_id,
+                    target_kind = target_kind.label(),
+                    value_length,
+                    accepted = true,
+                    "link panel copy-only route completed"
+                );
+            }
+            LinkPanelRoute::Browser => {
+                if target_kind != DetectedLinkKind::Web {
+                    warn!(
+                        event = "tools.link_panel.route_rejected",
+                        %correlation_id,
+                        target_kind = target_kind.label(),
+                        route = "browser",
+                        value_length,
+                        reason = "non_web_target",
+                        "link panel refused to send a local target to the browser"
+                    );
+                    return;
+                }
+                let url = if target.contains("://") {
+                    target.to_owned()
+                } else {
+                    format!("https://{target}")
+                };
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt as _;
+                    match std::process::Command::new("cmd")
+                        .args(["/C", "start", "", &url])
+                        .creation_flags(0x0800_0000)
+                        .spawn()
+                    {
+                        Ok(_) => info!(
+                            event = "tools.link_panel.browser_accepted",
+                            %correlation_id,
+                            target_kind = target_kind.label(),
+                            value_length,
+                            elapsed_ms = started_at.elapsed().as_millis() as u64,
+                            accepted = true,
+                            "link panel browser route accepted"
+                        ),
+                        Err(error) => warn!(
+                            event = "tools.link_panel.browser_failed",
+                            %correlation_id,
+                            target_kind = target_kind.label(),
+                            value_length,
+                            elapsed_ms = started_at.elapsed().as_millis() as u64,
+                            accepted = false,
+                            native_error_code = error.raw_os_error(),
+                            "link panel browser route failed"
+                        ),
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = url;
+                    warn!(
+                        event = "tools.link_panel.browser_failed",
+                        %correlation_id,
+                        target_kind = target_kind.label(),
+                        value_length,
+                        elapsed_ms = started_at.elapsed().as_millis() as u64,
+                        accepted = false,
+                        reason = "unsupported_platform",
+                        "link panel browser route is unavailable on this platform"
+                    );
+                }
+            }
+            LinkPanelRoute::OpenShell { action } => {
+                if !matches!(
+                    target_kind,
+                    DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory
+                ) {
+                    warn!(
+                        event = "tools.link_panel.route_rejected",
+                        %correlation_id,
+                        target_kind = target_kind.label(),
+                        route = "shell",
+                        value_length,
+                        reason = "non_local_target",
+                        "link panel refused to send a web target to the shell"
+                    );
+                    return;
+                }
+                match self.platform.send_command_correlated(
+                    PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                        target: target.to_owned(),
+                        action,
+                    }),
+                    correlation_id,
+                ) {
+                    Ok(command_id) => {
+                        info!(
+                            event = "tools.link_panel.shell_accepted",
+                            %correlation_id,
+                            %command_id,
+                            target_kind = target_kind.label(),
+                            ?action,
+                            value_length,
+                            "link panel shell route accepted"
+                        );
+                        self.pending_link_panel_actions.insert(
+                            command_id,
+                            PendingLinkPanelAction {
+                                correlation_id,
+                                target_kind,
+                                action,
+                                value_length,
+                                started_at,
+                            },
+                        );
+                    }
+                    Err(error) => warn!(
+                        event = "tools.link_panel.shell_rejected",
+                        %correlation_id,
+                        target_kind = target_kind.label(),
+                        ?action,
+                        value_length,
+                        accepted = false,
+                        reason = %error,
+                        "link panel shell route was not accepted"
+                    ),
+                }
+            }
+        }
+    }
+
+    fn abandon_pending_link_panel_actions(&mut self, terminal: &'static str) {
+        for (command_id, pending) in self.pending_link_panel_actions.drain() {
+            warn!(
+                event = "tools.link_panel.shell_failed",
+                %command_id,
+                %pending.correlation_id,
+                target_kind = pending.target_kind.label(),
+                ?pending.action,
+                value_length = pending.value_length,
+                elapsed_ms = pending.started_at.elapsed().as_millis() as u64,
+                accepted = false,
+                reason = terminal,
+                "link panel shell route ended before a native result"
+            );
+        }
     }
 
     fn persist_clipboard_config(&mut self, cx: &mut Context<Self>) {
@@ -2047,8 +2222,8 @@ impl ClipboardApplication {
         match notification {
             PlatformNotification::Connected => {
                 // A reconnect invalidates every command that was pending on the previous pipe.
-                // Keep only values already confirmed and persisted by the Windows adapter.
                 self.pending_configuration.clear();
+                self.abandon_pending_link_panel_actions("connection_reset");
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
                 self.abandon_pending_popup_visibility("connection_reset");
@@ -2113,6 +2288,7 @@ impl ClipboardApplication {
                     "clipboard invalidated commands from the disconnected PlatformHost session"
                 );
                 self.pending_configuration.clear();
+                self.abandon_pending_link_panel_actions("disconnected");
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
                 self.abandon_pending_popup_visibility("disconnected");
@@ -2153,6 +2329,37 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
+                if let Some(pending) = self.pending_link_panel_actions.remove(&correlation_id) {
+                    let elapsed_ms = pending.started_at.elapsed().as_millis() as u64;
+                    if result.success {
+                        info!(
+                            event = "tools.link_panel.shell_completed",
+                            correlation_id = %pending.correlation_id,
+                            command_id = %correlation_id,
+                            target_kind = pending.target_kind.label(),
+                            ?pending.action,
+                            value_length = pending.value_length,
+                            elapsed_ms,
+                            accepted = true,
+                            "link panel shell route completed"
+                        );
+                    } else {
+                        warn!(
+                            event = "tools.link_panel.shell_failed",
+                            correlation_id = %pending.correlation_id,
+                            command_id = %correlation_id,
+                            target_kind = pending.target_kind.label(),
+                            ?pending.action,
+                            value_length = pending.value_length,
+                            elapsed_ms,
+                            accepted = false,
+                            native_error_code = ?result.native_error_code,
+                            "link panel shell route failed"
+                        );
+                    }
+                    return;
+                }
+
                 if self.pending_storage_picker == Some(correlation_id) {
                     self.pending_storage_picker = None;
                     if !result.success {

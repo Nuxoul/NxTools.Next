@@ -185,8 +185,8 @@ impl DownloadApplication {
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus: activation.is_some(),
-                show: true,
+                focus: false,
+                show: false,
                 kind: WindowKind::Normal,
                 is_movable: true,
                 is_resizable: false,
@@ -270,6 +270,14 @@ impl DownloadApplication {
                             },
                         ));
                 }
+                let _ = self
+                    .platform
+                    .send_command(PlatformCommand::SetWindowVisibility(
+                        SetWindowVisibilityCommand {
+                            window_handle: *native_slot.borrow(),
+                            visible: true,
+                        },
+                    ));
                 if activation.is_none()
                     && matches!(
                         phase,

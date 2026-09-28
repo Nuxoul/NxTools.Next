@@ -49,8 +49,8 @@ use nxtools_protocol::{
     OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
     PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
     SetTaskbarProgressCommand, SetWindowBoundsCenteredCommand, SetWindowTopmostCommand,
-    ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand, TaskbarOverlayAnchor,
-    TaskbarProgressState,
+    SetWindowVisibilityCommand, ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand,
+    TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
