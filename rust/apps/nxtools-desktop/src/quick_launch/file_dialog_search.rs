@@ -21,6 +21,7 @@ use nxtools_protocol::{
 };
 use tracing::{info, warn};
 
+use super::search::is_navigable_directory_target;
 use super::{ImeEnterGate, QuickLaunchApplication, schedule_application_update};
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
@@ -1093,7 +1094,7 @@ impl QuickLaunchApplication {
         let Some(host) = self.file_dialog_search.host.as_ref() else {
             return;
         };
-        if !Path::new(&target_directory).is_absolute() {
+        if !is_navigable_directory_target(&target_directory) {
             return;
         }
         if let Err(error) = self

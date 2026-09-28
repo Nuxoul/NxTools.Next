@@ -1044,6 +1044,19 @@ internal sealed partial class WindowsPlatformAdapter
                     targetContext.ProcessName,
                     source);
                 _autoQuickSwitch.ObserveDirectorySource(source, displayName);
+                var publishedFields = new Dictionary<string, object?>
+                {
+                    ["target_window_handle"] = windowHandle
+                };
+                foreach (var pair in DirectoryNavigationTarget.DiagnosticFields(
+                             source.CurrentDirectory))
+                {
+                    publishedFields[$"source_{pair.Key}"] = pair.Value;
+                }
+                _log.Write(
+                    "info",
+                    "quick_launch.directory_source_recognition_published",
+                    fields: publishedFields);
                 CompleteDirectorySourceRecognition(windowHandle);
                 if (foreground.WindowHandle != windowHandle)
                 {

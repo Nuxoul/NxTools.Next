@@ -38,8 +38,6 @@ internal static class DirectoryNavigationTarget
         var libraryName = value["lib://".Length..]
             .Trim('\\', '/')
             .Trim();
-        var profile = Environment.GetFolderPath(
-            Environment.SpecialFolder.UserProfile);
         var candidate = libraryName.ToLowerInvariant() switch
         {
             "desktop" => Environment.GetFolderPath(
@@ -52,8 +50,10 @@ internal static class DirectoryNavigationTarget
                 Environment.SpecialFolder.MyMusic),
             "videos" => Environment.GetFolderPath(
                 Environment.SpecialFolder.MyVideos),
-            "downloads" => Path.Combine(profile, "Downloads"),
-            _ => string.Empty
+            "downloads" => Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Downloads"),
+            _ => ResolveLocalizedLibraryFolder(libraryName) ?? string.Empty
         };
         if (string.IsNullOrWhiteSpace(candidate) ||
             !Directory.Exists(candidate))
@@ -62,6 +62,45 @@ internal static class DirectoryNavigationTarget
         }
         resolved = Path.GetFullPath(candidate);
         return true;
+    }
+
+    private static string? ResolveLocalizedLibraryFolder(string libraryName)
+    {
+        var knownFolders = new[]
+        {
+            (Key: "desktop", Folder: Environment.SpecialFolder.Desktop),
+            (Key: "documents", Folder: Environment.SpecialFolder.MyDocuments),
+            (Key: "pictures", Folder: Environment.SpecialFolder.MyPictures),
+            (Key: "music", Folder: Environment.SpecialFolder.MyMusic),
+            (Key: "videos", Folder: Environment.SpecialFolder.MyVideos)
+        };
+        foreach (var knownFolder in knownFolders)
+        {
+            var path = Environment.GetFolderPath(knownFolder.Folder);
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                continue;
+            }
+            var leaf = Path.GetFileName(path.TrimEnd('\\', '/'));
+            var localized = ThirdPartyFileManagerDisplayPath
+                .GetLocalizedFolderDisplayName(path);
+            if (libraryName.Equals(knownFolder.Key, StringComparison.OrdinalIgnoreCase) ||
+                libraryName.Equals(leaf, StringComparison.OrdinalIgnoreCase) ||
+                libraryName.Equals(localized, StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+        }
+        var downloads = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Downloads");
+        var downloadsName = ThirdPartyFileManagerDisplayPath
+            .GetLocalizedFolderDisplayName(downloads);
+        return Directory.Exists(downloads) &&
+            (libraryName.Equals("downloads", StringComparison.OrdinalIgnoreCase) ||
+             libraryName.Equals(downloadsName, StringComparison.OrdinalIgnoreCase))
+            ? downloads
+            : null;
     }
 
     public static IReadOnlyDictionary<string, object?> DiagnosticFields(

@@ -485,6 +485,12 @@ internal sealed class Win32DirectoryOpusWindowOperations :
     {
         var caption = GetWindowCaption(container);
         string? candidate;
+        if (DirectoryNavigationTarget.TryResolve(
+                caption,
+                out var resolvedCaption))
+        {
+            return resolvedCaption;
+        }
         if (ThirdPartyFileManagerPath.LooksLikeRootedDirectory(caption))
         {
             candidate = caption;

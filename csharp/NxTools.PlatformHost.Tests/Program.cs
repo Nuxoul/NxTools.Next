@@ -1666,6 +1666,20 @@ internal static class Program
             Path.GetFullPath(pictures),
             StringComparison.OrdinalIgnoreCase));
 
+        var localizedPictures =
+            ThirdPartyFileManagerDisplayPath.GetLocalizedFolderDisplayName(
+                pictures);
+        if (!string.IsNullOrWhiteSpace(localizedPictures))
+        {
+            Assert(DirectoryNavigationTarget.TryResolve(
+                $"lib://{localizedPictures}",
+                out var resolvedLocalizedPictures));
+            Assert(string.Equals(
+                resolvedLocalizedPictures,
+                Path.GetFullPath(pictures),
+                StringComparison.OrdinalIgnoreCase));
+        }
+
         var fields = DirectoryNavigationTarget.DiagnosticFields(
             @"D:\Qingfeng");
         Assert(string.Equals(
@@ -2249,15 +2263,31 @@ internal static class Program
             ? NativeFocus.TryGetFocusedWindow(process.MainWindowHandle)
             : 0;
 
-        var foreground = new ForegroundContext(
-            process.MainWindowHandle,
-            focusWindowHandle,
-            (uint)process.Id,
-            process.ProcessName,
-            process.MainWindowTitle);
-        var initial = ThirdPartyFileManagerAdapter.TryCapture(foreground).Context ??
+        ThirdPartyFileManagerContext? initial = null;
+        for (var attempt = 0; attempt < 20 && initial is null; attempt++)
+        {
+            process.Refresh();
+            var currentForeground = new ForegroundContext(
+                process.MainWindowHandle,
+                NativeFocus.IsForegroundWindow(process.MainWindowHandle)
+                    ? NativeFocus.TryGetFocusedWindow(process.MainWindowHandle)
+                    : 0,
+                (uint)process.Id,
+                process.ProcessName,
+                process.MainWindowTitle);
+            initial = ThirdPartyFileManagerAdapter.TryCapture(
+                    currentForeground)
+                .Context;
+            if (initial is null)
+            {
+                Thread.Sleep(50);
+            }
+        }
+        if (initial is null)
+        {
             throw new InvalidOperationException(
                 "The real Directory Opus lister did not expose a navigation session.");
+        }
         var initialDirectory = initial.CurrentDirectory ??
             throw new InvalidOperationException(
                 "The real Directory Opus lister did not expose its current directory.");
