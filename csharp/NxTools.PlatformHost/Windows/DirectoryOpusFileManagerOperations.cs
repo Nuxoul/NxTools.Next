@@ -135,6 +135,7 @@ internal sealed class DirectoryOpusFileManagerOperations :
     }
 
     public string Id => "Directory Opus";
+    public bool RequiresPostNavigationActivation => false;
 
     public bool TryCapture(
         ForegroundContext foreground,

@@ -84,19 +84,75 @@ internal static class ThirdPartyFileManagerDisplayPath
             {
                 continue;
             }
-            var display = GetShellItemDisplayName(real);
-            if (string.IsNullOrWhiteSpace(display))
-            {
-                continue;
-            }
-            aliases[display] = real;
-            var displaySegment = Path.GetFileName(display.TrimEnd('\\', '/'));
-            if (!string.IsNullOrWhiteSpace(displaySegment))
-            {
-                aliases[displaySegment] = real;
-            }
+            AddKnownFolderAliases(aliases, real);
         }
+
+        var profile = Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile);
+        AddKnownFolderAliases(
+            aliases,
+            Directory.GetParent(profile)?.FullName);
         return aliases;
+    }
+
+    private static void AddKnownFolderAliases(
+        Dictionary<string, string> aliases,
+        string? real)
+    {
+        if (string.IsNullOrWhiteSpace(real) || !Directory.Exists(real))
+        {
+            return;
+        }
+        AddAlias(aliases, GetShellItemDisplayName(real), real);
+        AddAlias(aliases, GetLocalizedFolderDisplayName(real), real);
+    }
+
+    private static void AddAlias(
+        Dictionary<string, string> aliases,
+        string? display,
+        string real)
+    {
+        if (string.IsNullOrWhiteSpace(display))
+        {
+            return;
+        }
+        aliases[display] = real;
+        var displaySegment = Path.GetFileName(display.TrimEnd('\\', '/'));
+        if (!string.IsNullOrWhiteSpace(displaySegment))
+        {
+            aliases[displaySegment] = real;
+        }
+    }
+
+
+    internal static string? GetLocalizedFolderDisplayName(string realPath)
+    {
+        if (string.IsNullOrWhiteSpace(realPath))
+        {
+            return null;
+        }
+        try
+        {
+            var info = new ShellFileInfo
+            {
+                DisplayName = string.Empty,
+                TypeName = string.Empty
+            };
+            var result = SHGetFileInfo(
+                realPath,
+                0,
+                ref info,
+                (uint)Marshal.SizeOf<ShellFileInfo>(),
+                ShgfiDisplayName);
+            return result == IntPtr.Zero ||
+                string.IsNullOrWhiteSpace(info.DisplayName)
+                ? null
+                : info.DisplayName.Trim();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? GetKnownFolderPath(in Guid folderId)
@@ -154,6 +210,28 @@ internal static class ThirdPartyFileManagerDisplayPath
             Marshal.Release(item);
         }
     }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct ShellFileInfo
+    {
+        public IntPtr Icon;
+        public int IconIndex;
+        public uint Attributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string DisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
+        public string TypeName;
+    }
+
+    private const uint ShgfiDisplayName = 0x000000200;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SHGetFileInfo(
+        string path,
+        uint fileAttributes,
+        ref ShellFileInfo fileInfo,
+        uint fileInfoSize,
+        uint flags);
 
     // SIGDN_NORMALDISPLAY: the localized child name (e.g. 桌面 for Desktop on
     // a zh-CN system), which is exactly the per-segment form Directory Opus

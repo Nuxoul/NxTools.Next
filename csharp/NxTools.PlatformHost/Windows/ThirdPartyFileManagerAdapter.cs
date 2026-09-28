@@ -6,6 +6,8 @@ internal interface IThirdPartyFileManagerOperations
 {
     string Id { get; }
 
+    bool RequiresPostNavigationActivation => true;
+
     bool TryCapture(
         ForegroundContext foreground,
         out ThirdPartyFileManagerCapture? capture,
@@ -184,7 +186,8 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
             }
             return navigation;
         }
-        if (!session.Adapter.TryActivate(
+        if (session.Adapter.RequiresPostNavigationActivation &&
+            !session.Adapter.TryActivate(
                 command.WindowHandle,
                 session.PaneState,
                 out var activationError))

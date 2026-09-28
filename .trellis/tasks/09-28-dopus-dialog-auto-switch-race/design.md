@@ -36,6 +36,12 @@ The retry must inspect a specific pending HWND, not replace that target with the
 
 If the existing retry helper is reused, add an explicit background-target operation rather than weakening the semantics of the foreground-gated operation used by file-dialog recognition. Keep the distinction visible in names and tests.
 
+## DOpus Path and Activation Contract
+
+- `ThirdPartyFileManagerDisplayPath` must canonicalize DOpus friendly path segments through both `SHGetFileInfo(SHGFI_DISPLAYNAME)` and the parent of the current user profile; a known-folder identifier that is unavailable on a machine must not make `C:\Users` aliases disappear.
+- `DirectoryOpusFileManagerOperations.TryNavigate` owns activation around its `WM_COPYDATA` `Go` command. `ThirdPartyFileManagerSessionRegistry` must not reapply the saved pane/focus after a successful DOpus navigation, because that stale focus can restore the previous directory.
+- The real boundary test must assert one valid localized C-drive capture, one nested C-drive navigation, native readback, and restoration.
+
 ## Diagnostics
 
 Use the existing PlatformHost logger with bounded lifecycle events:

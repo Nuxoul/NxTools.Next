@@ -11,6 +11,7 @@ When a known Windows file dialog is reopened after the user briefly switches to 
 - The retry runs on the PlatformHost Windows event thread. If the user returns to the file dialog before DOpus recognition succeeds, retries observe the file dialog instead of the pending DOpus lister and no source is published.
 - The existing PlatformHost suite covers successful DOpus capture, stale-source clearing, and pane selection, but not the pending-source-to-file-dialog foreground transition.
 - The existing reference contract requires one source-to-dialog synchronization after a supported source becomes active, preserves the captured source HWND/pane context, and keeps failed recognition from reusing stale source state.
+- Real DOpus verification exposed a second boundary: the lister can expose localized `C:\用户` display segments that are not parsing paths, and a post-navigation activation using the captured pane focus can restore the pre-command directory.
 
 ## Requirements
 
@@ -27,7 +28,7 @@ When a known Windows file dialog is reopened after the user briefly switches to 
 - [x] Existing auto-switch, DOpus pane, file-dialog, and stale-source tests remain green.
 - [x] The implementation never calls native activation, `WM_COPYDATA`, or Rust IPC while performing background recognition; navigation still occurs only through the existing candidate/command path.
 - [x] Diagnostic events carry the existing bounded PlatformHost logging shape and do not log directory paths or window titles.
-- [x] The architecture gate and full suite pass; real interactive DOpus/Files soak is deferred because neither interactive window is available in this environment.
+- [x] The architecture gate, full PlatformHost suite, localized Users-root regression, and real DOpus C-drive navigation/readback pass; the complete DOpus-to-real-file-dialog soak remains environment-dependent and is not represented as automated coverage.
 
 ## Scope
 

@@ -22,8 +22,8 @@
 ## Validation Commands
 
 ```powershell
- dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "Directory source recognition"
- dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "auto quick switch" "Directory Opus" "file-dialog"
+ dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "Directory source recognition" "auto quick switch" "Directory Opus" "file-dialog"
+ dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "localized known folder aliases" "real Directory Opus navigation"
  dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore
 ```
 

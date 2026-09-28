@@ -58,6 +58,7 @@ internal static class Program
             ("pending directory source recognition is bounded and superseded safely", PendingDirectorySourceRecognitionIsBoundedAndSuperseded),
             ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
             ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
+            ("localized known folder aliases cover the Users root", KnownFolderLocalizedAliasesCoverUsersRoot),
             ("Total Commander adapter uses the captured source panel", TotalCommanderAdapterPreservesSourcePanel),
             ("OneCommander adapter freezes its UI Automation pane before the popup opens", OneCommanderAdapterPreservesAutomationPane),
             ("Files identity matches the Listary process and UIA root contract", FilesIdentityMatchesListaryContract),
@@ -74,6 +75,7 @@ internal static class Program
             ("elevated helper rendezvous accepts only bounded random names and tokens", ElevatedHelperRendezvousIsBounded),
             ("elevated helper diagnostics keep host and helper PIDs distinct", ElevatedHelperDiagnosticsKeepPidsDistinct),
             ("real Directory Opus lister exposes a third-party navigation context", RealDirectoryOpusListerExposesNavigationContext),
+            ("real Directory Opus navigation reaches C drive targets", RealDirectoryOpusNavigationReachesCDrive),
             ("real Files window exposes a third-party navigation context", RealFilesWindowExposesNavigationContext),
             ("file-dialog recognition rejects unrelated #32770 windows", FileDialogRecognitionUsesStructuralMarkers),
             ("file-dialog navigation writes a directory and restores its edit focus", FileDialogNavigationUsesCapturedControls),
@@ -1730,6 +1732,28 @@ internal static class Program
             Assert(directoryOpus.LastActivatedWindowHandle == 88);
             Assert(registry.SessionCount == 1);
 
+            var navigationOwnedAdapter =
+                new FakeThirdPartyFileManagerOperations(
+                    "directory_opus",
+                    windowHandle: 88,
+                    currentDirectory: @"C:\Work")
+                {
+                    RequiresPostNavigationActivation = false
+                };
+            var navigationOwnedRegistry =
+                new ThirdPartyFileManagerSessionRegistry(
+                    [navigationOwnedAdapter]);
+            var navigationOwnedContext =
+                navigationOwnedRegistry.TryCapture(foreground).Context ??
+                throw new InvalidOperationException("capture failed");
+            Assert(navigationOwnedRegistry.Navigate(
+                new NavigateThirdPartyFileManagerCommand(
+                    88,
+                    directory.FullName,
+                    navigationOwnedContext.HostContextId),
+                Directory.Exists).Success);
+            Assert(navigationOwnedAdapter.LastActivatedWindowHandle == 0);
+
             var alreadyConsumed = registry.Navigate(
                 new NavigateThirdPartyFileManagerCommand(
                     88,
@@ -2177,6 +2201,111 @@ internal static class Program
         Assert(captured.WindowHandle == process.MainWindowHandle.ToInt64());
         Assert(ThirdPartyFileManagerPath.LooksLikeRootedDirectory(
             captured.CurrentDirectory));
+        return Task.CompletedTask;
+    }
+
+    private static Task RealDirectoryOpusNavigationReachesCDrive()
+    {
+        using var process = Process.GetProcessesByName("dopus")
+            .FirstOrDefault(candidate => candidate.MainWindowHandle != IntPtr.Zero);
+        if (process is null)
+        {
+            Console.WriteLine("SKIP no interactive Directory Opus lister is available");
+            return Task.CompletedTask;
+        }
+        var focusWindowHandle = NativeFocus.IsForegroundWindow(
+            process.MainWindowHandle)
+            ? NativeFocus.TryGetFocusedWindow(process.MainWindowHandle)
+            : 0;
+
+        var foreground = new ForegroundContext(
+            process.MainWindowHandle,
+            focusWindowHandle,
+            (uint)process.Id,
+            process.ProcessName,
+            process.MainWindowTitle);
+        var initial = ThirdPartyFileManagerAdapter.TryCapture(foreground).Context ??
+            throw new InvalidOperationException(
+                "The real Directory Opus lister did not expose a navigation session.");
+        var initialDirectory = initial.CurrentDirectory ??
+            throw new InvalidOperationException(
+                "The real Directory Opus lister did not expose its current directory.");
+        var current = initial;
+        try
+        {
+            foreach (var targetDirectory in new[] { @"C:\Windows" })
+            {
+                var navigation = ThirdPartyFileManagerAdapter.Navigate(
+                    new NavigateThirdPartyFileManagerCommand(
+                        current.WindowHandle,
+                        targetDirectory,
+                        current.HostContextId));
+                if (!navigation.Success)
+                {
+                    throw new InvalidOperationException(
+                        "Directory Opus navigation command failed before readback: " +
+                        (navigation.Error ?? "unknown"));
+                }
+                process.Refresh();
+                var afterNavigation = new ForegroundContext(
+                    process.MainWindowHandle,
+                    NativeFocus.TryGetFocusedWindow(process.MainWindowHandle),
+                    (uint)process.Id,
+                    process.ProcessName,
+                    process.MainWindowTitle);
+                current = ThirdPartyFileManagerAdapter.TryCapture(
+                        afterNavigation)
+                    .Context ??
+                    throw new InvalidOperationException(
+                        $"The navigated Directory Opus lister could not be recaptured after {targetDirectory}.");
+                if (!ThirdPartyFileManagerPath.SameDirectory(
+                        current.CurrentDirectory,
+                        targetDirectory))
+                {
+                    throw new InvalidOperationException(
+                        "Directory Opus navigation readback did not reach the target.");
+                }
+            }
+        }
+        finally
+        {
+            ThirdPartyFileManagerContext? restoreContext = null;
+            for (var attempt = 0; attempt < 20 && restoreContext is null; attempt++)
+            {
+                process.Refresh();
+                var restoreForeground = new ForegroundContext(
+                    process.MainWindowHandle,
+                    NativeFocus.IsForegroundWindow(process.MainWindowHandle)
+                        ? NativeFocus.TryGetFocusedWindow(process.MainWindowHandle)
+                        : 0,
+                    (uint)process.Id,
+                    process.ProcessName,
+                    process.MainWindowTitle);
+                restoreContext = ThirdPartyFileManagerAdapter.TryCapture(
+                        restoreForeground)
+                    .Context;
+                if (restoreContext is null)
+                {
+                    Thread.Sleep(50);
+                }
+            }
+            if (restoreContext is null)
+            {
+                throw new InvalidOperationException(
+                    "The Directory Opus lister could not be recaptured for restoration.");
+            }
+            var restore = ThirdPartyFileManagerAdapter.Navigate(
+                new NavigateThirdPartyFileManagerCommand(
+                    restoreContext.WindowHandle,
+                    initialDirectory,
+                    restoreContext.HostContextId));
+            if (!restore.Success)
+            {
+                throw new InvalidOperationException(
+                    "Directory Opus navigation test could not restore the original directory: " +
+                    (restore.Error ?? "unknown"));
+            }
+        }
         return Task.CompletedTask;
     }
 
@@ -5350,6 +5479,38 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task KnownFolderLocalizedAliasesCoverUsersRoot()
+    {
+        var profileDirectory = Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile);
+        var usersRoot = Directory.GetParent(profileDirectory)?.FullName ??
+            throw new InvalidOperationException(
+                "The current user profile has no Users parent directory.");
+        var localizedName =
+            ThirdPartyFileManagerDisplayPath.GetLocalizedFolderDisplayName(
+                usersRoot);
+        Assert(!string.IsNullOrWhiteSpace(localizedName));
+
+        var aliases = ThirdPartyFileManagerDisplayPath.KnownFolderDisplayAliases();
+        Assert(aliases.TryGetValue(localizedName!, out var resolved));
+        Assert(string.Equals(
+            resolved,
+            usersRoot,
+            StringComparison.OrdinalIgnoreCase));
+
+        var root = Path.GetPathRoot(usersRoot) ??
+            throw new InvalidOperationException("The Users root has no drive root.");
+        var canonicalized = ThirdPartyFileManagerDisplayPath.Canonicalize(
+            Path.Join(root, localizedName!),
+            Directory.Exists,
+            aliases);
+        Assert(string.Equals(
+            canonicalized,
+            usersRoot,
+            StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
+    }
+
     private static Task KnownFolderDisplayAliasesCoverDesktop()
     {
         var aliases = ThirdPartyFileManagerDisplayPath.KnownFolderDisplayAliases();
@@ -5552,6 +5713,7 @@ internal static class Program
         IThirdPartyFileManagerOperations
     {
         public string Id => id;
+        public bool RequiresPostNavigationActivation { get; init; } = true;
         public long LastCapturedFocusWindowHandle { get; private set; }
         public long LastNavigatedWindowHandle { get; private set; }
         public string? LastNavigatedDirectory { get; private set; }
