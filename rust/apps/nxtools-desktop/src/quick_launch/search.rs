@@ -80,6 +80,42 @@ pub(crate) fn is_navigable_directory_target(target: &str) -> bool {
             .is_some_and(|library| !library.trim_matches(['\\', '/']).is_empty())
 }
 
+pub(crate) fn directory_target_diagnostic_fields(
+    target: &str,
+) -> (&'static str, String, Option<String>, usize, usize, bool) {
+    let value = target.trim();
+    let is_library = value.starts_with("lib://");
+    let kind = if is_library {
+        "library_uri"
+    } else if Path::new(value).is_absolute() {
+        "filesystem_absolute"
+    } else {
+        "other"
+    };
+    let root = if is_library {
+        "lib://".to_owned()
+    } else {
+        Path::new(value)
+            .components()
+            .next()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let library = is_library.then(|| value["lib://".len()..].trim_matches(['\\', '/']).to_owned());
+    let segments = value
+        .split(['\\', '/'])
+        .filter(|segment| !segment.is_empty())
+        .count();
+    (
+        kind,
+        root,
+        library,
+        value.len(),
+        segments,
+        value.ends_with(['\\', '/']),
+    )
+}
+
 pub(crate) fn recent_directory_navigation_action(
     result: &SearchResult,
     navigation_context: Option<&nxtools_protocol::DirectoryNavigationContext>,

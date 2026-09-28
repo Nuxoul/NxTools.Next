@@ -2974,6 +2974,14 @@ impl QuickLaunchApplication {
             .popup
             .as_ref()
             .map_or(0, |popup| popup.native_window_handle);
+        let (
+            target_kind,
+            target_root,
+            target_library,
+            target_length,
+            target_segment_count,
+            target_has_trailing_separator,
+        ) = directory_target_diagnostic_fields(&result.entry.target);
         let directory_visit = match &action {
             QuickLaunchAction::SwitchDirectory {
                 target_directory, ..
@@ -3017,6 +3025,12 @@ impl QuickLaunchApplication {
                     action = quick_launch_action_diagnostic_label(&action),
                     trigger = trigger.diagnostic_label(),
                     source = result.entry.source.label(),
+                    target_kind,
+                    target_root = %target_root,
+                    target_library = ?target_library,
+                    target_length,
+                    target_segment_count,
+                    target_has_trailing_separator,
                     "quick-launch action accepted"
                 );
                 // Hide immediately after dispatch: waiting for the completion
