@@ -254,6 +254,10 @@ internal static class ShellIconExtractor
             }
             return TryResolveShortcut(value)?.TargetPath;
         }
+        if (DirectoryNavigationTarget.TryResolve(value, out var resolvedDirectory))
+        {
+            return resolvedDirectory;
+        }
         if (Directory.Exists(value) || File.Exists(value))
         {
             return value;

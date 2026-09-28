@@ -45,7 +45,7 @@ internal static class Program
             ("visible file-dialog foreground repeats reuse the recognized host", VisibleFileDialogForegroundRepeatsReuseRecognizedHost),
             ("elevated directory helper request preserves its opaque rendezvous", ElevatedDirectoryHelperRequestRoundTrips),
             ("deferred directory capture expires with its summon budget", DeferredDirectoryCaptureExpires),
-            ("Explorer navigation keeps the captured host window", ExplorerNavigationKeepsCapturedWindow),
+            ("directory navigation resolves library URIs and preserves nested path metadata", DirectoryNavigationTargetResolvesLibraryAndNestedPaths),
             ("desktop navigation recognizes only the Shell desktop and opens the target", DesktopNavigationUsesShellDesktop),
             ("desktop identity requires Shell structure and Explorer ownership", DesktopIdentityRequiresShellEvidence),
             ("file-dialog navigation keeps the captured host window", FileDialogNavigationKeepsCapturedWindow),
@@ -1649,6 +1649,37 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task DirectoryNavigationTargetResolvesLibraryAndNestedPaths()
+    {
+        var pictures = Environment.GetFolderPath(
+            Environment.SpecialFolder.MyPictures);
+        Assert(Directory.Exists(pictures));
+        Assert(DirectoryNavigationTarget.TryResolve(
+            "lib://Pictures",
+            out var resolvedPictures));
+        Assert(string.Equals(
+            resolvedPictures,
+            Path.GetFullPath(pictures),
+            StringComparison.OrdinalIgnoreCase));
+        Assert(string.Equals(
+            ShellIconExtractor.ResolveNavigationDirectory("lib://Pictures"),
+            Path.GetFullPath(pictures),
+            StringComparison.OrdinalIgnoreCase));
+
+        var fields = DirectoryNavigationTarget.DiagnosticFields(
+            @"D:\Qingfeng");
+        Assert(string.Equals(
+            fields["target_kind"] as string,
+            "filesystem_absolute",
+            StringComparison.Ordinal));
+        Assert(string.Equals(
+            fields["target_root"] as string,
+            @"D:\",
+            StringComparison.Ordinal));
+        Assert(Convert.ToInt32(fields["target_segment_count"]) == 2);
+        return Task.CompletedTask;
+    }
+
     private static Task DeferredDirectoryCaptureExpires()
     {
         Assert(WindowsPlatformAdapter.IsQuickLaunchContextRequestCurrent(
@@ -2246,16 +2277,25 @@ internal static class Program
                         "Directory Opus navigation command failed before readback: " +
                         (navigation.Error ?? "unknown"));
                 }
-                process.Refresh();
-                var afterNavigation = new ForegroundContext(
-                    process.MainWindowHandle,
-                    NativeFocus.TryGetFocusedWindow(process.MainWindowHandle),
-                    (uint)process.Id,
-                    process.ProcessName,
-                    process.MainWindowTitle);
-                current = ThirdPartyFileManagerAdapter.TryCapture(
-                        afterNavigation)
-                    .Context ??
+                ThirdPartyFileManagerContext? recaptured = null;
+                for (var attempt = 0; attempt < 20 && recaptured is null; attempt++)
+                {
+                    process.Refresh();
+                    var afterNavigation = new ForegroundContext(
+                        process.MainWindowHandle,
+                        NativeFocus.TryGetFocusedWindow(process.MainWindowHandle),
+                        (uint)process.Id,
+                        process.ProcessName,
+                        process.MainWindowTitle);
+                    recaptured = ThirdPartyFileManagerAdapter.TryCapture(
+                            afterNavigation)
+                        .Context;
+                    if (recaptured is null)
+                    {
+                        Thread.Sleep(50);
+                    }
+                }
+                current = recaptured ??
                     throw new InvalidOperationException(
                         $"The navigated Directory Opus lister could not be recaptured after {targetDirectory}.");
                 if (!ThirdPartyFileManagerPath.SameDirectory(

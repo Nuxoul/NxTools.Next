@@ -72,13 +72,21 @@ pub(crate) fn recent_directory_results(
         .collect()
 }
 
+pub(crate) fn is_navigable_directory_target(target: &str) -> bool {
+    let value = target.trim();
+    Path::new(value).is_absolute()
+        || value
+            .strip_prefix("lib://")
+            .is_some_and(|library| !library.trim_matches(['\\', '/']).is_empty())
+}
+
 pub(crate) fn recent_directory_navigation_action(
     result: &SearchResult,
     navigation_context: Option<&nxtools_protocol::DirectoryNavigationContext>,
 ) -> Option<QuickLaunchAction> {
     let context = navigation_context.filter(|context| context.window_handle != 0)?;
     (result.entry.source == ApplicationSource::IndexedDirectory
-        && Path::new(&result.entry.target).is_absolute())
+        && is_navigable_directory_target(&result.entry.target))
     .then(|| QuickLaunchAction::SwitchDirectory {
         host: context.host,
         window_handle: context.window_handle,

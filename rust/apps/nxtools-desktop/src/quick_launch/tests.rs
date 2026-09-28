@@ -717,6 +717,29 @@ fn auto_quick_switch_request_becomes_one_file_dialog_navigation_command() {
 }
 
 #[test]
+fn library_uri_is_a_navigable_directory_target_and_nested_paths_are_preserved() {
+    assert!(is_navigable_directory_target("lib://Pictures"));
+    assert!(is_navigable_directory_target(r"D:\Qingfeng"));
+    assert!(!is_navigable_directory_target("lib://"));
+
+    let context = nxtools_protocol::DirectoryNavigationContext {
+        host: DirectoryNavigationHost::ThirdPartyFileManager,
+        window_handle: 66,
+        current_directory: Some(r"D:\Before".into()),
+        host_context_id: Some("dopus-pane".into()),
+    };
+    let mut result = search_result("Qingfeng", ApplicationSource::IndexedDirectory);
+    result.entry.target = r"D:\Qingfeng".into();
+    let action = recent_directory_navigation_action(&result, Some(&context))
+        .expect("nested directory must expose navigation");
+    assert!(matches!(
+        action,
+        QuickLaunchAction::SwitchDirectory { target_directory, .. }
+            if target_directory == r"D:\Qingfeng"
+    ));
+}
+
+#[test]
 fn icon_prefetch_tracks_the_visible_result_window_with_small_overscan() {
     assert_eq!(visible_icon_prefetch_range(0, 7, 50), 0..10);
     assert_eq!(visible_icon_prefetch_range(18, 25, 50), 16..28);

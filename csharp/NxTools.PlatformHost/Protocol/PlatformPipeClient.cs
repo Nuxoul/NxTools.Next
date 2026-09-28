@@ -267,13 +267,21 @@ internal sealed class PlatformPipeClient(
         }
         if (logCommandLifecycle)
         {
-            WriteCommandDiagnostic("info", "command.received", diagnosticCorrelationId,
-                new Dictionary<string, object?>
-                {
-                    ["command"] = commandName
-                });
-        }
+            var receivedFields = new Dictionary<string, object?>
+            {
+                ["command"] = commandName
+            };
+            AddCommandTargetDiagnosticFields(
+                envelope,
+                commandName,
+                receivedFields);
+            WriteCommandDiagnostic(
+                "info",
+                "command.received",
+                diagnosticCorrelationId,
+                receivedFields);
 
+        }
         WindowsCommandResult result;
         try
         {
@@ -317,16 +325,28 @@ internal sealed class PlatformPipeClient(
         }
         if (logCommandLifecycle)
         {
-            WriteCommandDiagnostic(result.Success ? "info" : "error", "command.completed", diagnosticCorrelationId,
-                new Dictionary<string, object?>
-                {
-                    ["command"] = commandName,
-                    ["success"] = result.Success,
-                    ["error_present"] = !string.IsNullOrEmpty(result.Error),
-                    ["native_error_code"] = result.NativeErrorCode,
-                    ["has_data"] = !string.IsNullOrEmpty(result.Data),
-                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
-                });
+            var completedFields = new Dictionary<string, object?>
+            {
+                ["command"] = commandName,
+                ["success"] = result.Success,
+                ["error_present"] = !string.IsNullOrEmpty(result.Error),
+                ["native_error_code"] = result.NativeErrorCode,
+                ["has_data"] = !string.IsNullOrEmpty(result.Data),
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            };
+            AddCommandTargetDiagnosticFields(
+                envelope,
+                commandName,
+                completedFields);
+            AddResultNavigationDiagnosticFields(
+                commandName,
+                result,
+                completedFields);
+            WriteCommandDiagnostic(
+                result.Success ? "info" : "error",
+                "command.completed",
+                diagnosticCorrelationId,
+                completedFields);
         }
         if (!result.Success && logCommandLifecycle)
         {
@@ -470,6 +490,79 @@ internal sealed class PlatformPipeClient(
                 ["reason"] = reason,
                 ["exception_type"] = error?.GetType().FullName
             });
+    }
+
+    private static void AddCommandTargetDiagnosticFields(
+        ProtocolEnvelope envelope,
+        string commandName,
+        Dictionary<string, object?> fields)
+    {
+        var propertyName = commandName.Equals(
+                "navigate_directory",
+                StringComparison.OrdinalIgnoreCase)
+            ? "target_directory"
+            : commandName.Equals(
+                "query_shell_actions",
+                StringComparison.OrdinalIgnoreCase)
+                ? "target"
+                : null;
+        if (propertyName is null)
+        {
+            return;
+        }
+        try
+        {
+            var target = envelope.Payload
+                .GetProperty("data")
+                .GetProperty(propertyName)
+                .GetString();
+            foreach (var pair in DirectoryNavigationTarget.DiagnosticFields(target))
+            {
+                fields[pair.Key] = pair.Value;
+            }
+        }
+        catch (JsonException)
+        {
+            // The command parser remains the owner of payload validation.
+        }
+        catch (InvalidOperationException)
+        {
+            // Diagnostics must not alter command handling for malformed payloads.
+        }
+    }
+
+    private static void AddResultNavigationDiagnosticFields(
+        string commandName,
+        WindowsCommandResult result,
+        Dictionary<string, object?> fields)
+    {
+        if (!commandName.Equals(
+                "query_shell_actions",
+                StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(result.Data))
+        {
+            return;
+        }
+        try
+        {
+            using var document = JsonDocument.Parse(result.Data);
+            if (!document.RootElement.TryGetProperty(
+                    "navigation_directory",
+                    out var navigation) ||
+                navigation.ValueKind != JsonValueKind.String)
+            {
+                return;
+            }
+            foreach (var pair in DirectoryNavigationTarget.DiagnosticFields(
+                         navigation.GetString()))
+            {
+                fields[$"navigation_{pair.Key}"] = pair.Value;
+            }
+        }
+        catch (JsonException)
+        {
+            // The command result remains authoritative for malformed data.
+        }
     }
 
     private async Task<WindowsCommandResult> ExecutePlatformCommandAsync(

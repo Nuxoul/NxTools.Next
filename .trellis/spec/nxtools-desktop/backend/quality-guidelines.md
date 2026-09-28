@@ -119,6 +119,8 @@ if panel.has_more_entries && !panel.page_request_pending && !panel.search_pendin
 - Recognition diagnostics may include HWND, attempt count, elapsed time, terminal reason, and native error code; never include paths, titles, or payload data.
 - Directory Opus friendly paths are localized display strings, not parsing paths. Alias construction must include `SHGetFileInfo(SHGFI_DISPLAYNAME)` names and a fallback for the parent of `Environment.SpecialFolder.UserProfile` so localized `C:\Users` segments resolve before any `Directory.Exists` or navigation check.
 - Directory Opus owns activation around its `WM_COPYDATA` `Go` command. After a successful navigation, the session registry must not re-activate the captured pane/focus state, because that stale focus can restore the pre-navigation tab or directory.
+- `lib://<KnownFolder>` targets are valid directory-navigation inputs. Rust action eligibility must preserve the URI, and Windows must resolve known library names before the filesystem existence gate; unknown library names remain a bounded failure.
+- `navigate_directory` and `query_shell_actions` diagnostics may log target kind, root, library name, length, segment count, trailing-separator state, and resolved navigation metadata, but never the raw target path.
 
 ### 4. Validation & Error Matrix
 
@@ -141,6 +143,7 @@ if panel.has_more_entries && !panel.page_request_pending && !panel.search_pendin
 - Architecture gate asserts the EventWindow caller uses `TryBeginPendingAttempt`, saved-HWND capture, stale-source clearing, dialog re-consumption, and destroy termination.
 - Full PlatformHost suite and interactive DOpus/file-dialog soak are required when the environment provides DOpus.
 - The real DOpus boundary test covers a valid localized `C:\` source, one `C:\Windows` navigation, readback, and restoration; a raw `WM_COPYDATA` success alone is insufficient evidence.
+- Library URI navigation and nested filesystem target tests must assert the original target is preserved until the Windows resolver, and diagnostic metadata distinguishes `D:\Qingfeng` from `D:\`.
 
 ### 7. Wrong vs Correct
 

@@ -24,7 +24,9 @@
 ```powershell
  dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "Directory source recognition" "auto quick switch" "Directory Opus" "file-dialog"
  dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "localized known folder aliases" "real Directory Opus navigation"
+ dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore -- "directory navigation resolves library URIs" "localized known folder aliases" "real Directory Opus navigation"
  dotnet run --project csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj --no-restore
+ cargo test -p nxtools-desktop --bin nxtools-desktop library_uri_is_a_navigable_directory_target_and_nested_paths_are_preserved
 ```
 
 Use the repository's committed Windows wrappers for Rust/package checks if the change reaches Rust. Direct Cargo commands must inherit the repository-required single-job environment, but this slice is expected to remain C#-local.

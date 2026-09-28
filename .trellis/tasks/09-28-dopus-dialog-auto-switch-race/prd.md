@@ -12,6 +12,7 @@ When a known Windows file dialog is reopened after the user briefly switches to 
 - The existing PlatformHost suite covers successful DOpus capture, stale-source clearing, and pane selection, but not the pending-source-to-file-dialog foreground transition.
 - The existing reference contract requires one source-to-dialog synchronization after a supported source becomes active, preserves the captured source HWND/pane context, and keeps failed recognition from reusing stale source state.
 - Real DOpus verification exposed a second boundary: the lister can expose localized `C:\用户` display segments that are not parsing paths, and a post-navigation activation using the captured pane focus can restore the pre-command directory.
+- A second real-flow check found that `lib://Pictures` is rejected as non-filesystem input before DOpus receives it, while nested filesystem targets must remain intact through the Quick Launch action and navigation command.
 
 ## Requirements
 
@@ -29,6 +30,7 @@ When a known Windows file dialog is reopened after the user briefly switches to 
 - [x] The implementation never calls native activation, `WM_COPYDATA`, or Rust IPC while performing background recognition; navigation still occurs only through the existing candidate/command path.
 - [x] Diagnostic events carry the existing bounded PlatformHost logging shape and do not log directory paths or window titles.
 - [x] The architecture gate, full PlatformHost suite, localized Users-root regression, and real DOpus C-drive navigation/readback pass; the complete DOpus-to-real-file-dialog soak remains environment-dependent and is not represented as automated coverage.
+- [x] Library URI navigation resolves known folders, nested target metadata is preserved, and the target diagnostic fields distinguish a full `D:\Qingfeng` input from a drive-root-only input without logging raw paths.
 
 ## Scope
 

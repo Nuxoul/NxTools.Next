@@ -41,6 +41,8 @@ If the existing retry helper is reused, add an explicit background-target operat
 - `ThirdPartyFileManagerDisplayPath` must canonicalize DOpus friendly path segments through both `SHGetFileInfo(SHGFI_DISPLAYNAME)` and the parent of the current user profile; a known-folder identifier that is unavailable on a machine must not make `C:\Users` aliases disappear.
 - `DirectoryOpusFileManagerOperations.TryNavigate` owns activation around its `WM_COPYDATA` `Go` command. `ThirdPartyFileManagerSessionRegistry` must not reapply the saved pane/focus after a successful DOpus navigation, because that stale focus can restore the previous directory.
 - The real boundary test must assert one valid localized C-drive capture, one nested C-drive navigation, native readback, and restoration.
+- `DirectoryNavigationTarget` is the Windows normalization boundary for filesystem paths and `lib://` known-folder identifiers. Rust must not rewrite the identifier before this boundary.
+- `PlatformPipeClient` records only bounded target metadata on `navigate_directory` and `query_shell_actions` received/completed events so a future failure can distinguish an upstream truncation from a Shell resolver truncation.
 
 ## Diagnostics
 

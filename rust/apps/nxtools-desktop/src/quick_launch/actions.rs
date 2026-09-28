@@ -1,3 +1,4 @@
+use super::search::is_navigable_directory_target;
 use super::*;
 
 #[derive(Clone)]
@@ -572,7 +573,7 @@ impl QuickLaunchActionMode {
         let navigation_directory = menu
             .as_ref()
             .and_then(|menu| menu.navigation_directory.clone())
-            .filter(|directory| Path::new(directory).is_absolute());
+            .filter(|directory| is_navigable_directory_target(directory));
         let navigation_action = self
             .navigation_context
             .as_ref()
@@ -703,7 +704,7 @@ pub(crate) fn quick_launch_action_available(
             host_context_id,
         } => {
             *window_handle != 0
-                && Path::new(target_directory).is_absolute()
+                && is_navigable_directory_target(target_directory)
                 && (*host != DirectoryNavigationHost::ThirdPartyFileManager
                     || host_context_id.is_some())
         }

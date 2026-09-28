@@ -6,6 +6,95 @@ internal sealed record DirectoryNavigationCaptureAttempt(
     DirectoryNavigationContext? Context,
     WindowsCommandResult? Failure = null);
 
+internal static class DirectoryNavigationTarget
+{
+    public static NavigateDirectoryCommand Normalize(
+        NavigateDirectoryCommand command)
+    {
+        return TryResolve(command.TargetDirectory, out var resolved)
+            ? command with { TargetDirectory = resolved }
+            : command;
+    }
+
+    public static bool TryResolve(
+        string? target,
+        out string resolved)
+    {
+        resolved = string.Empty;
+        var value = target?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+        if (Directory.Exists(value))
+        {
+            resolved = Path.GetFullPath(value);
+            return true;
+        }
+        if (!value.StartsWith("lib://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        var libraryName = value["lib://".Length..]
+            .Trim('\\', '/')
+            .Trim();
+        var profile = Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile);
+        var candidate = libraryName.ToLowerInvariant() switch
+        {
+            "desktop" => Environment.GetFolderPath(
+                Environment.SpecialFolder.Desktop),
+            "documents" => Environment.GetFolderPath(
+                Environment.SpecialFolder.MyDocuments),
+            "pictures" => Environment.GetFolderPath(
+                Environment.SpecialFolder.MyPictures),
+            "music" => Environment.GetFolderPath(
+                Environment.SpecialFolder.MyMusic),
+            "videos" => Environment.GetFolderPath(
+                Environment.SpecialFolder.MyVideos),
+            "downloads" => Path.Combine(profile, "Downloads"),
+            _ => string.Empty
+        };
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            !Directory.Exists(candidate))
+        {
+            return false;
+        }
+        resolved = Path.GetFullPath(candidate);
+        return true;
+    }
+
+    public static IReadOnlyDictionary<string, object?> DiagnosticFields(
+        string? target)
+    {
+        var value = target?.Trim() ?? string.Empty;
+        var isLibrary = value.StartsWith(
+            "lib://",
+            StringComparison.OrdinalIgnoreCase);
+        var segments = value.Split(
+            ['\\', '/'],
+            StringSplitOptions.RemoveEmptyEntries);
+        return new Dictionary<string, object?>
+        {
+            ["target_kind"] = isLibrary
+                ? "library_uri"
+                : Path.IsPathRooted(value)
+                    ? "filesystem_absolute"
+                    : "other",
+            ["target_root"] = isLibrary
+                ? "lib://"
+                : Path.GetPathRoot(value) ?? string.Empty,
+            ["target_library"] = isLibrary
+                ? value["lib://".Length..].Trim('\\', '/')
+                : null,
+            ["target_length"] = value.Length,
+            ["target_segment_count"] = segments.Length,
+            ["target_has_trailing_separator"] = value.EndsWith(
+                '\\') || value.EndsWith('/')
+        };
+    }
+}
+
 internal static class DirectoryNavigationAdapter
 {
     internal const string ExplorerHost = "explorer";
@@ -85,18 +174,23 @@ internal static class DirectoryNavigationAdapter
 
     public static WindowsCommandResult Navigate(
         NavigateDirectoryCommand command,
-        IElevatedDirectoryNavigationChannel? elevatedChannel = null) =>
-        ElevatedDirectoryNavigationClient.IsElevatedContext(
-            command.HostContextId)
-            ? elevatedChannel?.Navigate(command) ??
+        IElevatedDirectoryNavigationChannel? elevatedChannel = null)
+    {
+        var normalized = DirectoryNavigationTarget.Normalize(command);
+        return ElevatedDirectoryNavigationClient.IsElevatedContext(
+                normalized.HostContextId)
+            ? elevatedChannel?.Navigate(normalized) ??
                 new WindowsCommandResult(
                     false,
                     "The same-integrity directory helper is unavailable.")
-            : NavigateLocal(command);
+            : NavigateLocal(normalized);
+    }
 
     internal static WindowsCommandResult NavigateLocal(
-        NavigateDirectoryCommand command) =>
-        command.Host switch
+        NavigateDirectoryCommand command)
+    {
+        command = DirectoryNavigationTarget.Normalize(command);
+        return command.Host switch
         {
             ExplorerHost => ExplorerWindowAdapter.Navigate(
                 new NavigateExplorerCommand(
@@ -119,6 +213,7 @@ internal static class DirectoryNavigationAdapter
                 false,
                 $"Unsupported directory navigation host '{command.Host}'.")
         };
+    }
 
     internal static bool RequiresElevatedHelper(
         ForegroundContext foreground) =>
