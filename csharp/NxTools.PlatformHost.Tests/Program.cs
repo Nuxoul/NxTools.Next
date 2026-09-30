@@ -148,6 +148,9 @@ internal static class Program
             ("pure image capture requires PNG and file path compatibility fallbacks", PureImageCaptureRequiresCompatibilityFallbacks),
             ("file drop fallback uses a valid Unicode DROPFILES payload", FileDropFallbackUsesUnicodeDropFilesPayload),
             ("pure image native formats gain PNG and file path fallbacks", PureImageFormatsGainBothFallbacks),
+            ("private image formats are canonicalized without dropping custom formats", ActiveImageRewriteKeepsOnlyCanonicalImageFormats),
+            ("browser image metadata formats force canonical rewrite", BrowserImageMetadataFormatsForceCanonicalRewrite),
+            ("canonical image formats use standard top-down bitmap headers", CanonicalImageFormatsUseStandardHeaders),
             ("history image exposes PNG, bitmap and file path formats", HistoryImageExposesCompatibilityFormats),
             ("rich image target can omit duplicate file drop format", RichImageTargetOmitsFileDropFormat),
             ("image path fallback cleanup is bounded and protects the current file", ImagePathFallbackCleanupIsBounded),
@@ -3859,6 +3862,116 @@ internal static class Program
         var fileDrop = formats.Single(format => format.FormatId == 15);
         Assert(Encoding.Unicode.GetString(fileDrop.Data, 20, fileDrop.Data.Length - 20)
             == "C:\\images\\capture.png\0\0");
+        return Task.CompletedTask;
+    }
+    private static Task ActiveImageRewriteKeepsOnlyCanonicalImageFormats()
+    {
+        var formats = new List<CapturedClipboardNativeFormat>
+        {
+            new(49_201, "PNG", [1], 0),
+            new(49_161, "DataObject", [2], 1),
+            new(50_080, "PixPinData", [3], 2),
+            new(8, "", [4], 3),
+            new(17, "", [5], 4),
+            new(49_171, "Ole Private Data", [6], 5),
+            new(50_123, "CustomImageFormat", [7], 6)
+        };
+
+        ClipboardImageCompatibility.ReplaceWithCanonicalImageFormats(
+            formats,
+            pngFormatId: 49_201,
+            pngData: [8, 9],
+            imagePath: @"C:\images\capture.png",
+            dibV5Data: [10, 11],
+            dibData: [12, 13]);
+
+        Assert(formats.Select(format => format.FormatId).SequenceEqual([17u, 8u, 49_201u, 15u, 50_123u]));
+        Assert(formats.All(format => format.Data.Length > 0));
+        return Task.CompletedTask;
+    }
+    private static Task BrowserImageMetadataFormatsForceCanonicalRewrite()
+    {
+        var formats = new List<CapturedClipboardNativeFormat>
+        {
+            new(49_201, "PNG", [1], 0),
+            new(8, "", [2], 1),
+            new(17, "", [3], 2),
+            new(15, "", [4], 3),
+            new(49_202, "HTML Format", [5], 4),
+            new(49_203, "text/html", [6], 5),
+            new(49_204, "UniformResourceLocatorW", [7], 6),
+            new(49_205, "text/uri-list", [8], 7),
+            new(49_206, "text/x-moz-url", [9], 8),
+            new(49_207, "Chromium internal source URL", [10], 9),
+            new(49_208, "Chromium internal source image", [11], 10),
+            new(49_209, "Chromium Web Custom MIME Data Format", [12], 11)
+        };
+
+        Assert(ClipboardImageCompatibility.RequiresCanonicalRewrite(
+            hasImage: true,
+            hasText: false,
+            fileCount: 0,
+            formats));
+
+        ClipboardImageCompatibility.ReplaceWithCanonicalImageFormats(
+            formats,
+            pngFormatId: 49_201,
+            pngData: [8, 9],
+            imagePath: @"C:\images\capture.png",
+            dibV5Data: [10, 11],
+            dibData: [12, 13]);
+
+        Assert(formats.Select(format => format.FormatId).SequenceEqual([17u, 8u, 49_201u, 15u]));
+        Assert(!formats.Any(format =>
+            format.FormatName is "HTML Format" or "text/html" or
+                "UniformResourceLocatorW" or "text/uri-list" or "text/x-moz-url" or
+                "Chromium internal source URL" or "Chromium internal source image" or
+                "Chromium Web Custom MIME Data Format"));
+        return Task.CompletedTask;
+    }
+    private static Task PrivateImageFormatsForceCanonicalRewrite()
+    {
+        var formats = new List<CapturedClipboardNativeFormat>
+        {
+            new(49_201, "PNG", [1], 0),
+            new(8, "", [2], 1),
+            new(17, "", [3], 2),
+            new(15, "", [4], 3),
+            new(50_080, "PixPinData", [5], 4)
+        };
+
+        Assert(ClipboardImageCompatibility.RequiresCanonicalRewrite(
+            hasImage: true,
+            hasText: false,
+            fileCount: 0,
+            formats));
+        formats.RemoveAt(formats.Count - 1);
+        Assert(!ClipboardImageCompatibility.RequiresCanonicalRewrite(
+            hasImage: true,
+            hasText: false,
+            fileCount: 0,
+            formats));
+        return Task.CompletedTask;
+    }
+    private static Task CanonicalImageFormatsUseStandardHeaders()
+    {
+        using var bitmap = new System.Drawing.Bitmap(3, 2);
+        using var stream = new MemoryStream();
+        bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+
+        Assert(ClipboardImageCompatibility.TryCreateCanonicalBitmapFormats(
+            stream.ToArray(),
+            out var dibV5,
+            out var dib));
+        Assert(dibV5 is not null && dib is not null);
+        Assert(BitConverter.ToUInt32(dibV5!, 0) == 124);
+        Assert(BitConverter.ToInt32(dibV5!, 4) == 3);
+        Assert(BitConverter.ToInt32(dibV5!, 8) == -2);
+        Assert(BitConverter.ToUInt16(dibV5!, 14) == 32);
+        Assert(BitConverter.ToUInt32(dib!, 0) == 40);
+        Assert(BitConverter.ToInt32(dib!, 8) == -2);
+        Assert(dibV5!.Length == 124 + 3 * 2 * 4);
+        Assert(dib!.Length == 40 + 3 * 2 * 4);
         return Task.CompletedTask;
     }
 

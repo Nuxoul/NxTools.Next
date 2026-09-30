@@ -78,3 +78,12 @@ Make long-running clipboard history browsing and repeated search/delete workflow
 - Fixed review findings for immutable clipboard cursors, `QuerySuperseded` UI handling, search/scroll replacement races, mixed image/file asset cleanup, bounded PlatformHost publication tail, native callback exception boundaries, helper-role diagnostics, and payload/path-free logging.
 - Fixed download redownload reconciliation, partial media cleanup ordering, browser replacement task identity, stale progress rejection, compact final-path projection/filtering, and snapshot progress-cache reset.
 - The packaged interactive clipboard CPU/working-set soak and WER/dump correlation remain evidence gaps; no crash root cause is claimed.
+
+## Latest PixPin image-paste diagnosis
+
+- Live PlatformHost evidence confirmed PixPin screenshots carry PNG, `CF_DIB`, `CF_DIBV5`, `CF_HDROP`, and source-owned `DataObject`/`PixPinData`/`Ole Private Data` registrations.
+- The active image fallback previously replayed those private registrations as ordinary global-memory formats. The fix now canonicalizes the image to PNG plus top-down 32bpp `CF_DIBV5`/`CF_DIB`, filters source-private formats, and retains the bounded `CF_HDROP` path fallback.
+- Added PlatformHost regressions for private-format canonicalization, rewrite triggering, and valid DIB/DIBV5 headers. Debug build and the complete PlatformHost suite pass.
+- Browser right-click `Copy image` is covered by the same path: HTML/URL/Chromium metadata formats trigger canonical rewrite and are removed while PNG, top-down `CF_DIBV5`/`CF_DIB`, safe custom formats and bounded `CF_HDROP` remain.
+- The Release package and Inno Setup installer were built successfully, and the installer was smoke-installed into an isolated user directory. Live Pi-desktop/QQ/Codex acceptance remains pending because the currently running protected PlatformHost has a different hash from the new package and was not stopped.
+- Live PixPin/QQ/Pi/Codex end-to-end verification still requires a rebuilt/running package and the user's target input controls; the existing target-window activation failure evidence remains a separate issue from image-format compatibility.

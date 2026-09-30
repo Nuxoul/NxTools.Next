@@ -690,6 +690,8 @@ internal sealed partial class WindowsPlatformAdapter
                 (!ClipboardImageCompatibility.RequiresPngFallback(
                      hasImage: true, hasText, fileCount, nativeFormats) &&
                  !ClipboardImageCompatibility.RequiresFileDropFallback(
+                     hasImage: true, hasText, fileCount, nativeFormats) &&
+                 !ClipboardImageCompatibility.RequiresCanonicalRewrite(
                      hasImage: true, hasText, fileCount, nativeFormats)))
             {
                 return false;

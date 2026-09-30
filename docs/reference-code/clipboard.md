@@ -314,9 +314,11 @@ Current image compatibility chain:
 
 ```text
 direct copy of pure image
-  -> C# captures PNG/DIB
+  -> C# captures the source PNG/DIB/native formats
   -> content-addressed fallback PNG is persisted
-  -> C# rewrites clipboard with PNG/DIB + CF_HDROP
+  -> C# publishes a canonical PNG + CF_DIBV5 + CF_DIB core and retains safe non-private native formats
+  -> CF_HDROP is retained as the explicit path fallback for terminal/file-manager compatibility
+  -> PixPin/OLE-private source formats are not replayed into the active clipboard
 
 click image history item
   -> Rust classifies the captured target process
@@ -324,6 +326,17 @@ click image history item
   -> terminal/file manager: send PNG/DIB + persisted image_path_fallback
   -> C# follows the typed include_file_drop_fallback flag
 ```
+
+The canonical DIB path is important for screenshot applications such as PixPin: copying the
+source's `DataObject`, `PixPinData`, or `Ole Private Data` registrations as if they were ordinary
+global-memory formats can make the clipboard look populated while rich editors and CLI paste
+surfaces reject it. The compatibility rewrite keeps the PNG bytes, rebuilds a top-down 32bpp
+`CF_DIBV5`/`CF_DIB` pair, and preserves the bounded file-path fallback without logging payload data.
+Browser right-click `Copy image` is covered by the same rewrite boundary. Chromium can publish an
+image together with `HTML Format`, `text/html`, URL-list formats, or `Chromium internal source ...`
+and `Chromium Web Custom MIME Data Format` registrations. Those metadata formats trigger the
+canonical rewrite but are not replayed into the active clipboard; the image remains available
+through PNG/DIB and the bounded `CF_HDROP` fallback.
 
 ## Quick-jump target resolution
 

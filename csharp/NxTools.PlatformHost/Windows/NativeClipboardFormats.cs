@@ -180,7 +180,6 @@ internal static class NativeClipboardFormats
             out error,
             out hresult);
     }
-
     public static bool TryRewriteWithImageFallbacks(
         IntPtr owner,
         IReadOnlyList<CapturedClipboardNativeFormat> formats,
@@ -216,8 +215,17 @@ internal static class NativeClipboardFormats
             }
 
             var rewritten = formats.ToList();
-            ClipboardImageCompatibility.AddCompatibilityFallbacks(
-                rewritten, pngFormat, pngData, Path.GetFullPath(imagePathFallback));
+            ClipboardImageCompatibility.TryCreateCanonicalBitmapFormats(
+                pngData,
+                out var canonicalDibV5Data,
+                out var canonicalDibData);
+            ClipboardImageCompatibility.ReplaceWithCanonicalImageFormats(
+                rewritten,
+                pngFormat,
+                pngData,
+                Path.GetFullPath(imagePathFallback),
+                canonicalDibV5Data ?? formats.FirstOrDefault(static format => format.FormatId == 17)?.Data,
+                canonicalDibData ?? formats.FirstOrDefault(static format => format.FormatId == 8)?.Data);
             var payloads = rewritten
                 .Where(static format => format.Data.Length > 0)
                 .Select(static format => new NativePayload(
