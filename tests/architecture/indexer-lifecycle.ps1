@@ -82,6 +82,12 @@ $joinedCsharp = $csharpSource -join "`n"
 if ($joinedCsharp -match 'IndexSearchBatch|IndexSearchRequest|MftSnapshot|FSCTL_ENUM_USN_DATA') {
     throw 'Architecture regression: file indexing and query generations belong to Rust, not PlatformHost.'
 }
+if ($joinedCsharp -notmatch 'ShouldRequestInitialAuthorization\(ServiceExists\(\)\)' -or
+    $joinedCsharp -notmatch 'ShouldRequestInitialAuthorization\(bool serviceExists\) => !serviceExists' -or
+    $joinedCsharp -notmatch '(?s)if \(!ShouldRequestInitialAuthorization\(ServiceExists\(\)\)\).*?Verb = "runas"') {
+    throw 'Indexer deployment regression: an existing service must never enter the one-time UAC runas branch.'
+}
+
 if ($joinedCsharp -notmatch 'ensure_indexer_service' -or
     $joinedCsharp -notmatch 'obj=", "LocalSystem' -or
     $joinedCsharp -notmatch 'Verb = "runas"') {

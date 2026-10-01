@@ -179,6 +179,7 @@ internal static class Program
             ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
             ("indexer service command carries no caller-controlled path", IndexerServiceCommandHasNoPath),
+            ("existing indexer service never requests second authorization", ExistingIndexerServiceNeverRequestsSecondAuthorization),
             ("browser native messaging command preserves fixed extension identities", BrowserNativeMessagingCommandPreservesIdentities),
             ("indexer service installer only accepts packaged sibling", IndexerServiceInstallerAcceptsOnlyPackagedSibling),
             ("protected indexer service root stays under ProgramData", ProtectedIndexerServiceRootStaysUnderProgramData),
@@ -748,6 +749,14 @@ internal static class Program
             .Contains("indexer_path", StringComparison.OrdinalIgnoreCase));
         return Task.CompletedTask;
     }
+
+    private static Task ExistingIndexerServiceNeverRequestsSecondAuthorization()
+    {
+        Assert(!IndexerServiceInstaller.ShouldRequestInitialAuthorization(serviceExists: true));
+        Assert(IndexerServiceInstaller.ShouldRequestInitialAuthorization(serviceExists: false));
+        return Task.CompletedTask;
+    }
+
 
     private static Task BrowserNativeMessagingCommandPreservesIdentities()
     {

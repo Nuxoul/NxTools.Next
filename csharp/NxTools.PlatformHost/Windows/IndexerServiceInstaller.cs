@@ -25,8 +25,24 @@ internal static class IndexerServiceInstaller
         "(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
         "(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)" +
         "(A;;CCLCSWRPWPLORC;;;AU)";
+    private const string ServiceInstallMutexName = @"Local\NxToolsIndexerServiceInstallV1";
     private static readonly object ProcessImageGate = new();
     private static TrustedBinary? _processImage;
+
+    private sealed class ServiceInstallGate(Semaphore semaphore) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                semaphore.Release();
+            }
+            finally
+            {
+                semaphore.Dispose();
+            }
+        }
+    }
 
     internal static void PinCurrentProcessImage()
     {
@@ -49,16 +65,35 @@ internal static class IndexerServiceInstaller
     {
         try
         {
+            using var installGate = await AcquireServiceInstallGateAsync(cancellationToken);
+            // A changed user-package hash is an ordinary update, not a reason to
+            // ask for administrator consent again. Once the service exists, all
+            // later launches stay non-elevated: healthy services start normally;
+            // damaged services fail closed without another UAC prompt.
+            if (!ShouldRequestInitialAuthorization(ServiceExists()))
+            {
+                if (!IsProtectedServiceHealthy())
+                {
+                    return new WindowsCommandResult(
+                        false,
+                        "受保护索引服务已存在，但完整性检查未通过；未再次请求管理员权限。");
+                }
+                if (TryStartService(log))
+                {
+                    log.Write("info", "indexer_service.protected_package_reused", fields: new Dictionary<string, object?>
+                    {
+                        ["service_name"] = ServiceName
+                    });
+                    return new WindowsCommandResult(true, Data: "running");
+                }
+                return new WindowsCommandResult(false, "受保护索引服务已安装，但启动失败；未再次请求管理员权限。");
+            }
+
             var hostPath = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Cannot locate NxTools.PlatformHost.exe.");
             var indexerPath = ValidatePackagedIndexerPath(
                 hostPath,
                 Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe"));
-
-            if (IsInstalledAt(indexerPath) && TryStartService(log))
-            {
-                return new WindowsCommandResult(true, Data: "running");
-            }
 
             var startInfo = new ProcessStartInfo
             {
@@ -102,6 +137,8 @@ internal static class IndexerServiceInstaller
             return new WindowsCommandResult(false, error.Message);
         }
     }
+
+
 
     public static int InstallElevated(string indexerPath, IPlatformLog log)
     {
@@ -267,6 +304,63 @@ internal static class IndexerServiceInstaller
                 $"安装目录中缺少 {siblingFileName}。");
         }
         return siblingPath;
+    }
+
+    internal static bool IsProtectedServiceHealthy()
+    {
+        try
+        {
+            var protectedDirectory = ProtectedServiceDirectory();
+            var protectedIndexerPath = Path.Combine(protectedDirectory, "NxTools.Indexer.exe");
+            var protectedPlatformHostPath = Path.Combine(protectedDirectory, "NxTools.PlatformHost.exe");
+            var protectedDesktopPath = Path.Combine(protectedDirectory, "NxTools.exe");
+            if (!File.Exists(protectedIndexerPath) ||
+                !File.Exists(protectedPlatformHostPath) ||
+                !File.Exists(protectedDesktopPath))
+            {
+                return false;
+            }
+
+            using var key = Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+            var imagePath = key?.GetValue("ImagePath") as string;
+            var objectName = key?.GetValue("ObjectName") as string;
+            var startMode = key?.GetValue("Start");
+            var binaryHash = key?.GetValue(BinaryHashValueName) as string;
+            var desktopHash = key?.GetValue(DesktopHashValueName) as string;
+            var platformHostHash = key?.GetValue(PlatformHostHashValueName) as string;
+            var registeredDesktopPath = key?.GetValue(DesktopPathValueName) as string;
+            if (imagePath is null ||
+                objectName is null ||
+                startMode is null ||
+                binaryHash is null ||
+                desktopHash is null ||
+                platformHostHash is null ||
+                registeredDesktopPath is null)
+            {
+                return false;
+            }
+
+            var descriptor = RunSc(["sdshow", ServiceName], [0]);
+            return string.Equals(
+                    Path.GetFullPath(registeredDesktopPath),
+                    Path.GetFullPath(protectedDesktopPath),
+                    StringComparison.OrdinalIgnoreCase) &&
+                BinaryHashMatches(binaryHash, protectedIndexerPath) &&
+                BinaryHashMatches(desktopHash, protectedDesktopPath) &&
+                BinaryHashMatches(platformHostHash, protectedPlatformHostPath) &&
+                RegistrationMatches(
+                    new IndexerServiceRegistration(
+                        imagePath,
+                        objectName,
+                        Convert.ToInt32(startMode),
+                        descriptor),
+                    protectedIndexerPath);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsInstalledAt(string indexerPath)
@@ -1011,11 +1105,54 @@ internal static class IndexerServiceInstaller
         }
     }
 
+    internal static bool ShouldRequestInitialAuthorization(bool serviceExists) => !serviceExists;
+
     private static bool ServiceExists()
     {
-        using var key = Registry.LocalMachine.OpenSubKey(
-            $@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
-        return key is not null;
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+            return key is not null;
+        }
+        catch (Exception error) when (
+            error is UnauthorizedAccessException or
+            System.Security.SecurityException or
+            IOException)
+        {
+            // Unknown service state is fail-closed: never turn a registry read
+            // failure into a second administrator prompt.
+            return true;
+        }
+    }
+
+    private static async Task<ServiceInstallGate> AcquireServiceInstallGateAsync(
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            Semaphore? semaphore = null;
+            try
+            {
+                semaphore = new Semaphore(1, 1, ServiceInstallMutexName);
+                var deadline = Environment.TickCount64 + OperationTimeoutMs;
+                while (Environment.TickCount64 < deadline)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (semaphore.WaitOne(100))
+                    {
+                        var gate = new ServiceInstallGate(semaphore);
+                        semaphore = null;
+                        return gate;
+                    }
+                }
+                throw new TimeoutException("等待索引服务安装锁超时。");
+            }
+            finally
+            {
+                semaphore?.Dispose();
+            }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static void WaitForServiceStopped()
