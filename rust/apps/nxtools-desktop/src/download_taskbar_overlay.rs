@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
-use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_2, SPACING_8};
+use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
@@ -172,7 +172,7 @@ fn taskbar_overlay_max_lanes(settings: &DownloadTaskbarProgressOverlaySettings) 
     let text_space = if show_text {
         LINE_HEIGHT_LABEL as u32
             + if settings.show_progress {
-                SPACING_2 as u32
+                SPACING_4 as u32
             } else {
                 0
             }
@@ -575,7 +575,8 @@ impl DownloadTaskbarOverlayView {
 }
 
 impl Render for DownloadTaskbarOverlayView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let theme = self.theme;
         let visibility_generation = self.visibility.generation;
         let visibility_exiting = self.visibility.exiting;
@@ -667,7 +668,7 @@ impl Render for DownloadTaskbarOverlayView {
                             .flex_col()
                             .justify_center()
                             .gap(px(if show_text && settings.show_progress {
-                                SPACING_2
+                                SPACING_4
                             } else {
                                 0.0
                             }))
@@ -687,7 +688,11 @@ impl Render for DownloadTaskbarOverlayView {
                                         .children(lanes.iter().copied().enumerate().map(
                                             |(index, lane)| {
                                                 taskbar_progress_lane_element(
-                                                    theme, width, index, lane,
+                                                    theme,
+                                                    width,
+                                                    index,
+                                                    lane,
+                                                    crate::ui::motion::motion_allowed(cx),
                                                 )
                                             },
                                         )),
@@ -779,7 +784,8 @@ impl Render for DownloadTaskbarOverlayView {
                                 ),
                         );
                 }
-                root.with_animation(
+                if crate::ui::motion::motion_allowed(cx) {
+                    root.with_animation(
                     gpui::SharedString::from(format!(
                         "download-taskbar-visibility-{visibility_generation}-{visibility_exiting}"
                     )),
@@ -794,8 +800,10 @@ impl Render for DownloadTaskbarOverlayView {
                             taskbar_overlay_visibility_motion(delta, visibility_exiting);
                         root.opacity(opacity).relative().top(px(vertical_offset))
                     },
-                )
-                .into_any_element()
+                ).into_any_element()
+                } else {
+                    root.into_any_element()
+                }
             }
         }
     }
@@ -806,6 +814,7 @@ fn taskbar_progress_lane_element(
     width: f32,
     index: usize,
     lane: DownloadTaskbarOverlayLane,
+    motion_allowed: bool,
 ) -> gpui::AnyElement {
     let track = div()
         .relative()
@@ -814,23 +823,28 @@ fn taskbar_progress_lane_element(
         .overflow_hidden()
         .bg(theme.border_subtle);
     match lane {
-        DownloadTaskbarOverlayLane::Indeterminate => track
-            .child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .h_full()
-                    .w(px(width * 0.35))
-                    .bg(theme.accent)
-                    .opacity(0.78)
+        DownloadTaskbarOverlayLane::Indeterminate => {
+            let segment = div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .h_full()
+                .w(px(width * 0.35))
+                .bg(theme.accent)
+                .opacity(0.78);
+            let segment = if motion_allowed {
+                segment
                     .with_animation(
                         ("download-taskbar-indeterminate", index),
                         Animation::new(Duration::from_millis(1_400)).repeat(),
                         move |segment, delta| segment.left(px(width * 0.65 * delta)),
-                    ),
-            )
-            .into_any_element(),
+                    )
+                    .into_any_element()
+            } else {
+                segment.into_any_element()
+            };
+            track.child(segment).into_any_element()
+        }
         DownloadTaskbarOverlayLane::Determinate { completed, total } => {
             let ratio = if total == 0 {
                 0.0
@@ -934,7 +948,7 @@ fn taskbar_metric_item(
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(SPACING_2))
+        .gap(px(SPACING_4))
         .when_some(leading_label, |item, label| item.child(label))
         .child(div().font_family(UI_MONO_FONT_FAMILY).child(value))
         .when_some(trailing_label, |item, label| item.child(label))
@@ -1234,7 +1248,7 @@ mod tests {
         settings.height = 32;
         settings.show_speed = true;
 
-        assert_eq!(taskbar_overlay_max_lanes(&settings), 5);
+        assert_eq!(taskbar_overlay_max_lanes(&settings), 4);
     }
 
     #[test]

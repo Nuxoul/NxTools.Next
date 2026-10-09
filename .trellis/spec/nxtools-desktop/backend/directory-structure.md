@@ -1,54 +1,5 @@
-# Directory Structure
+# Desktop structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/apps/nxtools-desktop/src/main.rs`, `repo:rust/apps/nxtools-desktop/src/runtime.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard_worker.rs`, `repo:rust/apps/nxtools-desktop/src/quick_launch.rs`, `repo:rust/apps/nxtools-desktop/src/downloads.rs`, `repo:rust/apps/nxtools-desktop/src/ui/mod.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+main/runtime compose guards/services/supervisors; application controllers own live feature state, typed commands and configuration. main_window owns module shell/settings projection; downloads/quick_launch/ui submodules own concrete surfaces; shared ui/components/metrics/type/motion/theme own presentation primitives. Clipboard worker serializes blocking history IO outside render/callback. Notifications/popup/window lifecycle own identities. No raw Windows APIs in render or domain rewrites for styling. Preserve real surface seam when extracting modules; don't split leased owner into synchronous back-and-forth entities. [Architecture](../../shared/architecture.md).

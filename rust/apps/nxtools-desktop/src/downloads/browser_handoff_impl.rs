@@ -5,7 +5,275 @@
 
 use super::*;
 
+const FIXED_CONFIRMATION_IPC_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub(super) struct PendingNewDownloadHandoff {
+    pub(super) command_id: uuid::Uuid,
+    started_at: Instant,
+    source: AnyWindowHandle,
+    source_view: gpui::WeakEntity<NewDownloadView>,
+    generation: u64,
+    target: AnyWindowHandle,
+    target_view: Entity<NewDownloadView>,
+    source_native: i64,
+    target_native: i64,
+}
+
 impl DownloadApplication {
+    fn fixed_source_is_current(
+        &self,
+        source: AnyWindowHandle,
+        view: &gpui::WeakEntity<NewDownloadView>,
+        generation: u64,
+        cx: &App,
+    ) -> bool {
+        self.new_download_window == Some(source)
+            && cx.windows().contains(&source)
+            && view.upgrade().is_some_and(|view| {
+                let view = view.read(cx);
+                view.probe_generation == generation
+                    && view.handoff_staged
+                    && view.probe.is_some()
+                    && view.confirmed_request.as_ref().is_some_and(|request| {
+                        request.source_url == view.url.read(cx).value().trim()
+                    })
+            })
+    }
+
+    pub(crate) fn create_fixed_confirmation(
+        &mut self,
+        source: AnyWindowHandle,
+        source_view: gpui::WeakEntity<NewDownloadView>,
+        generation: u64,
+        operation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        self.cleanup_new_download_handoff(cx);
+        if self.pending_new_download_handoff.is_some()
+            || !self.fixed_source_is_current(source, &source_view, generation, cx)
+        {
+            return;
+        }
+        let Some(view) = source_view.upgrade() else {
+            return;
+        };
+        let window_size = new_download_window_size_for_probe(
+            view.read(cx)
+                .probe
+                .as_ref()
+                .expect("validated successful probe"),
+        );
+        let draft = view.read(cx).fixed_confirmation_draft(cx);
+        let anchor = source.update(cx, |_, window, cx| {
+            (
+                native_window_handle(window).unwrap_or_default(),
+                window.scale_factor(),
+                window.display(cx).map(|display| display.id()),
+            )
+        });
+        let Ok((source_native, scale, display_id)) = anchor else {
+            return;
+        };
+        let view_slot = Rc::new(RefCell::new(None));
+        let opened_view_slot = Rc::clone(&view_slot);
+        let native_slot = Rc::new(RefCell::new(0_i64));
+        let opened_native_slot = Rc::clone(&native_slot);
+        let mut options = new_download_window_options(WindowBounds::centered(window_size, cx));
+        options.show = false;
+        options.focus = false;
+        options.display_id = display_id;
+        let opened = cx.open_window(options, move |window, cx| {
+            *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
+            let view = cx.new(|cx| draft.hydrate(window, cx));
+            *opened_view_slot.borrow_mut() = Some(view.clone());
+            cx.new(|cx| Root::new(view, window, cx))
+        });
+        let target: AnyWindowHandle = match opened {
+            Ok(window) => window.into(),
+            Err(_) => {
+                let _ = source_view.update(cx, |view, cx| {
+                    view.handoff_pending = false;
+                    view.error = Some("确认窗口未能打开，可重试打开确认；无需重新探测".into());
+                    cx.notify();
+                });
+                warn!(event = "download.fixed_confirmation.failed", correlation_id = %operation_id, reason = "window_create", "fixed confirmation could not be created");
+                return;
+            }
+        };
+        let target_view = view_slot
+            .borrow_mut()
+            .take()
+            .expect("created confirmation view");
+        let target_native = *native_slot.borrow();
+        #[cfg(test)]
+        let (source_native, target_native) = self
+            .new_download_native_handles_override
+            .unwrap_or((source_native, target_native));
+        if !self.fixed_source_is_current(source, &source_view, generation, cx) {
+            let _ = target.update(cx, |_, window, _| window.remove_window());
+            return;
+        }
+        // Use the operation ID as the command ID: send_command_with_id has no separate correlation field.
+        self.pending_new_download_handoff = Some(PendingNewDownloadHandoff {
+            command_id: operation_id,
+            started_at: Instant::now(),
+            source,
+            source_view,
+            generation,
+            target,
+            target_view,
+            source_native,
+            target_native,
+        });
+        info!(event = "download.fixed_confirmation.started", correlation_id = %operation_id, source_native, target_native, generation, "fixed confirmation handoff started");
+        if source_native == 0 && target_native == 0 {
+            self.finish_new_download_handoff(operation_id, true, "hwndless", cx);
+            return;
+        }
+        let command = PlatformCommand::PresentFixedWindowOverAnchor(
+            nxtools_protocol::PresentFixedWindowOverAnchorCommand {
+                window_handle: target_native,
+                anchor_window_handle: source_native,
+                width: (window_size.width.as_f32() * scale).round() as i32,
+                height: (window_size.height.as_f32() * scale).round() as i32,
+            },
+        );
+        #[cfg(test)]
+        if self.new_download_native_handles_override.is_some() {
+            self.new_download_handoff_commands.push(command);
+            self.schedule_fixed_confirmation_timeout(operation_id, cx);
+            return;
+        }
+        if self
+            .platform
+            .send_command_with_id(command, operation_id)
+            .is_err()
+        {
+            self.finish_new_download_handoff(operation_id, false, "dispatch_rejected", cx);
+            return;
+        }
+        self.schedule_fixed_confirmation_timeout(operation_id, cx);
+    }
+
+    fn schedule_fixed_confirmation_timeout(&self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
+        cx.spawn(async move |application, cx| {
+            cx.background_executor()
+                .timer(FIXED_CONFIRMATION_IPC_TIMEOUT)
+                .await;
+            let _ = application.update(cx, |application, cx| {
+                application.finish_new_download_handoff(command_id, false, "ipc_timeout", cx);
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn cleanup_new_download_handoff(&mut self, cx: &mut Context<Self>) {
+        if let Some(pending) = self.pending_new_download_handoff.as_ref()
+            && (!self.fixed_source_is_current(
+                pending.source,
+                &pending.source_view,
+                pending.generation,
+                cx,
+            ) || !cx.windows().contains(&pending.target))
+        {
+            self.finish_new_download_handoff(pending.command_id, false, "retired", cx);
+        }
+        if self
+            .new_download_window
+            .is_some_and(|window| !cx.windows().contains(&window))
+        {
+            self.new_download_window = None;
+            #[cfg(test)]
+            {
+                self.new_download_view = None;
+            }
+        }
+    }
+
+    pub(crate) fn finish_new_download_handoff(
+        &mut self,
+        command_id: uuid::Uuid,
+        success: bool,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .pending_new_download_handoff
+            .as_ref()
+            .is_none_or(|pending| pending.command_id != command_id)
+        {
+            return;
+        }
+        let pending = self
+            .pending_new_download_handoff
+            .take()
+            .expect("matched handoff");
+        let current = self.fixed_source_is_current(
+            pending.source,
+            &pending.source_view,
+            pending.generation,
+            cx,
+        );
+        let ready = success && current && cx.windows().contains(&pending.target);
+        info!(event = "download.fixed_confirmation.finished", correlation_id = %command_id,
+            source_native = pending.source_native, target_native = pending.target_native, generation = pending.generation,
+            success = ready, reason, elapsed_ms = pending.started_at.elapsed().as_millis(), "fixed confirmation handoff finished");
+        if !ready {
+            let _ = pending
+                .target
+                .update(cx, |_, window, _| window.remove_window());
+            if self.new_download_window == Some(pending.source)
+                && cx.windows().contains(&pending.source)
+                && pending
+                    .source_view
+                    .upgrade()
+                    .is_some_and(|view| view.read(cx).probe_generation == pending.generation)
+            {
+                let _ = pending.source_view.update(cx, |view, cx| {
+                    view.handoff_pending = false;
+                    view.error = Some("确认窗口未能打开，可重试打开确认；无需重新探测".into());
+                    cx.notify();
+                });
+            }
+            return;
+        }
+        self.new_download_window = Some(pending.target);
+        #[cfg(test)]
+        {
+            self.new_download_view = Some(pending.target_view.clone());
+        }
+        let _ = pending
+            .source
+            .update(cx, |_, window, _| window.remove_window());
+        let target = pending.target;
+        let view = pending.target_view.downgrade();
+        cx.defer(move |cx| {
+            let _ = target.update(cx, |_, window, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    view.file_name.focus_handle(cx).focus(window);
+                    cx.notify();
+                });
+            });
+        });
+        // Never call GPUI activate_window: hidden WindowsWindow retains initial_placement,
+        // and its activate() replays stale constructor bounds through SetWindowPlacement.
+        if pending.target_native != 0 {
+            let _ = self.platform.send_command_correlated(
+                PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
+                    window_handle: pending.target_native,
+                    enabled: true,
+                }),
+                command_id,
+            );
+            let _ = self.platform.send_command_correlated(
+                PlatformCommand::ActivateWindow(ActivateWindowCommand {
+                    window_handle: pending.target_native,
+                }),
+                command_id,
+            );
+        }
+    }
+
     pub(crate) fn import_browser_blob(
         &mut self,
         context: BrowserBlobDialogContext,
@@ -154,18 +422,23 @@ impl DownloadApplication {
         browser_context: Option<(uuid::Uuid, uuid::Uuid)>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
+        self.cleanup_new_download_handoff(cx);
         if let Some(window) = self.new_download_window {
             if initial_source.is_some() {
                 if window.update(cx, |_, _, _| {}).is_ok() {
                     return Err("已有添加下载窗口，请先完成或关闭后重试".into());
                 }
-            } else if window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
+            } else if window.update(cx, |_, window, _| window.refresh()).is_ok() {
+                let native = window
+                    .update(cx, |_, window, _| {
+                        native_window_handle(window).unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                let _ = self.platform.send_command(PlatformCommand::ActivateWindow(
+                    ActivateWindowCommand {
+                        window_handle: native,
+                    },
+                ));
                 return Ok(());
             }
             self.new_download_window = None;

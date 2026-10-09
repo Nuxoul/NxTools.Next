@@ -82,7 +82,7 @@ impl Render for DownloadShutdownCountdownView {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(SPACING_6))
+                    .gap(px(SPACING_8))
                     .child(
                         div()
                             .text_size(px(TEXT_TITLE))
@@ -99,7 +99,7 @@ impl Render for DownloadShutdownCountdownView {
                         div()
                             .text_size(px(TEXT_LABEL))
                             .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_muted)
+                            .text_color(theme.text_secondary)
                             .child("这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。"),
                     ),
             )

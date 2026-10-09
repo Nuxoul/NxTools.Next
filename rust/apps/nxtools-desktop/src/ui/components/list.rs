@@ -5,12 +5,14 @@ use gpui::{
 use gpui_component::tooltip::Tooltip;
 
 use crate::theme::Theme;
-use crate::ui::metrics::{SETTINGS_ROW_MIN_HEIGHT, SPACING_6, SPACING_8};
+use crate::ui::components::action::focusable_content;
+use crate::ui::metrics::{SETTINGS_ROW_MIN_HEIGHT, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
-const COMPACT_RESULT_ROW_PADDING_X: f32 = 7.0;
+const COMPACT_RESULT_ROW_PADDING_X: f32 = 8.0;
 const COMPACT_RESULT_ROW_PADDING_Y: f32 = 4.0;
 const COMPACT_RESULT_ROW_CONTENT_GAP: f32 = 4.0;
+pub(crate) const RADIO_SELECTION_DOT_SIZE: f32 = 6.0;
 
 pub(crate) fn compact_list_row(
     theme: Theme,
@@ -28,7 +30,8 @@ pub(crate) fn compact_list_row(
     let detail_selector = SharedString::from(format!("{selector}-detail"));
     let tooltip_selector = SharedString::from(format!("{selector}-tooltip"));
     let tooltip_detail = detail.clone();
-    div()
+    let action_id = SharedString::from(format!("{selector}-action"));
+    let content = div()
         .id(selector.clone())
         .debug_selector(move || selector.to_string())
         .relative()
@@ -57,15 +60,14 @@ pub(crate) fn compact_list_row(
             })
             .build(window, cx)
         })
-        .on_click(on_click)
         .when(selected, |row| {
             row.child(
                 div()
                     .debug_selector(move || marker_selector.to_string())
                     .absolute()
                     .left_0()
-                    .top(px(SPACING_6))
-                    .bottom(px(SPACING_6))
+                    .top(px(SPACING_8))
+                    .bottom(px(SPACING_8))
                     .w(px(2.0))
                     .bg(theme.accent),
             )
@@ -95,7 +97,8 @@ pub(crate) fn compact_list_row(
                 .child(detail),
         )
         .when(!enabled, |row| row.opacity(0.62))
-        .into_any_element()
+        .into_any_element();
+    focusable_content(action_id, theme, false, content, on_click)
 }
 
 /// Shared shell for result-style rows (clipboard history today; other result
@@ -156,7 +159,8 @@ pub(crate) fn radio_list_row(
     let title_selector = SharedString::from(format!("{selector}-title"));
     let detail_selector = SharedString::from(format!("{selector}-detail"));
 
-    div()
+    let action_id = SharedString::from(format!("{selector}-action"));
+    let content = div()
         .id(selector.clone())
         .debug_selector(move || selector.to_string())
         .w_full()
@@ -175,7 +179,6 @@ pub(crate) fn radio_list_row(
             theme.canvas
         })
         .hover(move |style| style.bg(theme.surface_hover))
-        .on_click(on_click)
         .child(
             div()
                 .debug_selector(move || radio_selector.to_string())
@@ -190,7 +193,7 @@ pub(crate) fn radio_list_row(
                 .child(
                     div()
                         .debug_selector(move || radio_state_selector.to_string())
-                        .size(px(SPACING_6))
+                        .size(px(RADIO_SELECTION_DOT_SIZE))
                         .rounded_full()
                         .when(selected, |dot| dot.bg(theme.accent)),
                 ),
@@ -229,5 +232,107 @@ pub(crate) fn radio_list_row(
                         .child(detail),
                 ),
         )
-        .into_any_element()
+        .into_any_element();
+    focusable_content(action_id, theme, false, content, on_click)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{KeyDownEvent, KeyUpEvent, Keystroke, TestAppContext};
+    use std::{cell::Cell, rc::Rc};
+
+    struct SelectionRowsFixture {
+        radio_calls: Rc<Cell<usize>>,
+        category_calls: Rc<Cell<usize>>,
+    }
+
+    impl gpui::Render for SelectionRowsFixture {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            let radio_calls = self.radio_calls.clone();
+            let category_calls = self.category_calls.clone();
+            div()
+                .w(px(320.0))
+                .flex()
+                .flex_col()
+                .child(radio_list_row(
+                    Theme::zed_dark(),
+                    "keyboard-radio".into(),
+                    "视频轨道",
+                    "合成媒体选项",
+                    false,
+                    move |_, _, _| radio_calls.set(radio_calls.get() + 1),
+                ))
+                .child(compact_list_row(
+                    Theme::zed_dark(),
+                    "keyboard-category".into(),
+                    "已禁用分类",
+                    "仍可选中编辑",
+                    false,
+                    false,
+                    move |_, _, _| category_calls.set(category_calls.get() + 1),
+                ))
+        }
+    }
+
+    #[gpui::test]
+    fn selection_rows_support_keyboard_without_changing_content_budget(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        cx.update(crate::theme::apply_component_theme);
+        let radio_calls = Rc::new(Cell::new(0));
+        let category_calls = Rc::new(Cell::new(0));
+        let fixture_radio = radio_calls.clone();
+        let fixture_category = category_calls.clone();
+        let (_, window) = cx.add_window_view(move |_, _| SelectionRowsFixture {
+            radio_calls: fixture_radio,
+            category_calls: fixture_category,
+        });
+        window.refresh().expect("render production selection rows");
+        let radio = window
+            .debug_bounds("keyboard-radio")
+            .expect("actual radio row");
+        let category = window
+            .debug_bounds("keyboard-category")
+            .expect("actual category row");
+        assert_eq!(radio.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
+        assert_eq!(category.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
+        window.update(|window, _| window.focus_next());
+        window.refresh().expect("focus radio row");
+        for key in ["enter", "space"] {
+            let before = radio_calls.get();
+            window.simulate_event(KeyDownEvent {
+                keystroke: Keystroke::parse(key).expect("selection key"),
+                is_held: false,
+            });
+            assert_eq!(radio_calls.get(), before, "activation waits for release");
+            window.simulate_event(KeyUpEvent {
+                keystroke: Keystroke::parse(key).expect("selection release"),
+            });
+            assert_eq!(
+                radio_calls.get(),
+                before + 1,
+                "one selection per keyboard gesture"
+            );
+        }
+        window.simulate_keystrokes("tab");
+        window.refresh().expect("focus category row");
+        window.simulate_event(KeyDownEvent {
+            keystroke: Keystroke::parse("space").expect("category key"),
+            is_held: false,
+        });
+        window.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse("space").expect("category release"),
+        });
+        assert_eq!(
+            category_calls.get(),
+            1,
+            "disabled category remains selectable for editing"
+        );
+        assert_eq!(radio_calls.get(), 2, "Tab must move to the next action");
+        window
+            .refresh()
+            .expect("paint selected focus without layout shift");
+        assert_eq!(window.debug_bounds("keyboard-radio"), Some(radio));
+        assert_eq!(window.debug_bounds("keyboard-category"), Some(category));
+    }
 }

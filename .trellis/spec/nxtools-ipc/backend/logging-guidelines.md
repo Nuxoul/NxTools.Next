@@ -1,51 +1,5 @@
-# Logging Guidelines
+# IPC diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-ipc/src/lib.rs#PlatformNotification`, `repo:rust/crates/nxtools-protocol/src/lib.rs#Envelope`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Log connection generation, command/correlation ID, fixed stage, queue/timeout counts and elapsed/native codes. No serialized Envelope, clipboard/path/URL/query/capability values or raw malformed frame. Coalesce repeated connection failures and do not log ping/frame streams. One correlation crosses IPC and native owner; task/session/generation remain distinct. [Shared diagnostics](../../shared/engineering.md).

@@ -137,7 +137,7 @@ internal sealed partial class WindowsPlatformAdapter
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         internal static extern UIntPtr SetTimer(IntPtr window, UIntPtr timerId, uint milliseconds, IntPtr callback);
 
         [DllImport("user32.dll")]
@@ -160,7 +160,6 @@ internal sealed partial class WindowsPlatformAdapter
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetAncestor(IntPtr window, uint flags);
-
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKey);
 
@@ -174,6 +173,17 @@ internal sealed partial class WindowsPlatformAdapter
             int width,
             int height,
             uint flags);
+[DllImport("user32.dll")]
+[return: MarshalAs(UnmanagedType.Bool)]
+private static extern bool GetClientRect(
+    IntPtr window,
+    out NativeWindowRectangle bounds);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ClientToScreen(
+            IntPtr window,
+            ref Point point);
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
         private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
@@ -590,10 +600,12 @@ internal sealed partial class WindowsPlatformAdapter
         {
             var exists = window != IntPtr.Zero && IsWindow(window);
             var bounds = default(NativeWindowRectangle);
+            var clientBounds = default(NativeWindowRectangle);
             var cloaked = false;
             if (exists)
             {
                 _ = AnchoredWindowPlacement.TryGetVisibleBounds(window, out bounds);
+                _ = GetClientRect(window, out clientBounds);
                 try
                 {
                     cloaked = DwmGetWindowAttribute(
@@ -616,7 +628,8 @@ internal sealed partial class WindowsPlatformAdapter
                 cloaked,
                 exists ? GetWindowLongPtr(window, GwlHwndParent).ToInt64() : 0,
                 GetForegroundWindow().ToInt64(),
-                bounds);
+                bounds,
+                clientBounds);
         }
 
         internal static WindowsCommandResult SetWindowBounds(
@@ -651,13 +664,17 @@ internal sealed partial class WindowsPlatformAdapter
 
         /// <summary>
         /// Resizes the window while preserving its real current visual center.
-        /// GPUI's cached window origin never follows a user drag, so the center
-        /// must come from the native rectangle, not from the Rust side.
+        /// GPUI sends client/content pixels, so the current outer/client frame
+        /// is used to derive the SetWindowPos rectangle.
         /// </summary>
         internal static WindowsCommandResult SetWindowBoundsCentered(
             IntPtr window,
             int width,
-            int height)
+            int height,
+            Guid correlationId = default,
+            int recoveryAttempt = 0,
+            double? anchorCenterX = null,
+            double? anchorCenterY = null)
         {
             if (window == IntPtr.Zero || !IsWindow(window))
             {
@@ -667,78 +684,188 @@ internal sealed partial class WindowsPlatformAdapter
             {
                 return new WindowsCommandResult(false, "Window bounds must have a positive size.");
             }
-            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var current))
+            if (!AnchoredWindowPlacement.TryGetVisibleBounds(window, out var currentVisible) ||
+                !AnchoredWindowPlacement.TryGetWindowRectangle(window, out var currentOuter) ||
+                !TryGetClientScreenRectangle(window, out var currentClient))
             {
                 return new WindowsCommandResult(false, "The window rectangle is unavailable.");
             }
 
-            var centered = CenteredRectangle(current, width, height);
-            var applied = ToOuterRectangle(
-                window,
-                current,
-                centered,
-                width,
-                height,
-                out var failure);
-            if (applied == null)
-            {
-                return failure ?? new WindowsCommandResult(false, "The window rectangle is unavailable.");
-            }
-            var (x, y, outerWidth, outerHeight) = applied.Value;
+            var clientInsets = NativeWindowInsets.From(currentOuter, currentClient);
+            var centeredClient = anchorCenterX.HasValue && anchorCenterY.HasValue
+                ? CenteredRectangleAtCenter(anchorCenterX.Value, anchorCenterY.Value, width, height)
+                : CenteredRectangle(currentVisible, width, height);
+            var targetOuter = (
+                centeredClient.Left - clientInsets.Left,
+                centeredClient.Top - clientInsets.Top,
+                width + clientInsets.Left + clientInsets.Right,
+                height + clientInsets.Top + clientInsets.Bottom);
             var appliedOk = SetWindowPos(
                 window,
                 IntPtr.Zero,
-                x,
-                y,
-                outerWidth,
-                outerHeight,
+                targetOuter.Item1,
+                targetOuter.Item2,
+                targetOuter.Item3,
+                targetOuter.Item4,
                 SwpNoZOrder | SwpNoActivate);
-            // A drag/size modal loop swallows SetWindowPos (the classic
-            // lost-resize): park the rect; WM_EXITSIZEMOVE re-applies it.
-            if (!AppliedSizeTookEffect(window, x, y, outerWidth, outerHeight)
-                || IsDraggingOrSizing(window))
-            {
-                PendingCenteredResizes[GetAncestorOrSelf(window)] =
-                    (x, y, outerWidth, outerHeight);
-                StartCenteredResizeRetry(GetAncestorOrSelf(window));
-                _ = SetTimer(
-                    GetAncestorOrSelf(window),
-                    CenteredResizeRetryTimerId,
-                    CenteredResizeRetryMs,
-                    IntPtr.Zero);
-            }
-            return appliedOk
-                ? new WindowsCommandResult(true)
-                : new WindowsCommandResult(
-                    false,
-                    $"SetWindowPos(centered) failed with Win32={Marshal.GetLastWin32Error()}.");
+            var nativeError = appliedOk ? (int?)null : Marshal.GetLastWin32Error();
+            return appliedOk ? new WindowsCommandResult(true)
+                : new WindowsCommandResult(false, $"SetWindowPos(centered) failed with Win32={nativeError}.",
+                    NativeErrorCode: nativeError);
         }
 
-        internal const int CenteredResizeRetryTimerId = 0x4E52;
-        private const int CenteredResizeRetryMs = 250;
-
-        internal static void StartCenteredResizeRetry(IntPtr rootWindow)
+        internal static CenteredResizeReplayResult ReapplyPendingCenteredResizeFor(
+            IntPtr rootWindow,
+            Func<CenteredResizeRecoverySnapshot, NativeWindowPresentationState, WindowsCommandResult>? finalizeClientResize = null,
+            Action? beforeApply = null,
+            Action? beforeCommit = null)
         {
-            _ = SetTimer(
-                rootWindow,
-                new UIntPtr((uint)CenteredResizeRetryTimerId),
-                CenteredResizeRetryMs,
-                IntPtr.Zero);
+            if (!PendingCenteredResizes.TryGetValue(rootWindow, out var pending)) return default;
+            var snapshot = Snapshot(rootWindow, pending);
+            beforeApply?.Invoke();
+            var attemptCount = pending.AttemptCount + 1;
+            var result = new WindowsCommandResult(false, "The resize request was superseded.");
+            var clientMatches = false;
+            var stable = false;
+            if (IsCurrentCenteredResize(rootWindow, snapshot.Generation) && IsWindow(pending.Window))
+            {
+                // Capture the live moved center at the execution boundary, not at acceptance.
+                var before = CaptureWindowPresentation(pending.Window);
+                if (!IsDraggingOrSizing(pending.Window))
+                {
+                    result = SetWindowBoundsCentered(pending.Window, pending.Width, pending.Height,
+                        pending.CorrelationId, attemptCount);
+                    if (result.Success && IsCurrentCenteredResize(rootWindow, snapshot.Generation) && finalizeClientResize is not null)
+                        result = finalizeClientResize(snapshot, before);
+                }
+            }
+            beforeCommit?.Invoke();
+            // A position/size message may change the client after application.
+            // Read at retirement, not before the commit boundary.
+            var final = CaptureWindowPresentation(pending.Window);
+            clientMatches = final.Exists && final.ClientBounds.Width == pending.Width &&
+                final.ClientBounds.Height == pending.Height;
+            stable = result.Success && clientMatches && !IsDraggingOrSizing(pending.Window) && attemptCount >= 2;
+            var committed = stable || !IsWindow(pending.Window)
+                ? ((ICollection<KeyValuePair<IntPtr, PendingCenteredResize>>)PendingCenteredResizes)
+                    .Remove(new(rootWindow, pending))
+                : PendingCenteredResizes.TryUpdate(rootWindow, pending with { AttemptCount = attemptCount }, pending);
+            if (!committed) return default; // Superseded completion has no terminal authority.
+            var stillPending = PendingCenteredResizes.TryGetValue(rootWindow, out var currentPending) && currentPending.Generation == pending.Generation;
+            return new CenteredResizeReplayResult(true, pending.CorrelationId, pending.Window.ToInt64(),
+                pending.StartedAtTimestamp, attemptCount, result.Success && clientMatches, stillPending, result.NativeErrorCode)
+                {
+                    Generation = pending.Generation, RequestedWidth = pending.Width, RequestedHeight = pending.Height,
+                    ReadbackWidth = final.Exists ? final.ClientBounds.Width : 0,
+                    ReadbackHeight = final.Exists ? final.ClientBounds.Height : 0
+                };
         }
 
-        internal static void RetryPendingCenteredResize(IntPtr rootWindow)
+        internal static bool IsCurrentCenteredResize(IntPtr rootWindow, long generation) =>
+            PendingCenteredResizes.TryGetValue(rootWindow, out var pending) && pending.Generation == generation;
+
+        private static CenteredResizeRecoverySnapshot Snapshot(IntPtr rootWindow, PendingCenteredResize pending) =>
+            new(rootWindow, pending.CorrelationId, pending.Window.ToInt64(), pending.StartedAtTimestamp, pending.AttemptCount)
+            { Width = pending.Width, Height = pending.Height, Generation = pending.Generation };
+
+        internal static bool TryGetPendingCenteredResizeRoot(
+            IntPtr window,
+            out IntPtr rootWindow)
         {
-            if (PendingCenteredResizes.TryRemove(rootWindow, out var rect))
+            rootWindow = window == IntPtr.Zero ? IntPtr.Zero : GetAncestorOrSelf(window);
+            return rootWindow != IntPtr.Zero &&
+                PendingCenteredResizes.ContainsKey(rootWindow);
+        }
+
+        internal static bool TryGetPendingCenteredResize(
+            IntPtr rootWindow,
+            out CenteredResizeRecoverySnapshot snapshot)
+        {
+            if (PendingCenteredResizes.TryGetValue(rootWindow, out var pending))
             {
-                _ = SetWindowPos(
-                    rootWindow,
-                    IntPtr.Zero,
-                    rect.X,
-                    rect.Y,
-                    rect.Width,
-                    rect.Height,
-                    SwpNoZOrder | SwpNoActivate);
+                snapshot = Snapshot(rootWindow, pending);
+                return true;
             }
+            snapshot = default;
+            return false;
+        }
+
+        internal static void ParkCenteredResizeForRecovery(
+            IntPtr window, int width, int height, Guid correlationId)
+        {
+            // Corrections never create a request or replace a newer generation.
+            // The accepted request remains pending until final readback retires it.
+        }
+
+        internal static CenteredResizeRecoverySnapshot BeginCenteredResize(
+            IntPtr window, int width, int height, Guid correlationId)
+        {
+            var rootWindow = GetAncestorOrSelf(window);
+            var pending = new PendingCenteredResize(window, width, height, correlationId,
+                Stopwatch.GetTimestamp(), 0, Interlocked.Increment(ref CenteredResizeGeneration));
+            PendingCenteredResizes.AddOrUpdate(rootWindow, pending,
+                (_, current) => current.Generation > pending.Generation ? current : pending);
+            return Snapshot(rootWindow, pending);
+        }
+
+        internal static WindowsCommandResult ParkCenteredResizeForTest(
+            IntPtr window,
+            int width,
+            int height)
+        {
+            if (window == IntPtr.Zero || !IsWindow(window) || width <= 0 || height <= 0)
+            {
+                return new WindowsCommandResult(false, "The window or size is invalid.");
+            }
+            _ = BeginCenteredResize(window, width, height, Guid.Empty);
+            return new WindowsCommandResult(true);
+        }
+
+        internal static void CancelPendingCenteredResize(IntPtr rootWindow, Guid correlationId, long generation = 0)
+        {
+            if (!PendingCenteredResizes.TryGetValue(rootWindow, out var pending) ||
+                pending.CorrelationId != correlationId || (generation != 0 && pending.Generation != generation)) return;
+            _ = ((ICollection<KeyValuePair<IntPtr, PendingCenteredResize>>)PendingCenteredResizes)
+                .Remove(new(rootWindow, pending));
+        }
+
+        private sealed record PendingCenteredResize(
+            IntPtr Window,
+            int Width,
+            int Height,
+            Guid CorrelationId,
+            long StartedAtTimestamp,
+            int AttemptCount,
+            long Generation);
+
+        private static long CenteredResizeGeneration;
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+            IntPtr,
+            PendingCenteredResize> PendingCenteredResizes = new();
+
+        private static bool TryGetClientScreenRectangle(
+            IntPtr window,
+            out NativeWindowRectangle bounds)
+        {
+            bounds = default;
+            if (!GetClientRect(window, out var client))
+            {
+                return false;
+            }
+            var topLeft = new Point { X = client.Left, Y = client.Top };
+            var bottomRight = new Point { X = client.Right, Y = client.Bottom };
+            if (!ClientToScreen(window, ref topLeft) ||
+                !ClientToScreen(window, ref bottomRight))
+            {
+                return false;
+            }
+            bounds = new NativeWindowRectangle(
+                topLeft.X,
+                topLeft.Y,
+                bottomRight.X,
+                bottomRight.Y);
+            return true;
         }
 
         private static bool AppliedSizeTookEffect(
@@ -771,31 +898,62 @@ internal sealed partial class WindowsPlatformAdapter
                 && (info.flags & GUI_INMOVESIZE) != 0;
         }
 
-        internal static void ReapplyPendingCenteredResizeFor(IntPtr rootWindow)
-        {
-            if (PendingCenteredResizes.TryRemove(rootWindow, out var rect))
-            {
-                _ = SetWindowPos(
-                    rootWindow,
-                    IntPtr.Zero,
-                    rect.X,
-                    rect.Y,
-                    rect.Width,
-                    rect.Height,
-                    SwpNoZOrder | SwpNoActivate);
-            }
-        }
-
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<
-            IntPtr,
-            (int X, int Y, int Width, int Height)> PendingCenteredResizes = new();
 
         /// <summary>
-        /// Places the window centered over the anchor window's real rectangle,
-        /// preserving the anchor's visual center across a window replacement.
-        /// A missing anchor falls back to resizing in place at the current
-        /// position so the handoff never teleports the window.
+        /// Applies one fixed client size to a newly created HWND, centers it over
+        /// the live predecessor, and shows it without activation. No recovery,
+        /// dimension polling or resize of the predecessor is performed.
         /// </summary>
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr window);
+
+        internal static WindowsCommandResult PresentFixedWindowOverAnchor(
+            IntPtr window, IntPtr anchor, int width, int height, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return new WindowsCommandResult(false, "Fixed presentation was cancelled.");
+            if (window == IntPtr.Zero || anchor == IntPtr.Zero || window == anchor ||
+                !IsWindow(window) || !IsWindow(anchor) || width <= 0 || height <= 0 ||
+                !AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer) ||
+                !TryGetClientScreenRectangle(window, out var client) ||
+                !AnchoredWindowPlacement.TryGetVisibleBounds(anchor, out var anchorBounds))
+                return new WindowsCommandResult(false, "Fixed presentation window or anchor is unavailable.");
+            // Hidden GPUI creation may still be on the default monitor. Prepare
+            // the anchor monitor without sizing, then use that monitor's chrome.
+            if (GetDpiForWindow(window) != GetDpiForWindow(anchor))
+            {
+                if (!SetWindowPos(window, IntPtr.Zero, anchorBounds.Left, anchorBounds.Top, 0, 0,
+                    SwpNoSize | SwpNoZOrder | SwpNoActivate))
+                    return new WindowsCommandResult(false, "Fixed presentation monitor preparation failed.", NativeErrorCode: Marshal.GetLastWin32Error());
+                if (cancellationToken.IsCancellationRequested || !IsWindow(anchor) ||
+                    !AnchoredWindowPlacement.TryGetWindowRectangle(window, out outer) ||
+                    !TryGetClientScreenRectangle(window, out client))
+                    return new WindowsCommandResult(false, "Fixed presentation monitor preparation retired.");
+            }
+            var insets = NativeWindowInsets.From(outer, client);
+            var centerX = (anchorBounds.Left + anchorBounds.Right) / 2.0;
+            var centerY = (anchorBounds.Top + anchorBounds.Bottom) / 2.0;
+            var x = (int)Math.Round(centerX - width / 2.0) - insets.Left;
+            var y = (int)Math.Round(centerY - height / 2.0) - insets.Top;
+            if (!SetWindowPos(window, IntPtr.Zero, x, y,
+                width + insets.Left + insets.Right, height + insets.Top + insets.Bottom,
+                SwpNoZOrder | SwpNoActivate | SwpFrameChanged))
+                return new WindowsCommandResult(false, "Fixed window placement failed.", NativeErrorCode: Marshal.GetLastWin32Error());
+            if (cancellationToken.IsCancellationRequested || !IsWindow(anchor))
+                return new WindowsCommandResult(false, "Fixed presentation anchor retired.");
+            _ = ShowWindow(window, SwShowNoActivate);
+            var final = CaptureWindowPresentation(window);
+            var centered = Math.Abs((final.Bounds.Left + final.Bounds.Right) / 2.0 - centerX) <= 2 &&
+                Math.Abs((final.Bounds.Top + final.Bounds.Bottom) / 2.0 - centerY) <= 2;
+            if (cancellationToken.IsCancellationRequested || !IsWindow(anchor) || !final.Exists || !final.Visible ||
+                final.ClientBounds.Width != width || final.ClientBounds.Height != height || !centered)
+            {
+                _ = ShowWindow(window, SwHide);
+                return new WindowsCommandResult(false, "Fixed presentation did not match its final bounds.");
+            }
+            return new WindowsCommandResult(true);
+        }
+
         internal static WindowsCommandResult MoveWindowCenteredOver(
             IntPtr window,
             IntPtr anchorWindow,
@@ -874,6 +1032,17 @@ internal sealed partial class WindowsPlatformAdapter
                 centeredVisible.Top - insets.Top,
                 visibleWidth + insets.Left + insets.Right,
                 visibleHeight + insets.Top + insets.Bottom);
+        }
+
+        internal static NativeWindowRectangle CenteredRectangleAtCenter(
+            double centerX,
+            double centerY,
+            int width,
+            int height)
+        {
+            var left = (int)Math.Round(centerX - width / 2.0);
+            var top = (int)Math.Round(centerY - height / 2.0);
+            return new NativeWindowRectangle(left, top, left + width, top + height);
         }
 
         internal static NativeWindowRectangle CenteredRectangle(

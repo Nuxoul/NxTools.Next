@@ -1,0 +1,29 @@
+{
+  "id": "project-quality-and-core-polish",
+  "name": "project-quality-and-core-polish",
+  "title": "Unify project quality standards and core UX roadmap",
+  "description": "Plan source-backed engineering/UI standards and staged core-module refinement; evaluate small utilities without feature implementation",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-09-quality-standards-foundation",
+    "10-09-adjacent-utilities-evaluation"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

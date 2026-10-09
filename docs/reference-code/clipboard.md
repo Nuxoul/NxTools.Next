@@ -196,6 +196,13 @@ Verified current NxTools.Next call chain for the link-detector tool settings and
 - Exhaustive inspection of the old NxTools tree found no equivalent link-detector popup or persisted
   three-position setting. This is a new NxTools.Next preference, not a legacy behavior migration.
 
+Verified 2026-10-02 local-target link-panel route contract:
+
+- `DetectedLinkKind` carries `Web`, `LocalFile` or `LocalDirectory`; detector acceptance remains limited to known Web targets and existing drive/UNC paths, with file-vs-directory determined by the filesystem.
+- `link_panel_route` honors the persisted global copy-only preference first (default `true`), so no kind launches while copy-only is enabled. When copy-only is disabled, local files map to `OpenShellTarget(SelectInExplorer)`, local directories map to `OpenShellTarget(Open)`, and only Web targets consult the opt-in browser-auto-open setting.
+- `link_panel_shell_command` is shared by production dispatch and tests. It preserves the original local target and rejects a Web kind on the shell branch; local targets are never synthesized into `https://` URLs.
+- The row removes its panel window before recording the copied echo, dispatching the selected route, and writing the original target back to the clipboard. Diagnostics use kind/length/correlation/result only, never the path or URL payload.
+
 ## GPUI settings and popup ownership invariant
 
 The main-window hotkey editor owns the persisted modifier-action settings. A clipboard popup receives
@@ -493,11 +500,33 @@ GPUI 迁移规则：
   dialogs still requires user verification; popup search and history paging no longer depend on
   loading the configured retention maximum.
 
-- Migration gap: old NxTools hides the popup before target-focus restoration and paste input, while
-  `rust/apps/nxtools-desktop/src/ui/mod.rs:1163-1248` currently sends the paste action first and
-  hides the popup after a successful Windows result. A true hide-before-paste migration needs an
-  ordered native hide confirmation and a failure path that reveals the popup again; this audit did
-  not change that lifecycle spec by guesswork.
+- Clipboard action pending state must be installed in the GPUI panel before the command can be
+  enqueued: allocate one operation/command ID at action start, store `(command_id, action, item_id)`
+  and its watchdog token, then pass that ID through the IPC envelope. Rust results use the envelope ID.
+  This prevents a fast Windows result from arriving before the panel has a matching pending action.
+- After asynchronous native-format preparation, re-check the operation token before enqueueing. A
+  timeout or disconnect must clear both pending fields; a stale preparation result must not send a
+  command or restore a completed pending action. PlatformHost disconnect invalidates ordinary
+  pending commands by ID, not by individual `CommandResult`; the current popup therefore explicitly
+  abandons its pending paste and remains available for retry.
+- The caller-supplied IPC command-ID seam rejects an ID already pending on the active connection;
+  command IDs remain registered only for the existing bounded IPC timeout/result lifecycle.
+- Reverified in 2026-10: the panel now installs the action's operation/command ID and watchdog
+  before asynchronous native-format preparation begins, and `PlatformBridge::send_command_with_id`
+  uses that exact ID in the IPC envelope. Before enqueue, the async continuation rechecks the panel
+  operation token; after timeout or disconnect, stale preparation cannot still send a paste command.
+  The panel clears both its command pending value and operation/watchdog value on failure,
+  timeout, reconnect or disconnect; late results no longer mutate the abandoned action.
+- `ui::tests::clipboard_panel_registers_action_before_platform_command_and_clears_it_on_result`
+  exercises the production GPUI panel and bounded PlatformBridge endpoint: pending identity exists
+  before command receive, the emitted envelope has that ID, failed results unlock the panel, and
+  disconnect plus late success leave it in a retryable error state. This does not replace the
+  separate end-to-end native visibility/topmost/focus-order gap below.
+
+Migration gap: old NxTools hides the popup before target-focus restoration and paste input, while
+`rust/apps/nxtools-desktop/src/ui/mod.rs` currently sends the paste action first and hides the popup
+after a successful Windows result. A true hide-before-paste migration needs an ordered native hide
+confirmation and a failure path that reveals the popup again; this lifecycle was not changed here.
 - Migration gap: the first clipboard preview path uses `WindowOptions.show = true` and sends
   topmost immediately (`rust/apps/nxtools-desktop/src/clipboard.rs:1706-1737`). It still needs a
   real native sequence test for final bounds, passive/no-activate behavior, frame submission and
@@ -514,3 +543,42 @@ GPUI 迁移规则：
   sequence, and the Rust popup session rejects presses sampled before that session. Zero-valued
   fields remain a backward-compatible fallback for older PlatformHost peers; current package parts
   must ship together for the strict race protection.
+
+## 2026-10-08 SOL remediation: storage and import authority
+
+Reverified references: legacy `ClipboardRepository.Cleanup` permanently purges deleted rows after `max(7, cleanupDays)` and preserves favorite/pinned soft-delete exclusions; `ClipboardHistoryService.ImportJson` merges normal repository rows (no legacy portable ZIP implementation); `ClipboardPasteService.CopyItemAsync` does not restore the target, while paste uses the beforeRestore hide callback; `MainWindow.axaml.cs` dispatches copy/paste separately. Next keeps one session, stale-result rejection and deferred cross-entity updates.
+
+- Next purge is `max(7, retention_days)`, not a hard thirty-day minimum. The default thirty-day preference remains unchanged.
+- `archive.rs::import_archive` preflights only importable rows. Owned-file cleanup removes newly created resources/temp files after preflight failure, never existing/shared files. A late database error returns explicit partial inserted/updated/skipped counts. Already committed rows remain; cleanup deletes only newly owned assets proven unreferenced by `ClipboardHistory::referenced_asset_paths`. If that query fails, retain conservatively instead of deleting uncertain ownership.
+- `clipboard_worker::migrate_storage` serializes staging, opening replacement history and locked durable config commit before publishing the new live history/paths. Failure retains source authority; deferred captures remain serialized with the worker.
+- `ClipboardApplication::save_clipboard_section` does not own `storage_directory`: inside the disk-rereading locked merge it preserves the latest disk root. Only the worker migration transaction changes that field. `refresh_committed_migration_config` reloads latest disk state, not a stale pre-callback snapshot.
+- The decisive race test holds the UI at source S after the worker commits destination D, runs an ordinary settings save, then completes migration. Disk and live worker must remain at D; this regression was red before the storage-field ownership fix and is now green.
+
+Synthetic ZIP, SQLite-trigger, worker/config and GPUI regressions pass; real user archive/migration and native clipboard acceptance were not performed. See [the remediation evidence and limits](../audits/2026-10-08-sol-review-remediation.md).
+
+## 2026-10-09 Clipboard + Tools surface review (before polish)
+
+- Old `D:\Code\NxTools\Views\ClipboardHistoryPopupWindow.axaml:67-119` supplies an 8px safe inset, compact category/search/list hierarchy and separate selected-item state. `ClipboardHistoryPopupWindow.axaml.cs:61-167,206-259` constructs the popup, restores search focus when opened/activated, hides rather than destroys it, and hides its preview before hiding the popup. `:749-857,897-905` cancels superseded hover work, checks visible popup plus item identity before showing, creates at most one `ClipboardPreviewWindow`, updates/places it in place, and hides it on exit.
+- Old `D:\Code\NxTools\Views\ClipboardPreviewWindow.cs:29-95,97-159,200-237` constructs a separate non-activating, topmost tool window, changes content before disposing its prior bitmap, places it within the display, and reapplies passive native style on open/topmost. `MainWindow.axaml.cs:971-1067` keeps copy separate from paste and supplies a hide-before-focus/paste callback. Next's stronger retry-on-failure and staged-frame contracts at lines 239-273 above remain unchanged.
+- Zed `D:\Code\zed-main\crates\theme\src\default_colors.rs:205-225` distinguishes neutral hover/active/selected surfaces from focused blue borders; `crates\acp_tools\src\acp_tools.rs:708,738-752` tracks focus and routes interactions through click callbacks. These are visual/GPUI precedents, not clipboard lifecycle authority. Next's own `ui/components/action.rs:12-69` handles focused Enter/Space on KeyUp; do not attach a second key activation callback.
+- Next presentation chain: `ui/mod.rs:1882-2493` composes category strip, search, loading/error/empty and bounded list; `ui/history.rs:80-417` renders action/selection/hover; `ui/preview.rs:58-196` renders the passive view without owning show/hide. `clipboard.rs:1673-1840` schedules generation-guarded preview and native hide/staging; C# is the native visibility/bounds owner. Cosmetic changes must keep fixed 300×440 default client, panel/editor focus, history selection distinct from hover, one preview, generation guards, frame-before-reveal, offscreen staging, native no-activate and deferred cross-owner updates. Current first-show/native acceptance gaps remain at lines 526-537 above.
+
+## Keyboard refinement source boundary (2026-10-09)
+
+- Rechecked `D:\Code\NxTools\Controls\ClipboardHistoryListView.cs:472-491`: left release selects and invokes `ItemClicked`, right release selects and invokes context menu. `Views\ClipboardHistoryPopupWindow.axaml.cs:321-369,418-427` keeps search focus, routes Enter to selected history, Escape to popup hide, and Ctrl+F back to search; `:376-385` treats the native resize grip as drag-only, not a keyboard action. `:845-905` reuses and hides a single preview; `ClipboardPreviewWindow.cs:29-95,200-237` creates it non-activating/topmost and applies native no-activate style. No popup resize/focus/native reveal ordering changes belong to this refinement.
+- Next actionable custom GPUI entry points: `ui/mod.rs:2110-2216,2410-2505,2690-2825,3110-3288` (category add/tabs, search scope, back-to-top, undo, source toggles and editor buttons), `ui/history.rs:134-249,518-549` (row and management actions), `main_window/clipboard_page.rs:254-439,599-642` (two steppers and hotkey recorder). `ui/preview.rs:168-204` is intentionally passive; header move and resize grip are pointer gestures, not tab stops. The owning search/selected-item keyboard path and deferred cross-owner operations remain intact. For pointer-only actions, reuse GPUI keyed focus and the existing single KeyUp-generated click; do not synthesize a second Enter/Space listener. Category editor keeps its input focus until save/cancel; no row activation should leak through its occluding backdrop.
+
+## Global per-application blacklist amendment (2026-10-10)
+
+Reverified `D:\Code\NxTools\ViewModels\MainWindowClipboardViewModel.cs:595-619,956-965`
+and `Models\AppState.cs:229-245`: legacy capture splits exclusions and compares case-insensitively;
+KeePass, 1Password and Bitwarden default to clipboard-only exclusions. The requested global
+per-app Quick Launch/clipboard rule table is an intentional product amendment, not legacy UI parity.
+Canonical rules must distinguish absent legacy data from an explicitly empty table: migrate once,
+derive native clipboard exclusions only from clipboard-enabled rows, never resurrect deleted or
+unchecked rules from that compatibility projection. Basename/case/.EXE duplicates merge scopes.
+Draft add/edit/remove is local; cancel publishes nothing. One locked Core transaction owns the global
+network/system/rules save; only durable success defers weak live consumer updates to a later GPUI turn.
+Consumers must not save the same rules again. Diagnostics use UUID, counts, booleans, fixed failure
+stage and elapsed time, never application names/paths or clipboard payload. No clipboard history,
+paste, hotkey, preview, retention or native protocol policy changes are part of this amendment.

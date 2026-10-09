@@ -151,6 +151,22 @@ impl DownloadApplication {
                 .update(cx, |_, window, _| window.remove_window());
         }
     }
+    pub(crate) fn close_task_window_if_identity(
+        &mut self,
+        task_id: DownloadTaskId,
+        expected: TaskWindowIdentity,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let matches = self.task_windows.get(&task_id).is_some_and(|entry| {
+            entry.native_window_handle == expected.native_window_handle
+                && entry.generation == expected.generation
+        });
+        if !matches {
+            return false;
+        }
+        self.close_task_window(task_id, cx);
+        true
+    }
     pub(crate) fn open_task_window(
         &mut self,
         task_id: DownloadTaskId,
@@ -179,6 +195,7 @@ impl DownloadApplication {
         let opened_view_slot = Rc::clone(&view_slot);
         let scale_slot = Rc::new(RefCell::new(1.0_f32));
         let opened_scale_slot = Rc::clone(&scale_slot);
+        let platform_for_view = Rc::clone(&self.platform);
         #[cfg(test)]
         let native_window_handle_override = self.task_window_native_handle_override;
         let opened = cx.open_window(
@@ -194,7 +211,7 @@ impl DownloadApplication {
                 display_id: None,
                 window_background: WindowBackgroundAppearance::Opaque,
                 app_id: Some(format!("NxTools.Download.{}", task_id.as_uuid())),
-                window_min_size: Some(window_size),
+                window_min_size: Some(task_window_minimum_size()),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
             },
@@ -227,8 +244,12 @@ impl DownloadApplication {
                 let view = cx.new(|_| {
                     DownloadTaskWindowView::new(
                         application,
+                        platform_for_view,
                         task_id,
-                        resolved_native_handle,
+                        TaskWindowIdentity {
+                            native_window_handle: resolved_native_handle,
+                            generation: window_generation,
+                        },
                         snapshot,
                         progress,
                         shutdown_armed,
@@ -328,15 +349,21 @@ impl DownloadApplication {
         let reset_details_expanded = matches!(resize_for, Some(DownloadWindowPhase::Progress));
         let mut resize_size = None;
         view.update(cx, |view, cx| {
+            let previous_size = view.snapshot.as_ref().map(|task| {
+                download_task_window_size_for_details(
+                    download_window_phase(task.task.status()),
+                    view.details_expanded,
+                )
+            });
             view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
             if reset_details_expanded {
                 view.reset_details_expanded();
             }
             if let Some(phase) = resize_for {
-                resize_size = Some(download_task_window_size_for_details(
-                    phase,
-                    view.details_expanded,
-                ));
+                let next_size = download_task_window_size_for_details(phase, view.details_expanded);
+                if previous_size != Some(next_size) {
+                    resize_size = Some(next_size);
+                }
             }
         });
         let updated = window_handle

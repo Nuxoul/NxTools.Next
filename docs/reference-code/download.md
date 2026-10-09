@@ -140,12 +140,20 @@ Reverified 2026-09-03 against `D:\Code\NxTools` after the user reported completi
 stale open/reveal behavior (old `Views/DownloadCompletedWindow.axaml.cs` closes the window after the
 user confirms a post-completion action):
 
-- Old `DownloadCompletedWindow` treats "打开文件" / "打开文件夹" as terminal user intents: the Shell
-  open/reveal is dispatched and the completion window closes itself; the window has no purpose after
-  the artifact has been handed to the Shell. NxTools.Next must preserve this — the keyed GPUI
-  completion window releases its `DownloadWindowLifecycle` registration and removes itself in the
-  same deferred turn (`DownloadApplication::close_task_window`), never a bare `window.remove_window()`
-  that leaves a stale keyed registration behind.
+- Old `DownloadCompletedWindow` treats "打开文件" / "打开文件夹" as terminal user intents: it dispatches
+  the Shell action and closes immediately, without observing whether Explorer actually opened. NxTools.Next
+  preserves the terminal end state but strengthens the boundary: close only after the correlated
+  `OpenShellTarget` result succeeds. Use `DownloadApplication::close_task_window` so the keyed
+  `DownloadWindowLifecycle` registration is released with the native window; never call a bare
+  `window.remove_window()` that leaves stale registration behind.
+- If the Shell command is rejected, fails, times out or is invalidated by disconnect, keep the completed
+  window available for retry. Bind the pending result to the originating HWND + window generation so a
+  late success cannot close a replacement window. Main-list artifact actions carry no task-window identity
+  and must not close the completion window. Diagnostics record both operation correlation ID and IPC
+  command ID, never the target path.
+- Old `MainWindowViewModel::OpenTaskFolder` selects an existing file in Explorer, opens an existing
+  directory directly, and falls back to the save directory when the file is missing. The old owner catches
+  Explorer launch errors, so immediate completion-window close does not prove Explorer was shown.
 - A native close (title bar X, Alt+F4, taskbar close) must release the keyed lifecycle registration
   through `on_window_should_close` + `handle_task_window_native_close`, matching the
   delete-confirmation window pattern. Without it, the next task event targets the destroyed window,
@@ -1040,9 +1048,33 @@ Reverified on 2026-07-27 after the first packaged interaction pass:
   The real HWND is resized through native `SetWindowBoundsCentered`, which derives the current
   visual center from the native rectangle rather than GPUI's cached origin.
 - A user may keep moving the non-resizable add window while the probe is in flight. Probe completion
-  must not leave the confirmed body in the old compact client rectangle: the native resize request
-  is retried at bounded intervals after the move/size modal loop can release it, and stale probe
-  generations must not apply an old height.
+  must not leave the confirmed body in the old compact client rectangle; stale probe generations
+  must not apply an old height.
+- Reverified 2026-10-05 at the native GPUI/PlatformHost boundary: the Rust
+  `SetWindowBoundsCenteredCommand.width/height` values are physical client/content pixels
+  (the same dimensions GPUI receives through `WM_SIZE`), not DWM extended-frame bounds.
+  PlatformHost reads the current outer frame plus screen-space client rectangle, converts the
+  requested client size to one atomic `SetWindowPos`, then applies a bounded visible-center
+  correction outside a move/size modal loop. Recovery reuses the same target client dimensions
+  and center correction. Low-noise diagnostics carry the command correlation ID and record only
+  HWND, requested/actual client and visible dimensions, recovery state, native error and elapsed
+  time; no URL, path, file name or payload is logged.
+- A real temporary Win32 HWND regression now asserts both client/content dimensions and the
+  moved-window visible center for direct resize and move-end replay. The GPUI production test
+  still asserts the confirmed form, inspector and footer fit above the fixed footer. These tests
+  do not replace the still-required live drag-during-probe smoke at the user's DPI.
+- Native client correction also depends on the actual P/Invoke entry names:
+  `WindowsPlatformAdapter.ClientResize.cs::{ApplyClientResizeWithFrameChange,
+  TryGetClientResizeScreenBounds}` calls `GetWindowRect`, `GetClientRect`,
+  `ClientToScreen`, and `SetWindowPos`. Managed method prefixes are not export
+  names; each prefixed declaration must specify its Win32 `EntryPoint`.
+  The custom-client-chrome HWND regression exercises this mismatch branch,
+  not only the system-dialog path where client dimensions already match.
+  Final client readback must occur after visible-center correction, and a
+  mismatch must keep generation-scoped recovery pending rather than report
+  completion. A presentation timeout must never release a clipped form.
+- The bounded confirmed-state inspector has one generation-keyed 120 ms opacity-only enter using the
+  existing GPUI motion token and easing. It never animates native bounds or changes footer geometry.
 - Download storage startup is defensive at the SQLite boundary. `SqliteDownloadStore::open` avoids
   rewriting an already-WAL database, retries bounded `SQLITE_IOERR_TRUNCATE`/busy/locked startup
   failures, and quarantines a zero-byte database only when no `-wal`/`-shm` sidecars exist. A file
@@ -2412,6 +2444,31 @@ Reverified on 2026-08-22 before the DL-28 taskbar-overlay legibility migration:
   content frame and lane capacity in both modes; editing may add only an overlay border and resize
   handle, without changing telemetry/progress coordinates or transfer semantics.
 
+Reverified on 2026-10-03 while planning the download-dialog visual / Explorer-reveal follow-up:
+
+- AB Download Manager was inspected first at the Desktop `AddDownloadPage.kt`,
+  `ProgressDownloadPage.kt`, `CompletedDownloadPage.kt`, `ShowDownloadDialogs.kt` and shared
+  `BaseSingleDownloadComponent.kt` entries. It keeps one task-keyed window, aligns add-form
+  configuration/metadata/actions, separates progress detail from the action/progress region, and
+  gives completion one compact file-identity region plus a separated action footer. These are
+  layout references, not copied Compose implementation or a requirement to restore a full tabbed
+  page to NxTools.Next.
+- Old NxTools `Views/AddDownloadWindow.axaml` keeps URL probe and confirmed form stages with their
+  action row anchored after the form. `Views/DownloadProgressWindow.axaml(.cs)` changes the same
+  per-task progress HWND into compact completion and offers Open, Open Folder, native file drag and
+  Close. `ViewModels/MainWindowViewModel.cs::OpenTaskFolder` selects an existing final file,
+  opens an existing directory directly, and falls back to the save directory when the file is
+  missing. Legacy `OpenPathInExplorer` catches launch errors but does not confirm the selected
+  Explorer HWND became foreground.
+Reverified 2026-10-03 during implementation of the download-dialog / Explorer-Reveal follow-up:
+
+- Current Reveal chain is `DownloadTaskWindowView::render -> DownloadApplication::open_task_artifact_from_task_window -> OpenShellTarget(SelectInExplorer) -> PlatformHost::OpenShellTargetAsync -> ShellTarget::Launch -> ExplorerShellActivation::LaunchAndActivate -> correlated result/identity-guarded close`. Rust carries one correlation ID and closes only the originating HWND + generation after foreground-confirmed success; failed, timed-out, disconnected, late and duplicate actions leave the completed window available for retry.
+- C# always requests `/select,<file>` for an existing file, even when a matching folder window already exists. Existing directories are opened directly. Lookup includes minimized Explorer top-level windows, which are restored before activation. Success requires a post-activation foreground readback whose still-valid HWND belongs to the intended Explorer root. The lookup/activation loop is bounded; process launch or `SetForegroundWindow` alone is never success.
+- Rust resolves Reveal targets by kind: select an existing final file, open an existing directory directly, and fall back to the saved directory only when the final file is missing. Open-file and drag requests do not fall back to a folder.
+- One correlation is carried through Rust and PlatformHost diagnostics. Logs record bounded fixed stages, terminal outcome, elapsed time and native errors, and omit target paths, URL, file name and window title. User-visible Reveal failures are fixed/retryable and do not surface native path-bearing details.
+- The production schedule Popover keeps draft/commit/dismiss semantics. Time selection and its Clear/Confirm footer are separate aligned rows; regression coverage measures real visible button bounds, tier, baseline, inset, overlap, shell containment and unchanged parent bounds.
+- Automated verification passed: 428/428 `nxtools-desktop` tests, `cargo fmt --all -- --check`, the download UI lifecycle architecture gate, five PlatformHost Explorer activation cases, the separate non-DOpus shell-command responsiveness test, and PlatformHost Debug build with zero warnings/errors.
+- User-provided screenshots could not be previewed in this environment. Native Windows DPI visual comparison and live Explorer foreground/file-selection smoke remain manual acceptance gates; the unrelated DOpus navigation harness was not run.
 ## Resolved phase-0 decisions
 
 - CLI connects to a current-user local download pipe and starts the packaged desktop in background mode when
@@ -2423,3 +2480,65 @@ Reverified on 2026-08-22 before the DL-28 taskbar-overlay legibility migration:
 - The final authenticated browser transport: Native Messaging only, or Native Messaging plus a bounded loopback
   channel for large Blob payloads.
 - HLS/DASH shared protocol seam must wait until the HTTP implementation and one media implementation both exist.
+
+## 2026-10-08 SOL remediation: verified boundary contracts
+
+Reference entries reverified before implementation: ABDM `PartSplitSupport.kt` (locked safe part boundary) and `HttpDownloadJob.getPartDownloader` (idle ranges before split, bounded connections); legacy `Services\DownloadManagerService.cs::{DownloadSegmentsAdaptiveAsync,DownloadDashSegmentsWithBoundedWorkersAsync}`; `Views\AddDownloadWindow.axaml.cs::{constructor,OnOpened,OnClosed,RefreshContentSize,SizeChanged}`; `DownloadProgressWindow.axaml.cs` and `Services\WindowAnimationService.cs` (same-window stages and deferred final close). The legacy checkout does not include Avalonia's native/base show/hide source. Next verification reaches real HWND client readback, not merely the leaf view.
+
+- `CenteredResizeCoordinator.TrySchedule` bounds native work to two workers/64 HWND slots, one in-flight plus one coalesced next turn per HWND. IPC/EventWindow accept/enqueue without waiting on SetWindowPos. Accepted (`applied=false`) is not settled; a stuck native call keeps its slot and never triggers unlimited replacement threads.
+- `WindowsPlatformAdapter.NativeMethods` pending work is an immutable generation transaction. Replay reads one complete snapshot; compare-and-update/compare-and-remove protect replacement, even with repeated Guid.Empty IDs. Final client correction/readback occurs after center correction, preserves the user's live moved center, and never changes activation or Z-order. Stale completion has no terminal authority.
+- `NewDownloadWindowView::begin_probe` retires old generation/target before validation. Compact errors replace guidance until actual viewport reserve exists. Ordinary heights remain 176/278; media rows and errors use the same measured content budget. Timeout never releases clipped confirmation. Task details share centered native ownership; GPUI learns native pixels via WM_SIZE. Cross-entity export/settings work defers beyond the view lease.
+- `segmented_runner` preserves shrink identity until joined writer sync and Waiting checkpoint, then durably merges an adjacent Waiting range. `TransferPlan::merge_waiting_segment` preserves the written prefix and rejects prepending unwritten bytes to a progressed right range. One sample is appended per tick; stable shrink precedes growth/low-benefit evaluation; saved grown plans use the request's initial floor and an attempt-local learned baseline.
+- `dash_runner` re-fetches Completed fragments whose nonempty file length disagrees with the checkpoint; it still adopts legitimate uncheckpointed crash-window bytes. No equal-length cryptographic integrity claim is made.
+- `blob_upload` does not idle-reap Receiving. The owning socket bounds each body to two minutes, per-read timeout at most 30 seconds/remaining deadline, rejects a duplicate Receiving claim, and owns cleanup/capacity release.
+- `http` keeps safe routed/certificate-policy client reuse, policy generation invalidation and per-request ten-second probe deadline. HEAD and Range both complete via join; the abandoned 150-ms HEAD shortcut is not the contract. Diagnostics remove reqwest URL payloads and report phase durations only.
+
+Regression evidence and limits: [SOL remediation report](../audits/2026-10-08-sol-review-remediation.md). The full localhost grow/shrink test uses production HTTP writers/SQLite/checkpoints/pause/reopen/output and only injects speed samples. It does not prove external jitter or the real one-second sampler. Native/GPUI tests do not replace live pointer/probe/DPI acceptance. Full engine-contract runs still have unresolved failures; no package/install was performed.
+
+### 2026-10-09 engine-contract fixture closeout evidence
+
+ABDM `HttpDownloadJob.kt::fetchDownloadInfoAndValidate` and `pause/stopAllParts` were reverified (length/ETag/resume validation, stop/join before durable pause). Legacy `DownloadManagerService.cs::MergeDashAndVerifyAsync:3595-3682` concatenates selected tracks then uses cancellation-aware FFmpeg stream copy before final publication; it provides no socket-fixture behavior to migrate. No window/layout/focus or product semantics change belongs to this closeout.
+
+The real Next chain is `DownloadEngine::resolve_missing_file_name_before_acceptance -> HttpDownloadClient::probe`, followed by `segmented_runner::run_task -> probe` and durable pause/reopen/resume; DASH reaches `dash_runner -> media::{detect_ffmpeg_version,mux_dash_tracks}`. Both failing contracts share `tests/support/mod.rs::serve_connection`. On Windows the accepted stream inherits the nonblocking listener mode: an early zero-byte read returns WSAEWOULDBLOCK (10035), and the fixture discarded it. Explicitly restore blocking mode on accepted streams before the existing bounded read, rather than changing production retry/probe policies.
+
+Two causal reproductions: FFmpeg mux-marker wait actually failed earlier with Network/error-sending-request after 10035; crash-window initial HEAD/Range were both dropped, acceptance fallback GET consumed `serve_resume_required` zero-offset eligibility, then worker fallback GET returned HTTP409. A delayed-first-byte raw socket regression is red before correction (client 10053/server10035); run for both serial and concurrent fixture modes. HEAD shows the same listener/accepted-stream defect, not a new SOL production regression; compiled HEAD baseline was not run. Tests must surface a task terminal failure before a missing marker timeout while retaining cancellation/output/staging assertions. Diagnostics/probes contain native code/state only, no user payloads, and temporary DEBUG-ENGINE-CLOSEOUT probes must be removed after verification.
+
+### 2026-10-09 user screenshot: post-readback retirement and queued size mismatch
+
+The installed fixed Validation five-binary hashes matched the latest packaged build; no old-package explanation. User screenshot still showed confirmed directory/inspector inside a176px client without footer. Safe dimension-only runtime projection recorded requested278 then final176 with success/client_size_settled. Product pointers/DPI acceptance therefore remains red, regardless of earlier native/GPUI tests.
+
+References rechecked before correction: ABDM AddDownloadPage and legacy AddDownloadWindow constructor/Open/Closed/RefreshContentSize/SizeChanged retain content measurement/live center; GPUI0.2.2 Windows events.rs::handle_size_msg170–213 trusts WM_SIZE lParam for logical_size/render/resize callback, move modal loop216–247 pumps app work; Windows window.rs::resize schedules native SetWindowPos. Avalonia native/base source remains unavailable.
+
+Actual regressions added at production native seams: a real HWND changed to compact176 after replay readback but before commit returned success=true,pending=false; old cached clientMatches was used at retirement. A custom-client HWND grew278 then shrank176 before pumping messages; one queued synthetic WM_SIZE still announced278 against GetClientRect176. Fix retirement readback at commit and avoid payload-stale posted WM_SIZE; use actual native frame/client recomputation rather than a second logical-only resize owner. A same-size refresh regression must prove current native WM_SIZE is delivered, not merely delete synchronization and make no-message tests pass. No extra retry/worker budget, no native bounds animation, no focus/Z-order changes; final dimensions and generation remain authoritative.
+
+Operational incident: a cmd-quoted C# test filter was parsed incorrectly and selected a broader harness including forbidden real DOpus navigation; it is unrelated to download behavior. Agent stopped/reported it, user authorized only continued download repair. Subsequent checks preinspect exact names and direct PowerShell argument arrays, reject unexpected RUN names and exclude both real DOpus cases. No further DOpus/product/service/package operation is authorized by this follow-up.
+
+Directed native review found that SendMessageTimeoutW(ref WINDOWPOS) can return while a delayed receiver still owns the marshalled parameter. A hidden HWND regression held the receiver beyond2s and failed with `client refresh returned while the receiver still owned its WINDOWPOS parameter`; it deliberately skipped delayed pointer reads after early return, rather than provoking undefined memory access. The repair uses SendMessageW inside the existing fixed resize workers. The receiver reads the retained parameter and derives current WM_SIZE before return; placement/client/foreground remain unchanged. A permanent native hang retains a fixed slot; no claim of bounded Windows execution or forced cancellation. Microsoft SendMessage/SendMessageTimeout documentation was checked directly. Real GPUI pointer/DPI acceptance remains pending; the installed09:19 Validation package lacks this follow-up.
+
+### 2026-10-09 staged Downloads presentation recheck (before UI edits)
+
+- ABDM first: `desktop/app/.../pages/addDownload/single/AddDownloadPage.kt::{AddDownloadPage,ConfigActionsButtons,MainActionButtons}` keeps URL/configuration and footer decisions in one compact window; `desktop/app/.../pages/singleDownloadPage/ShowDownloadDialogs.kt::{ShowDownloadDialog,CommonContent,CompletedWindow,ProgressWindow}` switches one keyed component to its completed presentation, with native `CustomWindow` handling actual visibility and `onCloseRequest` calling the component close. `CompletedDownloadPage.kt::Actions` keeps the pressed-gesture drag source and open/reveal actions in a separated footer; `desktop/app/.../ui/template/DialogUi.kt::{DialogMainContent,DialogFooter}` separates dialog body and actions. No ABDM queue or transfer behavior is changed by this presentation pass.
+- Legacy next: `Views/AddDownloadWindow.axaml.cs::{AddDownloadWindow,OnOpened,OnClosed,RefreshContentSize}` attaches `Services/WindowAnimationService.cs::Attach` in the constructor; the service subscribes to `Window.Opened` and `Window.Closing`, animates content/opacity and calls `window.Close()` after the closing animation. Its `Window` base/native show/hide implementation is not checked into the legacy tree, so leaf callbacks alone are not proof of HWND visibility. `Views/MainWindow.axaml.cs::{ShowDownloadProgressWindow,ShowDownloadCompletedWindow}` owns keyed reuse, then calls `Show`; `Views/DownloadProgressWindow.axaml.cs::{DownloadProgressWindow,OnOpened,OnClosed,ShowCompletionState}` attaches the same base animation and switches its already-open window to completed content with center-preserving resize. Closing remains presentation-only; one-window completion and passive fallback remain distinct.
+- Next presentation boundary: `DownloadWindowLifecycle::task_changed -> DownloadApplication::apply_task_window_directive -> DownloadTaskWindowView::replace_snapshot` owns phase/key identity. `NewDownloadView::begin_probe` and the C# native centered bounds/WM_SIZE path own staged 176/278 client budgets and media row expansion, not a GPUI style pass. `DownloadTaskWindowView::render` and `main_window/download_page.rs` project state only; callbacks defer application mutations while the view is leased. Keep source HWND and synchronous pressed-pointer entry for OLE file drag; keep typed failure, bounded inspector/error, selected-ID details and schedule/delete draft lifecycles. Focus/action/pressed styling may change without moving those boundaries. Actual live show/hide, pointer, DPI and native drag acceptance remain separately pending.
+
+### 2026-10-09 staged keyboard/four-grid follow-up (verified before product edits)
+
+- ABDM first: `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/addDownload/single/AddDownloadPage.kt::{AddDownloadPage,ConfigActionsButtons,MainActionButtons}` exposes a bounded add flow with ordinary Compose clickable/button controls, while `pages/queue/QueueInfoComponent.kt::createConfigurableList` keeps weekday/start/stop configuration as a queue-owned draft. Neither supplies NxTools.Next's one-time date-grid keyboard policy. `pages/singleDownloadPage/CompletedDownloadPage.kt::Actions` remains a native pressed-gesture drag source, not a click substitute.
+- Legacy next: `Views/MainWindow.axaml` plan-start row and `ViewModels/MainWindowViewModel.cs` scheduled-start fields provide the one-time scheduling behavior, not a GPUI calendar implementation. `Views/AddDownloadWindow.axaml.cs::{AddDownloadWindow,OnOpened,OnClosed}` attaches `Services/WindowAnimationService.cs::Attach`, then Avalonia's `Window` base handles the actual Show/Close HWND boundary; base source is not checked in. Reuse Next's existing anchored date popover and preserve its draft/commit/clear/outside-dismiss focus return, rather than copying native date UI or another window.
+- Next gap: `new_download_view.rs::delayed_start_calendar` currently builds each day as a pointer-only `div` with an `on_click` installed only for non-past dates. Promote eligible dates to one keyed GPUI Button/KeyUp click path; past dates must be truly disabled, not just dimmed. Keep 40×19 day hit rectangles, month navigation's existing Buttons, generation-scoped view update via `window.defer`, and fixed popover/176/278 client budgets. `settings_view.rs::download_settings_navigation_item` and `schedule_view.rs` weekdays already use keyed focusable_content/Button from the earlier integration; don't add duplicate keyboard dispatch. `task_window.rs` native OLE file drag remains mouse-down-only with the source HWND. Other custom actions need a separate scoped boundary test before altering their behavior.
+
+## Repeated real transition failure — fixed-stage investigation
+User's new Validation screenshot shows the compact176 client and explicit resize-timeout error after probing, not a confirmed278 surface. Rechecked ABDM AddDownloadPage/BaseOptionDialog and legacy AddDownloadWindow constructor→WindowAnimationService.Attach→OnOpened/SizeChanged plus Stage/SizeToContent refresh; legacy uses one staged Window and its Avalonia native base remains unavailable. Current Next probe completion stages metadata, sends a cross-process centered resize, waits viewport/timeout and clears a successful probe on presentation expiry. Existing GPUI tests compile `native_window_handle` to None and thus do not execute this native gate; direct278 screenshot likewise bypasses transition. Add an owned Debug GPUI HWND/PID fixture (real176→C# production resize→real client/viewport278), separate from ordinary runtime/service/clipboard/network, before claiming a new fix. Non-resizable GPUI minmax sets only minimum track size, not a fixed maximum; actual message path must be measured rather than blaming old code. Ordinary176/278 remain fixed; placement/focus/cancellation/generation and media budgets must survive any stage-replacement simplification.
+
+### Approved fixed-window stage handoff (2026-10-09, before Rust implementation)
+
+ABDM `AddDownloadPage.kt::AddDownloadPage` retains its own dialog and closes through `onCloseRequest`; legacy `AddDownloadWindow.axaml.cs::{AddDownloadWindow,OnOpened,OnClosed,RefreshContentSize}` attaches `WindowAnimationService.Attach` in its constructor, then changes `SizeToContent` on the same Avalonia `Window`. Its base/native Show/Close implementation is not checked in. The user explicitly changes the Next presentation behavior: successful probe replaces the compact GPUI HWND with a new hidden final-size confirmation HWND, rather than waiting for an in-place Win32 resize/WM_SIZE on the still-moving compact HWND. The production fixture `downloads/polish_tests.rs::successful_probe_replaces_compact_window_with_fixed_confirmation` was red because the old registered window remained the same. Preserve one registered add window, retained successful probe/draft on failed native placement, source HWND center from the native adapter, generation/identity checks before closing the source, and deferred cross-entity callbacks. `PresentFixedWindowOverAnchor { window_handle, anchor_window_handle, width, height }` carries final device-pixel client dimensions: C# applies those bounds centered over the source while hidden, shows nonactivating, then reads back once; no resize of the source or retry loop. Direct synthetic forms and failed probes remain independently bounded; native success is not inferred from a timer or admission.
+
+Rust fixed-stage slice (compiled/native verification deferred to parent): `NewDownloadView::begin_probe` stages successful data and defers `DownloadApplication::create_fixed_confirmation`. The owner validates registered source/window liveness plus weak-view probe generation before creation and completion. Fresh InputState/SelectState entities are constructed for the target; copied state includes external/confirmed request, local destination/name/category/schedule, idempotency, probe/media selection and defaults. One pending slot is installed before caller-ID IPC dispatch; failure/disconnect/one ten-second IPC timeout closes only the target and preserves the successful source draft for presentation-only retry. A deferred window-closed observer retires orphan targets; stale/late results cannot register or close a newer owner.
+
+Pinned GPUI0.2.2 `src/platform/windows/window.rs:471–477` stores hidden `initial_placement` rather than applying requested HWND bounds, and `activate:690–705 -> set_window_placement:302–324` takes/replays it through SetWindowPlacement before focus. Therefore Rust never calls GPUI activate_window on the replacement or when reusing the registered add window; final placement/show and activation stay native-owned. Local target input focus/notify are deferred without native activation. Actual user probe/move/DPI lifecycle is still unverified; the earlier Debug176→C#resize278 fixture is not this replacement boundary.
+
+## Progress-to-completion position acceptance follow-up
+User accepted the15:38 new-download fixed handoff but reports slight downward movement on task completion. Rechecked ABDM ShowDownloadDialogs (progress/completed owner-specific state/windows), then legacy DownloadProgressWindow constructor→WindowAnimationService.Attach→OnOpened and ShowCompletionState→ResizePreservingCenter: final432x196 preserves native center, clamps work area, locks size and retains same task window. Next progress184/completion180 share one keyed HWND; current creation min size equals initial phase, potentially constraining a smaller terminal phase. A center-only native control fixture with min176 passes repeated184/280/180 transitions; that does not cover the real task min184. Add Debug real task-view/window-options fixture and exact native HWND center/minimum regression before correcting constraints. Preserve keyed task/window generation, presentation-only close, final-file/OLE and passive terminal fallback; no new size recovery loop or independent GPUI resize owner.
+
+2026-10-09 correction evidence: the owned real task HWND/min184 fixture rejected target440x180 with actual440x184; the earlier new-download/min176 center control was not equivalent. Two production regressions were behavior-red: collapsed progress184 differed from completed180, and the task lifecycle emitted a native centered resize on ordinary completion. Progress/completed now both use440x184; update_task_window compares previous phase/details logical budget with next budget and emits resize only when different. Minimum size is the collapsed184 budget for all initial phases, so failed196 can return to progress184. Same task/window generation, content/footer containment and no resize command pass. The exact owned native test covers184/280/184/196/184 repeated three times with15 zero-center-drift observations; it is not an installed physical-pointer/mixed-DPI acceptance claim.

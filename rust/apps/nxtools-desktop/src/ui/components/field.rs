@@ -4,7 +4,9 @@ use gpui::{
 use gpui_component::input::{Input, InputState};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_6, SPACING_8};
+use crate::ui::metrics::{
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8,
+};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL};
 
 fn field_shell_with_height(
@@ -62,7 +64,7 @@ pub(crate) fn labeled_control(
                 .h(px(LINE_HEIGHT_LABEL))
                 .flex()
                 .items_center()
-                .gap(px(SPACING_6))
+                .gap(px(SPACING_8))
                 .child(
                     div()
                         .flex_none()
@@ -109,7 +111,7 @@ pub(crate) fn labeled_field(
             Input::new(control)
                 .appearance(false)
                 .bordered(false)
-                .focus_bordered(false),
+                .focus_bordered(true),
         ),
         selector,
     )
@@ -146,7 +148,8 @@ pub(crate) fn inline_error(
         .border_color(theme.danger)
         .bg(theme.danger_soft)
         .px(px(SPACING_8))
-        .py(px(SPACING_6))
+        .py(px(SPACING_4))
+        .min_h(px(CONTROL_HEIGHT_ACTION))
         .text_size(px(TEXT_LABEL))
         .line_height(px(LINE_HEIGHT_LABEL))
         .text_color(theme.danger)

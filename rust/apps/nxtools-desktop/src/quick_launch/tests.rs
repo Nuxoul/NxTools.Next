@@ -39,7 +39,7 @@ fn production_result_row_keeps_height_through_animated_surface(cx: &mut TestAppC
         .refresh()
         .expect("render populated quick-launch results");
     let row = window
-        .debug_bounds("quick-launch-result-row")
+        .debug_bounds("quick-launch-result-row-0")
         .expect("production quick-launch result row");
     assert_eq!(row.size.height, px(40.0));
 }
@@ -404,8 +404,21 @@ fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
         );
     });
     assert_eq!(expanded_header, collapsed_header);
-    assert_eq!(results_surface.top(), expanded_header.bottom() + px(1.0));
-    assert_eq!(results_surface.bottom(), expanded_root.bottom());
+    let entrance_offset = window.read(|cx| {
+        if crate::ui::motion::motion_allowed(cx) {
+            1.0
+        } else {
+            0.0
+        }
+    });
+    assert_eq!(
+        results_surface.top(),
+        expanded_header.bottom() + px(entrance_offset)
+    );
+    assert_eq!(
+        results_surface.bottom(),
+        expanded_root.bottom() - px(1.0 - entrance_offset)
+    );
 
     panel.update_in(window, |panel, window, cx| {
         let expanded_generation = panel.results_appearance_generation;
@@ -534,6 +547,9 @@ fn quick_launch_application_fixture(
     let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
         .expect("open quick-launch application fixture catalog");
     let config_path = temp.path().join("config.json");
+    AppConfig::default()
+        .save_to(&config_path)
+        .expect("seed config fixture");
     let logs_path = temp.path().join("logs");
     let (application, endpoint) = cx.update(|cx| {
         let notifications = cx.new(|_| NotificationCenter::default());
@@ -554,6 +570,34 @@ fn quick_launch_application_fixture(
         (application, endpoint)
     });
     (temp, application, endpoint)
+}
+
+#[gpui::test]
+fn exclusive_fullscreen_suppression_setting_persists_and_syncs(cx: &mut TestAppContext) {
+    let (temp, application, endpoint) = quick_launch_application_fixture(cx);
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.set_exclusive_fullscreen_suppression(false, cx);
+        });
+    });
+
+    let config_path = temp.path().join("config.json");
+    let persisted = AppConfig::load_from(&config_path).expect("reload Quick Launch settings");
+    assert!(!persisted.quick_launch.suppress_in_exclusive_fullscreen);
+
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("updated Quick Launch configuration command");
+    let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command)) =
+        command.message
+    else {
+        panic!("expected typed Quick Launch configuration command");
+    };
+    assert!(!command.suppress_in_exclusive_fullscreen);
+    assert!(command.enabled);
+    assert!(command.auto_quick_switch_enabled);
+    assert!(command.file_dialog_search_enabled);
+    assert_eq!(command.hotkey_key, "Control");
 }
 
 fn quick_launch_panel_fixture(
@@ -1802,6 +1846,83 @@ fn calculator_action_mode_has_one_local_action_and_no_shell_loading() {
     );
 }
 
+#[gpui::test]
+fn copy_actions_dispatch_without_hiding_the_active_popup(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let panel_slot = Rc::new(RefCell::new(None));
+    let panel_for_window = Rc::clone(&panel_slot);
+    let window_slot = Rc::new(RefCell::new(None));
+    let window_for_window = Rc::clone(&window_slot);
+    let application_for_window = application.clone();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        *window_for_window.borrow_mut() = Some(window.window_handle());
+        let panel = cx.new(|cx| {
+            QuickLaunchPanel::new(
+                Vec::new(),
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 1,
+                    focus_window_handle: 1,
+                    process_id: 1,
+                    process_name: "editor".into(),
+                    window_title: String::new(),
+                },
+                None,
+                Vec::new(),
+                application_for_window.downgrade(),
+                window,
+                cx,
+            )
+        });
+        *panel_for_window.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    let panel = panel_slot
+        .borrow_mut()
+        .take()
+        .expect("mounted launcher panel");
+    let popup_window = window_slot
+        .borrow_mut()
+        .take()
+        .expect("launcher window handle");
+    application.update(window, |application, _| {
+        application.popup = Some(QuickLaunchWindow {
+            window: popup_window,
+            panel: panel.downgrade(),
+            native_window_handle: 1,
+        });
+    });
+    for action in [QuickLaunchAction::CopyPath, QuickLaunchAction::CopyCommand] {
+        let source = if action == QuickLaunchAction::CopyPath {
+            ApplicationSource::IndexedFile
+        } else {
+            ApplicationSource::CustomCommand
+        };
+        let mut result = search_result("fixture", source);
+        result.subtitle = Some("synthetic command".into());
+        application.update(window, |application, cx| {
+            application.execute(
+                result,
+                action.clone(),
+                "fixture".into(),
+                QuickLaunchActionTrigger::Enter,
+                cx,
+            )
+        });
+        let accepted = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("copy action dispatched");
+        assert!(matches!(
+            accepted.message,
+            nxtools_protocol::Message::PlatformCommand(_)
+        ));
+        panel.read_with(window, |panel, _| assert!(panel.is_open));
+        application.read_with(window, |application, _| {
+            assert!(application.pending_actions.contains_key(&accepted.id));
+        });
+    }
+}
+
 #[test]
 fn copy_path_success_keeps_the_launcher_open_without_recording_a_launch() {
     assert_eq!(
@@ -2525,7 +2646,7 @@ fn action_mode_reuses_the_result_row_rails_and_only_adds_a_lightweight_context(
     panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
     window.refresh().expect("render the ordinary result row");
     let result_row = window
-        .debug_bounds("quick-launch-result-row")
+        .debug_bounds("quick-launch-result-row-0")
         .expect("ordinary result row");
     let result_icon = window
         .debug_bounds("quick-launch-result-icon-0")
@@ -3916,6 +4037,15 @@ fn indexer_service_bootstrap_runs_once_and_drops_stale_pipe_commands() {
     assert_eq!(already_connected.finish(command), None);
     assert!(!already_connected.on_platform_connected());
 }
+#[test]
+fn validation_install_directory_skips_protected_indexer_service_management() {
+    assert!(!should_manage_indexer_service_for_executable(
+        std::path::Path::new(r"C:\Users\Test\NxTools.Next-Validation-20261004\NxTools.exe",)
+    ));
+    assert!(should_manage_indexer_service_for_executable(
+        std::path::Path::new(r"C:\ProgramData\NxTools\NxTools.Next\Service\NxTools.exe",)
+    ));
+}
 
 #[gpui::test]
 fn quick_launch_bounds_use_the_cursor_display_upper_quarter(cx: &mut TestAppContext) {
@@ -3932,7 +4062,8 @@ fn quick_launch_bounds_use_the_cursor_display_upper_quarter(cx: &mut TestAppCont
         cursor_y: 10,
         cursor_display_index: 0,
         cursor_monitor_dpi: 96,
-        requested_at_unix_ms: 0,
+        requested_at_unix_ms: 1_700_000_000_000,
+        correlation_id: None,
     };
     cx.update(|cx| {
         let (bounds, _) = quick_launch_bounds(&request, false, cx);
@@ -3959,7 +4090,8 @@ fn quick_launch_bounds_keep_logical_size_at_100_125_and_150_percent_dpi(cx: &mut
             cursor_y: 720,
             cursor_display_index: 0,
             cursor_monitor_dpi: dpi,
-            requested_at_unix_ms: 0,
+            requested_at_unix_ms: 1_700_000_000_000,
+            correlation_id: None,
         };
         cx.update(|cx| {
             let (bounds, _) = quick_launch_bounds(&request, true, cx);
@@ -3994,4 +4126,38 @@ fn panel_hide_is_result_tracked_and_self_healing() {
     }
     assert_eq!(PANEL_HIDE_RETRY_LIMIT, 1);
     assert_eq!(PANEL_HIDE_RECHECK_DELAY_MS, 400);
+}
+
+#[test]
+fn popup_reveal_waits_for_first_frame_and_first_native_bounds_are_staged() {
+    let source = include_str!("../quick_launch.rs");
+    let open = source
+        .split("fn open_popup(")
+        .nth(1)
+        .and_then(|body| body.split("fn schedule_captured_directory_record").next())
+        .expect("quick-launch open lifecycle");
+    assert!(open.contains("show: false"));
+    assert!(open.contains("SetWindowBoundsCommand {"));
+    assert!(open.contains("staged_device_bounds"));
+    let native_bounds = open
+        .find("SetWindowBoundsCommand {")
+        .expect("native bounds applied at window creation");
+    let panel_mount = open.find("QuickLaunchPanel::new").expect("panel mount");
+    assert!(native_bounds < panel_mount);
+
+    let reveal = source
+        .split("fn schedule_popup_reveal(")
+        .nth(1)
+        .and_then(|body| body.split("fn open_popup(").next())
+        .expect("first-frame reveal lifecycle");
+    let frame = reveal
+        .find("window.on_next_frame")
+        .expect("first GPUI frame");
+    let position = reveal
+        .find("PlatformCommand::SetWindowPosition")
+        .expect("native position");
+    let visible = reveal.find("visible: true").expect("native reveal");
+    assert!(frame < position && position < visible);
+    assert!(visible < reveal.find("begin_window_activation").expect("activation"));
+    assert!(source.contains("panel.prepare_for_hide(window, cx)"));
 }

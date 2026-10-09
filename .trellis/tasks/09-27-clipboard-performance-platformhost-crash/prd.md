@@ -50,13 +50,13 @@ Make long-running clipboard history browsing and repeated search/delete workflow
 
 ## Acceptance Criteria
 
-- [ ] A repeatable unattended performance loop reproduces the reported scrolling/search-delete workload and records baseline timings and outstanding-work/memory signals.
-- [ ] The loop demonstrates the dominant cost and a regression test or benchmark fails before the fix and passes after it; if the real UI seam cannot be automated, the limitation and fallback measurement are documented.
-- [ ] Deep scrolling uses bounded page/window state and does not accumulate full-history rows, duplicate async jobs, stale result application, or unbounded preview/materialization work.
-- [ ] Repeated search/delete cycles cancel or supersede stale work, keep only the current query result authoritative, and remain bounded under stress.
-- [ ] EcoPaste findings are recorded with exact paths/functions and translated into NxTools-specific decisions; no source is copied.
-- [ ] PlatformHost long-session failure handling has a red-capable regression/diagnostic gate. Any claimed root cause is supported by faulting-module, stack, dump, or WER evidence; otherwise the remaining evidence gap is explicit.
-- [ ] Relevant Rust/C# tests, performance checks, formatting, and scoped diff checks pass, with unrelated dirty worktree changes preserved.
+ - [ ] A repeatable unattended performance loop reproduces the reported scrolling/search-delete workload and records baseline timings and outstanding-work/memory signals.
+ - [ ] The loop demonstrates the dominant cost and a regression test or benchmark fails before the fix and passes after it; if the real UI seam cannot be automated, the limitation and fallback measurement are documented.
+ - [x] Deep scrolling uses bounded page/window state and does not accumulate full-history rows, duplicate async jobs, stale result application, or unbounded preview/materialization work.
+ - [ ] Repeated search/delete cycles cancel or supersede stale work, keep only the current query result authoritative, and remain bounded under stress.
+ - [ ] EcoPaste findings are recorded with exact paths/functions and translated into NxTools-specific decisions; no source is copied.
+ - [ ] PlatformHost long-session failure handling has a red-capable regression/diagnostic gate. Any claimed root cause is supported by faulting-module, stack, dump, or WER evidence; otherwise the remaining evidence gap is explicit.
+ - [ ] Relevant Rust/C# tests, performance checks, formatting, and scoped diff checks pass, with unrelated dirty worktree changes preserved.
 
 ## Deferred Items
 

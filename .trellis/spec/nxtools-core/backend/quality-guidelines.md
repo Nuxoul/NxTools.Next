@@ -1,51 +1,7 @@
-# Quality Guidelines
+# Core quality
 
-> Code quality standards for backend development.
+Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#tests`, `repo:Cargo.toml`.
 
----
+Required tests cover serde default/legacy compatibility, validated network settings, normalize idempotence, mixed-case/path blacklist basename, independent feature scopes, panel clamps, stale-section merge and corrupt/missing write failure. Use temp paths, never real config. Instance hints are advisory: verify actual lock before acting on stale HWND hint. Don't infer process identity from stored hint alone. Keep guard lifetime observable.
 
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+`cargo test -p nxtools-core --lib`; scoped strict Clippy/check/fmt follow [verification](../../shared/verification.md) memory environment. No broad allows or arbitrary refactoring. Cross-owner migration/config tests live in Desktop and must remain with local tests. [Shared engineering](../../shared/engineering.md).

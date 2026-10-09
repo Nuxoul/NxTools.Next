@@ -2,6 +2,12 @@
 
 > **Purpose**: Expand your thinking to catch things you might not have considered.
 
+These are reasoning aids, not NxTools product policy. Project-specific executable guidance
+starts at [the standards entry](../index.md); use [architecture](../shared/architecture.md),
+[engineering](../shared/engineering.md) and [UI authority](../shared/ui-design.md) for actual contracts.
+Trellis/template examples below apply only when editing those systems, not as requirements to
+add their architecture to this product.
+
 ---
 
 ## Why Thinking Guides?

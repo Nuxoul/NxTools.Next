@@ -18,6 +18,7 @@ use nxtools_clipboard::{
     ClipboardPageCursor, ClipboardRetentionPolicy, ClipboardSearchScope,
     ClipboardStorageMigrationReport, FilesCapture, ImageCapture, TextCapture,
 };
+use nxtools_core::AppConfig;
 use nxtools_protocol::ClipboardCapture;
 use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
@@ -626,10 +627,13 @@ impl ClipboardCaptureWorkerHandle {
         })
     }
 
+    /// Serializes the config commit with the worker's history switch, so captures
+    /// cannot land in the destination until restart will also open that destination.
     pub(crate) fn migrate_storage(
         &self,
         destination_root: PathBuf,
-    ) -> Result<ClipboardStorageMigrationReport, String> {
+        config_path: PathBuf,
+    ) -> Result<(ClipboardStorageMigrationReport, AppConfig), String> {
         let paths = Arc::clone(&self.paths);
         self.request_state_message(move |state| {
             let source_asset_root = state.asset_directory.clone();
@@ -640,15 +644,20 @@ impl ClipboardCaptureWorkerHandle {
             write_reset_marker(&destination_root).map_err(|error| error.to_string())?;
             let replacement =
                 ClipboardHistory::open(&report.database_path).map_err(|error| error.to_string())?;
-            state.history = replacement;
-            state.asset_directory = report.asset_root.clone();
-            state.last_cleanup_at_unix_ms = 0;
             let mut paths = paths
                 .lock()
                 .map_err(|_| "clipboard worker path state is poisoned".to_owned())?;
+            let storage_directory = destination_root.to_string_lossy().into_owned();
+            let merged = AppConfig::update_section(&config_path, |config| {
+                config.clipboard.storage_directory = storage_directory;
+            })
+            .map_err(|error| error.to_string())?;
+            state.history = replacement;
+            state.asset_directory = report.asset_root.clone();
+            state.last_cleanup_at_unix_ms = 0;
             paths.database_path = report.database_path.clone();
             paths.asset_directory = report.asset_root.clone();
-            Ok(report)
+            Ok((report, merged))
         })
     }
 }
@@ -1221,6 +1230,43 @@ mod tests {
                 .len(),
             5
         );
+    }
+
+    #[test]
+    fn migration_config_failure_keeps_worker_on_source_and_restart_config_unchanged() {
+        let directory = tempfile::tempdir().expect("synthetic storage roots");
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        fs::create_dir_all(&source).expect("create source");
+        let config_path = directory.path().join("config-is-directory");
+        fs::create_dir_all(&config_path).expect("force config commit failure");
+        let worker = ClipboardCaptureWorkerHandle::spawn(
+            source.join("clipboard.db"),
+            source.join("clipboard-images"),
+            retention(),
+            1_000,
+        )
+        .expect("start source worker");
+        let failure = worker
+            .migrate_storage(destination.clone(), config_path)
+            .expect_err("config commit must fail");
+        assert!(!failure.is_empty());
+        assert_eq!(worker.database_path(), source.join("clipboard.db"));
+        let async_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("create count-query runtime");
+        assert_eq!(
+            async_runtime
+                .block_on(worker.counts_async())
+                .expect("source counts after failed commit")
+                .total,
+            0
+        );
+        assert!(source.join("clipboard.db").exists());
+        worker.shutdown().expect("flush worker");
+        let reopened = ClipboardHistory::open(source.join("clipboard.db")).expect("source restart");
+        assert_eq!(reopened.counts().expect("reopened source counts").total, 0);
     }
 
     #[test]

@@ -1619,7 +1619,7 @@ impl ClipboardHistory {
         let max_items = policy.max_items.clamp(100, 100_000);
         let retention_days = policy.retention_days.clamp(1, 3650);
         let cutoff = now_unix_ms.saturating_sub(i64::from(retention_days) * DAY_MS);
-        let purge_days = retention_days.max(30);
+        let purge_days = retention_days.max(7);
         let purge_cutoff = now_unix_ms.saturating_sub(i64::from(purge_days) * DAY_MS);
         let transaction = self.connection.transaction()?;
 
@@ -3348,6 +3348,184 @@ mod tests {
         assert!(history.recent(10).expect("empty history").is_empty());
     }
 
+    // ZIP fixtures use the same manifest and asset layout as the exported archive.
+    #[test]
+    fn failed_archive_import_removes_only_owned_new_assets_without_rows() {
+        use sha2::Digest as _;
+        use std::io::Write as _;
+        let directory = tempfile::tempdir().expect("create archive fixture directory");
+        let db = directory.path().join("history.db");
+        let assets = directory.path().join("assets");
+        std::fs::create_dir_all(&assets).expect("create shared asset directory");
+        let existing_bytes = b"shared asset";
+        let digest = format!("{:x}", sha2::Sha256::digest(existing_bytes));
+        let existing = assets.join(format!("{digest}.png"));
+        std::fs::write(&existing, existing_bytes).expect("write shared asset");
+        let archive_path = directory.path().join("partial.nxtclip");
+        let mut zip = zip::ZipWriter::new(
+            std::fs::File::create(&archive_path).expect("create archive fixture"),
+        );
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("manifest.json", options)
+            .expect("start archive manifest");
+        let item = |image: &str, time: i64| {
+            serde_json::json!({
+                "kind":"image", "text":"", "image_entry":image, "image_width":1,
+                "image_height":1, "file_paths":[], "source":{"window_handle":0,
+                "process_id":0,"process_name":"test","icon_entry":null,"window_title":""},
+                "captured_at_unix_ms":time,"is_favorite":false,"is_pinned":false,"formats":[]
+            })
+        };
+        let manifest = serde_json::json!({"version":1,"items":[
+            item("images/existing.png", 1), item("images/new.png", 2),
+            item("images/missing.png", 3)]});
+        zip.write_all(manifest.to_string().as_bytes())
+            .expect("write archive manifest");
+        zip.start_file("images/existing.png", options)
+            .expect("start shared asset entry");
+        zip.write_all(existing_bytes)
+            .expect("write shared asset entry");
+        zip.start_file("images/new.png", options)
+            .expect("start owned asset entry");
+        zip.write_all(b"new asset")
+            .expect("write owned asset entry");
+        zip.finish().expect("finish archive fixture");
+        let mut history = ClipboardHistory::open(&db).expect("open archive history");
+        assert!(history.import_archive(&archive_path, &assets).is_err());
+        assert_eq!(
+            history
+                .counts()
+                .expect("count rows after failed import")
+                .total,
+            0
+        );
+        assert_eq!(
+            std::fs::read(existing).expect("read retained shared asset"),
+            existing_bytes
+        );
+        assert_eq!(
+            std::fs::read_dir(&assets)
+                .expect("list remaining assets")
+                .count(),
+            2
+        ); // existing + native-formats
+        assert!(
+            !std::fs::read_dir(&assets)
+                .expect("list import temporary entries")
+                .any(|entry| {
+                    entry
+                        .expect("read asset directory entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".import-")
+                })
+        );
+    }
+
+    #[test]
+    fn archive_import_late_database_failure_reports_committed_rows_explicitly() {
+        use std::io::Write as _;
+        let directory = tempfile::tempdir().expect("create late-failure fixture directory");
+        let archive_path = directory.path().join("late.nxtclip");
+        let mut zip = zip::ZipWriter::new(
+            std::fs::File::create(&archive_path).expect("create late-failure archive"),
+        );
+        zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .expect("start late-failure manifest");
+        let item = |text: &str, time: i64| {
+            serde_json::json!({
+                "kind":"text", "text":text, "image_entry":null, "image_width":0,
+                "image_height":0, "file_paths":[], "source":{"window_handle":0,
+                "process_id":0,"process_name":"test","icon_entry":null,"window_title":""},
+                "captured_at_unix_ms":time,"is_favorite":false,"is_pinned":false,"formats":[]
+            })
+        };
+        let mut first = item("first", 1);
+        first["source"]["icon_entry"] = serde_json::json!("icons/first.png");
+        let mut second = item("second", 2);
+        second["source"]["icon_entry"] = serde_json::json!("icons/second.png");
+        zip.write_all(
+            serde_json::json!({"version":1,"items":[first, second]})
+                .to_string()
+                .as_bytes(),
+        )
+        .expect("write late-failure manifest");
+        zip.start_file("icons/first.png", zip::write::SimpleFileOptions::default())
+            .expect("start first icon entry");
+        zip.write_all(b"first asset").expect("write first icon");
+        zip.start_file("icons/second.png", zip::write::SimpleFileOptions::default())
+            .expect("start second icon entry");
+        zip.write_all(b"second orphan asset")
+            .expect("write second icon");
+        zip.finish().expect("finish late-failure archive");
+        let mut history = ClipboardHistory::open(directory.path().join("history.db"))
+            .expect("open late-failure history");
+        history.connection.execute_batch("CREATE TRIGGER reject_second BEFORE INSERT ON clipboard_items WHEN NEW.text = 'second' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").expect("install late-insert failure trigger");
+        let error = history
+            .import_archive(&archive_path, &directory.path().join("assets"))
+            .expect_err("second row must hit the synthetic insert failure");
+        assert!(matches!(
+            error,
+            ClipboardArchiveError::Partial {
+                inserted: 1,
+                updated: 0,
+                ..
+            }
+        ));
+        assert_eq!(
+            history
+                .counts()
+                .expect("count partially committed rows")
+                .total,
+            1
+        );
+        let references = history
+            .referenced_asset_paths()
+            .expect("query committed asset references");
+        let actual = std::fs::read_dir(directory.path().join("assets"))
+            .expect("list assets after partial import")
+            .flatten()
+            .filter(|entry| entry.path().is_file())
+            .map(|entry| entry.path().to_string_lossy().into_owned())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            actual, references,
+            "late failure must remove new unreferenced resources, retain committed row assets"
+        );
+    }
+
+    #[test]
+    fn archive_import_skipped_row_does_not_extract_its_assets() {
+        use std::io::Write as _;
+        let directory = tempfile::tempdir().expect("create skipped-row fixture directory");
+        let archive_path = directory.path().join("skipped.nxtclip");
+        let mut zip = zip::ZipWriter::new(
+            std::fs::File::create(&archive_path).expect("create skipped-row archive"),
+        );
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("manifest.json", options)
+            .expect("start skipped-row manifest");
+        zip.write_all(br#"{"version":1,"items":[{"kind":"unknown","text":"","image_entry":"images/orphan.png","image_width":1,"image_height":1,"file_paths":[],"source":{"window_handle":0,"process_id":0,"process_name":"","icon_entry":null,"window_title":""},"captured_at_unix_ms":1,"is_favorite":false,"is_pinned":false,"formats":[]}]}"#).expect("write skipped-row manifest");
+        zip.start_file("images/orphan.png", options)
+            .expect("start orphan asset entry");
+        zip.write_all(b"orphan").expect("write orphan asset entry");
+        zip.finish().expect("finish skipped-row archive");
+        let mut history = ClipboardHistory::open(directory.path().join("history.db"))
+            .expect("open skipped-row history");
+        let root = directory.path().join("assets");
+        let report = history
+            .import_archive(&archive_path, &root)
+            .expect("import skipped-row archive");
+        assert_eq!(report.skipped, 1);
+        assert_eq!(report.assets_written, 0);
+        assert_eq!(
+            std::fs::read_dir(root)
+                .expect("list skipped-row assets")
+                .count(),
+            1
+        ); // native-formats only
+    }
+
     #[test]
     fn history_survives_closing_and_reopening_the_database() {
         let directory = tempfile::tempdir().expect("temp directory");
@@ -3626,6 +3804,50 @@ mod tests {
             )
             .expect("count purged rows");
         assert_eq!(remaining_rows, 0);
+    }
+
+    #[test]
+    fn deleted_row_purge_uses_seven_day_floor_or_longer_retention() {
+        const DAY_MS: i64 = 86_400_000;
+        for (days, before, after) in [(1, 6, 8), (7, 6, 8), (14, 10, 16), (30, 10, 32)] {
+            let directory = tempfile::tempdir().expect("retention case directory");
+            let mut history = ClipboardHistory::open(directory.path().join("history.db"))
+                .expect("open retention fixture");
+            let CaptureOutcome::Inserted(row) = history
+                .capture(TextCapture {
+                    text: format!("retention {days}"),
+                    native_formats: Vec::new(),
+                    source: fixture_source(),
+                    captured_at_unix_ms: DAY_MS,
+                })
+                .expect("capture retention fixture")
+            else {
+                panic!("must insert")
+            };
+            history
+                .soft_delete(row.id, 2 * DAY_MS)
+                .expect("soft delete");
+            let policy = ClipboardRetentionPolicy {
+                max_items: 1000,
+                retention_days: days,
+            };
+            assert_eq!(
+                history
+                    .cleanup(policy, (2 + before) * DAY_MS)
+                    .expect("clean retention fixture before expiry")
+                    .purged,
+                0,
+                "{days}-day policy purged recoverable row too soon"
+            );
+            assert_eq!(
+                history
+                    .cleanup(policy, (2 + after) * DAY_MS)
+                    .expect("clean retention fixture after expiry")
+                    .purged,
+                1,
+                "{days}-day policy failed to purge expired row"
+            );
+        }
     }
 
     #[test]

@@ -215,7 +215,7 @@ impl MainWindow {
         .ghost()
         .compact()
         .xsmall()
-        .h(px(26.0))
+        .h(px(28.0))
         .w(px(154.0))
         .px(px(8.0))
         .rounded(px(RADIUS_CONTROL))
@@ -240,8 +240,11 @@ impl MainWindow {
                         })
                         .checked(action == current)
                         .on_click(move |_event, _window, cx| {
-                            let _ = clipboard.update(cx, |application, _| {
-                                application.set_clipboard_modifier_action(modifier, action);
+                            let clipboard = clipboard.clone();
+                            cx.defer(move |cx| {
+                                let _ = clipboard.update(cx, |application, _| {
+                                    application.set_clipboard_modifier_action(modifier, action);
+                                });
                             });
                         }),
                     )
@@ -262,7 +265,7 @@ impl MainWindow {
         let theme = self.theme;
         div()
             .id(id)
-            .h(px(26.0))
+            .h(px(28.0))
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border)
@@ -270,8 +273,10 @@ impl MainWindow {
             .flex()
             .items_center()
             .child(
-                div()
-                    .id(gpui::SharedString::from(format!("{id}-minus")))
+                Button::new(gpui::SharedString::from(format!("{id}-minus")))
+                    .ghost()
+                    .p_0()
+                    .rounded(px(RADIUS_CONTROL))
                     .w(px(28.0))
                     .h_full()
                     .cursor_pointer()
@@ -279,23 +284,25 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_color(theme.text_muted)
-                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
                     .child("−")
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         cx.stop_propagation();
-                        let _ = this.clipboard.update(cx, |application, _| {
-                            let settings = application.clipboard_settings();
-                            if edits_days {
-                                application.set_clipboard_retention(
-                                    settings.max_items,
-                                    settings.retention_days.saturating_sub(step as u32),
-                                );
-                            } else {
-                                application.set_clipboard_retention(
-                                    settings.max_items.saturating_sub(step),
-                                    settings.retention_days,
-                                );
-                            }
+                        let clipboard = this.clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, _| {
+                                let settings = application.clipboard_settings();
+                                if edits_days {
+                                    application.set_clipboard_retention(
+                                        settings.max_items,
+                                        settings.retention_days.saturating_sub(step as u32),
+                                    );
+                                } else {
+                                    application.set_clipboard_retention(
+                                        settings.max_items.saturating_sub(step),
+                                        settings.retention_days,
+                                    );
+                                }
+                            });
                         });
                         cx.notify();
                     })),
@@ -315,8 +322,10 @@ impl MainWindow {
                     .child(value.to_string()),
             )
             .child(
-                div()
-                    .id(gpui::SharedString::from(format!("{id}-plus")))
+                Button::new(gpui::SharedString::from(format!("{id}-plus")))
+                    .ghost()
+                    .p_0()
+                    .rounded(px(RADIUS_CONTROL))
                     .w(px(28.0))
                     .h_full()
                     .cursor_pointer()
@@ -324,23 +333,25 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_color(theme.text_muted)
-                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
                     .child("+")
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         cx.stop_propagation();
-                        let _ = this.clipboard.update(cx, |application, _| {
-                            let settings = application.clipboard_settings();
-                            if edits_days {
-                                application.set_clipboard_retention(
-                                    settings.max_items,
-                                    settings.retention_days.saturating_add(step as u32),
-                                );
-                            } else {
-                                application.set_clipboard_retention(
-                                    settings.max_items.saturating_add(step),
-                                    settings.retention_days,
-                                );
-                            }
+                        let clipboard = this.clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, _| {
+                                let settings = application.clipboard_settings();
+                                if edits_days {
+                                    application.set_clipboard_retention(
+                                        settings.max_items,
+                                        settings.retention_days.saturating_add(step as u32),
+                                    );
+                                } else {
+                                    application.set_clipboard_retention(
+                                        settings.max_items.saturating_add(step),
+                                        settings.retention_days,
+                                    );
+                                }
+                            });
                         });
                         cx.notify();
                     })),
@@ -366,7 +377,7 @@ impl MainWindow {
         let plus_clipboard = clipboard;
         div()
             .id(id)
-            .h(px(26.0))
+            .h(px(28.0))
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border)
@@ -374,8 +385,10 @@ impl MainWindow {
             .flex()
             .items_center()
             .child(
-                div()
-                    .id(gpui::SharedString::from(format!("{id}-minus")))
+                Button::new(gpui::SharedString::from(format!("{id}-minus")))
+                    .ghost()
+                    .p_0()
+                    .rounded(px(RADIUS_CONTROL))
                     .w(px(28.0))
                     .h_full()
                     .cursor_pointer()
@@ -383,16 +396,18 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_color(theme.text_muted)
-                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
                     .child("−")
                     .on_click(cx.listener(move |_, _event, _window, cx| {
                         cx.stop_propagation();
-                        let _ = minus_clipboard.update(cx, |application, _| {
-                            update_clipboard_capture_limit(
-                                application,
-                                kind,
-                                value.saturating_sub(step),
-                            );
+                        let clipboard = minus_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, _| {
+                                update_clipboard_capture_limit(
+                                    application,
+                                    kind,
+                                    value.saturating_sub(step),
+                                );
+                            });
                         });
                         cx.notify();
                     })),
@@ -412,8 +427,10 @@ impl MainWindow {
                     .child(value_label),
             )
             .child(
-                div()
-                    .id(gpui::SharedString::from(format!("{id}-plus")))
+                Button::new(gpui::SharedString::from(format!("{id}-plus")))
+                    .ghost()
+                    .p_0()
+                    .rounded(px(RADIUS_CONTROL))
                     .w(px(28.0))
                     .h_full()
                     .cursor_pointer()
@@ -421,16 +438,18 @@ impl MainWindow {
                     .items_center()
                     .justify_center()
                     .text_color(theme.text_muted)
-                    .hover(move |style| style.bg(theme.surface_hover).text_color(theme.text))
                     .child("+")
                     .on_click(cx.listener(move |_, _event, _window, cx| {
                         cx.stop_propagation();
-                        let _ = plus_clipboard.update(cx, |application, _| {
-                            update_clipboard_capture_limit(
-                                application,
-                                kind,
-                                value.saturating_add(step),
-                            );
+                        let clipboard = plus_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, _| {
+                                update_clipboard_capture_limit(
+                                    application,
+                                    kind,
+                                    value.saturating_add(step),
+                                );
+                            });
                         });
                         cx.notify();
                     })),
@@ -595,11 +614,12 @@ impl MainWindow {
         } else {
             settings.hotkey.display.clone()
         };
-        let hotkey_control = div()
-            .id("record-clipboard-hotkey")
-            .h(px(26.0))
+        let hotkey_control = Button::new("record-clipboard-hotkey")
+            .ghost()
+            .p_0()
+            .h(px(28.0))
             .min_w(px(116.0))
-            .px(px(9.0))
+            .px(px(8.0))
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(if recording_clipboard {
@@ -680,36 +700,19 @@ impl MainWindow {
             "MP",
             cx,
         );
-        let exclusions_control = div()
-            .w(px(250.0))
-            .h(px(28.0))
-            .rounded(px(RADIUS_CONTROL))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.canvas)
-            .px(px(7.0))
-            .flex()
-            .items_center()
-            .child(
-                Input::new(&self.exclusions_input)
-                    .appearance(false)
-                    .bordered(false)
-                    .focus_bordered(false),
-            )
-            .into_any_element();
         let export_clipboard = self.clipboard.clone();
         let import_clipboard = self.clipboard.clone();
         let archive_controls = div()
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(px(4.0))
             .child(
                 Button::new("clipboard-export-archive")
                     .ghost()
                     .compact()
                     .xsmall()
-                    .h(px(26.0))
-                    .px(px(9.0))
+                    .h(px(28.0))
+                    .px(px(8.0))
                     .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
@@ -717,8 +720,11 @@ impl MainWindow {
                     .disabled(management_busy)
                     .child(div().text_size(px(TEXT_LABEL)).child("导出"))
                     .on_click(move |_event, _window, cx| {
-                        let _ = export_clipboard.update(cx, |application, cx| {
-                            application.request_clipboard_export(cx);
+                        let clipboard = export_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, cx| {
+                                application.request_clipboard_export(cx);
+                            });
                         });
                     }),
             )
@@ -727,8 +733,8 @@ impl MainWindow {
                     .ghost()
                     .compact()
                     .xsmall()
-                    .h(px(26.0))
-                    .px(px(9.0))
+                    .h(px(28.0))
+                    .px(px(8.0))
                     .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
@@ -736,8 +742,11 @@ impl MainWindow {
                     .disabled(management_busy)
                     .child(div().text_size(px(TEXT_LABEL)).child("导入"))
                     .on_click(move |_event, _window, cx| {
-                        let _ = import_clipboard.update(cx, |application, cx| {
-                            application.request_clipboard_import(cx);
+                        let clipboard = import_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, cx| {
+                                application.request_clipboard_import(cx);
+                            });
                         });
                     }),
             )
@@ -747,14 +756,14 @@ impl MainWindow {
         let database_controls = div()
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(px(4.0))
             .child(
                 Button::new("clipboard-database-backup")
                     .ghost()
                     .compact()
                     .xsmall()
-                    .h(px(26.0))
-                    .px(px(9.0))
+                    .h(px(28.0))
+                    .px(px(8.0))
                     .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
@@ -762,8 +771,11 @@ impl MainWindow {
                     .disabled(management_busy)
                     .child(div().text_size(px(TEXT_LABEL)).child("备份"))
                     .on_click(move |_event, _window, cx| {
-                        let _ = backup_clipboard.update(cx, |application, cx| {
-                            application.request_clipboard_database_backup(cx);
+                        let clipboard = backup_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, cx| {
+                                application.request_clipboard_database_backup(cx);
+                            });
                         });
                     }),
             )
@@ -772,8 +784,8 @@ impl MainWindow {
                     .ghost()
                     .compact()
                     .xsmall()
-                    .h(px(26.0))
-                    .px(px(9.0))
+                    .h(px(28.0))
+                    .px(px(8.0))
                     .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(theme.border_subtle)
@@ -781,8 +793,11 @@ impl MainWindow {
                     .disabled(management_busy)
                     .child(div().text_size(px(TEXT_LABEL)).child("压缩"))
                     .on_click(move |_event, _window, cx| {
-                        let _ = compact_clipboard.update(cx, |application, cx| {
-                            application.request_clipboard_database_compaction(cx);
+                        let clipboard = compact_clipboard.clone();
+                        cx.defer(move |cx| {
+                            let _ = clipboard.update(cx, |application, cx| {
+                                application.request_clipboard_database_compaction(cx);
+                            });
                         });
                     }),
             )
@@ -792,8 +807,8 @@ impl MainWindow {
             .ghost()
             .compact()
             .xsmall()
-            .h(px(26.0))
-            .px(px(9.0))
+            .h(px(28.0))
+            .px(px(8.0))
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border_subtle)
@@ -801,8 +816,11 @@ impl MainWindow {
             .disabled(management_busy)
             .child(div().text_size(px(TEXT_LABEL)).child("迁移"))
             .on_click(move |_event, _window, cx| {
-                let _ = migrate_clipboard.update(cx, |application, cx| {
-                    application.request_clipboard_storage_migration(cx);
+                let clipboard = migrate_clipboard.clone();
+                cx.defer(move |cx| {
+                    let _ = clipboard.update(cx, |application, cx| {
+                        application.request_clipboard_storage_migration(cx);
+                    });
                 });
             })
             .into_any_element();
@@ -874,9 +892,19 @@ impl MainWindow {
             ),
             compact_setting_row(
                 theme,
-                "排除来源进程",
-                "分号或逗号分隔；失焦或回车后应用",
-                exclusions_control,
+                "应用黑名单",
+                "在全局设置中为每个应用分别禁用剪贴板或速启",
+                action_button("clipboard-open-global-blacklist", "全局设置")
+                    .ghost()
+                    .disabled(self.network_settings.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(application) = this.network_settings.clone() {
+                            cx.defer(move |cx| {
+                                application.update(cx, |owner, cx| owner.open_window(cx))
+                            });
+                        }
+                    }))
+                    .into_any_element(),
             ),
             compact_setting_row(
                 theme,

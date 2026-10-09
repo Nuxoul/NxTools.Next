@@ -133,17 +133,28 @@ fn split_arguments(value: &str) -> Result<Vec<String>, String> {
     let mut arguments = Vec::new();
     let mut current = String::new();
     let mut quote = None;
-    let mut escaped = false;
     let mut started = false;
-    for character in value.chars() {
-        if escaped {
-            current.push(character);
-            escaped = false;
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            let mut count = 1;
+            while characters.peek() == Some(&'\\') {
+                characters.next();
+                count += 1;
+            }
+            if quote != Some('\'') && characters.peek() == Some(&'"') {
+                current.extend(std::iter::repeat_n('\\', count / 2));
+                if count % 2 == 1 {
+                    characters.next();
+                    current.push('"');
+                } else {
+                    characters.next();
+                    quote = if quote == Some('"') { None } else { Some('"') };
+                }
+            } else {
+                current.extend(std::iter::repeat_n('\\', count));
+            }
             started = true;
-            continue;
-        }
-        if character == '\\' && quote == Some('"') {
-            escaped = true;
             continue;
         }
         if matches!(character, '\'' | '"') {
@@ -151,10 +162,10 @@ fn split_arguments(value: &str) -> Result<Vec<String>, String> {
                 quote = None;
             } else if quote.is_none() {
                 quote = Some(character);
-                started = true;
             } else {
                 current.push(character);
             }
+            started = true;
             continue;
         }
         if character.is_whitespace() && quote.is_none() {
@@ -169,9 +180,6 @@ fn split_arguments(value: &str) -> Result<Vec<String>, String> {
     }
     if quote.is_some() {
         return Err("参数中存在未闭合的引号".into());
-    }
-    if escaped {
-        current.push('\\');
     }
     if started {
         arguments.push(current);
@@ -375,6 +383,42 @@ mod tests {
             ]
         );
         assert_eq!(prepared.working_directory.as_deref(), Some(r"D:\Work"));
+    }
+
+    #[test]
+    fn prepared_windows_paths_preserve_backslash_runs_and_quoted_trailing_separators() {
+        let prepared = prepare_custom_command_with(
+            &command(r#"--path "C:\Program Files\Tool\\" --quoted "a\"b" --plain C:\Temp\ --first={1} --second=%s2"#),
+            Some(r#""D:\My Files\\" "C:\Data\input.txt""#),
+            |_| None,
+        )
+        .expect("prepare quoted Windows paths");
+        assert_eq!(
+            prepared.arguments,
+            [
+                "--path",
+                r"C:\Program Files\Tool\",
+                "--quoted",
+                "a\"b",
+                "--plain",
+                r"C:\Temp\",
+                r"--first=D:\My Files\",
+                r"--second=C:\Data\input.txt",
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_quote_parity_distinguishes_literal_quote_from_closing_quote() {
+        assert_eq!(
+            split_arguments(r#""C:\path\\" end"#).expect("decode quoted trailing backslash"),
+            [r"C:\path\", "end"]
+        );
+        assert_eq!(
+            split_arguments(r#""C:\path\"x""#).expect("decode escaped quote in path"),
+            ["C:\\path\"x"]
+        );
+        assert!(split_arguments(r#""C:\unfinished"#).is_err());
     }
 
     #[test]

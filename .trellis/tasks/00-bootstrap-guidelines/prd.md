@@ -1,5 +1,12 @@
 # Bootstrap Task: Fill Project Development Guidelines
 
+> 2026-10-09 coverage handoff: the related, independently approved
+> `.trellis/tasks/10-09-quality-standards-foundation` populated source-backed first-party
+> guidance and retained this task/state/history. Start at `.trellis/spec/index.md` and
+> `docs/audits/2026-10-09-quality-standards-foundation.md` for current coverage and limits.
+> The bootstrap checkboxes below are historical bookkeeping, not a remaining-template claim;
+> this task was not automatically completed or archived.
+
 **You (the AI) are running this task. The developer does not read this file.**
 
 The developer just ran `trellis init` on this project for the first time.

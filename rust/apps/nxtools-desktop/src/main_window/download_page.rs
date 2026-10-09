@@ -1012,7 +1012,7 @@ impl MainWindow {
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface)
-                    .px(px(SPACING_6))
+                    .px(px(SPACING_8))
                     .flex()
                     .items_center()
                     .gap(px(SPACING_4))
@@ -1093,7 +1093,9 @@ impl MainWindow {
                     .h(px(CONTROL_HEIGHT_ACTION))
                     .child(
                         labelled_icon_action("download-new-task", MaterialIcon::Add, "新建下载")
-                            .primary()
+                            .custom(crate::ui::components::action::primary_button_variant(
+                                theme, cx,
+                            ))
                             .on_click(move |_, _, cx| {
                                 let application = new_download_application.clone();
                                 cx.defer(move |cx| {
@@ -1341,14 +1343,15 @@ pub(crate) fn download_task_row(
         .debug_selector(move || row_id.to_string())
         .h(px(DOWNLOAD_TASK_ROW_HEIGHT))
         .flex_none()
-        .border_b_1()
-        .border_color(theme.border_subtle)
+        .border_l_2()
+        .border_color(if selected { theme.accent } else { theme.canvas })
         .bg(if selected {
             theme.element_selected
         } else {
             theme.canvas
         })
         .hover(move |style| style.bg(theme.surface_hover))
+        .active(move |style| style.bg(theme.surface_pressed))
         .on_click(move |event, _, cx| {
             let modifiers = event.modifiers();
             let visible_task_ids = click_visible_task_ids.clone();
@@ -1497,7 +1500,7 @@ pub(crate) fn download_task_row(
                         .overflow_hidden()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_2))
+                        .gap(px(SPACING_4))
                         .child(
                             div()
                                 .id(name_id.clone())
@@ -1636,14 +1639,14 @@ pub(crate) fn download_task_row(
                                     })
                                 })
                                 .w_full()
-                                .h(px(3.0))
-                                .rounded(px(RADIUS_CONTROL))
-                                .bg(theme.surface_raised)
+                                .h(px(PROGRESS_TRACK_HEIGHT))
+                                .rounded(px(RADIUS_CONTROL / 2.0))
+                                .bg(theme.image_well)
                                 .child(
                                     div()
                                         .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH * transfer.fraction))
                                         .h_full()
-                                        .rounded(px(RADIUS_CONTROL))
+                                        .rounded(px(RADIUS_CONTROL / 2.0))
                                         .bg(status_color),
                                 ),
                         ),
@@ -2039,7 +2042,7 @@ pub(crate) fn download_batch_toolbar(
         .gap(px(4.0))
         .child(
             div()
-                .mr(px(6.0))
+                .mr(px(SPACING_4))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(gpui::FontWeight::MEDIUM)
@@ -2185,31 +2188,30 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
     let mut tabs = div()
         .debug_selector(|| "download-detail-tabs".into())
         .h(px(DOWNLOAD_DETAIL_TAB_HEIGHT))
-        .px(px(10.0))
+        .px(px(8.0))
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .items_end()
-        .gap(px(2.0));
+        .gap(px(4.0));
     for tab in DownloadDetailTab::ALL {
         let active = tab == active_tab;
         let tab_main_window = main_window.clone();
         let tab_scroll = scroll.clone();
         tabs = tabs.child(
-            div()
-                .id(("download-detail-tab", tab as usize))
+            Button::new(("download-detail-tab", tab as usize))
+                .ghost()
+                .small()
+                .compact()
                 .debug_selector(move || format!("download-detail-tab-{}", tab.diagnostic_name()))
                 .h(px(DETAIL_TAB_HEIGHT))
-                .px(px(10.0))
+                .px(px(8.0))
                 .border_b_2()
                 .border_color(if active {
                     theme.accent
                 } else {
                     gpui::rgba(0x00000000)
                 })
-                .cursor_pointer()
-                .flex()
-                .items_center()
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(if active {
@@ -2217,9 +2219,12 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
                 } else {
                     gpui::FontWeight::NORMAL
                 })
-                .text_color(if active { theme.text } else { theme.text_muted })
-                .hover(move |style| style.bg(theme.surface_hover))
-                .child(tab.label())
+                .text_color(if active {
+                    theme.text
+                } else {
+                    theme.text_secondary
+                })
+                .label(tab.label())
                 .on_click(move |_, _, cx| {
                     tab_main_window.update(cx, |window, cx| {
                         if window.download_detail_tab != tab {
@@ -2407,7 +2412,7 @@ pub(crate) fn download_overview_detail(
     div()
         .flex()
         .flex_col()
-        .gap(px(6.0))
+        .gap(px(SPACING_4))
         .child(div().flex().gap(px(24.0)).child(primary).child(secondary))
         .when_some(task.error.as_ref(), |content, error| {
             content.child(download_detail_line_with_color(
@@ -2478,7 +2483,7 @@ pub(crate) fn download_segment_detail(
         .w_full()
         .flex()
         .flex_wrap()
-        .gap(px(3.0));
+        .gap(px(SPACING_4));
     for segment in &detail.segments {
         let ratio =
             (segment.downloaded_bytes() as f32 / segment.len().max(1) as f32).clamp(0.0, 1.0);
@@ -2548,7 +2553,7 @@ pub(crate) fn download_segment_detail(
     div()
         .flex()
         .flex_col()
-        .gap(px(7.0))
+        .gap(px(SPACING_8))
         .child(
             div()
                 .text_size(px(TEXT_LABEL))
@@ -2743,7 +2748,7 @@ pub(crate) fn download_timeline_detail(
                 .border_color(theme.border_subtle)
                 .flex()
                 .items_start()
-                .gap(px(10.0))
+                .gap(px(SPACING_8))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .child(
@@ -2775,10 +2780,10 @@ pub(crate) fn download_detail_section(
         .flex_1()
         .flex()
         .flex_col()
-        .gap(px(3.0))
+        .gap(px(SPACING_4))
         .child(
             div()
-                .pb(px(3.0))
+                .pb(px(SPACING_4))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(gpui::FontWeight::SEMIBOLD)

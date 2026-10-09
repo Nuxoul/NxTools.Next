@@ -47,7 +47,9 @@ internal static class BoundedStaOperationRunner
             ActiveOperations[threadName] = activeCount + 1;
         }
         var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var operationCancellationLifetime = new SharedResourceLifetime(operationCancellation.Dispose);
         var completed = new ManualResetEventSlim();
+        var completionLifetime = new SharedResourceLifetime(completed.Dispose);
         T? capturedResult = default;
         Exception? capturedError = null;
         var thread = new Thread(() =>
@@ -66,19 +68,32 @@ internal static class BoundedStaOperationRunner
             }
             finally
             {
-                lock (ActiveGate)
+                try
                 {
-                    if (ActiveOperations.TryGetValue(threadName, out var remaining)
-                        && remaining > 1)
+                    lock (ActiveGate)
                     {
-                        ActiveOperations[threadName] = remaining - 1;
+                        if (ActiveOperations.TryGetValue(threadName, out var remaining)
+                            && remaining > 1)
+                        {
+                            ActiveOperations[threadName] = remaining - 1;
+                        }
+                        else
+                        {
+                            ActiveOperations.Remove(threadName);
+                        }
                     }
-                    else
+                    if (!TrySignalCompletion(completed.Set, out var completionError)
+                        && capturedError is null)
                     {
-                        ActiveOperations.Remove(threadName);
+                        capturedError = new InvalidOperationException(
+                            $"{threadName} completion signal failed: {completionError}");
                     }
                 }
-                completed.Set();
+                finally
+                {
+                    completionLifetime.Release();
+                    operationCancellationLifetime.Release();
+                }
             }
         })
         {
@@ -104,47 +119,85 @@ internal static class BoundedStaOperationRunner
                     ActiveOperations.Remove(threadName);
                 }
             }
-            operationCancellation.Dispose();
+            completionLifetime.Release();
+            completionLifetime.Release();
+            operationCancellationLifetime.Release();
+            operationCancellationLifetime.Release();
             result = default;
             error = exception.Message;
             return false;
         }
 
-        bool finished;
         try
         {
-            finished = completed.Wait(timeout, cancellationToken);
+            bool finished;
+            try
+            {
+                finished = completed.Wait(timeout, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                operationCancellation.Cancel();
+                result = default;
+                error = $"{threadName} was cancelled.";
+                return false;
+            }
+            if (!finished)
+            {
+                operationCancellation.Cancel();
+                result = default;
+                error = $"{threadName} timed out after {timeout.TotalMilliseconds:0} ms.";
+                return false;
+            }
+            if (cancellationToken.IsCancellationRequested)
+            {
+                operationCancellation.Cancel();
+                result = default;
+                error = $"{threadName} was cancelled.";
+                return false;
+            }
+            if (capturedError is not null)
+            {
+                result = default;
+                error = capturedError.Message;
+                return false;
+            }
+            result = capturedResult;
+            error = null;
+            return true;
         }
-        catch (OperationCanceledException)
+        finally
         {
-            operationCancellation.Cancel();
-            result = default;
-            error = $"{threadName} was cancelled.";
+            completionLifetime.Release();
+            operationCancellationLifetime.Release();
+        }
+    }
+
+    private sealed class SharedResourceLifetime(Action dispose)
+    {
+        private int _owners = 2;
+
+        public void Release()
+        {
+            if (Interlocked.Decrement(ref _owners) == 0)
+            {
+                dispose();
+            }
+        }
+    }
+
+    internal static bool TrySignalCompletion(Action signal, out string? error)
+    {
+        try
+        {
+            signal();
+            error = null;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            error = exception.Message;
             return false;
         }
-        if (!finished)
-        {
-            operationCancellation.Cancel();
-            result = default;
-            error = $"{threadName} timed out after {timeout.TotalMilliseconds:0} ms.";
-            return false;
-        }
-        if (cancellationToken.IsCancellationRequested)
-        {
-            operationCancellation.Cancel();
-            result = default;
-            error = $"{threadName} was cancelled.";
-            return false;
-        }
-        if (capturedError is not null)
-        {
-            result = default;
-            error = capturedError.Message;
-            return false;
-        }
-        result = capturedResult;
-        error = null;
-        operationCancellation.Dispose();
-        return true;
     }
 }

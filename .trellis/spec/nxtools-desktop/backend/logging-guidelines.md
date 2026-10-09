@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Desktop diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/apps/nxtools-desktop/src/runtime.rs#DesktopRuntime`, `repo:rust/apps/nxtools-desktop/src/downloads.rs`, `repo:rust/apps/nxtools-desktop/src/quick_launch.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Runtime retains core LogGuard. Operation ID crosses Rust/IPC/C#; log accepted/start, meaningful transition/terminal and elapsed native/fixed failure codes. No query/text/URL/path/name/title/icon resource/header/cookie or raw command Debug. No render/hover/pointer/animation/byte-tick spam; coalesce progress and repeated failures. Temporary probes uniquely tagged then removed. UI labels requested by users are not telemetry. [Shared diagnostics](../../shared/engineering.md); generic string error interpolation must be explicitly sanitized, not trusted because it came from a typed owner.

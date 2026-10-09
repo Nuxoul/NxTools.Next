@@ -18,6 +18,7 @@ use crate::ui::typography::{TEXT_BODY, TEXT_META};
 
 const TEXT_LINE_HEIGHT: f32 = 20.0;
 const META_LINE_HEIGHT: f32 = 16.0;
+// Matches the rendered 1px border and 10px inner inset on both axes.
 const WINDOW_HORIZONTAL_CHROME: f32 = 22.0;
 const WINDOW_VERTICAL_CHROME: f32 = 22.0;
 const CONTENT_META_GAP: f32 = 8.0;
@@ -92,7 +93,8 @@ impl ClipboardPreview {
 }
 
 impl Render for ClipboardPreview {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let theme = self.theme;
         let layout = self.layout;
         let application = self.application.clone();
@@ -163,13 +165,20 @@ impl Render for ClipboardPreview {
             }
         };
 
-        preview_shell(theme)
+        let preview = preview_shell(theme)
             .id("clipboard-preview-root")
+            .debug_selector(|| "clipboard-preview-root".into())
             .p(px(10.0))
             .gap(px(CONTENT_META_GAP))
             .on_hover(move |hovered, _window, cx| {
-                let _ = application.update(cx, |application, cx| {
-                    application.set_preview_pointer_inside(*hovered, cx);
+                let application = application.clone();
+                let hovered = *hovered;
+                // A preview render/hover can run while ClipboardApplication is leased.
+                // Defer even the fast path; never write back into its current lease.
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.set_preview_pointer_inside(hovered, cx);
+                    });
                 });
             })
             .child(content)
@@ -184,15 +193,21 @@ impl Render for ClipboardPreview {
                         .whitespace_normal()
                         .child(meta),
                 )
-            })
-            .with_animation(
-                ("clipboard-preview-appear", appearance_generation),
-                Animation::new(PREVIEW_APPEAR_DURATION).with_easing(ease_out_quint()),
-                |preview, delta| {
-                    let (opacity, vertical_offset) = preview_appearance(delta);
-                    preview.opacity(opacity).relative().top(px(vertical_offset))
-                },
-            )
+            });
+        if crate::ui::motion::motion_allowed(cx) {
+            preview
+                .with_animation(
+                    ("clipboard-preview-appear", appearance_generation),
+                    Animation::new(PREVIEW_APPEAR_DURATION).with_easing(ease_out_quint()),
+                    |preview, delta| {
+                        let (opacity, vertical_offset) = preview_appearance(delta);
+                        preview.opacity(opacity).relative().top(px(vertical_offset))
+                    },
+                )
+                .into_any_element()
+        } else {
+            preview.into_any_element()
+        }
     }
 }
 

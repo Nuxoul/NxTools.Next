@@ -1,0 +1,3 @@
+# Clipboard ownership
+
+Exclusive files: nxtools-clipboard, nxtools-finder, desktop clipboard.rs/clipboard_worker.rs/quick_launch.rs/quick_launch tests/UI tests/main_window tests if needed. Do not modify core or C# shared test files. References clipboard and quick-launch notes + legacy sources must precede changes. KeepOpen hide policy applied before dispatch; failure actions retain current session guards. Windows argument decoding follows backslash-before-quote rules, not blanket escaping. Import prevalidation and cleanup guard for new assets; clarify partial report before late error. Migration needs worker/config commit coordination or rollback with no stale state overwrite; not a helper-only fake. Current-data IO forbidden; synthetic temp stores only.

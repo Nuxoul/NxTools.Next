@@ -1,51 +1,5 @@
-# Database Guidelines
+# CLI persistence (SQL not applicable)
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/apps/nxtools-cli/src/lib.rs#CliCommand`, `repo:rust/crates/nxtools-download-ipc/src/lib.rs#DownloadIpcClient`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+CLI owns no SQL/history. Engine/store persists tasks, schedule, idempotency and replacement IDs; CLI sends typed commands and renders authoritative results/events. Don't read or edit engine SQLite/config to bypass IPC. `--connect-only` cannot create product runtime; host-unavailable is an explicit exit. Local command parser tests use provided temp default_directory without probing real user files.

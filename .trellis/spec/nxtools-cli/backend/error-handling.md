@@ -1,51 +1,5 @@
-# Error Handling
+# CLI errors and output
 
-> How errors are handled in this project.
+Evidence: `repo:rust/apps/nxtools-cli/src/lib.rs#CliError`, `repo:rust/apps/nxtools-cli/src/lib.rs#EXIT_SUCCESS`, `repo:rust/apps/nxtools-cli/src/lib.rs#CliHostPolicy`.
 
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Existing exits: success0, syntax2, host unavailable3, task not found4, invalid state5, request rejected6, operation failed7, protocol incompatible8. Preserve typed incompatibility downcast and human/JSON mode; don't collapse every cause to exit1. Batch actions report per-item results and replacement ID where redownload changes identity. Operation error != transport absence. Requested task/path output is legitimate, but raw anyhow/path/URL context is not diagnostic-safe. [Shared errors](../../shared/engineering.md).

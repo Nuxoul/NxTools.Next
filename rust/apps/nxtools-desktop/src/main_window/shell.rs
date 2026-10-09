@@ -88,11 +88,11 @@ impl MainWindow {
                     .child(
                         div()
                             .debug_selector(|| "main-brand-title".into())
-                            .h(px(LINE_HEIGHT_BODY))
-                            .text_size(px(TEXT_BODY))
-                            .line_height(px(LINE_HEIGHT_BODY))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(theme.text_secondary)
+                            .h(px(LINE_HEIGHT_PAGE_TITLE))
+                            .text_size(px(TEXT_PAGE_TITLE))
+                            .line_height(px(LINE_HEIGHT_PAGE_TITLE))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.text)
                             .child("NxTools"),
                     )
                     .child(
@@ -173,101 +173,125 @@ impl MainWindow {
         .into_any_element()
     }
 
-    pub(crate) fn render_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_sidebar(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let active = self.shell.active_module();
-        let mut modules = div().flex().flex_col().gap(px(4.0));
-        for module in MainModule::ALL {
+        let mut modules = div().flex().flex_col().gap(px(SPACING_4));
+        for (index, module) in MainModule::ALL.into_iter().enumerate() {
             let selected = module == active;
+            let focus = self.module_focus[index].clone();
             let selector = gpui::SharedString::from(format!("main-module-{}", module.label()));
             let debug_selector = selector.clone();
             let title_selector = format!("main-module-{}-title", module.label());
             let description_selector = format!("main-module-{}-description", module.label());
+            let selected_selector = format!("main-module-{}-selected", module.label());
+            let action_focus = focus.clone();
             modules = modules.child(
-                div()
-                    .id(selector)
-                    .debug_selector(move || debug_selector.to_string())
-                    .h(px(SIDEBAR_ROW_HEIGHT))
-                    .px(px(10.0))
-                    .rounded(px(RADIUS_CONTROL))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .cursor_pointer()
-                    .bg(if selected {
+                focused_action(
+                    selector,
+                    &focus,
+                    theme,
+                    false,
+                    window,
+                    cx.listener(move |this, _, window, cx| {
+                        this.shell.activate(module);
+                        // Unmounting a page must release its orphaned menu focus.
+                        window.blur();
+                        action_focus.focus(window);
+                        cx.notify();
+                    }),
+                )
+                .debug_selector(move || debug_selector.to_string())
+                .h(px(SIDEBAR_ROW_HEIGHT))
+                .w_full()
+                .px(px(SPACING_8))
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .bg(if selected {
+                    theme.element_selected
+                } else {
+                    theme.canvas
+                })
+                .hover(move |style| {
+                    style.bg(if selected {
                         theme.element_selected
                     } else {
-                        theme.canvas
+                        theme.surface_hover
                     })
-                    .hover(move |style| style.bg(theme.surface_hover))
-                    .child(
-                        Icon::new(Self::module_icon(module))
-                            .size(px(18.0))
-                            .text_color(if selected {
-                                theme.accent
-                            } else {
-                                theme.text_secondary
-                            }),
-                    )
-                    .child(
+                })
+                .active(move |style| style.bg(theme.surface_pressed))
+                .when(selected, |row| {
+                    row.child(
                         div()
-                            .flex_1()
-                            .flex()
-                            .flex_col()
-                            .gap(px(1.0))
-                            .child(
-                                div()
-                                    .debug_selector(move || title_selector.clone())
-                                    .text_size(px(TEXT_BODY))
-                                    .line_height(px(LINE_HEIGHT_BODY))
-                                    .font_weight(if selected {
-                                        gpui::FontWeight::MEDIUM
-                                    } else {
-                                        gpui::FontWeight::NORMAL
-                                    })
-                                    .text_color(theme.text)
-                                    .child(module.label()),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(move || description_selector.clone())
-                                    .text_size(px(TEXT_LABEL))
-                                    .line_height(px(LINE_HEIGHT_LABEL))
-                                    .text_color(theme.text_muted)
-                                    .child(module.description()),
-                            ),
+                            .debug_selector(move || selected_selector.clone())
+                            .absolute()
+                            .left_0()
+                            .top(px(SPACING_8))
+                            .bottom(px(SPACING_8))
+                            .w(px(2.0))
+                            .bg(theme.accent),
                     )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.shell.activate(module);
-                        // Switching pages unmounts the outgoing page, but an
-                        // open context menu's PopupMenu entity keeps keyboard
-                        // focus — hotkeys then die until Escape. Blur clears
-                        // focus out of the orphaned menu scope; the menu
-                        // visual goes with its page.
-                        window.blur();
-                        cx.notify();
-                    })),
+                })
+                .child(
+                    Icon::new(Self::module_icon(module))
+                        .size(px(18.0))
+                        .text_color(if selected {
+                            theme.accent_hover
+                        } else {
+                            theme.text_secondary
+                        }),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(SPACING_4))
+                        .child(
+                            div()
+                                .debug_selector(move || title_selector.clone())
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
+                                .font_weight(if selected {
+                                    gpui::FontWeight::MEDIUM
+                                } else {
+                                    gpui::FontWeight::NORMAL
+                                })
+                                .text_color(theme.text)
+                                .child(module.label()),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(move || description_selector.clone())
+                                .text_size(px(TEXT_LABEL))
+                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_color(theme.text_secondary)
+                                .child(module.description()),
+                        ),
+                ),
             );
         }
-
         div()
             .debug_selector(|| "main-sidebar".into())
             .w(px(SIDEBAR_WIDTH))
             .h_full()
-            .p(px(10.0))
+            .p(px(SPACING_8))
             .border_r_1()
             .border_color(theme.border_subtle)
             .bg(theme.canvas)
             .flex()
             .flex_col()
             .child(
-                div().px(px(8.0)).pt(px(8.0)).pb(px(14.0)).child(
-                    div()
-                        .text_size(px(TEXT_LABEL))
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text_muted)
-                        .child("工作区"),
-                ),
+                div()
+                    .px(px(SPACING_8))
+                    .pt(px(SPACING_8))
+                    .pb(px(SPACING_16))
+                    .text_size(px(TEXT_LABEL))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.text_muted)
+                    .child("工作区"),
             )
             .child(modules)
             .child(div().flex_1())
@@ -357,11 +381,19 @@ pub(crate) fn window_control(
             })
             .build(window, cx)
         })
-        .on_click(on_click)
         .child(
-            div()
-                .debug_selector(move || icon_selector.clone())
-                .size(px(12.0))
-                .child(icon),
+            Button::new(id)
+                .debug_selector(move || format!("{id}-keyboard-target"))
+                .ghost()
+                .w_full()
+                .h_full()
+                .rounded(px(crate::ui::metrics::RADIUS_NONE))
+                .on_click(on_click)
+                .child(
+                    div()
+                        .debug_selector(move || icon_selector.clone())
+                        .size(px(12.0))
+                        .child(icon),
+                ),
         )
 }

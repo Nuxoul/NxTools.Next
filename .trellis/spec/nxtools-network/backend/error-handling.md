@@ -1,51 +1,5 @@
-# Error Handling
+# Network errors
 
-> How errors are handled in this project.
+Evidence: `repo:rust/crates/nxtools-network/src/lib.rs#NetworkPolicyError`, `repo:rust/crates/nxtools-network/src/lib.rs#normalize_and_validate`.
 
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Typed variants InvalidSettings, LockPoisoned and Client preserve cause. Validate before publishing new policy; rejected settings cannot replace live route. Do not silently fall back direct after explicit manual proxy failure. Downstream caller maps source error into its feature fault; request deadlines/HTTP status are not owned here. Raw reqwest Display may carry sensitive endpoint data; use fixed kind/mode/source for diagnostics per [shared engineering](../../shared/engineering.md).

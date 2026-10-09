@@ -11,6 +11,18 @@ The product is a clean-room rewrite. Rust owns the GPUI desktop experience, doma
 storage, search, download engine and orchestration. C# is a deliberately narrow Windows
 adapter for APIs that are significantly safer or more maintainable through .NET and COM.
 
+## Engineering and UI standards
+
+Start at [.trellis/spec/index.md](.trellis/spec/index.md) for ownership, coding contracts,
+package checks and the approved UI target/current matrix. Standards are source-backed; gaps and
+unverified native/release acceptance remain explicit. Validate document navigation and contract
+structure with `python tests/architecture/spec-contracts.py` (Python 3.11+); product verification
+uses the owner-specific checks and workstation rules there.
+
+The repository-status section below is a historical phase-1 summary, not the current completion
+ledger. See [the dated remediation report](docs/audits/2026-10-08-sol-review-remediation.md) and
+active Trellis task artifacts for current implementation evidence and pending acceptance.
+
 ## Repository status
 
 The active product slice is the background clipboard workflow. NxTools captures text, images

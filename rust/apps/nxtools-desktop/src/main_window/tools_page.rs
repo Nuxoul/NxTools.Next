@@ -1,15 +1,13 @@
-//! The "其他工具" page: a grid of tool cards. Clicking a card opens that
-//! tool's settings section (inline, below the grid).
+//! The Tools workspace lists every currently registered tool in continuous rows
+//! and opens one settings window per tool. Presentation never changes persistence.
 
 use super::*;
 use crate::ui::components::settings::{
     FeatureSettingsWindowIds, FeatureSettingsWindowSpec, feature_settings_window, settings_row,
     settings_section, settings_toggle,
 };
-use crate::ui::metrics::{RADIUS_CONTROL, SPACING_6, SPACING_8, SPACING_12};
-use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
-};
+use crate::ui::metrics::{SPACING_8, SPACING_12, SPACING_16};
+use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 use gpui::{
     Corner, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
     size,
@@ -17,14 +15,13 @@ use gpui::{
 use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 use nxtools_core::LinkPanelPosition;
 
-/// One card in the tools grid.
+/// Stable tool identity and copy shared by the workspace and settings window.
 #[derive(Clone, Copy)]
 struct ToolCard {
     id: &'static str,
     title: &'static str,
     description: &'static str,
     icon: MaterialIcon,
-    enabled: bool,
 }
 fn link_panel_position_label(position: LinkPanelPosition) -> &'static str {
     match position {
@@ -41,114 +38,141 @@ fn link_panel_position_selector(position: LinkPanelPosition) -> &'static str {
         LinkPanelPosition::TopRight => "tool-settings-position-top-right",
     }
 }
-pub(crate) fn render_tools(window: &mut MainWindow, cx: &mut Context<MainWindow>) -> AnyElement {
-    let theme = window.theme;
-    let link_detector_enabled = window
+pub(crate) fn render_tools(
+    this: &mut MainWindow,
+    window: &Window,
+    cx: &mut Context<MainWindow>,
+) -> AnyElement {
+    let theme = this.theme;
+    let enabled = this
         .clipboard
         .upgrade()
         .map(|application| application.read(cx).link_detector_enabled())
         .unwrap_or_default();
-
-    let cards = [ToolCard {
+    let card = ToolCard {
         id: "tool-link-detector",
         title: "链接识别",
-        description: "复制到链接或本地路径时在光标附近浮出识别面板",
+        description: "识别网页链接及现有文件路径；默认仅复制，不自动打开网页",
         icon: MaterialIcon::Language,
-        enabled: link_detector_enabled,
-    }];
-
-    let mut grid = div()
-        .debug_selector(|| "tools-grid".into())
-        .w_full()
-        .flex()
-        .flex_wrap()
-        .gap(px(SPACING_12));
-    for card in cards {
-        grid =
-            grid.child(
+    };
+    let focus = this.tool_focus.clone();
+    let entry = focused_action(
+        card.id,
+        &focus,
+        theme,
+        false,
+        window,
+        cx.listener(move |this, _, _, cx| {
+            open_tool_settings_window(this, card, cx);
+            cx.notify();
+        }),
+    )
+    .debug_selector(|| "tool-link-detector-card".into())
+    .w_full()
+    .min_h(px(80.0))
+    .p(px(SPACING_12))
+    .bg(theme.surface)
+    .hover(move |style| style.bg(theme.surface_hover))
+    .active(move |style| style.bg(theme.surface_pressed))
+    .flex()
+    .items_center()
+    .gap(px(SPACING_12))
+    .child(
+        div()
+            .size(px(32.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                Icon::new(card.icon)
+                    .size(px(20.0))
+                    .text_color(theme.accent_hover),
+            ),
+    )
+    .child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(SPACING_4))
+            .child(
                 div()
-                    .id(card.id)
-                    .debug_selector(move || format!("{}-card", card.id))
-                    .w(px(240.0))
-                    .cursor_pointer()
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .p(px(SPACING_12))
-                    .flex()
-                    .flex_col()
-                    .gap(px(SPACING_8))
-                    .hover(move |style| style.bg(theme.surface_hover))
-                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                        // Clicking a card opens the tool's settings in a small
-                        // dedicated window (user's explicit requirement).
-                        open_tool_settings_window(this, card, cx);
-                        cx.notify();
-                    }))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(SPACING_8))
-                            .child(Icon::new(card.icon).size(px(18.0)).text_color(
-                                if card.enabled {
-                                    theme.accent
-                                } else {
-                                    theme.text_muted
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .text_size(px(TEXT_BODY))
-                                    .line_height(px(LINE_HEIGHT_BODY))
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .child(card.title),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_muted)
-                            .child(card.description),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(TEXT_META))
-                            .text_color(if card.enabled {
-                                theme.success
-                            } else {
-                                theme.text_muted
-                            })
-                            .child(if card.enabled {
-                                "已启用"
-                            } else {
-                                "已停用"
-                            }),
-                    ),
-            );
-    }
-
+                    .debug_selector(|| "tool-link-detector-title".into())
+                    .text_size(px(TEXT_BODY))
+                    .line_height(px(LINE_HEIGHT_BODY))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.text)
+                    .child(card.title),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "tool-link-detector-description".into())
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_secondary)
+                    .child(card.description),
+            ),
+    )
+    .child(
+        div()
+            .debug_selector(|| "tool-link-detector-status".into())
+            .flex_none()
+            .text_size(px(TEXT_LABEL))
+            .line_height(px(LINE_HEIGHT_LABEL))
+            .text_color(if enabled {
+                theme.success
+            } else {
+                theme.text_secondary
+            })
+            .child(if enabled { "已启用" } else { "已停用" }),
+    )
+    .child(
+        div()
+            .debug_selector(|| "tool-link-detector-configure".into())
+            .flex_none()
+            .text_size(px(TEXT_LABEL))
+            .line_height(px(LINE_HEIGHT_LABEL))
+            .text_color(theme.accent_hover)
+            .child("配置 →"),
+    );
     div()
         .id("tools-page")
         .debug_selector(|| "tools-page".into())
         .size_full()
         .min_h_0()
-        .overflow_y_scroll()
-        .track_scroll(&window.tools_scroll)
-        .px(px(20.0))
-        .py(px(16.0))
         .flex()
         .flex_col()
-        .gap(px(SPACING_6))
+        .bg(theme.canvas)
+        .child(
+            ModuleHeader::new(
+                "tools-module-header",
+                "tools-module-header-title",
+                "tools-module-header-metadata",
+                "其他工具",
+                "按需启用与配置",
+            )
+            .render(theme),
+        )
         .child(
             div()
-                .text_size(px(crate::ui::typography::TEXT_TITLE))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("其他工具"),
+                .id("tools-content")
+                .debug_selector(|| "tools-content".into())
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .track_scroll(&this.tools_scroll)
+                .p(px(SPACING_16))
+                .child(
+                    div()
+                        .debug_selector(|| "tools-grid".into())
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .child(entry),
+                ),
         )
-        .child(grid)
         .into_any_element()
 }
 
@@ -323,19 +347,19 @@ impl Render for ToolSettingsWindowBody {
                 settings_row(
                     theme,
                     "自动关闭时间",
-                    "识别面板显示后等待关闭的时间。",
+                    "识别面板显示后等待关闭的时间（2–60 秒）。",
                     auto_hide_control,
                 ),
                 settings_row(
                     theme,
                     "悬浮窗位置",
-                    "选择识别面板在屏幕上的显示位置。",
+                    "左上角、中央或右上角；位置按显示器范围约束。",
                     position_control.into_any_element(),
                 ),
                 settings_row(
                     theme,
                     "自动打开浏览器",
-                    "点击识别结果后直接打开对应网页。",
+                    "关闭“仅复制”后才打开；只适用于网页链接。",
                     settings_toggle(
                         theme,
                         "tool-settings-open-browser",
@@ -346,7 +370,7 @@ impl Render for ToolSettingsWindowBody {
                 settings_row(
                     theme,
                     "仅复制",
-                    "点击识别结果时只复制，不打开目标。",
+                    "默认开启；点击只复制，文件和网页都不启动。",
                     settings_toggle(
                         theme,
                         "tool-settings-copy-only",

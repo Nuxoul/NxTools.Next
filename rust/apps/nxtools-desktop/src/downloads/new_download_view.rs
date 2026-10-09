@@ -1,5 +1,6 @@
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
+use gpui::{Animation, AnimationExt, ease_out_quint};
 use nxtools_protocol::SetWindowBoundsCenteredCommand;
 
 /// Translates raw engine failure text into guidance the user can act on.
@@ -29,18 +30,141 @@ fn apply_new_download_window_resize(
     window: &mut Window,
     window_size: gpui::Size<gpui::Pixels>,
 ) -> bool {
+    apply_new_download_window_resize_with_correlation(
+        platform,
+        window,
+        window_size,
+        uuid::Uuid::new_v4(),
+    )
+}
+
+fn apply_new_download_window_resize_with_correlation(
+    platform: &PlatformBridge,
+    window: &mut Window,
+    window_size: gpui::Size<gpui::Pixels>,
+    correlation_id: uuid::Uuid,
+) -> bool {
     if let Some(handle) = crate::ui::native_window_handle(window) {
-        let _ = platform.send_command(PlatformCommand::SetWindowBoundsCentered(
-            SetWindowBoundsCenteredCommand {
+        // One native resize owner after HWND creation. GPUI's window.resize
+        // also schedules SetWindowPos, creating a competing size request.
+        // Real WM_SIZE from PlatformHost refreshes GPUI's viewport instead.
+        let width = (window_size.width.as_f32() * window.scale_factor()).round() as i32;
+        let height = (window_size.height.as_f32() * window.scale_factor()).round() as i32;
+        match platform.send_command_correlated(
+            PlatformCommand::SetWindowBoundsCentered(SetWindowBoundsCenteredCommand {
                 window_handle: handle,
-                width: (window_size.width.as_f32() * window.scale_factor()).round() as i32,
-                height: (window_size.height.as_f32() * window.scale_factor()).round() as i32,
-            },
-        ));
-        true
+                width,
+                height,
+            }),
+            correlation_id,
+        ) {
+            Ok(command_id) => {
+                info!(
+                    event = "download.window_resize.accepted",
+                    %correlation_id,
+                    %command_id,
+                    window_handle = handle,
+                    requested_client_width = width,
+                    requested_client_height = height,
+                    "download window native resize accepted"
+                );
+                true
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.window_resize.rejected",
+                    %correlation_id,
+                    window_handle = handle,
+                    requested_client_width = width,
+                    requested_client_height = height,
+                    error = %error,
+                    "download window native resize rejected"
+                );
+                false
+            }
+        }
     } else {
         window.resize(window_size);
         false
+    }
+}
+
+impl NewDownloadView {
+    pub(crate) fn fixed_confirmation_draft(&self, cx: &App) -> FixedConfirmationDraft {
+        FixedConfirmationDraft {
+            init: NewDownloadViewInit {
+                application: self.application.clone(),
+                default_directory: PathBuf::from(self.directory.read(cx).value().as_str()),
+                default_connection_limit: self.default_connection_limit,
+                default_adaptive_segment_policy: self.default_adaptive_segment_policy,
+                categories: self.categories.clone(),
+                initial_source: self
+                    .external_request
+                    .clone()
+                    .map(NewDownloadInitialSource::Download),
+            },
+            theme: self.theme,
+            url: self.url.read(cx).value().to_string(),
+            directory: self.directory.read(cx).value().to_string(),
+            file_name: self.file_name.read(cx).value().to_string(),
+            save_directory_explicit: self.save_directory_explicit,
+            selected_category_id: self.selected_category_id.clone(),
+            scheduled_date: self.scheduled_date,
+            scheduled_month: self.scheduled_month,
+            hour: self.scheduled_hour.read(cx).selected_index(cx),
+            minute: self.scheduled_minute.read(cx).selected_index(cx),
+            committed_schedule: self.committed_schedule,
+            confirmed_request: self.confirmed_request.clone(),
+            submission_idempotency_key: self.submission_idempotency_key,
+            probe: self.probe.clone(),
+            hls: self.selected_hls_variant,
+            video: self.selected_dash_video_track,
+            audio: self.selected_dash_audio_track,
+            generation: self.probe_generation,
+        }
+    }
+    fn resize_window(
+        &self,
+        window: &mut Window,
+        window_size: gpui::Size<gpui::Pixels>,
+        cx: &Context<Self>,
+    ) {
+        self.resize_window_with_correlation(window, window_size, uuid::Uuid::new_v4(), cx);
+    }
+
+    fn resize_window_with_correlation(
+        &self,
+        window: &mut Window,
+        window_size: gpui::Size<gpui::Pixels>,
+        correlation_id: uuid::Uuid,
+        cx: &Context<Self>,
+    ) {
+        let platform = self.application.read(cx).platform_bridge();
+        let _ = apply_new_download_window_resize_with_correlation(
+            &platform,
+            window,
+            window_size,
+            correlation_id,
+        );
+    }
+
+    fn confirmed_window_pending(&self, window: &Window) -> bool {
+        self.handoff_staged
+            || confirmed_window_pending(
+                self.confirmed_target_height,
+                self.confirmed_gate_expired,
+                window.viewport_size().height,
+            )
+    }
+
+    fn error_window_size(&self) -> gpui::Size<gpui::Pixels> {
+        self.probe
+            .as_ref()
+            .map(|probe| {
+                let base = new_download_window_size_for_probe(probe);
+                size(base.width, base.height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT)
+            })
+            .unwrap_or_else(|| new_download_error_window_size(false))
     }
 }
 
@@ -67,6 +191,70 @@ pub(crate) struct BrowserBlobDialogContext {
     pub(crate) handoff_id: uuid::Uuid,
     pub(crate) blob: BrowserBlob,
     pub(crate) save_directory: PathBuf,
+}
+
+/// Owned stage data only: input/select entities remain bound to their original window.
+pub(crate) struct FixedConfirmationDraft {
+    init: NewDownloadViewInit,
+    theme: Theme,
+    url: String,
+    directory: String,
+    file_name: String,
+    save_directory_explicit: bool,
+    selected_category_id: Option<String>,
+    scheduled_date: NaiveDate,
+    scheduled_month: NaiveDate,
+    hour: Option<IndexPath>,
+    minute: Option<IndexPath>,
+    committed_schedule: Option<DelayedStartSelection>,
+    confirmed_request: Option<DownloadRequest>,
+    submission_idempotency_key: uuid::Uuid,
+    probe: Option<DownloadProbe>,
+    hls: Option<usize>,
+    video: Option<usize>,
+    audio: Option<usize>,
+    generation: u64,
+}
+
+impl FixedConfirmationDraft {
+    pub(crate) fn hydrate(
+        self,
+        window: &mut Window,
+        cx: &mut Context<NewDownloadView>,
+    ) -> NewDownloadView {
+        let mut view = NewDownloadView::new(self.init, window, cx);
+        view.hydrating_stage = true;
+        view.theme = self.theme;
+        view.url
+            .update(cx, |input, cx| input.set_value(self.url, window, cx));
+        view.directory
+            .update(cx, |input, cx| input.set_value(self.directory, window, cx));
+        view.file_name
+            .update(cx, |input, cx| input.set_value(self.file_name, window, cx));
+        view.save_directory_explicit = self.save_directory_explicit;
+        view.selected_category_id = self.selected_category_id;
+        view.scheduled_date = self.scheduled_date;
+        view.scheduled_month = self.scheduled_month;
+        view.scheduled_hour.update(cx, |select, cx| {
+            select.set_selected_index(self.hour, window, cx)
+        });
+        view.scheduled_minute.update(cx, |select, cx| {
+            select.set_selected_index(self.minute, window, cx)
+        });
+        view.committed_schedule = self.committed_schedule;
+        view.confirmed_request = self.confirmed_request;
+        view.submission_idempotency_key = self.submission_idempotency_key;
+        view.probe = self.probe;
+        view.selected_hls_variant = self.hls;
+        view.selected_dash_video_track = self.video;
+        view.selected_dash_audio_track = self.audio;
+        view.probe_generation = self.generation;
+        cx.defer_in(window, |view, _, cx| {
+            view.hydrating_stage = false;
+            cx.notify();
+        });
+        view
+    }
 }
 
 pub(crate) fn category_matches_query(category: &DownloadCategorySettings, query: &str) -> bool {
@@ -109,6 +297,9 @@ pub(crate) fn category_choice_background(theme: Theme, selected: bool, highlight
 }
 
 pub(crate) struct NewDownloadView {
+    pub(crate) handoff_staged: bool,
+    pub(crate) handoff_pending: bool,
+    hydrating_stage: bool,
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
     pub(crate) url: Entity<InputState>,
@@ -140,12 +331,17 @@ pub(crate) struct NewDownloadView {
     pub(crate) probing: bool,
     pub(crate) submitting: bool,
     pub(crate) probe_generation: u64,
+    /// Height the confirmed form needs; `Some` while a native window may still
+    /// be catching up (see `confirmed_window_pending`).
+    pub(crate) confirmed_target_height: Option<gpui::Pixels>,
+    pub(crate) confirmed_gate_expired: bool,
     pub(crate) error: Option<String>,
     pub(crate) _subscription: Subscription,
     pub(crate) _directory_subscription: Subscription,
     pub(crate) _category_search_subscription: Subscription,
     pub(crate) _category_key_subscription: Subscription,
     pub(crate) _enter_key_subscription: Subscription,
+    pub(crate) _bounds_subscription: Subscription,
 }
 
 impl NewDownloadView {
@@ -217,7 +413,7 @@ impl NewDownloadView {
         let category_search =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索分类名称、目录或扩展名"));
         let directory_subscription = cx.subscribe(&directory, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
+            if matches!(event, InputEvent::Change) && !this.hydrating_stage {
                 this.save_directory_explicit = true;
                 cx.notify();
             }
@@ -277,8 +473,11 @@ impl NewDownloadView {
                 && !event.keystroke.modifiers.modified()
                 && !this.submitting
                 && !this.probing
+                && (!this.confirmed_window_pending(window)
+                    || (this.handoff_staged && !this.handoff_pending))
             {
-                if this.probe.is_some() && this.confirmed_request.is_some() {
+                if !this.handoff_staged && this.probe.is_some() && this.confirmed_request.is_some()
+                {
                     this.submit(DownloadSubmitMode::StartNow, window, cx);
                 } else {
                     this.begin_probe(window, cx);
@@ -286,6 +485,14 @@ impl NewDownloadView {
             }
         });
         let enter_subscription = cx.intercept_keystrokes(enter_listener);
+        // A native `WM_SIZE` updates GPUI's viewport without dirtying any view;
+        // re-render so a withheld confirmed form appears the moment the
+        // window reaches its target height. Only local view state is touched.
+        let bounds_subscription = cx.observe_window_bounds(window, |this, _window, cx| {
+            if this.confirmed_target_height.is_some() && !this.confirmed_gate_expired {
+                cx.notify();
+            }
+        });
         let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
         let scheduled_date = default_scheduled_at.date_naive();
         let scheduled_month = calendar_month_start(scheduled_date);
@@ -323,6 +530,9 @@ impl NewDownloadView {
             },
         );
         Self {
+            handoff_staged: false,
+            handoff_pending: false,
+            hydrating_stage: false,
             theme: Theme::zed_dark(),
             application,
             url,
@@ -364,12 +574,15 @@ impl NewDownloadView {
             probing: false,
             submitting: false,
             probe_generation: 0,
+            confirmed_target_height: None,
+            confirmed_gate_expired: false,
             error: None,
             _subscription: subscription,
             _directory_subscription: directory_subscription,
             _category_search_subscription: category_search_subscription,
             _category_key_subscription: category_key_subscription,
             _enter_key_subscription: enter_subscription,
+            _bounds_subscription: bounds_subscription,
         }
     }
 
@@ -457,32 +670,91 @@ impl NewDownloadView {
         cx.notify();
     }
 
+    fn schedule_fixed_confirmation(
+        &mut self,
+        window: &Window,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        self.handoff_pending = true;
+        self.error = None;
+        let source = window.window_handle();
+        let generation = self.probe_generation;
+        let view = cx.entity().downgrade();
+        let application = self.application.downgrade();
+        cx.defer(move |cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.create_fixed_confirmation(source, view, generation, correlation_id, cx);
+            });
+        });
+        cx.notify();
+    }
+
     pub(crate) fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.external_blob.is_some() {
             return;
         }
+        if self.handoff_staged
+            && self.probe.is_some()
+            && self
+                .confirmed_request
+                .as_ref()
+                .is_some_and(|request| request.source_url == self.url.read(cx).value().trim())
+        {
+            if !self.handoff_pending {
+                self.schedule_fixed_confirmation(window, uuid::Uuid::new_v4(), cx);
+            }
+            return;
+        }
+        self.handoff_staged = false;
+        self.handoff_pending = false;
+        let correlation_id = uuid::Uuid::new_v4();
+        // Validation failures also retire any old probe/handoff and layout.
+        self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+        let owner = self.application.downgrade();
+        cx.defer(move |cx| {
+            let _ = owner.update(cx, |owner, cx| owner.cleanup_new_download_handoff(cx));
+        });
+        self.confirmed_target_height = None;
+        self.confirmed_gate_expired = false;
+        self.probing = false;
+        let leave_noncompact_stage = self.probe.is_some() || self.error.is_some();
         let request = match self.request(cx) {
             Ok(request) => request,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
                 self.confirmed_request = None;
                 self.probe = None;
-                window.resize(new_download_error_window_size(false));
+                self.resize_window_with_correlation(
+                    window,
+                    new_download_error_window_size(false),
+                    correlation_id,
+                    cx,
+                );
                 cx.notify();
                 return;
             }
         };
-        self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+        // The generation was retired before validation, including error paths.
         let generation = self.probe_generation;
         self.probing = true;
         self.error = None;
         self.confirmed_request = None;
         self.probe = None;
-        window.resize(new_download_window_size(false));
-        let correlation_id = uuid::Uuid::new_v4();
+        self.confirmed_target_height = None;
+        self.confirmed_gate_expired = false;
+        if leave_noncompact_stage {
+            self.resize_window_with_correlation(
+                window,
+                new_download_window_size(false),
+                correlation_id,
+                cx,
+            );
+        }
         let engine = self.application.read(cx).engine.clone();
         let background = cx.background_executor().clone();
         let source_window = window.window_handle();
+        let application = self.application.downgrade();
         let platform_for_resize = self.application.read(cx).platform_bridge();
         cx.spawn(async move |this, cx| {
             let request_for_probe = request.clone();
@@ -500,7 +772,7 @@ impl NewDownloadView {
                         .outcome
                 })
                 .await;
-            let applied = this.update(cx, |this, cx| {
+            let applied = this.update(cx, |this, _cx| {
                 if this.probe_generation != generation {
                     return None;
                 }
@@ -558,12 +830,16 @@ impl NewDownloadView {
                         false
                     }
                 };
-                cx.notify();
                 let window_size = this
                     .probe
                     .as_ref()
                     .map(new_download_window_size_for_probe)
                     .unwrap_or_else(|| new_download_error_window_size(false));
+                // Retain successful probe data on the compact owner until a NEW fixed window is ready.
+                this.handoff_staged = confirmed;
+                this.handoff_pending = confirmed;
+                this.confirmed_target_height = None;
+                this.confirmed_gate_expired = false;
                 Some((
                     this.file_name.clone(),
                     resolved_file_name,
@@ -571,18 +847,36 @@ impl NewDownloadView {
                     window_size,
                 ))
             });
-            if let Ok(Some((file_name, resolved_file_name, _confirmed, window_size))) = applied {
-                let initial_platform = Rc::clone(&platform_for_resize);
-                let _ = source_window
-                    .update(cx, move |_, window, cx| {
-                        if let Some(resolved_file_name) = resolved_file_name {
-                            file_name.update(cx, |input, cx| {
-                                input.set_value(resolved_file_name, window, cx);
+            if let Ok(Some((file_name, resolved_file_name, confirmed, window_size))) = applied {
+                let weak_view = this.clone();
+                let _ = source_window.update(cx, move |_, window, cx| {
+                    if let Some(resolved_file_name) = resolved_file_name {
+                        file_name.update(cx, |input, cx| {
+                            input.set_value(resolved_file_name, window, cx);
+                        });
+                    }
+                    if confirmed {
+                        cx.defer(move |cx| {
+                            let _ = application.update(cx, |application, cx| {
+                                application.create_fixed_confirmation(
+                                    source_window,
+                                    weak_view,
+                                    generation,
+                                    correlation_id,
+                                    cx,
+                                );
                             });
-                        }
-                        apply_new_download_window_resize(&initial_platform, window, window_size)
-                    })
-                    .unwrap_or(false);
+                        });
+                    } else {
+                        apply_new_download_window_resize_with_correlation(
+                            &platform_for_resize,
+                            window,
+                            window_size,
+                            correlation_id,
+                        );
+                    }
+                });
+                let _ = this.update(cx, |_, cx| cx.notify());
             }
         })
         .detach();
@@ -595,7 +889,9 @@ impl NewDownloadView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.submitting {
+        // A staged compact owner has not shown the confirmation/footer yet.
+        // Native placement failure retains the draft but never enables submission.
+        if self.submitting || self.confirmed_window_pending(window) {
             return;
         }
         if let Some(blob) = self.external_blob.clone() {
@@ -614,6 +910,7 @@ impl NewDownloadView {
             let save_directory_explicit = self.save_directory_explicit;
             let source_window = window.window_handle();
             let source_native_handle = native_window_handle(window).unwrap_or_default();
+            let platform_for_resize = self.application.read(cx).platform_bridge();
             let view = cx.entity().downgrade();
             cx.defer(move |cx| {
                 match application.update(cx, |application, cx| {
@@ -641,7 +938,11 @@ impl NewDownloadView {
                     Err(message) => {
                         let _ = source_window.update(cx, |_, window, _| {
                             // A blob dialog is always in the confirmed layout.
-                            window.resize(new_download_error_window_size(true));
+                            apply_new_download_window_resize(
+                                &platform_for_resize,
+                                window,
+                                new_download_error_window_size(true),
+                            );
                         });
                         let _ = view.update(cx, |view, cx| {
                             view.submitting = false;
@@ -657,14 +958,14 @@ impl NewDownloadView {
             Ok(request) => request,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
-                window.resize(new_download_error_window_size(self.probe.is_some()));
+                self.resize_window(window, self.error_window_size(), cx);
                 cx.notify();
                 return;
             }
         };
         let Some(confirmed) = self.confirmed_request.clone() else {
             self.error = Some("请先探测链接并确认文件信息".into());
-            window.resize(new_download_error_window_size(self.probe.is_some()));
+            self.resize_window(window, self.error_window_size(), cx);
             cx.notify();
             return;
         };
@@ -677,7 +978,7 @@ impl NewDownloadView {
             Ok(media) => media,
             Err(error) => {
                 self.error = Some(humanize_download_fault(&error));
-                window.resize(new_download_error_window_size(self.probe.is_some()));
+                self.resize_window(window, self.error_window_size(), cx);
                 cx.notify();
                 return;
             }
@@ -685,21 +986,24 @@ impl NewDownloadView {
         let Some(mut request) = merge_confirmed_download_request(confirmed, current) else {
             self.confirmed_request = None;
             self.probe = None;
+            self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+            self.confirmed_target_height = None;
+            self.confirmed_gate_expired = false;
             self.error = Some("下载地址已变更，请重新探测".into());
-            window.resize(new_download_error_window_size(self.probe.is_some()));
+            self.resize_window(window, self.error_window_size(), cx);
             cx.notify();
             return;
         };
         request.media = media;
         if let Err(error) = request.validate() {
             self.error = Some(error.to_string());
-            window.resize(new_download_error_window_size(self.probe.is_some()));
+            self.resize_window(window, self.error_window_size(), cx);
             cx.notify();
             return;
         }
         if request.save_directory.exists() && !request.save_directory.is_dir() {
             self.error = Some("保存位置不是文件夹，请重新选择".into());
-            window.resize(new_download_error_window_size(self.probe.is_some()));
+            self.resize_window(window, self.error_window_size(), cx);
             cx.notify();
             return;
         }
@@ -710,11 +1014,12 @@ impl NewDownloadView {
         let idempotency_key = self.submission_idempotency_key;
         let source_window = window.window_handle();
         let source_native_handle = native_window_handle(window).unwrap_or_default();
+        let platform_for_resize = self.application.read(cx).platform_bridge();
         let view = cx.entity().downgrade();
         // Submission only reaches this point with a confirmed probe, so the
         // error reserve must stack onto the confirmed layout height, not the
         // compact one.
-        let error_confirmed = self.probe.is_some();
+        let error_window_size = self.error_window_size();
         info!(?mode, "scheduling download task submission");
         cx.defer(move |cx| {
             let delayed = request.scheduled_at_unix_ms.is_some();
@@ -755,8 +1060,13 @@ impl NewDownloadView {
                 }
                 Err(message) => {
                     error!(error = %message, ?mode, "download task submission rejected");
-                    let _ = source_window.update(cx, |_, window, _| {
-                        window.resize(new_download_error_window_size(error_confirmed));
+                    let platform_for_resize = Rc::clone(&platform_for_resize);
+                    let _ = source_window.update(cx, move |_, window, _| {
+                        apply_new_download_window_resize(
+                            &platform_for_resize,
+                            window,
+                            error_window_size,
+                        );
                     });
                     let _ = view.update(cx, |view, cx| {
                         view.submitting = false;
@@ -844,14 +1154,32 @@ pub(crate) fn new_download_footer_action(
 }
 
 impl Render for NewDownloadView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let theme = self.theme;
         let current_directory = self.directory.read(cx).value().to_string();
         let application = self.application.clone();
-        let probe = self.probe.clone();
-        let probing = self.probing;
+        // Successful probe state stays on the compact owner, but that owner
+        // never paints confirmation. Only the new fixed-size target owns the form.
+        // Legacy direct fixtures still guard their explicitly supplied viewport budget.
+        let confirmed_pending = self.confirmed_window_pending(window);
+        let probe = if confirmed_pending {
+            None
+        } else {
+            self.probe.clone()
+        };
+        let displayed_error = if confirmed_pending && !self.handoff_staged {
+            None
+        } else {
+            self.error.clone()
+        };
+        let probing =
+            self.probing || self.handoff_pending || (confirmed_pending && !self.handoff_staged);
         let submitting = self.submitting;
         let confirmed = probe.is_some();
+        let compact_error = !confirmed
+            && displayed_error.is_some()
+            && window.viewport_size().height < new_download_error_window_size(false).height;
         // The unconfirmed dialog is a fixed-height window; an inline probe
         // error adds one bounded error row. The window reserves that row via
         // `set_error`/`clear_error` so the footer buttons keep their position
@@ -929,7 +1257,7 @@ impl Render for NewDownloadView {
                                 .size_full()
                                 .flex()
                                 .flex_col()
-                                .gap(px(SPACING_6))
+                                .gap(px(SPACING_4))
                                 .child(delayed_start_calendar(
                                     theme,
                                     schedule_month,
@@ -939,12 +1267,13 @@ impl Render for NewDownloadView {
                                 ))
                                 .child(
                                     div()
-                                        .pt(px(SPACING_6))
+                                        .debug_selector(|| "download-new-schedule-time-row".into())
+                                        .pt(px(SPACING_4))
                                         .border_t_1()
                                         .border_color(theme.border_subtle)
                                         .flex()
                                         .items_center()
-                                        .gap(px(SPACING_6))
+                                        .gap(px(SPACING_8))
                                         .child(
                                             div()
                                                 .mr(px(SPACING_4))
@@ -968,8 +1297,19 @@ impl Render for NewDownloadView {
                                             Select::new(&schedule_minute)
                                                 .menu_width(px(66.0))
                                                 .small(),
-                                        ))
-                                        .child(div().flex_1())
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .debug_selector(|| "download-new-schedule-action-row".into())
+                                        .w_full()
+                                        .px(px(SPACING_8))
+                                        .pt(px(SPACING_4))
+                                        .border_t_1()
+                                        .border_color(theme.border_subtle)
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
                                         .child(
                                             div()
                                                 .debug_selector(|| {
@@ -980,6 +1320,10 @@ impl Render for NewDownloadView {
                                                         "download-new-schedule-clear",
                                                         "清除",
                                                     )
+                                                    .debug_selector(|| {
+                                                        "download-new-schedule-clear-button".into()
+                                                    })
+                                                    .h(px(CONTROL_HEIGHT_ACTION))
                                                     .ghost()
                                                     .on_click(move |_, window, cx| {
                                                         let schedule_clear_view =
@@ -1012,6 +1356,10 @@ impl Render for NewDownloadView {
                                                         "download-new-schedule-confirm-button",
                                                         "确定",
                                                     )
+                                                    .debug_selector(|| {
+                                                        "download-new-schedule-confirm-button".into()
+                                                    })
+                                                    .h(px(CONTROL_HEIGHT_ACTION))
                                                     .custom(schedule_primary_variant)
                                                     .on_click(move |_, window, cx| {
                                                         let selection = read_delayed_start_draft(
@@ -1071,17 +1419,26 @@ impl Render for NewDownloadView {
             div()
                 .debug_selector(|| "download-new-probe-action".into())
                 .child(
-                    action_button("download-probe", if probing { "正在探测…" } else { "继续" })
-                        .icon(Icon::new(if probing {
-                            MaterialIcon::ProgressActivity
+                    action_button(
+                        "download-probe",
+                        if probing {
+                            "正在准备…"
+                        } else if self.handoff_staged {
+                            "重试打开确认"
                         } else {
-                            MaterialIcon::ManageSearch
-                        }))
-                        .custom(primary_button_variant(theme, cx))
-                        .disabled(probing || submitting)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.begin_probe(window, cx);
-                        })),
+                            "继续"
+                        },
+                    )
+                    .icon(Icon::new(if probing {
+                        MaterialIcon::ProgressActivity
+                    } else {
+                        MaterialIcon::ManageSearch
+                    }))
+                    .custom(primary_button_variant(theme, cx))
+                    .disabled(probing || submitting)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.begin_probe(window, cx);
+                    })),
                 )
                 .into_any_element()
         };
@@ -1324,7 +1681,7 @@ impl Render for NewDownloadView {
                             240.0,
                             div()
                                 .size_full()
-                                .p(px(SPACING_6))
+                                .p(px(SPACING_8))
                                 .flex()
                                 .flex_col()
                                 .gap(px(SPACING_4))
@@ -1352,7 +1709,7 @@ impl Render for NewDownloadView {
                 .debug_selector(|| "download-new-footer-leading-actions".into())
                 .flex()
                 .items_center()
-                .gap(px(6.0))
+                .gap(px(SPACING_8))
                 .child(schedule_control)
                 .child(footer_actions)
                 .into_any_element()
@@ -1364,7 +1721,7 @@ impl Render for NewDownloadView {
                 .debug_selector(|| "download-new-footer-submission-actions".into())
                 .flex()
                 .items_center()
-                .gap(px(6.0))
+                .gap(px(SPACING_8))
                 .child(
                     div()
                         .debug_selector(|| "download-add-to-queue".into())
@@ -1437,6 +1794,7 @@ impl Render for NewDownloadView {
                     .unwrap_or_else(|| "大小未知".into()),
             };
             div()
+                .id(("download-new-confirmed-form", self.probe_generation))
                 .debug_selector(|| "download-new-form-grid".into())
                 .flex_1()
                 // Clamp like the compact body below: if any future content
@@ -1445,7 +1803,7 @@ impl Render for NewDownloadView {
                 .min_h_0()
                 .overflow_hidden()
                 .px(px(16.0))
-                .py(px(10.0))
+                .py(px(SPACING_8))
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
@@ -1498,9 +1856,10 @@ impl Render for NewDownloadView {
                 ))
                 .child(
                     div()
+                        .debug_selector(|| "download-new-confirmed-form".into())
                         .flex()
                         .items_start()
-                        .gap(px(12.0))
+                        .gap(px(SPACING_8))
                         .child(
                             div()
                                 .min_w_0()
@@ -1598,7 +1957,14 @@ impl Render for NewDownloadView {
                                         ),
                                 ),
                         )
-                        .child(new_download_probe_inspector(theme, &probe, is_blob, size)),
+                        .child(new_download_probe_inspector(
+                            theme,
+                            &probe,
+                            is_blob,
+                            size,
+                            self.probe_generation,
+                            crate::ui::motion::motion_allowed(cx),
+                        )),
                 )
                 .when_some(media_options_panel, |body, panel| body.child(panel))
                 .when_some(self.error.clone(), |body, error| {
@@ -1611,7 +1977,7 @@ impl Render for NewDownloadView {
                 .min_h_0()
                 .overflow_hidden()
                 .px(px(16.0))
-                .py(px(10.0))
+                .py(px(SPACING_8))
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
@@ -1625,6 +1991,7 @@ impl Render for NewDownloadView {
                             theme,
                             "download-new-url-field-input",
                             Input::new(&self.url)
+                                .disabled(self.handoff_pending)
                                 .appearance(false)
                                 .bordered(false)
                                 .focus_bordered(false),
@@ -1640,6 +2007,7 @@ impl Render for NewDownloadView {
                                     .small()
                                     .outline()
                                     .size(px(CONTROL_HEIGHT_ACTION))
+                                    .disabled(self.handoff_pending)
                                     .px(px(0.0))
                                     .rounded(px(RADIUS_CONTROL))
                                     .on_click({
@@ -1669,7 +2037,7 @@ impl Render for NewDownloadView {
                         .min_w_0()
                         .flex()
                         .items_center()
-                        .gap(px(SPACING_6))
+                        .gap(px(SPACING_8))
                         .child(
                             Icon::new(if probing {
                                 MaterialIcon::ProgressActivity
@@ -1677,7 +2045,9 @@ impl Render for NewDownloadView {
                                 MaterialIcon::Info
                             })
                             .size(px(ICON_GLYPH_SMALL))
-                            .text_color(if probing {
+                            .text_color(if compact_error {
+                                theme.danger
+                            } else if probing {
                                 theme.accent
                             } else {
                                 theme.icon_muted
@@ -1690,21 +2060,24 @@ impl Render for NewDownloadView {
                                 .truncate()
                                 .text_size(px(TEXT_LABEL))
                                 .line_height(px(LINE_HEIGHT_LABEL))
-                                .text_color(if probing {
+                                .text_color(if compact_error {
+                                    theme.danger
+                                } else {
                                     theme.text_secondary
-                                } else {
-                                    theme.text_muted
                                 })
-                                .child(if probing {
-                                    "正在读取远端文件名、大小与续传能力…"
+                                .child(if compact_error {
+                                    displayed_error.clone().unwrap_or_default()
+                                } else if probing {
+                                    "正在读取远端文件名、大小与续传能力…".into()
                                 } else {
-                                    "输入 HTTP/HTTPS 链接，继续后自动获取文件信息"
+                                    "输入 HTTP/HTTPS 链接，继续后自动获取文件信息".into()
                                 }),
                         ),
                 )
-                .when_some(self.error.clone(), |body, error| {
-                    body.child(download_inline_error(theme, error))
-                })
+                .when_some(
+                    displayed_error.clone().filter(|_| !compact_error),
+                    |body, error| body.child(download_inline_error(theme, error)),
+                )
                 .into_any_element()
         };
         div()
@@ -1719,7 +2092,7 @@ impl Render for NewDownloadView {
                 div()
                     .debug_selector(|| "download-new-titlebar".into())
                     .h(px(34.0))
-                    .pl(px(14.0))
+                    .pl(px(SPACING_16))
                     .border_b_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface)
@@ -1731,8 +2104,8 @@ impl Render for NewDownloadView {
                             .flex_1()
                             .flex()
                             .items_center()
-                            .gap(px(7.0))
-                            .text_size(px(TEXT_BODY))
+                            .gap(px(SPACING_8))
+                            .text_size(px(TEXT_PAGE_TITLE))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(
                                 Icon::new(MaterialIcon::Download)
@@ -1758,7 +2131,7 @@ impl Render for NewDownloadView {
                     .child(footer_leading_actions)
                     .child(div().flex_1())
                     .when_some(footer_submission_actions, |footer, actions| {
-                        footer.child(actions).child(div().w(px(6.0)))
+                        footer.child(actions).child(div().w(px(SPACING_8)))
                     })
                     .child(
                         div()
@@ -1773,6 +2146,7 @@ impl Render for NewDownloadView {
                             )),
                     ),
             )
+            .into_any_element()
     }
 }
 
@@ -1784,6 +2158,8 @@ pub(crate) fn new_download_probe_inspector(
     probe: &DownloadProbe,
     is_blob: bool,
     size_label: String,
+    generation: u64,
+    motion_allowed: bool,
 ) -> AnyElement {
     let status = if is_blob {
         "Blob 已接收"
@@ -1817,7 +2193,7 @@ pub(crate) fn new_download_probe_inspector(
         "单连接传输".into()
     };
 
-    div()
+    let inspector = div()
         .debug_selector(|| "download-new-probe-inspector".into())
         .w(px(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
         .h(px(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))
@@ -1839,7 +2215,7 @@ pub(crate) fn new_download_probe_inspector(
                 .min_w_0()
                 .flex()
                 .items_center()
-                .gap(px(SPACING_6))
+                .gap(px(SPACING_8))
                 .child(
                     Icon::new(MaterialIcon::Check)
                         .size(px(14.0))
@@ -1882,8 +2258,18 @@ pub(crate) fn new_download_probe_inspector(
                     theme.text_muted
                 })
                 .child(capability),
-        )
-        .into_any_element()
+        );
+    if motion_allowed {
+        inspector
+            .with_animation(
+                ("download-new-probe-inspector", generation),
+                Animation::new(crate::ui::motion::ENTER_DURATION).with_easing(ease_out_quint()),
+                |surface, delta| surface.opacity(0.94 + 0.06 * delta),
+            )
+            .into_any_element()
+    } else {
+        inspector.into_any_element()
+    }
 }
 
 pub(crate) fn hls_quality_options(
@@ -2153,7 +2539,7 @@ pub(crate) fn delayed_start_calendar(
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(2.0))
+        .gap(px(0.0))
         .child(
             div()
                 .h(px(28.0))
@@ -2216,7 +2602,7 @@ pub(crate) fn delayed_start_calendar(
         )
         .child(
             div()
-                .h(px(16.0))
+                .h(px(14.0))
                 .flex()
                 .children(weekdays.into_iter().map(|weekday| {
                     div()
@@ -2232,7 +2618,7 @@ pub(crate) fn delayed_start_calendar(
         )
         .children((0..6).map(|row| {
             div()
-                .h(px(22.0))
+                .h(px(19.0))
                 .flex()
                 .children(days[row * 7..row * 7 + 7].iter().copied().map(|date| {
                     let disabled = date < today;
@@ -2240,17 +2626,24 @@ pub(crate) fn delayed_start_calendar(
                     let current_month = date.month() == month.month();
                     let is_today = date == today;
                     let day_view = view.clone();
-                    div()
-                        .id(("download-new-schedule-day", date.num_days_from_ce() as u64))
+                    Button::new(("download-new-schedule-day", date.num_days_from_ce() as u64))
+                        .ghost()
+                        .small()
+                        .compact()
                         .when(date == selected_date + ChronoDuration::days(1), |cell| {
                             cell.debug_selector(|| "download-new-schedule-next-day".into())
                         })
+                        .when(date == today - ChronoDuration::days(1), |cell| {
+                            cell.debug_selector(|| "download-new-schedule-past-day".into())
+                        })
+                        .when(date == today, |cell| {
+                            cell.debug_selector(|| "download-new-schedule-today".into())
+                        })
+                        .when(disabled, |cell| cell.opacity(0.32))
                         .w(px(40.0))
-                        .h(px(22.0))
+                        .h(px(19.0))
+                        .px(px(0.0))
                         .rounded(px(RADIUS_CONTROL))
-                        .flex()
-                        .items_center()
-                        .justify_center()
                         .text_size(px(TEXT_LABEL))
                         .text_color(if selected {
                             theme.accent_text
@@ -2259,32 +2652,22 @@ pub(crate) fn delayed_start_calendar(
                         } else {
                             theme.text_muted
                         })
-                        .when(disabled, |cell| cell.opacity(0.32))
                         .when(is_today && !selected, |cell| {
                             cell.border_1().border_color(theme.border_active)
                         })
                         .when(selected, |cell| cell.bg(theme.accent))
-                        .when(!disabled, |cell| {
-                            cell.cursor_pointer()
-                                .hover(|cell| {
-                                    if selected {
-                                        cell.bg(theme.accent)
-                                    } else {
-                                        cell.bg(theme.surface_hover)
-                                    }
-                                })
-                                .on_click(move |_, window, cx| {
-                                    let day_view = day_view.clone();
-                                    window.defer(cx, move |_, cx| {
-                                        let _ = day_view.update(cx, |view, cx| {
-                                            view.scheduled_date = date;
-                                            view.scheduled_month = calendar_month_start(date);
-                                            cx.notify();
-                                        });
-                                    });
-                                })
+                        .disabled(disabled)
+                        .label(date.day().to_string())
+                        .on_click(move |_, window, cx| {
+                            let day_view = day_view.clone();
+                            window.defer(cx, move |_, cx| {
+                                let _ = day_view.update(cx, |view, cx| {
+                                    view.scheduled_date = date;
+                                    view.scheduled_month = calendar_month_start(date);
+                                    cx.notify();
+                                });
+                            });
                         })
-                        .child(date.day().to_string())
                 }))
         }))
         .into_any_element()
@@ -2321,11 +2704,32 @@ pub(crate) fn ffmpeg_install_phase_label(phase: FfmpegInstallPhase) -> &'static 
     }
 }
 
+/// The confirmed form needs one additional field row beside the compact
+/// probe surface, but should stay compact enough to keep the footer close to
+/// the content.
+pub(crate) const NEW_DOWNLOAD_CONFIRMED_HEIGHT: f32 = 278.0;
+
 pub(crate) fn new_download_window_size(confirmed: bool) -> gpui::Size<gpui::Pixels> {
     if confirmed {
-        size(px(560.0), px(278.0))
+        size(px(560.0), px(NEW_DOWNLOAD_CONFIRMED_HEIGHT))
     } else {
         size(px(560.0), px(176.0))
+    }
+}
+
+/// Whether the confirmed form must still be withheld because GPUI's live
+/// viewport (which only follows real `WM_SIZE` messages) is shorter than the
+/// height the confirmed layout needs. While a user drags the window the Win32
+/// move loop rewrites the compact size on every mouse move, so this is derived
+/// from the live viewport on each render instead of being a one-way flag.
+pub(crate) fn confirmed_window_pending(
+    target_height: Option<gpui::Pixels>,
+    _gate_expired: bool,
+    viewport_height: gpui::Pixels,
+) -> bool {
+    match target_height {
+        Some(target) => viewport_height.as_f32() + 1.5 < target.as_f32(),
+        _ => false,
     }
 }
 
@@ -2357,7 +2761,10 @@ pub(crate) fn new_download_window_size_for_probe(
                 0.0,
                 SETTINGS_ROW_MIN_HEIGHT * 3.0,
             );
-            size(px(560.0), px(260.0 + 16.0 + rows_height))
+            size(
+                px(560.0),
+                px(NEW_DOWNLOAD_CONFIRMED_HEIGHT + 16.0 + SPACING_4 + rows_height),
+            )
         }
         Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
             let row_count = dash.video_tracks.len().max(dash.audio_tracks.len());
@@ -2367,7 +2774,10 @@ pub(crate) fn new_download_window_size_for_probe(
                 0.0,
                 SETTINGS_ROW_MIN_HEIGHT * 3.0,
             );
-            size(px(560.0), px(260.0 + 16.0 + 15.0 + rows_height))
+            size(
+                px(560.0),
+                px(NEW_DOWNLOAD_CONFIRMED_HEIGHT + 16.0 + SPACING_4 + 15.0 + rows_height),
+            )
         }
         _ => new_download_window_size(true),
     }

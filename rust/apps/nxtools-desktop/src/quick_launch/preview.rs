@@ -492,12 +492,13 @@ impl QuickLaunchPreview {
 }
 
 impl Render for QuickLaunchPreview {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let theme = Theme::zed_dark();
         let application = self.application.clone();
         let appearance_generation = self.appearance_generation;
         let is_exiting = self.is_exiting;
-        let motion_suppressed = self.motion_suppressed;
+        let motion_suppressed = self.motion_suppressed || crate::ui::motion::reduced_motion(cx);
         let has_timestamps =
             self.payload.created_at.is_some() || self.payload.modified_at.is_some();
         let body = match &self.payload.body {
@@ -519,6 +520,7 @@ impl Render for QuickLaunchPreview {
                 .overflow_y_scroll()
                 .vertical_scrollbar(&self.text_scroll)
                 .p(px(SPACING_12))
+                .min_w_0()
                 .text_size(px(TEXT_BODY))
                 .line_height(px(LINE_HEIGHT_BODY))
                 .text_color(theme.text_secondary)
@@ -532,6 +534,8 @@ impl Render for QuickLaunchPreview {
                     div()
                         .debug_selector(|| "quick-launch-preview-text-copy".into())
                         .w_full()
+                        .min_w_0()
+                        .whitespace_normal()
                         .child(text.clone()),
                 )
                 .when(*truncated, |content| {
@@ -588,17 +592,23 @@ impl Render for QuickLaunchPreview {
                     .flex()
                     .flex_col()
                     .justify_center()
-                    .gap(px(SPACING_2))
+                    .gap(px(SPACING_4))
                     .child(
                         div()
+                            .debug_selector(|| "quick-launch-preview-title".into())
+                            .w_full()
+                            .min_w_0()
                             .h(px(LINE_HEIGHT_BODY))
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_BODY))
+                            .text_color(theme.text)
                             .truncate()
                             .child(self.payload.name.clone()),
                     )
                     .child(
                         div()
+                            .w_full()
+                            .min_w_0()
                             .h(px(LINE_HEIGHT_LABEL))
                             .text_size(px(TEXT_LABEL))
                             .line_height(px(LINE_HEIGHT_LABEL))
@@ -610,6 +620,7 @@ impl Render for QuickLaunchPreview {
                         header.child(
                             div()
                                 .w_full()
+                                .min_w_0()
                                 .flex()
                                 .items_center()
                                 .gap(px(SPACING_12))
@@ -657,6 +668,7 @@ impl Render for QuickLaunchPreview {
                     .px(px(SPACING_12))
                     .border_t_1()
                     .border_color(theme.border_subtle)
+                    .min_w_0()
                     .flex()
                     .items_center()
                     .font_family(UI_MONO_FONT_FAMILY)

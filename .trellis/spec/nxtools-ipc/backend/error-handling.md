@@ -1,51 +1,5 @@
-# Error Handling
+# IPC errors
 
-> How errors are handled in this project.
+Evidence: `repo:rust/crates/nxtools-ipc/src/lib.rs#PlatformBridgeError`, `repo:rust/crates/nxtools-ipc/src/lib.rs#failed_platform_result`, `repo:rust/crates/nxtools-ipc/src/local_pipe.rs#LocalPipeReader`.
 
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Disconnected/Busy/DuplicateCommandId reject before leaked/replaced pending state. Timeout/disconnect terminal notifications are generation-scoped, not empty success. Frame decode/version/native IO errors retain bounded category; broken pipe yields EOF, initial deadline TimedOut. Do not log entire failed frame or turn arbitrary native failure into a retry loop. Feature owner decides retry/focus/error presentation. [Shared engineering](../../shared/engineering.md).

@@ -1,5 +1,12 @@
 # NxTools.Next development rules
 
+Engineering and UI guidance starts at [.trellis/spec/index.md](.trellis/spec/index.md).
+Read its applicable owner topics and shared contracts before code changes. The approved UI
+target/current/exception matrix is [.trellis/spec/shared/ui-design.md](.trellis/spec/shared/ui-design.md);
+historical component/reference measurements do not silently override the later approved brief.
+For spec-only changes run `python tests/architecture/spec-contracts.py`; this checks documents,
+not product behavior or native/release acceptance.
+
 ## Reference-driven migration
 
 Reference review is a blocking prerequisite, not an optional follow-up. For any feature that

@@ -978,6 +978,73 @@ async fn paused_dash_video_reopens_from_durable_fragment_checkpoint() {
 }
 
 #[tokio::test]
+async fn completed_dash_fragment_with_wrong_length_is_redownloaded_after_reopen() {
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create DASH recovery directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open DASH engine");
+    let mut dash_request = request(&server, destination.clone());
+    dash_request.source_url = format!("http://{}/dash/static.mpd", server.address());
+    dash_request.file_name = Some("recovered.mp4".into());
+    dash_request.connection_limit = Some(1);
+    dash_request.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+        manifest_url: dash_request.source_url.clone(),
+        video_representation_id: Some("v1080".into()),
+        audio_representation_id: None,
+    }));
+    server.hold_dash_first_media(true);
+    let task_id = engine
+        .submit(dash_request, RequestOrigin::Ui)
+        .expect("submit DASH");
+    let initialization = destination
+        .join(format!(".nxtools-dash-{}", task_id.as_uuid()))
+        .join("00000000.fragment");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !initialization.exists() || server.dash_first_media_attempts() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "DASH initialization did not finish"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    engine.pause(task_id).expect("pause DASH");
+    assert_eq!(
+        engine
+            .wait_for_terminal(task_id, Duration::from_secs(2))
+            .await
+            .expect("wait for pause")
+            .task
+            .status(),
+        DownloadStatus::Paused
+    );
+    server.hold_dash_first_media(false);
+    drop(engine);
+    std::fs::write(&initialization, b"CORRUPTED-LONGER-THAN-INIT")
+        .expect("corrupt completed fragment without changing checkpoint");
+    let reopened = DownloadEngine::open(&database).expect("reopen DASH engine");
+    reopened.resume(task_id).expect("resume DASH");
+    let completed = reopened
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for recovery");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "{:?}",
+        completed.error
+    );
+    assert_eq!(
+        std::fs::read(destination.join("recovered.mp4")).expect("read output"),
+        b"VINIT|V0|V1"
+    );
+    assert_eq!(
+        server.dash_initialization_attempts(),
+        2,
+        "a corrupted completed checkpoint must be fetched again"
+    );
+}
+#[tokio::test]
 async fn reopened_dash_video_rejects_changed_track_identity_before_mixing_fragments() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create mutable DASH directory");
@@ -1356,6 +1423,19 @@ async fn cancelling_during_ffmpeg_mux_removes_dash_staging_and_output() {
     let working = destination.join(format!(".nxtools-dash-{}", task_id.as_uuid()));
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !marker.exists() {
+        let task = engine
+            .task(task_id)
+            .expect("read mux-start task")
+            .expect("mux-start task exists");
+        assert!(
+            !matches!(
+                task.task.status(),
+                DownloadStatus::Failed | DownloadStatus::Completed | DownloadStatus::Cancelled
+            ),
+            "FFmpeg mux marker missing after terminal state: status={:?}, error={:?}",
+            task.task.status(),
+            task.error
+        );
         assert!(
             std::time::Instant::now() < deadline,
             "FFmpeg mux process did not start"

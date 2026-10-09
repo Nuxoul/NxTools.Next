@@ -325,9 +325,9 @@ fn receive_upload(
     let temporary = staging_root.join(format!("{id}.uploading"));
     let completed = completed_path(staging_root, id);
     let write_result = write_chunk_body(stream, &temporary, offset, content_length);
-    let mut state = registry.lock().map_err(|_| UploadFailure::Io)?;
     if let Err(failure) = write_result {
         drain_claimed_body(stream, failure.unread_bytes);
+        let mut state = registry.lock().map_err(|_| UploadFailure::Io)?;
         state.active = state.active.saturating_sub(1);
         let upload = state.pending.remove(&id).ok_or(UploadFailure::Io)?;
         warn!(
@@ -346,6 +346,7 @@ fn receive_upload(
     }
     let received = offset + content_length;
     let complete = received == expected_size;
+    let mut state = registry.lock().map_err(|_| UploadFailure::Io)?;
     if complete && let Err(error) = fs::rename(&temporary, &completed) {
         state.active = state.active.saturating_sub(1);
         let upload = state.pending.remove(&id).ok_or(UploadFailure::Io)?;
@@ -457,6 +458,9 @@ fn claim_upload(
     Ok(expected_size)
 }
 
+// A claimed chunk is exempt from idle reaping, but may not drip indefinitely.
+const MAX_RECEIVING_DURATION: Duration = Duration::from_secs(2 * 60);
+
 fn write_chunk_body(
     stream: &mut TcpStream,
     path: &Path,
@@ -474,9 +478,20 @@ fn write_chunk_body(
         .map_err(|error| BlobBodyFailure::new("staging_truncate", error, chunk_size))?;
     file.seek(SeekFrom::Start(offset))
         .map_err(|error| BlobBodyFailure::new("staging_seek", error, chunk_size))?;
+    let deadline = Instant::now() + MAX_RECEIVING_DURATION;
     let mut remaining = chunk_size;
     let mut buffer = [0_u8; 64 * 1024];
     while remaining > 0 {
+        let Some(remaining_time) = deadline.checked_duration_since(Instant::now()) else {
+            return Err(BlobBodyFailure {
+                kind: "body_deadline",
+                native_error_code: 0,
+                unread_bytes: remaining,
+            });
+        };
+        stream
+            .set_read_timeout(Some(remaining_time.min(Duration::from_secs(30))))
+            .map_err(|error| BlobBodyFailure::new("socket_timeout", error, remaining))?;
         let read_limit = usize::try_from(remaining.min(buffer.len() as u64))
             .expect("read limit is bounded by the in-memory buffer");
         let read = stream
@@ -596,7 +611,9 @@ fn reap_expired_uploads(registry: &mut UploadRegistry, staging_root: &Path, now:
     let expired = registry
         .pending
         .iter()
-        .filter_map(|(id, upload)| (upload.expires_at <= now).then_some(*id))
+        .filter_map(|(id, upload)| {
+            (upload.state != UploadState::Receiving && upload.expires_at <= now).then_some(*id)
+        })
         .collect::<Vec<_>>();
     for id in expired {
         let Some(upload) = registry.pending.remove(&id) else {
@@ -846,6 +863,89 @@ mod tests {
         drop(registry);
         service.forget(capability.id);
         std::fs::remove_dir_all(directory).expect("remove Blob staging fixture");
+    }
+
+    #[test]
+    fn receiving_claim_is_exclusive_and_cannot_be_reaped_during_body_io() {
+        let directory = unique_test_directory();
+        let service = BlobUploadService::start(&directory).expect("start upload service");
+        let capability = prepare(&service, 2);
+        let token = capability.path.rsplit('/').next().expect("token");
+        super::claim_upload(&service.registry, capability.id, token, 0, 1)
+            .expect("claim first writer");
+        {
+            let mut registry = service.registry.lock().expect("lock registry");
+            registry
+                .pending
+                .get_mut(&capability.id)
+                .expect("claim exists")
+                .expires_at = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            super::reap_expired_uploads(&mut registry, &directory, std::time::Instant::now());
+            assert!(registry.pending.contains_key(&capability.id));
+            assert_eq!(registry.active, 1);
+        }
+        assert_eq!(
+            super::claim_upload(&service.registry, capability.id, token, 0, 1),
+            Err(super::UploadFailure::NotFound)
+        );
+        service.forget(capability.id);
+        let registry = service.registry.lock().expect("lock released registry");
+        assert_eq!(registry.active, 0);
+        drop(registry);
+        std::fs::remove_dir_all(directory).expect("remove fixture");
+    }
+
+    #[test]
+    fn active_socket_finishes_after_idle_deadline_passes_without_reaper_deleting_it() {
+        let directory = unique_test_directory();
+        let service = BlobUploadService::start(&directory).expect("start upload service");
+        let capability = prepare(&service, 2);
+        let mut stream = TcpStream::connect(service.address()).expect("connect");
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .expect("timeout");
+        write!(
+            stream,
+            "POST {}?offset=0 HTTP/1.1\r\nHost: {}\r\nContent-Length: 2\r\n\r\n",
+            capability.path,
+            service.address()
+        )
+        .expect("send header only");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let registry = service.registry.lock().expect("lock registry");
+            if registry
+                .pending
+                .get(&capability.id)
+                .is_some_and(|upload| upload.state == super::UploadState::Receiving)
+            {
+                break;
+            }
+            drop(registry);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "socket did not claim upload"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        {
+            let mut registry = service.registry.lock().expect("lock registry");
+            registry
+                .pending
+                .get_mut(&capability.id)
+                .expect("claimed upload")
+                .expires_at = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        }
+        let _replacement = prepare(&service, 1);
+        stream.write_all(b"ok").expect("finish body");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("read response");
+        assert!(response.starts_with("HTTP/1.1 204"), "{response}");
+        assert_eq!(
+            std::fs::read(super::completed_path(&directory, capability.id)).expect("staged body"),
+            b"ok"
+        );
+        std::fs::remove_dir_all(directory).expect("remove fixture");
     }
 
     #[test]

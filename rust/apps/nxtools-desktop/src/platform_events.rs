@@ -13,6 +13,7 @@ use crate::downloads::DownloadApplication;
 use crate::network_settings::NetworkSettingsApplication;
 use crate::quick_launch::QuickLaunchApplication;
 
+use crate::ui::motion::UiMotionPreference;
 pub(crate) struct PlatformEventDispatcher {
     platform: Rc<PlatformBridge>,
     browser_startup_window: Option<BrowserStartupWindow>,
@@ -131,6 +132,9 @@ impl PlatformEventDispatcher {
                     pending_command_count = pending_command_ids.len(),
                     "platform-dependent shell operations were invalidated"
                 );
+                // A disconnected native adapter cannot authorize animation on a later turn.
+                cx.set_global(UiMotionPreference::default());
+                cx.refresh_windows();
                 self.pending_tray_restore = None;
                 if let Some(startup) = self.browser_startup_window.as_mut()
                     && startup
@@ -182,6 +186,27 @@ impl PlatformEventDispatcher {
                         "Windows rejected the browser-startup main-window minimize request"
                     );
                 }
+            }
+            PlatformNotification::Event(PlatformEvent::SystemMotionPreferenceChanged(
+                preference,
+            )) => {
+                let mut policy = cx
+                    .try_global::<UiMotionPreference>()
+                    .copied()
+                    .unwrap_or_default();
+                if policy.apply(preference) {
+                    cx.set_global(policy);
+                    cx.refresh_windows();
+                }
+                info!(
+                    event = "system.motion.preference_applied",
+                    correlation_id = %preference.correlation_id,
+                    reduced_motion = policy.reduced_motion(),
+                    native_error_code = preference.native_error_code,
+                    "native animation preference received by desktop UI policy"
+                );
+                // This is UI policy, not an application/entity notification.
+                return;
             }
             PlatformNotification::Event(PlatformEvent::TrayActionRequested(request)) => {
                 let started_at = Instant::now();

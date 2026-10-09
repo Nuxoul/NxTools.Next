@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Desktop regression and window lifecycle quality gates"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Correlated bounded diagnostics"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Rust/C#/IPC ownership boundary"}
+{"file": "docs/reference-code/download.md", "reason": "Task-window reuse, center-preserving transform, and motion baseline"}
+{"file": "docs/reference-code/gpui.md", "reason": "Probe resize boundary and restrained opacity/offset motion"}
+{"file": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs", "reason": "Probe resize retries, layout states, and submission handoff"}
+{"file": "rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs", "reason": "New-download window creation and browser/blob handoff"}
+{"file": "rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs", "reason": "Keyed task-window creation, placement, and lifecycle"}
+{"file": "rust/apps/nxtools-desktop/src/downloads/task_window.rs", "reason": "Progress/terminal render and phase layout"}
+{"file": "rust/apps/nxtools-desktop/src/download_window_lifecycle.rs", "reason": "One-window-per-task state machine"}
+{"file": "csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.NativeMethods.cs", "reason": "Native centered resize and modal-loop retry"}

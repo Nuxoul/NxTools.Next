@@ -28,7 +28,7 @@ use crate::theme::Theme;
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
-    ICON_GLYPH_SMALL, SPACING_2, SPACING_8, SPACING_12,
+    ICON_GLYPH_SMALL, SPACING_8, SPACING_12,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
@@ -427,95 +427,123 @@ impl FileDialogSearchPanel {
         );
     }
 
-    fn default_source_row(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    fn default_source_row(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let source = self.default_source.clone()?;
         let theme = self.theme;
         let panel = cx.entity().downgrade();
+        let escape_panel = panel.clone();
+        let row = div()
+            .id("file-dialog-default-source")
+            .active(move |row| row.bg(theme.surface_pressed))
+            .debug_selector(|| "file-dialog-default-source".into())
+            .h(px(DEFAULT_SOURCE_HEIGHT))
+            .px(px(SPACING_12))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(SPACING_8))
+            .border_t_1()
+            .border_color(theme.border_subtle)
+            .bg(theme.canvas)
+            .hover(move |row| row.bg(theme.surface_hover))
+            .cursor_pointer()
+            .child(
+                div()
+                    .debug_selector(|| "file-dialog-default-source-icon".into())
+                    .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        gpui_component::Icon::new(MaterialIcon::Folder)
+                            .size(px(16.0))
+                            .text_color(theme.icon),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "file-dialog-default-source-title".into())
+                    .min_w_0()
+                    .flex_1()
+                    .max_w(px(192.0))
+                    .h(px(LINE_HEIGHT_BODY))
+                    .truncate()
+                    .text_size(px(TEXT_BODY))
+                    .line_height(px(LINE_HEIGHT_BODY))
+                    .text_color(theme.text)
+                    .child(source.name),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "file-dialog-default-source-path".into())
+                    .min_w_0()
+                    .flex_1()
+                    .h(px(LINE_HEIGHT_LABEL))
+                    .truncate()
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .child(source.path),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "file-dialog-default-source-shortcut".into())
+                    .w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))
+                    .h(px(LINE_HEIGHT_LABEL))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .child("Ctrl+G"),
+            )
+            .into_any_element();
         Some(
-            div()
-                .id("file-dialog-default-source")
-                .debug_selector(|| "file-dialog-default-source".into())
-                .h(px(DEFAULT_SOURCE_HEIGHT))
-                .px(px(SPACING_12))
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(SPACING_8))
-                .border_t_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.canvas)
-                .hover(move |row| row.bg(theme.surface_hover))
-                .cursor_pointer()
-                .on_click(move |_event, _window, cx| {
-                    let _ = panel.update(cx, |panel, cx| {
-                        panel.activate_default_source(cx);
-                    });
-                })
-                .child(
-                    div()
-                        .debug_selector(|| "file-dialog-default-source-icon".into())
-                        .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            gpui_component::Icon::new(MaterialIcon::Folder)
-                                .size(px(16.0))
-                                .text_color(theme.icon),
-                        ),
-                )
-                .child(
-                    div()
-                        .debug_selector(|| "file-dialog-default-source-title".into())
-                        .min_w_0()
-                        .flex_1()
-                        .max_w(px(190.0))
-                        .h(px(LINE_HEIGHT_BODY))
-                        .truncate()
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_BODY))
-                        .text_color(theme.text)
-                        .child(source.name),
-                )
-                .child(
-                    div()
-                        .debug_selector(|| "file-dialog-default-source-path".into())
-                        .min_w_0()
-                        .flex_1()
-                        .h(px(LINE_HEIGHT_LABEL))
-                        .truncate()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child(source.path),
-                )
-                .child(
-                    div()
-                        .debug_selector(|| "file-dialog-default-source-shortcut".into())
-                        .w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))
-                        .h(px(LINE_HEIGHT_LABEL))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_end()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child("Ctrl+G"),
-                )
-                .into_any_element(),
+            super::panel::quick_launch_focusable_row(
+                "file-dialog-default-source-focus",
+                theme,
+                false,
+                row,
+                window,
+                cx,
+                move |_event, _window, cx| {
+                    let _ = panel.update(cx, |panel, cx| panel.activate_default_source(cx));
+                },
+            )
+            .on_key_down(move |event, window, cx| {
+                if event.keystroke.key != "escape" || event.keystroke.modifiers.modified() {
+                    return;
+                }
+                let _ = escape_panel.update(cx, |panel, cx| {
+                    panel.search_input.focus_handle(cx).focus(window);
+                    panel.escape(window, cx);
+                });
+                window.prevent_default();
+                cx.stop_propagation();
+            })
+            .flex_none()
+            .into_any_element(),
         )
     }
 
-    fn row(&self, index: usize, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn row(&self, index: usize, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let item = self.results[index].clone();
         let selected = index == self.selected;
         let theme = self.theme;
         let panel = cx.entity().downgrade();
         let click_panel = panel.clone();
-        div()
+        let navigation_panel = panel.clone();
+        let focus_id = gpui::SharedString::from(format!("file-dialog-result-focus-{}", item.path));
+        let row = div()
             .id(("file-dialog-search-row", index))
+            .active(move |row| row.bg(theme.surface_pressed))
             .debug_selector(move || format!("file-dialog-search-result-row-{index}"))
             .w_full()
             .h(px(COMPACT_RESULT_ROW_HEIGHT))
@@ -542,12 +570,6 @@ impl FileDialogSearchPanel {
                         panel.selected = index;
                         cx.notify();
                     }
-                });
-            })
-            .on_click(move |_event, _window, cx| {
-                let _ = click_panel.update(cx, |panel, cx| {
-                    panel.selected = index;
-                    panel.activate_selected(cx);
                 });
             })
             .child(
@@ -579,7 +601,7 @@ impl FileDialogSearchPanel {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(SPACING_2))
+                    .gap(px(crate::ui::metrics::SPACING_4))
                     .child(
                         div()
                             .debug_selector(move || {
@@ -605,12 +627,48 @@ impl FileDialogSearchPanel {
                             .child(item.path),
                     ),
             )
-            .into_any_element()
+            .into_any_element();
+        super::panel::quick_launch_focusable_row(
+            focus_id,
+            theme,
+            false,
+            row,
+            window,
+            cx,
+            move |_event, _window, cx| {
+                let _ = click_panel.update(cx, |panel, cx| {
+                    panel.selected = index;
+                    panel.activate_selected(cx);
+                    cx.notify();
+                });
+            },
+        )
+        .on_key_down(move |event, window, cx| {
+            if event.keystroke.modifiers.modified()
+                || !matches!(event.keystroke.key.as_str(), "up" | "down" | "escape")
+            {
+                return;
+            }
+            let _ = navigation_panel.update(cx, |panel, cx| {
+                panel.selected = index;
+                panel.search_input.focus_handle(cx).focus(window);
+                match event.keystroke.key.as_str() {
+                    "up" => panel.move_selection(-1),
+                    "down" => panel.move_selection(1),
+                    _ => panel.escape(window, cx),
+                }
+                cx.notify();
+            });
+            window.prevent_default();
+            cx.stop_propagation();
+        })
+        .into_any_element()
     }
 }
 
 impl Render for FileDialogSearchPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let theme = self.theme;
         let expanded = self.expanded;
         let appearance_generation = self.appearance_generation;
@@ -619,18 +677,18 @@ impl Render for FileDialogSearchPanel {
         let default_source = if expanded {
             None
         } else {
-            self.default_source_row(cx)
+            self.default_source_row(window, cx)
         };
         let list = uniform_list(
             "file-dialog-search-results",
             result_count,
-            cx.processor(|panel, range: Range<usize>, _window, cx| {
-                range.map(|index| panel.row(index, cx)).collect()
+            cx.processor(|panel, range: Range<usize>, window, cx| {
+                range.map(|index| panel.row(index, window, cx)).collect()
             }),
         )
         .size_full()
         .track_scroll(self.result_scroll.clone());
-        div()
+        let root = div()
             .id("file-dialog-search-window")
             .debug_selector(|| "file-dialog-search-window".into())
             .size_full()
@@ -717,8 +775,9 @@ impl Render for FileDialogSearchPanel {
                         )
                     }),
             )
-            .when_some(default_source, |root, row| root.child(row))
-            .with_animation(
+            .when_some(default_source, |root, row| root.child(row));
+        if crate::ui::motion::motion_allowed(cx) {
+            root.with_animation(
                 ("file-dialog-search-appear", appearance_generation),
                 Animation::new(SEARCH_APPEAR_DURATION).with_easing(ease_out_quint()),
                 |surface, delta| {
@@ -728,6 +787,10 @@ impl Render for FileDialogSearchPanel {
                         .opacity(0.94 + 0.06 * delta)
                 },
             )
+            .into_any_element()
+        } else {
+            root.into_any_element()
+        }
     }
 }
 
@@ -1110,6 +1173,49 @@ impl QuickLaunchApplication {
         {
             warn!(%error, "could not activate file-dialog default directory");
         }
+    }
+}
+
+#[cfg(test)]
+pub(super) fn polish_keyboard_fixture(
+    window: &mut Window,
+    cx: &mut Context<FileDialogSearchPanel>,
+) -> FileDialogSearchPanel {
+    let host = QuickLaunchFileDialogSearchHost {
+        window_handle: 77,
+        current_directory: Some(r"C:\synthetic".into()),
+        left: 100,
+        top: 200,
+        width: 900,
+        height: 640,
+        monitor_dpi: 96,
+        visible: true,
+        changed_at_unix_ms: 1,
+        quick_switch_source: None,
+    };
+    let mut panel = FileDialogSearchPanel::new(&host, WeakEntity::new_invalid(), window, cx);
+    panel.expanded = true;
+    panel.results = ["first", "second"]
+        .into_iter()
+        .map(|name| IndexSearchItem {
+            path: format!(r"C:\synthetic\{name}.txt"),
+            name: name.into(),
+            is_directory: false,
+            size_bytes: None,
+            modified_at_unix_ms: None,
+            score: 0,
+        })
+        .collect();
+    panel
+}
+
+#[cfg(test)]
+impl FileDialogSearchPanel {
+    pub(super) fn polish_focus_search(&self, window: &mut Window, cx: &App) {
+        self.search_input.focus_handle(cx).focus(window);
+    }
+    pub(super) fn polish_selected(&self) -> usize {
+        self.selected
     }
 }
 

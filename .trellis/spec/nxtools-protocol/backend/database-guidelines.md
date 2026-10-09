@@ -1,51 +1,5 @@
-# Database Guidelines
+# Protocol persistence (SQL not applicable)
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/crates/nxtools-protocol/src/lib.rs#Envelope`, `repo:rust/crates/nxtools-protocol/src/lib.rs#IndexerCommand`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+Wire DTOs are not database models and own no SQL/schema. JSON line transport state lives in IPC; download durable state lives in Download; index settings/cache in Indexer. Don't add persistence or default recreation to decode_line. MAX_FRAME_BYTES is a wire bound, not permission to log contents. Request IDs/correlation remain independent from persisted task identity.

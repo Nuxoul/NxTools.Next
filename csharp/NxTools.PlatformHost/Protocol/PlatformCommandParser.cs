@@ -45,7 +45,8 @@ internal sealed record ConfigureQuickLaunchCommand(
     string HotkeyKey,
     string HotkeyDisplay,
     bool AutoQuickSwitchEnabled = true,
-    bool FileDialogSearchEnabled = true);
+    bool FileDialogSearchEnabled = true,
+    bool SuppressInExclusiveFullscreen = true);
 internal sealed record SetQuickLaunchHotKeyRecordingCommand(bool Recording);
 internal sealed record ConfigureDesktopShellCommand(
     bool StartOnLoginSilently,
@@ -56,6 +57,7 @@ internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enable
 internal sealed record SetWindowShadowCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
 internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
+internal sealed record PresentFixedWindowOverAnchorCommand(long WindowHandle, long AnchorWindowHandle, int Width, int Height);
 internal sealed record MoveWindowCenteredOverCommand(
     long WindowHandle,
     long AnchorWindowHandle,
@@ -258,6 +260,9 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
             envelope,
             "set_window_bounds_centered",
             "Centered window-bounds command payload was empty.");
+
+    public static PresentFixedWindowOverAnchorCommand ParsePresentFixedWindowOverAnchor(ProtocolEnvelope envelope) =>
+        Parse<PresentFixedWindowOverAnchorCommand>(envelope, "present_fixed_window_over_anchor", "Fixed window presentation payload was empty.");
 
     public static MoveWindowCenteredOverCommand ParseMoveWindowCenteredOver(
         ProtocolEnvelope envelope) =>

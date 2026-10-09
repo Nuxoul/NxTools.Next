@@ -3,7 +3,7 @@ use gpui_component::Icon;
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{SPACING_2, SPACING_8, SPACING_12};
+use crate::ui::metrics::{SPACING_4, SPACING_8, SPACING_12};
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 pub(crate) const WORK_STATE_ICON_SIZE: f32 = 18.0;
@@ -70,15 +70,60 @@ pub(crate) fn interactive_state(
     state: Div,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(selector)
+    InteractiveWorkState {
+        selector,
+        state,
+        on_click: Box::new(on_click),
+    }
+}
+
+#[derive(gpui::IntoElement)]
+struct InteractiveWorkState {
+    selector: &'static str,
+    state: Div,
+    on_click: crate::ui::components::action::ClickHandler,
+}
+
+impl gpui::RenderOnce for InteractiveWorkState {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let Self {
+            selector,
+            state,
+            on_click,
+        } = self;
+        let focus = window
+            .use_keyed_state(
+                SharedString::from(format!("{selector}-focus")),
+                cx,
+                |_, cx| cx.focus_handle().tab_stop(true),
+            )
+            .read(cx)
+            .clone();
+        let focused = focus.is_focused(window);
+        crate::ui::components::action::focused_action(
+            selector,
+            &focus,
+            Theme::zed_dark(),
+            false,
+            window,
+            on_click,
+        )
+        .border_0()
         .debug_selector(move || selector.into())
         .w_full()
         .flex_none()
-        .cursor_pointer()
         .min_h(px(WORK_STATE_MIN_HEIGHT))
-        .on_click(on_click)
         .child(state)
+        .when(focused, |state| {
+            state.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .border_2()
+                    .border_color(Theme::zed_dark().focus_ring),
+            )
+        })
+    }
 }
 
 fn work_state(
@@ -142,7 +187,7 @@ fn work_state(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .debug_selector(move || title_selector.clone())

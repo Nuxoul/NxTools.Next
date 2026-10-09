@@ -1,51 +1,5 @@
-# Error Handling
+# Clipboard errors
 
-> How errors are handled in this project.
+Evidence: `repo:rust/crates/nxtools-clipboard/src/lib.rs#ClipboardHistoryError`, `repo:rust/crates/nxtools-clipboard/src/archive.rs#ClipboardArchiveError`, `repo:rust/crates/nxtools-clipboard/src/storage.rs#ClipboardStorageError`.
 
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+QuerySuperseded is expected cancellation; retain committed rows, no empty/error UI. Item/category missing, unsupported/empty edit and built-in immutable category are typed validation. SQLite/serialization/IO propagate cause. Late import Partial counts mean committed rows exist: retain referenced assets and remove only proven new orphans; query failure preserves conservatively. Migration failure retains source until durable commit. Caller logs fixed code/count/stage, not text/path/category payload or raw error. [Engineering](../../shared/engineering.md).

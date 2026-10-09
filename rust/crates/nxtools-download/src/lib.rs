@@ -595,6 +595,13 @@ impl TransferPlan {
                 segment_index: cancelled_segment_index,
             });
         }
+        // Progress on the right starts at its old offset; prepending an
+        // unwritten left range would falsely turn it into a downloaded prefix.
+        if cancelled_end.saturating_add(1) == absorbing_start && absorbing.downloaded_bytes() != 0 {
+            return Err(TransferPlanError::SegmentNotWaiting {
+                segment_index: absorbing_segment_index,
+            });
+        }
         let merged_start = cancelled_start.min(absorbing_start);
         let merged_end = cancelled_end.max(absorbing_end);
         let merged = DownloadSegment::new(
@@ -605,10 +612,9 @@ impl TransferPlan {
             DownloadSegmentState::Waiting,
         )?;
         let mut segments = self.segments.clone();
-        let lower = cancelled_position.min(absorbing_position);
-        let higher = cancelled_position.max(absorbing_position);
-        segments[absorbing_position.min(higher).max(lower)] = merged;
-        segments.remove(cancelled_position.max(absorbing_position));
+        // Retain the absorber's identity even when it follows the shed range.
+        segments[absorbing_position] = merged;
+        segments.remove(cancelled_position);
         // Reindex remaining segments is unnecessary: indices stay unique.
         *self = Self::new(
             self.protocol,

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Preserve GPUI entity lifecycle, generation ownership, and deferred cross-entity updates."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Trace the native gesture, IPC event, Rust session, GPUI visibility, and dismissal boundaries."}

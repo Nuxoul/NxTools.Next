@@ -1,51 +1,5 @@
-# Logging Guidelines
+# CLI diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/apps/nxtools-cli/src/lib.rs#CliCommand`, `repo:rust/apps/nxtools-cli/src/main.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+CLI stdout/JSON is explicitly requested product output and may expose task fields; stderr is actionable user error. Do not equate that with telemetry or copy argv/headers/URLs/paths into lifecycle logs. Feature diagnostics use request IDs, action/result kinds and elapsed counts through owning engine. No extra parse-loop logs. [Engineering privacy](../../shared/engineering.md).

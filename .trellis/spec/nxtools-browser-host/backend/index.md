@@ -1,38 +1,9 @@
-# Backend Development Guidelines
+# Browser host backend
 
-> Best practices for backend development in this project.
+Evidence: `repo:rust/apps/nxtools-browser-host/src/lib.rs#BrowserRequest`, `repo:rust/apps/nxtools-browser-host/src/blob_upload.rs`.
 
----
+## Pre-Development Checklist
+Read [download/browser reference](../../../../docs/reference-code/download.md), [engineering](../../shared/engineering.md), [structure](directory-structure.md), [persistence](database-guidelines.md), [errors](error-handling.md), [logging](logging-guidelines.md), [quality](quality-guidelines.md), [extension](../../browser-extension/index.md). Native Messaging and engine wire versions/bounds are distinct.
 
-## Overview
-
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+## Quality Check
+`cargo test -p nxtools-browser-host --lib`; real temp socket Blob and identity/malformed/batch validation; extension contracts and browser-native-messaging gate. Strict checks per [verification](../../shared/verification.md). No real browser/download/cookie/registry operations. [Entry](../../index.md).

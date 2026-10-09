@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>NxTools · 布局设计工作台</title>
+  <link rel="stylesheet" href="prototype.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <header class="bench-header">
+    <div><strong>NxTools</strong><span class="bench-divider">/</span>布局设计工作台</div>
+    <span class="support">仅设计原型 · 合成演示数据 · 不连接产品</span>
+  </header>
+  <div class="bench-controls" aria-label="原型工作台控制">
+    <label>界面<select id="page-selector"></select></label>
+    <label>状态<select id="state-selector">
+      <option value="normal">正常 normal</option><option value="long">长内容 long</option>
+      <option value="empty">空 empty</option><option value="loading">加载 loading</option>
+      <option value="error">错误 error</option><option value="busy">忙碌 busy</option>
+    </select></label>
+    <label>窗口<select id="size-selector"><option value="default">默认尺寸</option><option value="minimum">主窗口最小 920 × 480</option></select></label>
+    <label>显示<select id="zoom-selector"><option value="actual">100% · 实际 CSS 像素</option><option value="fit">适应视口 · 缩放预览</option></select></label>
+    <button id="reset-prototype" type="button">重置演示</button>
+  </div>
+  <main class="stage" id="stage" aria-label="应用窗口预览区域">
+    <div id="frame-space"><div id="app-frame" data-testid="app-frame"></div></div>
+  </main>
+  <footer class="bench-footer"><output id="geometry-readout"></output><span>100% 需浏览器缩放为 100%；窗口尺寸不包含工作台。所有动作仅修改内存。</span><button id="audit-button" type="button">检查布局</button></footer>
+  <div id="bench-notice" role="status" aria-live="polite"></div>
+  <details class="bench-notes"><summary>设计边界与操作说明</summary><p>主页面：下载工作区、速启设置、剪贴板设置、工具。弹窗与配套界面由上方选择器切换；它不属于应用。全局设置为独立草稿窗口，其他配置即时模拟。速启输入框支持 ↑ ↓、Enter、→ 进入动作、Esc 返回；剪贴板支持 ↑ ↓、Enter、Esc。媒体确认使用独立尺寸，不挤入普通确认窗口。</p><p>预览、菜单、浏览器扩展、媒体和原生拖拽包含标注线框。不会访问文件、剪贴板、系统、网络或真实配置；不能证明 GPUI / Windows HWND / DPI / 屏幕阅读器提供方兼容性。</p></details>
+</body>
+</html>

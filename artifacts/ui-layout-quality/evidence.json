@@ -1,0 +1,52 @@
+{
+  "kind": "browser-design-only",
+  "checks": 305,
+  "failures": 0,
+  "page_cases": 125,
+  "section_cases": 148,
+  "interaction_cases": 32,
+  "production_migrated": false,
+  "user_visual_approved": false,
+  "captures": [
+    {
+      "file": "clipboardPopup.png",
+      "bytes": 21296,
+      "sha256": "51DFBAAE86C88B64C8C83DFBAE1C2B4AF19F8D75A7C8086D6AEE0E70414781BC"
+    },
+    {
+      "file": "clipboardSettings.png",
+      "bytes": 40759,
+      "sha256": "EA591717A02AF46D034E35619B0B9E1B885220613E0ABE3074924C06DFD69A91"
+    },
+    {
+      "file": "confirm.png",
+      "bytes": 16393,
+      "sha256": "4FAB8D6C35EB4F6DD4CEB7C5417E3301C482157B6761A504CB616B3BBD13F933"
+    },
+    {
+      "file": "downloads.png",
+      "bytes": 47168,
+      "sha256": "A0B235DBCC2EC64E8F3836182E677DAFD1895277B02C5EC4CC702D0DFE376D45"
+    },
+    {
+      "file": "global.png",
+      "bytes": 22402,
+      "sha256": "F969D7643FF15B11C3A2695ED71B3A85CC080D47C5DA542EBF4B1C5D96DADE75"
+    },
+    {
+      "file": "progress.png",
+      "bytes": 7235,
+      "sha256": "137595B313C549AB6638070F29876F9394D318C463C29E16FECBBCC1D15B00D7"
+    },
+    {
+      "file": "quickPopup.png",
+      "bytes": 17522,
+      "sha256": "2DC2E64BD3F38AE488CF837BC9F46A1BCD4EDAB86AA1138491A09D48DFDFB8FB"
+    },
+    {
+      "file": "quickSettings.png",
+      "bytes": 33490,
+      "sha256": "4109ED6A74B2E95ED94D4C36D908A852D6FCC944F1E36114129332512C56CC30"
+    }
+  ]
+}

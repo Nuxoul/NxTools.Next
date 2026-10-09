@@ -1,38 +1,17 @@
-# Backend Development Guidelines
+# Core backend
 
-> Best practices for backend development in this project.
+Owner: settings/defaults/paths/instance and logging guards, not feature engines or Windows UI. Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#AppConfig`, `repo:rust/crates/nxtools-core/Cargo.toml`.
 
----
+## Pre-Development Checklist
+Read [shared architecture](../../shared/architecture.md), [engineering](../../shared/engineering.md), owning reference/task and the topics below. Preserve serde/default/legacy compatibility and storage-field ownership.
 
-## Overview
+| Topic | Scope |
+| --- | --- |
+| [Structure](directory-structure.md) | Core boundaries and dependency direction |
+| [Persistence](database-guidelines.md) | JSON/config locks, no SQL |
+| [Errors](error-handling.md) | Validation/context and unsafe raw diagnostics |
+| [Diagnostics](logging-guidelines.md) | Nonblocking guard and payload policy |
+| [Quality](quality-guidelines.md) | Defaults/normalize/merge/instance tests |
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+## Quality Check
+Follow [verification](../../shared/verification.md); `cargo test -p nxtools-core --lib`, scoped Clippy/check/fmt when code changes. Docs-only use spec-contracts. Test stale/missing/corrupt config, mixed-case blacklist and instance hints. No product/service launch. [Standards entry](../../index.md).

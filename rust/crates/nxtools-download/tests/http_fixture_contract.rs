@@ -149,3 +149,35 @@ fn fixture_can_change_resource_validators_between_requests() {
         Some("Mon, 27 Jul 2026 00:00:02 GMT")
     );
 }
+
+#[test]
+fn fixture_preserves_accepted_connections_until_delayed_request_bytes_arrive() {
+    for concurrent in [false, true] {
+        let server = if concurrent {
+            DeterministicHttpServer::start_concurrent()
+        } else {
+            DeterministicHttpServer::start()
+        };
+        let mut stream =
+            TcpStream::connect(server.address()).expect("connect delayed fixture client");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("bound delayed fixture response");
+        // Give the accept/read boundary a turn before any HTTP bytes exist.
+        std::thread::sleep(Duration::from_millis(50));
+        stream
+            .write_all(b"GET /range HTTP/1.1\r\nHost: fixture\r\nRange: bytes=4-7\r\nConnection: close\r\n\r\n")
+            .expect("accepted fixture connection must survive delayed request bytes");
+        let mut response = Vec::new();
+        stream
+            .read_to_end(&mut response)
+            .expect("read delayed fixture response");
+        assert!(
+            response.starts_with(b"HTTP/1.1 206 "),
+            "accepted fixture connection lost before headers; concurrent={concurrent}, response_bytes={}",
+            response.len()
+        );
+        assert!(response.ends_with(b"4567"));
+        assert_eq!(server.total_requests(), 1);
+    }
+}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Parent desktop quality and regression gates"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Parent diagnostic contract"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Parent Rust/C#/IPC ownership boundary"}
+{"file": "docs/reference-code/clipboard.md", "reason": "Link detector and panel lifecycle reference"}
+{"file": "docs/reference-code/system-shell.md", "reason": "Explorer and native shell invariants"}
+{"file": "docs/reference-code/download.md", "reason": "Download task-window lifecycle reference"}
+{"file": "docs/reference-code/gpui.md", "reason": "GPUI motion and native resize baseline"}

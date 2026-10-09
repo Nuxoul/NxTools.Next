@@ -1,4 +1,4 @@
-use crate::ui::metrics::{ICON_GLYPH_SMALL, PROGRESS_TRACK_HEIGHT};
+use crate::ui::metrics::ICON_GLYPH_SMALL;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,6 +22,7 @@ use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::HOVER_ACTION_RAIL_WIDTH;
 use crate::ui::action_from_modifiers;
+use crate::ui::components::action::focusable_content;
 use crate::ui::components::list::compact_result_row;
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::metrics::RADIUS_CONTROL;
@@ -32,9 +33,9 @@ pub const IMAGE_PREVIEW_FALLBACK_HEIGHT: f32 = 96.0;
 const IMAGE_PREVIEW_MAX_HEIGHT: f32 = 270.0;
 pub const IMAGE_LIST_MAX_HEIGHT: f32 = 144.0;
 const ROW_VERTICAL_PADDING: f32 = 8.0;
-const METADATA_HEIGHT: f32 = 20.0;
+const METADATA_HEIGHT: f32 = 24.0;
 const CONTENT_GAP: f32 = 4.0;
-const TEXT_CONTENT_HEIGHT: f32 = 23.0;
+const TEXT_CONTENT_HEIGHT: f32 = 24.0;
 const IMAGE_WELL_VERTICAL_PADDING: f32 = 8.0;
 pub const TEXT_ROW_HEIGHT: f32 =
     ROW_VERTICAL_PADDING + METADATA_HEIGHT + CONTENT_GAP + TEXT_CONTENT_HEIGHT;
@@ -87,6 +88,7 @@ pub fn history_row(
     modifier_actions: ClipboardModifierActions,
     category_menu: CategorySourceMenu,
     handlers: HistoryRowHandlers,
+    actions_focused: bool,
 ) -> impl IntoElement {
     let HistoryRowHandlers {
         action: on_action,
@@ -133,9 +135,13 @@ pub fn history_row(
 
     div()
         .id(("history-row-slot", index))
+        .debug_selector(move || format!("history-row-slot-{index}"))
         .h(px(slot_height))
         .pb(px(ROW_GAP))
-        .child(
+        .child(focusable_content(
+            ("history-row-action", index),
+            theme,
+            false,
             compact_result_row(
                 theme,
                 ("history-row", index),
@@ -158,12 +164,6 @@ pub fn history_row(
                     cx,
                 );
             })
-            .on_click(move |event, window, cx| {
-                let Some(action) = action_from_click(event, modifier_actions) else {
-                    return;
-                };
-                click_action(action, event, window, cx);
-            })
             .flex()
             .flex_col()
             .gap(px(CONTENT_GAP))
@@ -173,7 +173,7 @@ pub fn history_row(
                     .h(px(METADATA_HEIGHT))
                     .flex()
                     .items_center()
-                    .gap(px(PROGRESS_TRACK_HEIGHT))
+                    .gap(px(4.0))
                     .when_some(usage, |row, usage| row.child(usage_badge(theme, usage)))
                     .child(source_icon(theme, source, source_icon_path, index))
                     .child(time_label(theme, relative_time))
@@ -190,14 +190,14 @@ pub fn history_row(
                             .top_0()
                             .right_0()
                             .w(px(HOVER_ACTION_RAIL_WIDTH))
-                            .invisible()
+                            .when(!selected && !actions_focused, |rail| rail.invisible())
                             .group_hover(group_name, |style| style.visible())
                             .h(px(METADATA_HEIGHT))
                             .pl_1()
                             .flex()
                             .items_center()
                             .justify_end()
-                            .gap(px(2.0))
+                            .gap(px(4.0))
                             .when(!open_targets.is_empty(), |actions| {
                                 actions.child(open_targets_button(
                                     theme,
@@ -209,6 +209,7 @@ pub fn history_row(
                             .when(can_edit, |actions| {
                                 actions.child(management_button(
                                     theme,
+                                    index,
                                     MaterialIcon::Edit,
                                     "编辑文本",
                                     ClipboardItemAction::Edit,
@@ -218,6 +219,7 @@ pub fn history_row(
                             })
                             .child(management_button(
                                 theme,
+                                index,
                                 MaterialIcon::Keep,
                                 if is_pinned { "取消置顶" } else { "置顶" },
                                 ClipboardItemAction::TogglePinned,
@@ -226,6 +228,7 @@ pub fn history_row(
                             ))
                             .child(management_button(
                                 theme,
+                                index,
                                 MaterialIcon::Star,
                                 if is_favorite {
                                     "取消收藏"
@@ -238,6 +241,7 @@ pub fn history_row(
                             ))
                             .child(management_button(
                                 theme,
+                                index,
                                 MaterialIcon::Delete,
                                 "删除",
                                 ClipboardItemAction::Delete,
@@ -412,8 +416,15 @@ pub fn history_row(
                         }
                     },
                 )
-            }),
-        )
+            })
+            .into_any_element(),
+            move |event, window, cx| {
+                let Some(action) = action_from_click(event, modifier_actions) else {
+                    return;
+                };
+                click_action(action, event, window, cx);
+            },
+        ))
 }
 
 fn open_targets_button(
@@ -426,8 +437,8 @@ fn open_targets_button(
     let button = Button::new(("clipboard-open-target", index))
         .ghost()
         .compact()
-        .h(px(20.0))
-        .w(px(20.0))
+        .h(px(24.0))
+        .w(px(24.0))
         .p_0()
         .tooltip(if targets.len() == 1 {
             single_target_tooltip
@@ -517,37 +528,43 @@ fn compact_target_label(value: &str) -> String {
 }
 fn management_button(
     theme: Theme,
+    index: usize,
     icon: MaterialIcon,
     tooltip: &'static str,
     action: ClipboardItemAction,
     handler: HistoryManagementHandler,
     active: bool,
 ) -> impl IntoElement {
-    div()
-        .id(gpui::SharedString::from(format!(
-            "clipboard-item-action-{tooltip}"
-        )))
-        .size(px(20.0))
-        .rounded(px(RADIUS_CONTROL))
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .justify_center()
-        .hover(move |style| style.bg(theme.surface_raised))
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
-        .child(
-            Icon::new(icon)
-                .size(px(ICON_GLYPH_SMALL))
-                .text_color(if active {
-                    theme.accent
-                } else {
-                    theme.text_secondary
-                }),
-        )
-        .on_click(move |event, window, cx| {
-            cx.stop_propagation();
-            handler(action.clone(), event, window, cx);
-        })
+    let key = match &action {
+        ClipboardItemAction::Edit => "edit",
+        ClipboardItemAction::TogglePinned => "pin",
+        ClipboardItemAction::ToggleFavorite => "favorite",
+        ClipboardItemAction::Delete => "delete",
+        ClipboardItemAction::ToggleCategorySource { .. } => "category",
+    };
+    Button::new(gpui::SharedString::from(format!(
+        "clipboard-item-action-{index}-{key}"
+    )))
+    .ghost()
+    .size(px(24.0))
+    .rounded(px(RADIUS_CONTROL))
+    .flex()
+    .items_center()
+    .justify_center()
+    .tooltip(tooltip)
+    .child(
+        Icon::new(icon)
+            .size(px(ICON_GLYPH_SMALL))
+            .text_color(if active {
+                theme.accent
+            } else {
+                theme.text_secondary
+            }),
+    )
+    .on_click(move |event, window, cx| {
+        cx.stop_propagation();
+        handler(action.clone(), event, window, cx);
+    })
 }
 fn state_icon(theme: Theme, icon: MaterialIcon, tooltip: &'static str) -> impl IntoElement {
     div()
@@ -582,7 +599,7 @@ fn text_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
         .h(px(TEXT_CONTENT_HEIGHT))
         .flex()
         .items_center()
-        .gap_2()
+        .gap(px(8.0))
         .child(
             div()
                 .min_w_0()
@@ -618,7 +635,7 @@ fn files_content(theme: Theme, entry: &ClipboardItem) -> gpui::AnyElement {
         .h(px(TEXT_CONTENT_HEIGHT))
         .flex()
         .items_center()
-        .gap_2()
+        .gap(px(8.0))
         .child(
             div()
                 .min_w_0()
@@ -714,7 +731,7 @@ fn time_label(theme: Theme, text: String) -> impl IntoElement {
     div()
         .max_w(px(92.0))
         .h(px(18.0))
-        .px(px(2.0))
+        .px(px(crate::ui::metrics::SPACING_4))
         .text_size(px(TEXT_META))
         .text_color(theme.text_muted)
         .flex()
@@ -793,9 +810,9 @@ mod tests {
 
     #[test]
     fn row_metrics_match_the_reference_panel() {
-        assert_eq!(TEXT_ROW_HEIGHT, 55.0);
+        assert_eq!(TEXT_ROW_HEIGHT, 60.0);
         assert_eq!(ROW_GAP, 4.0);
-        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 40.0);
+        assert_eq!(IMAGE_ROW_CHROME_HEIGHT, 44.0);
     }
 
     #[test]

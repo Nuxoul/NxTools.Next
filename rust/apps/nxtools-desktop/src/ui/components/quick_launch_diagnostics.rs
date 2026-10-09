@@ -10,7 +10,7 @@ use crate::theme::Theme;
 use crate::ui::components::action::{
     action_button, danger_hover_button_variant, labelled_icon_action,
 };
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, SPACING_2, SPACING_8, SPACING_12};
+use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, SPACING_4, SPACING_8, SPACING_12};
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_MONO_FONT_FAMILY,
 };
@@ -176,7 +176,7 @@ pub(crate) fn quick_launch_diagnostics(
                         .flex_1()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_2))
+                        .gap(px(SPACING_4))
                         .child(
                             div()
                                 .h(px(LINE_HEIGHT_BODY))
@@ -259,7 +259,7 @@ fn diagnostics_section_header(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .h(px(LINE_HEIGHT_BODY))

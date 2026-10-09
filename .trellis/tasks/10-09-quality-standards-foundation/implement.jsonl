@@ -1,0 +1,19 @@
+{"file":"AGENTS.md","reason":"Source-backed authority, layer ownership and workstation safety"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/prd.md","reason":"Standards-only scope and applicable placeholder acceptance"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/design.md","reason":"Navigation, evidence and target/current separation"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/implement.md","reason":"Ordered discovery/writing/check steps"}
+{"file":".trellis/tasks/00-bootstrap-guidelines/prd.md","reason":"Existing package coverage backlog; preserve related task"}
+{"file":".trellis/tasks/10-02-staged-desktop-ui/design.md","reason":"Approved semantic palette/density and interaction target"}
+{"file":"docs/ui-remediation-plan.md","reason":"Historical implemented UI and conflicting metric evidence"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Preserve concrete cross-layer contracts"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace actual storage/IPC/native/UI boundaries"}
+{"file":"docs/reference-code/gpui.md","reason":"GPUI rendering/lease/source authority"}
+{"file":"docs/audits/2026-10-08-sol-review-remediation.md","reason":"Validation limitations and recent proven fixes"}
+{"file":".trellis/spec/index.md","reason":"Authoritative source-backed owner navigation"}
+{"file":".trellis/spec/shared/architecture.md","reason":"Actual first-party layer and state ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Cross-layer async/config/error/privacy contracts"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Approved target/current/exception and full interaction states"}
+{"file":".trellis/spec/shared/verification.md","reason":"Exact safe checks and evidence levels"}
+{"file":".trellis/spec/shared/foundation-backlog.md","reason":"Observed gaps, not waivers or product implementation consent"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Native API/STA and diagnostics owner guidance"}
+{"file":".trellis/spec/browser-extension/index.md","reason":"Actual MV3/web policy and UI owner guidance"}

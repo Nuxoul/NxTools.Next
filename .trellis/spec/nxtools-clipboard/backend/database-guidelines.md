@@ -1,53 +1,8 @@
-# Database Guidelines
+# Clipboard SQLite and assets
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/crates/nxtools-clipboard/src/lib.rs#ClipboardHistory`, `repo:rust/crates/nxtools-clipboard/src/storage.rs`, `repo:rust/crates/nxtools-clipboard/src/archive.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
+History owns Connection/item/format/category SQL; current initialization uses CREATE TABLE/additive ensure_column, not a claimed versioned schema/WAL contract. Serialized worker stays outside GPUI. Assets are referenced resources. Online backup then VACUUM; migration stages/validates then worker commits config before switch. Retention max(7,days); late import Partial cleans only proven new orphans. [Quality](quality-guidelines.md), [verification](../../shared/verification.md); retain cursor contract below.
 
 ## Scenario: Bounded clipboard history pagination
 
@@ -92,4 +47,3 @@ let cursor = ClipboardPageCursor { id: last.id };
 let cursor = ClipboardPageCursor::from(&last);
 history.query_category_page_after(query, category, scope, cursor, limit, Some(total))?;
 ```
-(To be filled by the team)

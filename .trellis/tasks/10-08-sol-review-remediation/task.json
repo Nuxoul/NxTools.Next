@@ -1,0 +1,31 @@
+{
+  "id": "sol-review-remediation",
+  "name": "sol-review-remediation",
+  "title": "Fix SOL review confirmed defects",
+  "description": "Repair confirmed SOL review defects through approved production regressions without package/install/service mutations",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-browser-host",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-08",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-08-sol-window-remediation",
+    "10-08-sol-engine-remediation",
+    "10-08-sol-clipboard-launcher-remediation",
+    "10-08-sol-system-remediation"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

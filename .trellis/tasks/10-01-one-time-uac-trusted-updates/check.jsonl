@@ -1,0 +1,5 @@
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Review update/startup behavior against atomic protected binary matching and exact-path process safety."}
+{"file":".trellis/spec/nxtools-desktop/backend/error-handling.md","reason":"Check UAC cancellation and installer/service errors are accurately separated."}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Check the service-update protocol remains least-privilege and fail-closed."}
+{"file":".trellis/spec/nxtools-ipc/backend/logging-guidelines.md","reason":"Check investigation evidence does not disclose trust material or user-sensitive paths."}
+{"file": ".trellis/tasks/10-01-one-time-uac-trusted-updates/research/reference-uac-comparison.md", "reason": "Check that the proposed NxTools trust/update design does not copy unrelated elevation behavior."}

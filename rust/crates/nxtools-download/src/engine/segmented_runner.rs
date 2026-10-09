@@ -668,6 +668,523 @@ pub(crate) fn select_rebalance_candidate(
         .max_by_key(|(_, remaining)| *remaining))
 }
 
+fn select_shrink_candidate(
+    inner: &DownloadEngineInner,
+    task_id: DownloadTaskId,
+    worker_controls: &HashMap<u32, DownloadSegmentTransferControl>,
+    waiting: &VecDeque<DownloadSegment>,
+    progress_by_segment: &Arc<Mutex<HashMap<u32, u64>>>,
+    minimum_remaining_bytes: u64,
+) -> Result<Option<(u32, u64)>, DownloadEngineError> {
+    let plan = inner
+        .store
+        .load_transfer_plan(task_id)?
+        .ok_or(DownloadEngineError::EmptySegmentLayout(task_id))?;
+    let progress = progress_by_segment
+        .lock()
+        .map_err(|_| DownloadEngineError::LockPoisoned)?;
+    Ok(plan
+        .segments()
+        .iter()
+        .filter(|segment| worker_controls.contains_key(&segment.index()))
+        .filter_map(|segment| {
+            let observed = progress
+                .get(&segment.index())
+                .copied()
+                .unwrap_or(segment.downloaded_bytes());
+            let remaining = segment.len().saturating_sub(observed);
+            (remaining >= minimum_remaining_bytes
+                && waiting.iter().any(|neighbour| {
+                    (segment.end_byte().saturating_add(1) == neighbour.start_byte()
+                        && neighbour.downloaded_bytes() == 0)
+                        || (neighbour.end_byte().saturating_add(1) == segment.start_byte()
+                            && observed == 0)
+                }))
+            .then_some((segment.index(), remaining))
+        })
+        .max_by_key(|(_, remaining)| *remaining))
+}
+
+fn shrink_eligible(
+    requested: bool,
+    outcome: &Result<DownloadSegmentTransferOutcome, HttpDownloadError>,
+    stopping: bool,
+    segment_count: usize,
+    initial_count: usize,
+) -> bool {
+    requested
+        && matches!(
+            outcome,
+            Ok(DownloadSegmentTransferOutcome::Rebalanced { .. })
+        )
+        && !stopping
+        && segment_count > initial_count
+}
+
+#[cfg(test)]
+mod shrink_fixture {
+    use super::*;
+
+    pub(super) fn synced_worker_identity_survives_pending_clear_but_not_stops_or_completion() {
+        let acknowledged = Ok(DownloadSegmentTransferOutcome::Rebalanced {
+            downloaded_bytes: 0,
+        });
+        assert!(shrink_eligible(true, &acknowledged, false, 3, 2));
+        assert!(!shrink_eligible(false, &acknowledged, false, 3, 2));
+        assert!(!shrink_eligible(true, &acknowledged, true, 3, 2));
+        assert!(!shrink_eligible(true, &acknowledged, false, 2, 2));
+        assert!(!shrink_eligible(
+            true,
+            &Ok(DownloadSegmentTransferOutcome::Completed {
+                downloaded_bytes: 1
+            }),
+            false,
+            3,
+            2
+        ));
+    }
+
+    // This is a localhost integration gate, colocated to keep the sample seam
+    // cfg(test)-only. Only sampling is synthetic: Range I/O, writer sync,
+    // worker joins, plan replacement, pause/reopen and publication are real.
+    pub(super) async fn sampled_runner_shrinks_a_grown_saved_plan_and_resumes_exact_artifact() {
+        for grow_first in [true, false] {
+            let server = HeldRangeServer::start();
+            let directory = tempfile::tempdir().expect("shrink directory");
+            let database = directory.path().join("downloads.sqlite3");
+            let engine = DownloadEngine::open(&database).expect("open shrink engine");
+            let request = DownloadRequest {
+                source_url: server.url.clone(),
+                save_directory: directory.path().to_owned(),
+                save_directory_explicit: true,
+                file_name: Some("shrink.bin".into()),
+                headers: Vec::new(),
+                cookie: None,
+                referrer: None,
+                certificate_policy: Default::default(),
+                connection_limit: Some(1),
+                speed_limit_bytes_per_second: None,
+                expected_total_bytes: None,
+                scheduled_at_unix_ms: None,
+                adaptive_segment_policy: Some(crate::DownloadAdaptiveSegmentPolicy {
+                    enabled: true,
+                    max_segments: if grow_first { 3 } else { 2 },
+                    min_segment_mib: 1,
+                }),
+                media: None,
+                category_id: None,
+                category_name: None,
+                duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
+            };
+            let task_id = engine
+                .enqueue(request.clone(), RequestOrigin::Internal)
+                .expect("enqueue");
+            let http = HttpDownloadClient::new().expect("HTTP client");
+            let probe = http.probe(&request).await.expect("localhost probe");
+            let (temporary, final_path) =
+                HttpDownloadClient::artifact_paths(&request, &probe, task_id)
+                    .expect("artifact paths");
+            SegmentedArtifact::create(&temporary, 5 * MIB)
+                .await
+                .expect("saved artifact");
+            let plan = TransferPlan::new(
+                TransferProtocol::Http,
+                server.url.clone(),
+                Some(5 * MIB),
+                true,
+                probe.validator.clone(),
+                vec![
+                    DownloadSegment::new(0, 0, 4 * MIB - 1, 0, DownloadSegmentState::Waiting)
+                        .expect("saved left range"),
+                    DownloadSegment::new(1, 4 * MIB, 5 * MIB - 1, 0, DownloadSegmentState::Waiting)
+                        .expect("saved right range"),
+                ],
+            )
+            .expect("grown saved plan");
+            engine
+                .inner
+                .store
+                .save_transfer_plan(task_id, &plan)
+                .expect("save grown plan");
+            let control = DownloadTransferControl::new();
+            {
+                let mut tasks = engine.inner.lock_tasks().expect("lock fixture task state");
+                let state = tasks.get_mut(&task_id).expect("fixture task exists");
+                for status in [
+                    DownloadStatus::Probing,
+                    DownloadStatus::Waiting,
+                    DownloadStatus::Downloading,
+                ] {
+                    state
+                        .task
+                        .transition_to(status, now_unix_ms())
+                        .expect("fixture state transition");
+                }
+                state.control = Some(control.clone());
+                state.transfer.probe = Some(probe.clone());
+                state.transfer.temporary_path = Some(temporary.clone());
+                state.transfer.final_path = Some(final_path.clone());
+                engine
+                    .inner
+                    .persist(state)
+                    .expect("persist fixture attempt");
+            }
+            let (samples, sample_receiver) = async_channel::bounded(1);
+            let worker_inner = engine.inner.clone();
+            let worker_control = control.clone();
+            let worker = tokio::spawn(async move {
+                run_segmented_task_with_samples(
+                    &worker_inner,
+                    task_id,
+                    uuid::Uuid::new_v4(),
+                    &request,
+                    &probe,
+                    &worker_control,
+                    &http,
+                    temporary,
+                    final_path,
+                    Some(sample_receiver),
+                )
+                .await
+            });
+            wait_for_bytes(&engine, task_id, 4096).await;
+            for _ in 0..ADAPTIVE_SAMPLE_COUNT {
+                samples
+                    .send(100_000)
+                    .await
+                    .expect("runner accepts baseline sample");
+            }
+            let grown_count = if grow_first { 3 } else { 2 };
+            wait_for_plan_count(&engine, task_id, grown_count).await;
+            if grow_first {
+                // The restarted reduced worker writes another real prefix before
+                // slow samples ask it to sync and absorb its queued right tail.
+                wait_for_bytes(&engine, task_id, 8192).await;
+            }
+            for _ in 0..ADAPTIVE_SAMPLE_COUNT - 1 {
+                samples
+                    .send(10_000)
+                    .await
+                    .expect("runner accepts slow sample");
+            }
+            // Fence the fourth sample by waiting for the one-slot channel drain.
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !samples.is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("runner consumed fourth slow sample");
+            assert_eq!(
+                engine
+                    .inner
+                    .store
+                    .load_transfer_plan(task_id)
+                    .expect("read durable plan")
+                    .expect("durable plan exists")
+                    .segments()
+                    .len(),
+                grown_count,
+                "four slow samples must not become a five-sample window"
+            );
+            samples
+                .send(10_000)
+                .await
+                .expect("runner accepts fifth slow sample");
+            wait_for_plan_count(&engine, task_id, grown_count - 1).await;
+            let shrunk = engine
+                .inner
+                .store
+                .load_transfer_plan(task_id)
+                .expect("read shrunk plan")
+                .expect("shrunk plan exists");
+            let surviving = shrunk
+                .segments()
+                .iter()
+                .find(|segment| segment.index() == 0)
+                .expect("real worker continues synced range");
+            assert_eq!(surviving.start_byte(), 0);
+            assert_eq!(
+                surviving.end_byte(),
+                if grow_first { 4 * MIB - 1 } else { 5 * MIB - 1 }
+            );
+            assert!(
+                surviving.downloaded_bytes() >= if grow_first { 8192 } else { 4096 },
+                "the joined writer's real prefix must survive the durable merge"
+            );
+            assert!(
+                shrunk
+                    .segments()
+                    .iter()
+                    .filter(|segment| segment.state == DownloadSegmentState::Active)
+                    .count()
+                    <= 1
+            );
+            let counts = engine
+                .inner
+                .store
+                .load_task_timeline(task_id, 100)
+                .expect("read plan history")
+                .into_iter()
+                .rev() // Storage returns newest first; assert chronological decrease.
+                .filter_map(|entry| match entry.event {
+                    crate::DownloadTaskTimelineEvent::TransferPlanChanged { segment_count } => {
+                        Some(segment_count)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                counts
+                    .windows(2)
+                    .any(|pair| pair[0] as usize == grown_count
+                        && pair[1] as usize == grown_count - 1),
+                "SQLite must record the shrink, not just an in-memory decision: {counts:?}"
+            );
+            control.pause();
+            tokio::time::timeout(Duration::from_secs(3), worker)
+                .await
+                .expect("pause bounded runner")
+                .expect("join runner")
+                .expect("pause runner");
+            assert_eq!(
+                engine
+                    .task(task_id)
+                    .expect("read paused task")
+                    .expect("paused task exists")
+                    .task
+                    .status(),
+                DownloadStatus::Paused
+            );
+            assert!(!directory.path().join("shrink.bin").exists());
+            let durable = engine
+                .inner
+                .store
+                .load_transfer_plan(task_id)
+                .expect("read durable paused plan")
+                .expect("paused plan exists");
+            let prefix = durable.segments()[0].downloaded_bytes() as usize;
+            assert!(prefix > 0);
+            drop(engine);
+            let reopened_store = SqliteDownloadStore::open(&database).expect("independent reopen");
+            assert_eq!(
+                reopened_store
+                    .load_transfer_plan(task_id)
+                    .expect("read reopened plan")
+                    .expect("reopened plan exists")
+                    .segments(),
+                durable.segments()
+            );
+            let reopened = DownloadEngine::open(&database).expect("reopen engine");
+            server.release.store(true, Ordering::Release);
+            reopened.resume(task_id).expect("resume shrunk checkpoint");
+            let completed = reopened
+                .wait_for_terminal(task_id, Duration::from_secs(5))
+                .await
+                .expect("resume reaches terminal state");
+            assert_eq!(
+                completed.task.status(),
+                DownloadStatus::Completed,
+                "{:?}",
+                completed.error
+            );
+            assert_eq!(
+                std::fs::read(directory.path().join("shrink.bin"))
+                    .expect("read exact final artifact"),
+                server.body.as_ref().clone()
+            );
+            assert!(
+                server
+                    .ranges
+                    .lock()
+                    .expect("lock observed ranges")
+                    .iter()
+                    .any(|&(start, _)| start == prefix),
+                "resumed request must continue at the synced prefix"
+            );
+            assert_eq!(
+                reopened_store
+                    .load_transfer_plan(task_id)
+                    .expect("read completed plan")
+                    .expect("completed plan exists")
+                    .segments()
+                    .len(),
+                grown_count - 1,
+                "shrink completion must not fall through to split/re-grow"
+            );
+        }
+    }
+
+    async fn wait_for_bytes(engine: &DownloadEngine, task_id: DownloadTaskId, bytes: u64) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            // Progress events can be coalesced after a worker restart. Inspect
+            // the real prefix rather than requiring another UI-rate event.
+            while {
+                use std::io::{Read, Seek};
+                let path = engine
+                    .task(task_id)
+                    .expect("read active task")
+                    .expect("active task exists")
+                    .temporary_path
+                    .expect("temporary artifact is registered");
+                let mut byte = [0_u8; 1];
+                !std::fs::File::open(path).is_ok_and(|mut file| {
+                    file.seek(std::io::SeekFrom::Start(bytes - 1)).is_ok()
+                        && file.read_exact(&mut byte).is_ok()
+                        && byte[0] == ((bytes - 1) % 251) as u8
+                })
+            } {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .expect("real Range writer made progress");
+    }
+
+    async fn wait_for_plan_count(engine: &DownloadEngine, task_id: DownloadTaskId, count: usize) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while engine
+                .inner
+                .store
+                .load_transfer_plan(task_id)
+                .expect("read runner plan")
+                .expect("runner plan exists")
+                .segments()
+                .len()
+                != count
+            {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .expect("actual runner persisted the expected plan size");
+    }
+
+    struct HeldRangeServer {
+        url: String,
+        body: Arc<Vec<u8>>,
+        ranges: Arc<Mutex<Vec<(usize, usize)>>>,
+        release: Arc<AtomicBool>,
+        shutdown: Arc<AtomicBool>,
+        listener: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl HeldRangeServer {
+        fn start() -> Self {
+            let listener =
+                std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind held fixture");
+            listener
+                .set_nonblocking(true)
+                .expect("nonblocking listener");
+            let url = format!(
+                "http://{}/shrink.bin",
+                listener.local_addr().expect("fixture address")
+            );
+            let body = Arc::new(
+                (0..5 * MIB)
+                    .map(|offset| (offset % 251) as u8)
+                    .collect::<Vec<_>>(),
+            );
+            let ranges = Arc::new(Mutex::new(Vec::new()));
+            let release = Arc::new(AtomicBool::new(false));
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let (worker_body, worker_ranges, worker_release, worker_shutdown) = (
+                body.clone(),
+                ranges.clone(),
+                release.clone(),
+                shutdown.clone(),
+            );
+            let listener = std::thread::spawn(move || {
+                let mut connections = Vec::new();
+                while !worker_shutdown.load(Ordering::Acquire) {
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let (body, ranges, release, shutdown) = (
+                                worker_body.clone(),
+                                worker_ranges.clone(),
+                                worker_release.clone(),
+                                worker_shutdown.clone(),
+                            );
+                            connections.push(std::thread::spawn(move || {
+                                use std::io::{Read, Write};
+                                // Winsock accepted sockets inherit the listener's
+                                // nonblocking mode; the connection worker is blocking.
+                                stream.set_nonblocking(false).expect("blocking accepted socket");
+                                stream.set_read_timeout(Some(Duration::from_secs(3))).expect("bounded fixture read");
+                                stream.set_write_timeout(Some(Duration::from_secs(3))).expect("bounded fixture write");
+                                stream.set_nodelay(true).expect("disable fixture Nagle");
+                                let mut head = Vec::new();
+                                let mut buffer = [0_u8; 2048];
+                                while head.len() < 16 * 1024 && !head.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                                    let Ok(read) = stream.read(&mut buffer) else { return; };
+                                    if read == 0 { return; }
+                                    head.extend_from_slice(&buffer[..read]);
+                                }
+                                let head = String::from_utf8(head).expect("fixture ASCII request header");
+                                if head.starts_with("HEAD ") {
+                                    let response = format!("HTTP/1.1 200 OK\r\nAccept-Ranges: bytes\r\nETag: \"shrink\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                                    let _ = stream.write_all(response.as_bytes());
+                                    let _ = stream.shutdown(std::net::Shutdown::Write);
+                                    return;
+                                }
+                                let range = head.lines().find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    if !name.eq_ignore_ascii_case("range") { return None; }
+                                    let (start, end) = value.trim().strip_prefix("bytes=")?.split_once('-')?;
+                                    Some((start.parse::<usize>().ok()?, end.parse::<usize>().ok()?))
+                                });
+                                let Some((start, end)) = range else {
+                                    return;
+                                };
+                                assert!(start <= end && end < body.len());
+                                let response = format!("HTTP/1.1 206 Partial Content\r\nETag: \"shrink\"\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len(), end - start + 1);
+                                if stream.write_all(response.as_bytes()).is_err() { return; }
+                                let first_end = (start + 4095).min(end);
+                                if stream.write_all(&body[start..=first_end]).is_err() { return; }
+                                let _ = stream.flush();
+                                if (start, end) == (0, 0) { return; }
+                                ranges.lock().expect("lock request record").push((start, end));
+                                let deadline = Instant::now() + Duration::from_secs(15);
+                                while !release.load(Ordering::Acquire) && !shutdown.load(Ordering::Acquire) && Instant::now() < deadline {
+                                    std::thread::sleep(Duration::from_millis(2));
+                                }
+                                if !shutdown.load(Ordering::Acquire) && first_end < end {
+                                    let _ = stream.write_all(&body[first_end + 1..=end]);
+                                }
+                            }));
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(2))
+                        }
+                        Err(error) => panic!("localhost accept: {error}"),
+                    }
+                }
+                for connection in connections {
+                    connection.join().expect("join held fixture connection");
+                }
+            });
+            Self {
+                url,
+                body,
+                ranges,
+                release,
+                shutdown,
+                listener: Some(listener),
+            }
+        }
+    }
+
+    impl Drop for HeldRangeServer {
+        fn drop(&mut self) {
+            self.shutdown.store(true, Ordering::Release);
+            self.listener
+                .take()
+                .expect("fixture listener handle")
+                .join()
+                .expect("join listener");
+        }
+    }
+}
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_segmented_task(
     inner: &Arc<DownloadEngineInner>,
@@ -679,6 +1196,35 @@ pub(crate) async fn run_segmented_task(
     http: &HttpDownloadClient,
     temporary_path: PathBuf,
     final_path: PathBuf,
+) -> Result<(), DownloadEngineError> {
+    run_segmented_task_with_samples(
+        inner,
+        task_id,
+        correlation_id,
+        request,
+        probe,
+        control,
+        http,
+        temporary_path,
+        final_path,
+        #[cfg(test)]
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_segmented_task_with_samples(
+    inner: &Arc<DownloadEngineInner>,
+    task_id: DownloadTaskId,
+    correlation_id: uuid::Uuid,
+    request: &DownloadRequest,
+    probe: &DownloadProbe,
+    control: &DownloadTransferControl,
+    http: &HttpDownloadClient,
+    temporary_path: PathBuf,
+    final_path: PathBuf,
+    #[cfg(test)] samples: Option<async_channel::Receiver<u64>>,
 ) -> Result<(), DownloadEngineError> {
     let total_bytes = probe
         .total_bytes
@@ -856,7 +1402,12 @@ pub(crate) async fn run_segmented_task(
     let mut pending_rebalance = None;
     let mut pending_shrink: Option<u32> = None;
     let mut adaptive_growth_remaining = 0_usize;
-    let initial_segment_count = u16::try_from(segments.len()).unwrap_or(u16::MAX);
+    // The restored layout may already contain adaptive tails. Its current
+    // count is not the original floor; derive that from the request's initial
+    // connection layout so saved grown plans can shed queued ranges.
+    let initial_segment_count =
+        u16::try_from(create_initial_segments(total_bytes, Some(max_connections))?.len())
+            .unwrap_or(u16::MAX);
     let target_connections = usize::from(max_connections);
     let mut segment_count = segments.len();
     let adaptive_policy = request.adaptive_segment_policy.unwrap_or_default();
@@ -885,7 +1436,14 @@ pub(crate) async fn run_segmented_task(
                 };
                 joined
             }
-            _ = adaptive_tick.tick(), if !paused && !cancelled && first_error.is_none() => {
+            injected_speed = async {
+                #[cfg(test)]
+                if let Some(samples) = samples.as_ref() {
+                    return samples.recv().await.ok();
+                }
+                adaptive_tick.tick().await;
+                None::<u64>
+            }, if !paused && !cancelled && first_error.is_none() => {
                 let now = Instant::now();
                 let downloaded = progress_by_segment
                     .lock()
@@ -894,27 +1452,21 @@ pub(crate) async fn run_segmented_task(
                     .copied()
                     .sum::<u64>();
                 let elapsed = now.duration_since(sampled_at).as_secs_f64().max(0.001);
-                let speed = (downloaded.saturating_sub(sampled_bytes) as f64 / elapsed)
-                    .min(u64::MAX as f64) as u64;
+                let speed = injected_speed.unwrap_or_else(|| {
+                    (downloaded.saturating_sub(sampled_bytes) as f64 / elapsed)
+                        .min(u64::MAX as f64) as u64
+                });
                 sampled_at = now;
                 sampled_bytes = downloaded;
                 let current_segments = u16::try_from(segment_count).unwrap_or(u16::MAX);
-                let observed = adaptive.observe(
+                let decision = adaptive.observe(
                     speed,
                     current_segments,
+                    initial_segment_count,
                     retry_observed.load(Ordering::Acquire),
                 );
-                let decision = if matches!(observed, AdaptiveConnectionDecision::Hold) {
-                    adaptive.observe_shrink(
-                        speed,
-                        current_segments,
-                        initial_segment_count,
-                    )
-                } else {
-                    observed
-                };
                 match decision {
-                    AdaptiveConnectionDecision::Grow if pending_rebalance.is_none() => {
+                    AdaptiveConnectionDecision::Grow if pending_rebalance.is_none() && pending_shrink.is_none() => {
                         adaptive_growth_remaining =
                             adaptive_max_segments.saturating_sub(segment_count).min(4);
                         adaptive.confirm_growth_target(
@@ -957,19 +1509,12 @@ pub(crate) async fn run_segmented_task(
                             adaptive.cancel_growth();
                         }
                     }
-                    AdaptiveConnectionDecision::Shrink => {
-                        // Shed one segment: pick the one with the most
-                        // remaining bytes, cancel its worker, checkpoint it
-                        // back to Waiting, merge its untouched range into the
-                        // neighbouring Waiting segment and respawn that
-                        // neighbour. segment_count is decremented when the
-                        // joined worker is reaped below.
-                        if let Some((candidate_index, _remaining)) = select_rebalance_candidate(
-                            inner,
-                            task_id,
-                            &worker_controls,
-                            &progress_by_segment,
-                            adaptive_min_remaining_bytes,
+                    AdaptiveConnectionDecision::Shrink if pending_shrink.is_none() && pending_rebalance.is_none() => {
+                        // Only shed a worker adjacent to a queued Waiting range.
+                        // Sync its writer before editing the persisted plan.
+                        if let Some((candidate_index, _remaining)) = select_shrink_candidate(
+                            inner, task_id, &worker_controls, &waiting_segments,
+                            &progress_by_segment, adaptive_min_remaining_bytes,
                         )? && let Some(candidate_control) = worker_controls.get(&candidate_index)
                         {
                             candidate_control.request_rebalance();
@@ -986,6 +1531,7 @@ pub(crate) async fn run_segmented_task(
                             );
                         }
                     }
+                    AdaptiveConnectionDecision::Shrink => {}
                     AdaptiveConnectionDecision::DisabledAfterRetry => {
                         adaptive_growth_remaining = 0;
                         warn!(
@@ -1023,89 +1569,100 @@ pub(crate) async fn run_segmented_task(
         if shrink_requested {
             pending_shrink = None;
         }
-        let skip_shrink = pending_shrink.is_none()
-            || paused
-            || cancelled
-            || first_error.is_some()
-            || !u16::try_from(segment_count)
-                .map(|count| count > initial_segment_count)
-                .unwrap_or(false);
-        // Adaptive shrink: the shed worker exits through its cancel path with
-        // its remaining range checkpointed back to Waiting; fold that range
-        // into the neighbouring Waiting segment and respawn the neighbour.
+        let skip_shrink = !shrink_eligible(
+            shrink_requested,
+            &outcome,
+            paused || cancelled || first_error.is_some(),
+            segment_count,
+            usize::from(initial_segment_count),
+        );
+        let mut shrink_merged = false;
+        let mut shrink_waiting = None;
         if shrink_requested && !skip_shrink {
-            let Some(plan) = inner.store.load_transfer_plan(task_id)? else {
-                info!(
-                    event = "download.adaptive_segments.shrink_missing_plan",
-                    %correlation_id,
-                    ?task_id,
-                    "adaptive shrink skipped: transfer plan disappeared"
-                );
-                // The shed worker simply exits; the segment stays as waiting
-                // state and the queue refills it on the next run.
-                continue;
+            let downloaded_bytes = match &outcome {
+                Ok(DownloadSegmentTransferOutcome::Rebalanced { downloaded_bytes }) => {
+                    *downloaded_bytes
+                }
+                _ => unreachable!("shrink only follows a synced worker rebalance"),
             };
-            let cancelled_segment = plan
+            shrink_waiting = Some(checkpoint_segment(
+                inner,
+                task_id,
+                correlation_id,
+                &segment,
+                downloaded_bytes,
+                DownloadSegmentState::Waiting,
+            )?);
+        }
+        if let Some(waiting_checkpoint) = shrink_waiting.as_ref() {
+            let Some(plan) = inner.store.load_transfer_plan(task_id)? else {
+                return Err(DownloadEngineError::EmptySegmentLayout(task_id));
+            };
+            if let Some(cancelled) = plan
                 .segments()
                 .iter()
                 .find(|candidate| candidate.index() == segment.index())
-                .cloned();
-            if let Some(cancelled) = cancelled_segment
                 && cancelled.state == DownloadSegmentState::Waiting
+                && let Some(neighbour) = waiting_segments.iter().find(|candidate| {
+                    (cancelled.downloaded_bytes() == 0
+                        && candidate.end_byte().saturating_add(1) == cancelled.start_byte())
+                        || (candidate.downloaded_bytes() == 0
+                            && cancelled.end_byte().saturating_add(1) == candidate.start_byte())
+                })
             {
-                let neighbour = plan
-                    .segments()
-                    .iter()
-                    .filter(|candidate| {
-                        candidate.index() != segment.index()
-                            && candidate.state == DownloadSegmentState::Waiting
-                            && (candidate.end_byte().saturating_add(1) == cancelled.start_byte()
-                                || cancelled.end_byte().saturating_add(1) == candidate.start_byte())
-                    })
-                    .max_by_key(|candidate| candidate.len())
-                    .cloned();
-                if let Some(neighbour) = neighbour {
-                    let Some(mut merge_plan) = inner.store.load_transfer_plan(task_id)? else {
-                        info!(
-                            event = "download.adaptive_segments.shrink_missing_plan",
-                            %correlation_id,
-                            ?task_id,
-                            "adaptive shrink merge skipped: transfer plan disappeared"
-                        );
-                        continue;
-                    };
-                    let neighbour_control = worker_controls.get(&neighbour.index()).cloned();
-                    match merge_plan.merge_waiting_segment(segment.index(), neighbour.index()) {
-                        Ok(()) => {
-                            inner.persist_transfer_plan_change(task_id, &merge_plan)?;
-                            segment_count = segment_count.saturating_sub(1);
-                            info!(
-                                event = "download.adaptive_segments.shrink_merged",
-                                %correlation_id,
-                                ?task_id,
-                                cancelled_segment_index = segment.index(),
-                                merged_segment_index = neighbour.index(),
-                                current_segments = segment_count,
-                                "adaptive shrink merged the shed range into its neighbour"
-                            );
-                            if let Some(neighbour_control) = neighbour_control {
-                                neighbour_control.request_rebalance();
-                            }
-                            adaptive.record_completed_growth(
-                                u16::try_from(segment_count).unwrap_or(u16::MAX),
-                            );
-                        }
-                        Err(error) => {
-                            info!(
-                                event = "download.adaptive_segments.shrink_merge_failed",
-                                %correlation_id,
-                                ?task_id,
-                                error = %error,
-                                "adaptive shrink could not merge; keeping the segment"
-                            );
-                        }
-                    }
+                let (shed_index, surviving_index) = if cancelled.downloaded_bytes() == 0 {
+                    (segment.index(), neighbour.index())
+                } else {
+                    (neighbour.index(), segment.index())
+                };
+                let neighbour_index = neighbour.index();
+                let mut merged_plan = plan.clone();
+                if merged_plan
+                    .merge_waiting_segment(shed_index, surviving_index)
+                    .is_ok()
+                {
+                    inner.persist_transfer_plan_change(task_id, &merged_plan)?;
+                    waiting_segments.retain(|candidate| candidate.index() != neighbour_index);
+                    let merged = merged_plan
+                        .segments()
+                        .iter()
+                        .find(|candidate| candidate.index() == surviving_index)
+                        .ok_or(DownloadEngineError::IncompleteSegmentLayout(task_id))?
+                        .clone();
+                    progress_by_segment
+                        .lock()
+                        .map_err(|_| DownloadEngineError::LockPoisoned)?
+                        .remove(&shed_index);
+                    segment_lengths
+                        .lock()
+                        .map_err(|_| DownloadEngineError::LockPoisoned)?
+                        .remove(&shed_index);
+                    segment_lengths
+                        .lock()
+                        .map_err(|_| DownloadEngineError::LockPoisoned)?
+                        .insert(surviving_index, merged.len());
+                    progress_by_segment
+                        .lock()
+                        .map_err(|_| DownloadEngineError::LockPoisoned)?
+                        .insert(surviving_index, merged.downloaded_bytes());
+                    waiting_segments.push_back(merged);
+                    segment_count = segment_count.saturating_sub(1);
+                    shrink_merged = true;
+                    adaptive_growth_remaining = 0;
+                    adaptive.cancel_growth();
+                    adaptive.disabled = true;
+                    info!(
+                        event = "download.adaptive_segments.shrink_merged",
+                        %correlation_id, ?task_id,
+                        cancelled_segment_index = shed_index,
+                        merged_segment_index = surviving_index,
+                        current_segments = segment_count,
+                        "synced adaptive shrink merged a waiting range"
+                    );
                 }
+            }
+            if !shrink_merged {
+                waiting_segments.push_back(waiting_checkpoint.clone());
             }
         }
         let mut released_slot = false;
@@ -1134,6 +1691,24 @@ pub(crate) async fn run_segmented_task(
             }
             Ok(DownloadSegmentTransferOutcome::Cancelled { .. }) => {
                 cancelled = true;
+            }
+            Ok(DownloadSegmentTransferOutcome::Rebalanced { .. }) if shrink_waiting.is_some() => {
+                // Synced Waiting checkpoint was already merged or queued above.
+            }
+            Ok(DownloadSegmentTransferOutcome::Rebalanced { downloaded_bytes })
+                if shrink_requested =>
+            {
+                let waiting = checkpoint_segment(
+                    inner,
+                    task_id,
+                    correlation_id,
+                    &segment,
+                    downloaded_bytes,
+                    DownloadSegmentState::Waiting,
+                )?;
+                if !paused && !cancelled && first_error.is_none() {
+                    waiting_segments.push_back(waiting);
+                }
             }
             Ok(DownloadSegmentTransferOutcome::Rebalanced { downloaded_bytes }) => {
                 let waiting = checkpoint_segment(
@@ -1321,6 +1896,8 @@ pub(crate) async fn run_segmented_task(
         let continuing_adaptive_growth = adaptive_growth_remaining > 0;
         let can_split = adaptive_policy.enabled && segment_count < adaptive_max_segments;
         let should_rebalance = can_split
+            && pending_shrink.is_none()
+            && !shrink_requested
             && (released_slot && worker_controls.len() < target_connections
                 || continuing_adaptive_growth);
         if should_rebalance
@@ -1587,4 +2164,17 @@ pub(crate) fn validate_resumed_plan(
         return Err(DownloadEngineError::ResourceChanged(task_id));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod shrink_regression {
+    #[test]
+    fn synced_worker_identity_survives_pending_clear_but_not_stops_or_completion() {
+        super::shrink_fixture::synced_worker_identity_survives_pending_clear_but_not_stops_or_completion();
+    }
+
+    #[tokio::test]
+    async fn sampled_runner_shrinks_a_grown_saved_plan_and_resumes_exact_artifact() {
+        super::shrink_fixture::sampled_runner_shrinks_a_grown_saved_plan_and_resumes_exact_artifact().await;
+    }
 }

@@ -125,6 +125,26 @@ internal sealed class PlatformPipeClient(
         }
 
         platformAdapter.DiscardQueuedEventsForNewSession();
+        // The bounded event queue above was discarded: every handshake gets a fresh state
+        // snapshot before normal event forwarding, even when no user setting changed.
+        var motionSnapshot = platformAdapter.SystemMotionSnapshot;
+        var motionCorrelationId = Guid.NewGuid();
+        var motionStarted = Stopwatch.StartNew();
+        await WriteAsync(writer, PlatformEventEnvelopeFactory.Create(
+            new SystemMotionPreferenceChangedEvent(motionCorrelationId,
+                motionSnapshot.ReducedMotion, motionSnapshot.NativeErrorCode)), cancellationToken);
+        try
+        {
+            log.Write(motionSnapshot.NativeErrorCode == 0 ? "info" : "warning",
+                "system.motion.session_snapshot_sent", motionCorrelationId,
+                new Dictionary<string, object?>
+                {
+                    ["reduced_motion"] = motionSnapshot.ReducedMotion,
+                    ["native_error_code"] = motionSnapshot.NativeErrorCode,
+                    ["elapsed_ms"] = motionStarted.ElapsedMilliseconds
+                });
+        }
+        catch { /* Diagnostic delivery cannot affect the handshake. */ }
         Console.WriteLine("PlatformHost connected to NxTools desktop protocol v1.");
         log.Write("info", "ipc.connected", fields: new Dictionary<string, object?>
         {
@@ -596,12 +616,14 @@ internal sealed class PlatformPipeClient(
                 cancellationToken),
             "configure_quick_launch" => await platformAdapter.ConfigureQuickLaunchAsync(
                 PlatformCommandParser.ParseConfigureQuickLaunch(envelope),
+                diagnosticCorrelationId,
                 cancellationToken),
             "set_quick_launch_hot_key_recording" => await platformAdapter.SetQuickLaunchHotKeyRecordingAsync(
                 PlatformCommandParser.ParseSetQuickLaunchHotKeyRecording(envelope),
                 cancellationToken),
             "configure_desktop_shell" => await platformAdapter.ConfigureDesktopShellAsync(
                 PlatformCommandParser.ParseConfigureDesktopShell(envelope),
+                diagnosticCorrelationId,
                 cancellationToken),
             "set_window_topmost" => platformAdapter.SetWindowTopmost(
                 PlatformCommandParser.ParseSetWindowTopmost(envelope)),
@@ -612,7 +634,10 @@ internal sealed class PlatformPipeClient(
             "set_window_bounds" => platformAdapter.SetWindowBounds(
                 PlatformCommandParser.ParseSetWindowBounds(envelope)),
             "set_window_bounds_centered" => platformAdapter.SetWindowBoundsCentered(
-                PlatformCommandParser.ParseSetWindowBoundsCentered(envelope)),
+                PlatformCommandParser.ParseSetWindowBoundsCentered(envelope),
+                diagnosticCorrelationId),
+            "present_fixed_window_over_anchor" => await platformAdapter.PresentFixedWindowOverAnchorAsync(
+                PlatformCommandParser.ParsePresentFixedWindowOverAnchor(envelope), diagnosticCorrelationId, cancellationToken),
             "move_window_centered_over" => platformAdapter.MoveWindowCenteredOver(
                 PlatformCommandParser.ParseMoveWindowCenteredOver(envelope)),
             "stash_window_bounds" => platformAdapter.StashWindowBounds(

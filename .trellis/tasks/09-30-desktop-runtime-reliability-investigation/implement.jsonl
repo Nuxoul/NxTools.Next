@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Preserve GPUI lifecycle, runtime supervisor, and bounded diagnostic contracts while investigating."}
+{"file": ".trellis/spec/nxtools-clipboard/backend/quality-guidelines.md", "reason": "Trace clipboard capture without changing ownership, format compatibility, or bounded queue behavior."}
+{"file": ".trellis/spec/nxtools-clipboard/backend/logging-guidelines.md", "reason": "Keep capture/reproduction telemetry structured and free of clipboard payloads or paths."}
+{"file": ".trellis/spec/nxtools-ipc/backend/index.md", "reason": "Trace bounded event delivery across PlatformHost IPC and desktop receivers."}

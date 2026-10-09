@@ -1,51 +1,5 @@
-# Quality Guidelines
+# Protocol quality
 
-> Code quality standards for backend development.
+Evidence: `repo:rust/crates/nxtools-protocol/src/lib.rs#tests`, `repo:csharp/NxTools.PlatformHost/Protocol/ProtocolEnvelope.cs`.
 
----
-
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+Roundtrip real enum/DTO payloads, version rejection, exact frame-size boundary and serde default/unknown-field compatibility. For a changed native command verify C# parser and actual owning callback/result, not only encode equality. Bounds/size units (logical/device pixels, bytes/ms, HWND/PID) are explicit in field contract; no name-only authorization. Keep optional source HWND/native result metadata coherent. `cargo test -p nxtools-protocol --lib` and affected IPC/native tests follow [verification](../../shared/verification.md); no new warning suppression.

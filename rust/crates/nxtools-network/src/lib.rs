@@ -12,6 +12,7 @@ use thiserror::Error;
 #[derive(Clone)]
 pub struct NetworkPolicy {
     settings: Arc<RwLock<NetworkSettings>>,
+    generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl NetworkPolicy {
@@ -19,6 +20,7 @@ impl NetworkPolicy {
         normalize_and_validate(&mut settings)?;
         Ok(Self {
             settings: Arc::new(RwLock::new(settings)),
+            generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
     }
 
@@ -28,7 +30,17 @@ impl NetworkPolicy {
             .settings
             .write()
             .map_err(|_| NetworkPolicyError::LockPoisoned)? = settings;
+        // Bumped after the write so a snapshot that observes the new generation
+        // also observes the new settings. Consumers that cache built clients use
+        // it to drop clients made under the previous route.
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         Ok(())
+    }
+
+    /// Monotonic counter that changes whenever the policy is updated.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub fn snapshot(&self) -> Result<NetworkOperationSnapshot, NetworkPolicyError> {
@@ -78,6 +90,17 @@ impl NetworkOperationSnapshot {
             NetworkRoute::Direct => "none",
             NetworkRoute::System => "system",
             NetworkRoute::ManualHttp { .. } => "configured",
+        }
+    }
+
+    /// Stable identity of the outbound route, used to decide whether a built
+    /// client can be reused. Two snapshots with equal keys build equivalent
+    /// clients.
+    pub fn route_key(&self) -> String {
+        match &self.route {
+            NetworkRoute::Direct => "direct".to_owned(),
+            NetworkRoute::System => "system".to_owned(),
+            NetworkRoute::ManualHttp { endpoint } => format!("manual:{endpoint}"),
         }
     }
 

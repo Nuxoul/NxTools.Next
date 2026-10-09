@@ -1,0 +1,2 @@
+{"file": ".trellis\\spec\\nxtools-desktop\\backend\\quality-guidelines.md", "reason": "Desktop GPUI rendering and lifecycle conventions"}
+{"file": ".trellis\\tasks\\10-02-link-detector-panel\\reference-scope.md", "reason": "Compact popup ownership, transparency and GPUI lease invariants"}

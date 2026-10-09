@@ -112,8 +112,13 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase);
     }
 
-    public void Launch()
+    public WindowsCommandResult Launch(Action<string>? stageChanged = null)
     {
+        if (Kind == ShellTargetKind.SelectInExplorer)
+        {
+            return ExplorerShellActivation.LaunchAndActivate(Target, stageChanged);
+        }
+
         ProcessStartInfo startInfo;
         switch (Kind)
         {
@@ -129,12 +134,6 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                 }
                 startInfo = new ProcessStartInfo("regedit.exe", "-m") { UseShellExecute = true };
                 break;
-            case ShellTargetKind.SelectInExplorer:
-                startInfo = new ProcessStartInfo("explorer.exe", $"/select,\"{Target}\"")
-                {
-                    UseShellExecute = true
-                };
-                break;
             case ShellTargetKind.RunElevated:
                 startInfo = new ProcessStartInfo(Target)
                 {
@@ -146,21 +145,9 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                 startInfo = new ProcessStartInfo(Target) { UseShellExecute = true };
                 break;
         }
-        var process = Process.Start(startInfo);
-        // Explorer windows launched from a background service process inherit
-        // its lack of foreground rights and open behind the app. A short
-        // foreground restore makes the new Explorer window take z-order top.
-        if (process is not null && Kind is ShellTargetKind.SelectInExplorer or ShellTargetKind.Open)
-        {
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(600);
-                if (!process.HasExited)
-                {
-                    _ = NativeMethods.SetForegroundWindow(process.MainWindowHandle);
-                }
-            });
-        }
+
+        _ = Process.Start(startInfo);
+        return new WindowsCommandResult(true);
     }
 
     internal static string BuildRegistryLastKey(string target, string? existingLastKey)

@@ -783,3 +783,39 @@ async fn probe_falls_back_to_plain_get_when_head_and_range_are_both_rejected() {
     assert!(!probe.supports_ranges);
     assert_eq!(probe.validator.etag.as_deref(), Some("\"get-only\""));
 }
+
+#[tokio::test]
+async fn probe_keeps_head_only_metadata_and_bounds_a_slow_head() {
+    let _contract = HTTP_CONTRACT_GATE.lock().await;
+    // `/head-slow` answers HEAD after 3 s with no Content-Disposition and the
+    // Range GET immediately. A real server answers both concurrently.
+    let server = DeterministicHttpServer::start_concurrent();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let probe = client
+        .probe(&request(&server, "/head-slow"))
+        .await
+        .expect("a slow HEAD still lets the probe complete");
+
+    // Both responses are awaited, so every header either one carries is used.
+    assert_eq!(probe.total_bytes, Some(16));
+    assert!(probe.supports_ranges);
+}
+
+#[tokio::test]
+async fn probe_uses_a_content_disposition_that_only_head_carries() {
+    let _contract = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+
+    let probe = client
+        .probe(&request(&server, "/head-names-the-file"))
+        .await
+        .expect("probe fixture whose HEAD names the file");
+
+    assert_eq!(
+        probe.file_name.as_deref(),
+        Some("from-head.bin"),
+        "a HEAD-only Content-Disposition must not be lost to the Range response"
+    );
+}

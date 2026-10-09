@@ -9,7 +9,7 @@ use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_2, SPACING_8, SPACING_12,
+    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_4, SPACING_8, SPACING_12,
 };
 use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
@@ -91,7 +91,7 @@ pub(crate) fn path_exclusion_setting(
                         .flex_1()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_2))
+                        .gap(px(SPACING_4))
                         .child(
                             div()
                                 .h(px(LINE_HEIGHT_BODY))

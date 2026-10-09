@@ -77,6 +77,8 @@ use crate::ui::components::field::{
     field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
     path_picker_shell,
 };
+#[cfg(test)]
+use crate::ui::components::list::RADIO_SELECTION_DOT_SIZE;
 use crate::ui::components::list::{compact_list_row, radio_list_row};
 use crate::ui::components::popover::{list_box, popover_shell};
 use crate::ui::components::settings::{
@@ -85,24 +87,32 @@ use crate::ui::components::settings::{
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
     BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, PROGRESS_TRACK_HEIGHT,
-    RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_2, SPACING_4, SPACING_6,
-    SPACING_8, SPACING_12, SPACING_16,
+    RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12,
+    SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
-    TEXT_LABEL, TEXT_META, TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
+    TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE, TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
 mod browser_handoff_impl;
 mod completion_shutdown_impl;
+#[cfg(debug_assertions)]
+pub(crate) mod completion_transition_preview;
 mod delete_confirmation;
+#[cfg(debug_assertions)]
+pub(crate) mod fixed_transition_preview;
 mod new_download_view;
+#[cfg(test)]
+mod polish_tests;
 mod schedule_view;
 mod settings_view;
 mod shutdown_window;
 mod task_window;
 mod task_windows_impl;
+#[cfg(debug_assertions)]
+pub(crate) mod visual_preview;
 
 use self::delete_confirmation::*;
 use self::new_download_view::*;
@@ -319,6 +329,15 @@ impl DownloadSettingsPathAction {
 struct PendingExtensionExport {
     command_id: uuid::Uuid,
     format: &'static str,
+    started_at: Instant,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingDownloadArtifactAction {
+    correlation_id: uuid::Uuid,
+    task_id: DownloadTaskId,
+    action: ShellOpenAction,
+    window: Option<TaskWindowIdentity>,
     started_at: Instant,
 }
 
@@ -548,6 +567,20 @@ fn download_task_icon_resource_key(task: &DownloadEngineTask) -> Option<String> 
     (!extension.is_empty()).then(|| format!("{DOWNLOAD_TASK_ICON_SIZE}:type:.{extension}"))
 }
 
+fn resolve_download_artifact_target(
+    final_path: Option<&Path>,
+    save_directory: &Path,
+    action: ShellOpenAction,
+) -> Result<(PathBuf, bool), String> {
+    if let Some(path) = final_path.filter(|path| path.is_file() || path.is_dir()) {
+        return Ok((path.to_path_buf(), false));
+    }
+    if action == ShellOpenAction::SelectInExplorer {
+        return Ok((save_directory.to_path_buf(), true));
+    }
+    Err("任务还没有可用的最终文件路径。".into())
+}
+
 struct DownloadShutdownWindow {
     window: AnyWindowHandle,
     view: Entity<DownloadShutdownCountdownView>,
@@ -596,6 +629,12 @@ pub(crate) struct DownloadApplication {
     new_download_window: Option<AnyWindowHandle>,
     #[cfg(test)]
     new_download_view: Option<Entity<NewDownloadView>>,
+    pending_new_download_handoff: Option<browser_handoff_impl::PendingNewDownloadHandoff>,
+    _new_download_close_subscription: Subscription,
+    #[cfg(test)]
+    new_download_native_handles_override: Option<(i64, i64)>,
+    #[cfg(test)]
+    new_download_handoff_commands: Vec<PlatformCommand>,
     schedule_window: Option<AnyWindowHandle>,
     settings_window: Option<AnyWindowHandle>,
     #[cfg(test)]
@@ -608,6 +647,7 @@ pub(crate) struct DownloadApplication {
     taskbar_overlay_edit_gesture_active: bool,
     pending_taskbar_overlay_gestures: HashSet<uuid::Uuid>,
     config: AppConfig,
+    pending_artifact_actions: HashMap<uuid::Uuid, PendingDownloadArtifactAction>,
     config_path: PathBuf,
     log_directory: PathBuf,
     database_path: PathBuf,
@@ -801,6 +841,22 @@ impl DownloadApplication {
             new_download_window: None,
             #[cfg(test)]
             new_download_view: None,
+            pending_new_download_handoff: None,
+            _new_download_close_subscription: {
+                let application = cx.entity().downgrade();
+                cx.on_window_closed(move |cx| {
+                    let application = application.clone();
+                    cx.defer(move |cx| {
+                        let _ = application.update(cx, |application, cx| {
+                            application.cleanup_new_download_handoff(cx);
+                        });
+                    });
+                })
+            },
+            #[cfg(test)]
+            new_download_native_handles_override: None,
+            #[cfg(test)]
+            new_download_handoff_commands: Vec::new(),
             schedule_window: None,
             settings_window: None,
             #[cfg(test)]
@@ -813,6 +869,7 @@ impl DownloadApplication {
             taskbar_overlay_edit_gesture_active: false,
             pending_taskbar_overlay_gestures: HashSet::new(),
             config,
+            pending_artifact_actions: HashMap::new(),
             config_path,
             log_directory,
             database_path,
@@ -1296,9 +1353,67 @@ impl DownloadApplication {
         action: ShellOpenAction,
         cx: &mut Context<Self>,
     ) {
-        let path = match self.final_artifact_path(task_id) {
-            Ok(path) => path.to_string_lossy().into_owned(),
+        self.open_task_artifact_with_window(task_id, action, None, cx);
+    }
+
+    pub(crate) fn open_task_artifact_from_task_window(
+        &mut self,
+        task_id: DownloadTaskId,
+        action: ShellOpenAction,
+        window: TaskWindowIdentity,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_task_artifact_with_window(task_id, action, Some(window), cx);
+    }
+
+    fn open_task_artifact_with_window(
+        &mut self,
+        task_id: DownloadTaskId,
+        action: ShellOpenAction,
+        window: Option<TaskWindowIdentity>,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .pending_artifact_actions
+            .values()
+            .any(|pending| pending.task_id == task_id)
+        {
+            info!(
+                event = "download.artifact.shell_action_coalesced",
+                task_id = %task_id.as_uuid(),
+                ?action,
+                "duplicate download artifact action ignored while a result is pending"
+            );
+            return;
+        }
+        let correlation_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+
+        let detail = self
+            .task_detail
+            .as_ref()
+            .filter(|detail| detail.task.task.id() == task_id)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| load_download_task_detail(&self.engine, task_id));
+        let (target, used_save_directory_fallback) = match detail.and_then(|detail| {
+            resolve_download_artifact_target(
+                detail.task.final_path.as_deref(),
+                &detail.task.task.request().save_directory,
+                action,
+            )
+        }) {
+            Ok(target) => target,
             Err(error) => {
+                warn!(
+                    event = "download.artifact.shell_action_failed",
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    ?action,
+                    failure_kind = "target_unavailable",
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download artifact target could not be resolved"
+                );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         format!("download-artifact-missing-{}", task_id.as_uuid()),
@@ -1310,32 +1425,132 @@ impl DownloadApplication {
                 return;
             }
         };
-        match self
-            .platform
-            .send_command(PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+        if used_save_directory_fallback && let Err(error) = std::fs::create_dir_all(&target) {
+            warn!(
+                event = "download.artifact.shell_action_failed",
+                %correlation_id,
+                task_id = %task_id.as_uuid(),
+                ?action,
+                failure_kind = "save_directory_unavailable",
+                native_error_code = ?error.raw_os_error(),
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "download reveal could not prepare the task save directory"
+            );
+            self.notifications.update(cx, |notifications, cx| {
+                notifications.show_error(
+                    format!("download-artifact-open-{}", task_id.as_uuid()),
+                    "无法打开所在文件夹",
+                    "保存目录无法访问，完成窗口仍保留，可检查权限后重试。",
+                    cx,
+                );
+            });
+            return;
+        }
+        let path = target.to_string_lossy().into_owned();
+        info!(
+            event = "download.artifact.reveal_target_resolved",
+            %correlation_id,
+            task_id = %task_id.as_uuid(),
+            used_save_directory_fallback,
+            target_is_directory = target.is_dir(),
+            "download reveal target resolved"
+        );
+
+        let pending = PendingDownloadArtifactAction {
+            correlation_id,
+            task_id,
+            action,
+            window,
+            started_at,
+        };
+        match self.platform.send_command_correlated(
+            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
                 target: path,
                 action,
-            })) {
-            Ok(correlation_id) => {
+            }),
+            correlation_id,
+        ) {
+            Ok(command_id) => {
+                self.pending_artifact_actions.insert(command_id, pending);
                 info!(
                     event = "download.artifact.shell_action_accepted",
                     %correlation_id,
+                    %command_id,
                     task_id = %task_id.as_uuid(),
                     ?action,
+                    from_task_window = window.is_some(),
                     "download artifact Shell action accepted"
                 );
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT)
+                        .await;
+                    let _ = this.update(cx, |application, cx| {
+                        application.artifact_action_timed_out(command_id, cx);
+                    });
+                })
+                .detach();
             }
             Err(error) => {
+                warn!(
+                    event = "download.artifact.shell_action_failed",
+                    %correlation_id,
+                    task_id = %task_id.as_uuid(),
+                    ?action,
+                    failure_kind = match &error {
+                        PlatformBridgeError::Disconnected => "platform_disconnected",
+                        PlatformBridgeError::Busy => "queue_busy",
+                        PlatformBridgeError::DuplicateCommandId => "duplicate_command_id",
+                    },
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "download artifact Shell action was not accepted"
+                );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         format!("download-artifact-open-{}", task_id.as_uuid()),
-                        "无法执行文件操作",
-                        error.to_string(),
+                        if action == ShellOpenAction::SelectInExplorer {
+                            "无法打开所在文件夹"
+                        } else {
+                            "无法执行文件操作"
+                        },
+                        "资源管理器操作未能排入队列，完成窗口仍保留，可重试。",
                         cx,
                     );
                 });
             }
         }
+    }
+
+    fn artifact_action_timed_out(&mut self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_artifact_actions.remove(&command_id) else {
+            return;
+        };
+        warn!(
+            event = "download.artifact.shell_action_failed",
+            correlation_id = %pending.correlation_id,
+            %command_id,
+            task_id = %pending.task_id.as_uuid(),
+            ?pending.action,
+            failure_kind = "timeout",
+            elapsed_ms = pending.started_at.elapsed().as_millis(),
+            "download artifact Shell action timed out"
+        );
+        self.notifications.update(cx, |notifications, cx| {
+            notifications.show_error(
+                format!("download-artifact-open-{}", pending.task_id.as_uuid()),
+                if pending.action == ShellOpenAction::SelectInExplorer {
+                    "无法打开所在文件夹"
+                } else {
+                    "无法执行文件操作"
+                },
+                if pending.action == ShellOpenAction::SelectInExplorer {
+                    "未能确认资源管理器已切到目标文件夹；完成窗口仍保留，可重试。"
+                } else {
+                    "Windows 未能确认文件操作，请重试。"
+                },
+                cx,
+            );
+        });
     }
 
     fn begin_task_file_drag(
@@ -2132,6 +2347,7 @@ impl DownloadApplication {
                 let failure_kind = match error {
                     PlatformBridgeError::Disconnected => "platform_disconnected",
                     PlatformBridgeError::Busy => "queue_busy",
+                    PlatformBridgeError::DuplicateCommandId => "duplicate_command_id",
                 };
                 self.finish_download_settings_path_action_failure(pending, failure_kind, None, cx);
             }
@@ -3110,6 +3326,37 @@ impl DownloadApplication {
                 pending_command_count = pending_command_ids.len(),
                 "downloads invalidated commands from the disconnected PlatformHost session"
             );
+            if let Some(pending) = self.pending_new_download_handoff.as_ref() {
+                self.finish_new_download_handoff(pending.command_id, false, "disconnected", cx);
+            }
+            for (command_id, pending) in self.pending_artifact_actions.drain() {
+                warn!(
+                    event = "download.artifact.shell_action_failed",
+                    correlation_id = %pending.correlation_id,
+                    %command_id,
+                    task_id = %pending.task_id.as_uuid(),
+                    ?pending.action,
+                    failure_kind = "platform_disconnected",
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download artifact Shell action was invalidated by PlatformHost disconnect"
+                );
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        format!("download-artifact-open-{}", pending.task_id.as_uuid()),
+                        if pending.action == ShellOpenAction::SelectInExplorer {
+                            "无法打开所在文件夹"
+                        } else {
+                            "无法执行文件操作"
+                        },
+                        if pending.action == ShellOpenAction::SelectInExplorer {
+                            "Windows 连接已断开，完成窗口仍保留，可重新点击打开所在文件夹。"
+                        } else {
+                            "Windows 连接已断开，任务窗口仍可重试。"
+                        },
+                        cx,
+                    );
+                });
+            }
             self.pending_task_icons.clear();
             self.pending_task_icon_resources.clear();
             self.pending_task_window_activations.clear();
@@ -3154,6 +3401,89 @@ impl DownloadApplication {
         else {
             return;
         };
+        if self
+            .pending_new_download_handoff
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == correlation_id)
+        {
+            let application = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                let _ = application.update(cx, |application, cx| {
+                    application.finish_new_download_handoff(
+                        correlation_id,
+                        result.success,
+                        "native_result",
+                        cx,
+                    );
+                });
+            });
+            return;
+        }
+        if let Some(pending) = self.pending_artifact_actions.remove(&correlation_id) {
+            if result.success {
+                if let Some(window) = pending.window {
+                    if self.close_task_window_if_identity(pending.task_id, window, cx) {
+                        info!(
+                            event = "download.artifact.task_window_closed",
+                            correlation_id = %pending.correlation_id,
+                            command_id = %correlation_id,
+                            task_id = %pending.task_id.as_uuid(),
+                            window_handle = window.native_window_handle,
+                            window_generation = %window.generation,
+                            "download artifact action completed and task window closed"
+                        );
+                    } else {
+                        info!(
+                            event = "download.artifact.task_window_close_suppressed",
+                            correlation_id = %pending.correlation_id,
+                            command_id = %correlation_id,
+                            task_id = %pending.task_id.as_uuid(),
+                            window_handle = window.native_window_handle,
+                            window_generation = %window.generation,
+                            reason = "window_generation_changed",
+                            "download artifact action completed but its task window was no longer current"
+                        );
+                    }
+                }
+                info!(
+                    event = "download.artifact.shell_action_completed",
+                    correlation_id = %pending.correlation_id,
+                    command_id = %correlation_id,
+                    task_id = %pending.task_id.as_uuid(),
+                    ?pending.action,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download artifact Shell action completed"
+                );
+            } else {
+                warn!(
+                    event = "download.artifact.shell_action_failed",
+                    correlation_id = %pending.correlation_id,
+                    command_id = %correlation_id,
+                    task_id = %pending.task_id.as_uuid(),
+                    ?pending.action,
+                    native_error_code = ?result.native_error_code,
+                    elapsed_ms = pending.started_at.elapsed().as_millis(),
+                    "download artifact Shell action failed"
+                );
+                self.notifications.update(cx, |notifications, cx| {
+                    notifications.show_error(
+                        format!("download-artifact-open-{}", pending.task_id.as_uuid()),
+                        if pending.action == ShellOpenAction::SelectInExplorer {
+                            "无法打开所在文件夹"
+                        } else {
+                            "无法执行文件操作"
+                        },
+                        if pending.action == ShellOpenAction::SelectInExplorer {
+                            "资源管理器未能确认目标文件夹已切到前台；完成窗口仍保留，可重试。"
+                        } else {
+                            "Windows 未能完成文件操作，请重试。"
+                        },
+                        cx,
+                    );
+                });
+            }
+            return;
+        }
         if let Some(pending) = self.pending_task_icons.remove(&correlation_id) {
             let native_error_code = result.native_error_code;
             let error_present = result.error.is_some();

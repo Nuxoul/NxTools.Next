@@ -1,54 +1,5 @@
-# Directory Structure
+# Browser host structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/apps/nxtools-browser-host/src/main.rs`, `repo:rust/apps/nxtools-browser-host/src/lib.rs`, `repo:rust/apps/nxtools-browser-host/src/blob_upload.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+main frames stdin/stdout and initialization; lib validates browser protocol2/max256KiB, bounded request fields then converts typed Download commands, readiness/interactive/background start policy and response identity; Blob module owns loopback capability/chunk staging only. Engine owns persistent tasks, C# owns registry installation, extension owns browser item until confirmed acceptance. BrowserRequest payload Value is decoded/validated at this boundary, not passed raw into multiple handlers. [Architecture](../../shared/architecture.md).

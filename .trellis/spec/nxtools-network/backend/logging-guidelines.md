@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Network diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-network/src/lib.rs#proxy_mode_name`, `repo:rust/crates/nxtools-network/src/lib.rs#source`, `repo:rust/crates/nxtools-network/src/lib.rs#route_key`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Network library exposes mode/source labels for feature-owner lifecycle events and otherwise needn't log client construction. Do not log route_key/manual endpoint, URLs/proxy credentials or raw request errors. Consumer correlation accompanies accepted/start/terminal elapsed metadata; no per-byte/client-pool/frame logs. [Shared privacy](../../shared/engineering.md) applies even when route metadata originates from settings.

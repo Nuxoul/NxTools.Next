@@ -3,12 +3,16 @@
 //! dwell time; clicking a row copies the value and closes the panel.
 
 use crate::clipboard::ClipboardApplication;
+use crate::theme::Theme;
 use crate::tools::link_detector::DetectedLinkKind;
+use crate::ui::metrics::{RADIUS_CONTROL, RADIUS_FLOATING, SPACING_4, SPACING_8};
+use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY};
 use gpui::{
     AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, WeakEntity, Window, div, px, rgb,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div, px,
 };
 use gpui_component::Icon;
+use gpui_component::button::{Button, ButtonVariants};
 use tracing::info;
 
 pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
@@ -31,13 +35,8 @@ pub(crate) fn link_panel_route(
         return LinkPanelRoute::CopyOnly;
     }
     match kind {
-        DetectedLinkKind::Web => {
-            if auto_open_browser {
-                LinkPanelRoute::Browser
-            } else {
-                LinkPanelRoute::CopyOnly
-            }
-        }
+        DetectedLinkKind::Web if auto_open_browser => LinkPanelRoute::Browser,
+        DetectedLinkKind::Web => LinkPanelRoute::CopyOnly,
         DetectedLinkKind::LocalFile => LinkPanelRoute::OpenShell {
             action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
         },
@@ -45,6 +44,27 @@ pub(crate) fn link_panel_route(
             action: nxtools_protocol::ShellOpenAction::Open,
         },
     }
+}
+pub(crate) fn link_panel_shell_command(
+    route: LinkPanelRoute,
+    target: &str,
+    target_kind: DetectedLinkKind,
+) -> Option<nxtools_protocol::PlatformCommand> {
+    let LinkPanelRoute::OpenShell { action } = route else {
+        return None;
+    };
+    if !matches!(
+        target_kind,
+        DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory
+    ) {
+        return None;
+    }
+    Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
+        nxtools_protocol::OpenShellTargetCommand {
+            target: target.to_owned(),
+            action,
+        },
+    ))
 }
 
 pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
@@ -145,18 +165,8 @@ impl LinkPanelView {
 }
 
 impl Render for LinkPanelView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Spec palette (v1.0): floating panel = bg-surface-3 #27272a, 6px
-        // radius, 1px #3f3f46 border, text-primary/secondary hierarchy,
-        // accent-primary hover rows, footer with auto-hide countdown.
-        let surface = rgb(0x27272a);
-        let border = rgb(0x3f3f46);
-        let text_primary = rgb(0xf4f4f5);
-        let text_secondary = rgb(0xa1a1aa);
-        let text_muted = rgb(0x71717a);
-        let accent = rgb(0x0ea5e9);
-        let accent_hover = rgb(0x38bdf8);
-        let success = rgb(0x10b981);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::zed_dark();
         let application = self.application.clone();
         let visible_count = if self.expanded || self.links.len() <= 1 {
             self.links.len()
@@ -167,33 +177,64 @@ impl Render for LinkPanelView {
         let mut container = div()
             .debug_selector(|| "link-panel".into())
             .size_full()
-            .bg(surface)
+            .font_family(UI_FONT_FAMILY)
+            .bg(theme.surface)
             .border_1()
-            .border_color(border)
-            .rounded(px(6.0))
+            .border_color(theme.border_subtle)
+            .rounded(px(RADIUS_FLOATING))
             .overflow_hidden()
             .flex()
             .flex_col()
-            .py(px(4.0));
+            .py(px(SPACING_4));
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
             let copy_value = link.copy_value.clone();
             let kind = link.kind;
             let route = link_panel_route(kind, self.auto_open_browser, self.copy_only);
+            let focus = window
+                .use_keyed_state(("link-panel-focus", index), cx, |_, cx| {
+                    cx.focus_handle().tab_stop(true)
+                })
+                .read(cx)
+                .clone();
             container = container.child(
                 div()
                     .id(("link-panel-row", index))
+                    .track_focus(&focus)
+                    .border_2()
+                    .border_color(if focus.is_focused(window) {
+                        theme.focus_ring
+                    } else {
+                        gpui::transparent_black().into()
+                    })
+                    .on_key_down(move |event, window, cx| {
+                        if focus.is_focused(window)
+                            && event.keystroke.key == "tab"
+                            && !event.keystroke.modifiers.control
+                            && !event.keystroke.modifiers.alt
+                            && !event.keystroke.modifiers.platform
+                        {
+                            if event.keystroke.modifiers.shift {
+                                window.focus_prev();
+                            } else {
+                                window.focus_next();
+                            }
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        }
+                    })
                     .debug_selector(move || format!("link-panel-row-{index}"))
-                    .h(px(28.0))
+                    .h(px(LINK_PANEL_ROW_HEIGHT))
                     .min_w_0()
-                    .mx(px(4.0))
-                    .px(px(8.0))
-                    .rounded(px(6.0))
+                    .mx(px(SPACING_4))
+                    .px(px(SPACING_8))
+                    .rounded(px(RADIUS_CONTROL))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(px(SPACING_4))
                     .cursor_pointer()
-                    .hover(move |style| style.bg(rgb(0x3f3f46)))
+                    .hover(move |style| style.bg(theme.surface_hover))
+                    .active(move |style| style.bg(theme.surface_pressed))
                     .on_click(move |_event, window, cx| {
                         let route = route;
                         let copy_value = copy_value.clone();
@@ -226,16 +267,21 @@ impl Render for LinkPanelView {
                         });
                     })
                     .child(
-                        Icon::new(crate::icons::MaterialIcon::ContentCopy)
-                            .size(px(12.0))
-                            .text_color(text_muted),
+                        Icon::new(match kind {
+                            DetectedLinkKind::Web => crate::icons::MaterialIcon::Language,
+                            DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory => {
+                                crate::icons::MaterialIcon::Folder
+                            }
+                        })
+                        .size(px(16.0))
+                        .text_color(theme.text_secondary),
                     )
                     .child(
                         div()
                             .min_w_0()
                             .flex_1()
-                            .text_size(px(12.0))
-                            .text_color(text_primary)
+                            .text_size(px(TEXT_BODY))
+                            .text_color(theme.text)
                             .truncate()
                             .child(link.display.clone()),
                     ),
@@ -243,20 +289,18 @@ impl Render for LinkPanelView {
         }
         if needs_expander {
             container = container.child(
-                div()
-                    .id("link-panel-expander")
+                Button::new("link-panel-expander")
+                    .ghost()
                     .debug_selector(|| "link-panel-expander".into())
                     .h(px(LINK_PANEL_EXPANDER_HEIGHT))
-                    .mx(px(4.0))
-                    .px(px(8.0))
-                    .rounded(px(6.0))
+                    .mx(px(SPACING_4))
+                    .px(px(SPACING_8))
+                    .rounded(px(RADIUS_CONTROL))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
-                    .cursor_pointer()
-                    .text_size(px(11.0))
-                    .text_color(text_secondary)
-                    .hover(move |style| style.bg(rgb(0x3f3f46)))
+                    .gap(px(SPACING_4))
+                    .text_size(px(TEXT_LABEL))
+                    .text_color(theme.text_secondary)
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.expanded = true;
                         // Grow the window to the expanded layout: every row
@@ -271,7 +315,7 @@ impl Render for LinkPanelView {
                         }
                         cx.notify();
                     }))
-                    .child(format!(
+                    .label(format!(
                         "展开其余 {} 个链接",
                         self.links.len() - visible_count
                     )),
@@ -280,42 +324,51 @@ impl Render for LinkPanelView {
         container = container.child(
             div()
                 .debug_selector(|| "link-panel-footer".into())
-                .h(px(22.0))
-                .mt(px(2.0))
-                .mx(px(4.0))
-                .px(px(8.0))
+                .h(px(LINK_PANEL_FOOTER_HEIGHT))
+                .mt(px(LINK_PANEL_FOOTER_MARGIN_TOP))
+                .mx(px(SPACING_4))
+                .px(px(SPACING_8))
                 .flex()
                 .items_center()
                 .justify_between()
                 .border_t_1()
-                .border_color(border)
-                .child(div().text_size(px(10.0)).text_color(text_secondary).child(
-                    if self.links.len() > 1 {
-                        format!("{} 个链接", self.links.len())
-                    } else {
-                        "1 个链接".to_owned()
-                    },
-                ))
+                .border_color(theme.border_subtle)
+                .child(
+                    div()
+                        .text_size(px(TEXT_META))
+                        .text_color(theme.text_secondary)
+                        .child(if self.links.len() > 1 {
+                            format!("{} 个链接", self.links.len())
+                        } else {
+                            "1 个链接".to_owned()
+                        }),
+                )
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(4.0))
+                        .gap(px(SPACING_4))
                         .child(
                             div()
-                                .text_size(px(10.0))
-                                .text_color(success)
-                                .child("点击复制"),
+                                .text_size(px(TEXT_META))
+                                .text_color(theme.text_secondary)
+                                .child(if self.copy_only {
+                                    "点击复制"
+                                } else if self.auto_open_browser {
+                                    "网页可打开 · 本地可打开"
+                                } else {
+                                    "网页仅复制 · 本地可打开"
+                                }),
                         )
                         .child(
                             div()
-                                .text_size(px(10.0))
-                                .text_color(text_muted)
+                                .text_size(px(TEXT_META))
+                                .text_color(theme.text_muted)
                                 .child("自动消失"),
                         ),
                 ),
         );
-        let _ = (accent, accent_hover, application);
+        let _ = application;
         container
     }
 }
@@ -366,6 +419,45 @@ mod tests {
                 action: nxtools_protocol::ShellOpenAction::Open,
             }
         );
+
+        let file_target = r"C:\Users\Administrator\Throne.exe";
+        assert_eq!(
+            link_panel_shell_command(
+                link_panel_route(DetectedLinkKind::LocalFile, true, false),
+                file_target,
+                DetectedLinkKind::LocalFile,
+            ),
+            Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
+                nxtools_protocol::OpenShellTargetCommand {
+                    target: file_target.to_owned(),
+                    action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
+                }
+            )),
+            "an existing .exe path is passed unchanged to Explorer selection"
+        );
+        let directory_target = r"C:\Users\Administrator\Downloads";
+        assert_eq!(
+            link_panel_shell_command(
+                link_panel_route(DetectedLinkKind::LocalDirectory, true, false),
+                directory_target,
+                DetectedLinkKind::LocalDirectory,
+            ),
+            Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
+                nxtools_protocol::OpenShellTargetCommand {
+                    target: directory_target.to_owned(),
+                    action: nxtools_protocol::ShellOpenAction::Open,
+                }
+            ))
+        );
+        assert!(
+            link_panel_shell_command(
+                link_panel_route(DetectedLinkKind::LocalFile, true, false),
+                "https://example.test/app.exe",
+                DetectedLinkKind::Web,
+            )
+            .is_none()
+        );
+        assert!(!file_target.starts_with("https://"));
     }
 
     #[test]
@@ -378,9 +470,16 @@ mod tests {
             link_panel_route(DetectedLinkKind::Web, false, false),
             LinkPanelRoute::CopyOnly
         );
-        assert_eq!(
-            link_panel_route(DetectedLinkKind::LocalFile, true, true),
-            LinkPanelRoute::CopyOnly
-        );
+        for kind in [
+            DetectedLinkKind::Web,
+            DetectedLinkKind::LocalFile,
+            DetectedLinkKind::LocalDirectory,
+        ] {
+            assert_eq!(
+                link_panel_route(kind, true, true),
+                LinkPanelRoute::CopyOnly,
+                "copy-only mode must not launch any target kind"
+            );
+        }
     }
 }

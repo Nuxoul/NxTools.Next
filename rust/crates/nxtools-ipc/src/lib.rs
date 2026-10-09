@@ -383,6 +383,17 @@ impl PlatformBridge {
         self.send_command_envelope(Envelope::new(Message::PlatformCommand(command)))
     }
 
+    /// Sends a command using an ID already installed in caller-owned pending state.
+    pub fn send_command_with_id(
+        &self,
+        command: PlatformCommand,
+        command_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        let mut envelope = Envelope::new(Message::PlatformCommand(command));
+        envelope.id = command_id;
+        self.send_command_envelope(envelope)
+    }
+
     pub fn send_command_correlated(
         &self,
         command: PlatformCommand,
@@ -399,6 +410,9 @@ impl PlatformBridge {
             .router
             .lock()
             .map_err(|_| PlatformBridgeError::Disconnected)?;
+        if router.pending.contains_key(&command_id) {
+            return Err(PlatformBridgeError::DuplicateCommandId);
+        }
         let active = router
             .active
             .as_ref()
@@ -446,6 +460,8 @@ pub enum PlatformBridgeError {
     Disconnected,
     #[error("the Windows platform command queue is full")]
     Busy,
+    #[error("the caller-supplied platform command ID is already pending")]
+    DuplicateCommandId,
 }
 
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
@@ -1005,6 +1021,80 @@ mod tests {
             }))
             .expect_err("disconnected command must be rejected");
         assert!(matches!(error, PlatformBridgeError::Disconnected));
+    }
+
+    #[test]
+    fn caller_supplied_command_id_is_used_for_result_routing() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let command_id = uuid::Uuid::new_v4();
+        let result = PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: None,
+        };
+
+        assert_eq!(
+            bridge
+                .send_command_with_id(
+                    PlatformCommand::PasteText(PasteTextCommand {
+                        text: "routed".into(),
+                        paste_after_write: true,
+                        target_window_handle: 42,
+                        target_focus_window_handle: 43,
+                    }),
+                    command_id,
+                )
+                .expect("caller-ID command"),
+            command_id
+        );
+        let envelope = server
+            .try_receive_command_for_contract_test()
+            .expect("queued command");
+        assert_eq!(envelope.id, command_id);
+
+        server
+            .send_notification_for_contract_test(PlatformNotification::CommandResult {
+                correlation_id: command_id,
+                result,
+            })
+            .expect("publish command result");
+        assert!(matches!(
+            bridge.notification_receiver().try_recv(),
+            Ok(PlatformNotification::CommandResult { correlation_id, .. }) if correlation_id == command_id
+        ));
+    }
+
+    #[test]
+    fn caller_supplied_command_id_cannot_replace_an_inflight_command() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let command_id = uuid::Uuid::new_v4();
+        let command = || {
+            PlatformCommand::PasteText(PasteTextCommand {
+                text: "same id".into(),
+                paste_after_write: true,
+                target_window_handle: 42,
+                target_focus_window_handle: 43,
+            })
+        };
+        bridge
+            .send_command_with_id(command(), command_id)
+            .expect("first command");
+
+        assert_eq!(
+            bridge.send_command_with_id(command(), command_id),
+            Err(PlatformBridgeError::DuplicateCommandId)
+        );
+        assert_eq!(
+            server
+                .try_receive_command_for_contract_test()
+                .expect("original queued command")
+                .id,
+            command_id
+        );
+        assert!(server.try_receive_command_for_contract_test().is_err());
     }
 
     #[test]

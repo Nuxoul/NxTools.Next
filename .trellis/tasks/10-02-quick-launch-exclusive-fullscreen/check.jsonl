@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/nxtools-ipc/backend/logging-guidelines.md", "reason": "Review correlated, bounded and payload-free Windows fullscreen/hotkey diagnostics."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify persisted setting, serde defaults, IPC and C# native decision agree end to end."}
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Check Quick Launch setting UI, deferred state mutation, keyboard accessibility and regression coverage."}

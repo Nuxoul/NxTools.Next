@@ -1,51 +1,5 @@
-# Database Guidelines
+# Indexer cache and settings (SQL not applicable)
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/apps/nxtools-indexer/src/mft/cache.rs#MappedSnapshot`, `repo:rust/apps/nxtools-indexer/src/settings.rs`, `repo:rust/apps/nxtools-indexer/src/usn.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+No SQL connection/schema: cache VERSION3/magic/layout bounds validates mapped base plus persisted delta and mount/journal identity. Keep immutable searchable base and overlay, version compatibility and atomic staged persistence/compaction; restart restores both, not rebuild due desktop reconnect. Native mmap unsafe is narrow with file lifetime and bounds checks. Settings use synced temporary and last-good backup; corrupt existing primary+backup fails closed instead of broad default scope. A bounded RebuildRequired with searchable last-good is maintenance, not last_error. Genuine persistence/compaction/poll worker failures remain faults. Don't invent Listary native algorithms or universal ORM. [Verification](../../shared/verification.md).

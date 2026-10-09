@@ -4,7 +4,7 @@ use gpui_component::menu::{PopupMenu, PopupMenuItem};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, SPACING_6};
+use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, SPACING_8};
 use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY, UI_FONT_FAMILY};
 
 const MENU_MIN_WIDTH: f32 = 192.0;
@@ -49,7 +49,7 @@ pub(crate) fn context_menu_item(
             .h(px(CONTROL_HEIGHT_ACTION))
             .flex()
             .items_center()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .font_family(UI_FONT_FAMILY)
             .text_size(px(TEXT_BODY))
             .line_height(px(LINE_HEIGHT_BODY))

@@ -1,38 +1,9 @@
-# Backend Development Guidelines
+# IPC backend
 
-> Best practices for backend development in this project.
+Evidence: `repo:rust/crates/nxtools-ipc/src/lib.rs#PlatformBridge`, `repo:rust/crates/nxtools-ipc/src/local_pipe.rs`.
 
----
+## Pre-Development Checklist
+Read [architecture](../../shared/architecture.md), [engineering](../../shared/engineering.md), [structure](directory-structure.md), [persistence](database-guidelines.md), [errors](error-handling.md), [logging](logging-guidelines.md), [quality](quality-guidelines.md). Preserve pending-before-send and generation isolation; pipe ACL does not authorize service identity.
 
-## Overview
-
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+## Quality Check
+`cargo test -p nxtools-ipc --lib`; immediate-result, queue-full, timeout/replacement/disconnect and temporary-pipe deadline cases. Use [verification](../../shared/verification.md) memory settings and scoped strict lint/check/fmt; never real protected-service commands without approval. [Entry](../../index.md).

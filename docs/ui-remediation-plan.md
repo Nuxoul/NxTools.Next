@@ -5,6 +5,13 @@
 > 视觉目标：以 Zed 为主参考，以当前剪贴板工作区为产品内基准，保持高级、简约、极客、紧凑。
 > 适用范围：桌面 GPUI、浏览器扩展 Popup、网页媒体悬浮入口与拖放目标。
 
+> Historical implementation/evidence ledger. For new work, the later approved
+> [staged design](../.trellis/tasks/10-02-staged-desktop-ui/design.md) governs visual targets;
+> [the target/current/exception matrix](../.trellis/spec/shared/ui-design.md) records conflicts
+> with these earlier dimensions and current code. Preserve the existing behavioral/native
+> invariants and phase evidence; do not mechanically replace values or treat source-complete
+> slices as current visual/native release acceptance. [Standards entry](../.trellis/spec/index.md).
+
 ## 1. 文档目的
 
 下载、速启和剪贴板的主要功能已经基本具备，但视觉实现尚未形成统一的组件层和布局规则。

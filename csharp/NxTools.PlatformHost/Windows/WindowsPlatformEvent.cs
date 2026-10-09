@@ -3,6 +3,8 @@ namespace NxTools.PlatformHost.Windows;
 using NxTools.PlatformHost.Protocol;
 
 internal abstract record WindowsPlatformEvent;
+internal sealed record SystemMotionPreferenceChangedEvent(
+    Guid CorrelationId, bool ReducedMotion, int NativeErrorCode) : WindowsPlatformEvent;
 
 internal sealed record TrayActionRequestedEvent(Guid CorrelationId, string Action) : WindowsPlatformEvent;
 
@@ -68,8 +70,8 @@ internal sealed record QuickLaunchPanelRequestedEvent(
     uint CursorDisplayIndex,
     uint CursorMonitorDpi,
     long RequestedAtUnixMs,
-    DirectoryNavigationContext? DirectoryNavigationContext = null) : WindowsPlatformEvent;
-
+    DirectoryNavigationContext? DirectoryNavigationContext = null,
+    Guid? CorrelationId = null) : WindowsPlatformEvent;
 internal sealed record QuickLaunchDirectoryContextResolvedEvent(
     long TargetWindowHandle,
     long RequestedAtUnixMs,

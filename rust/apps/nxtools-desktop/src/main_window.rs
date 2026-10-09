@@ -49,7 +49,8 @@ use crate::quick_launch::{
 use crate::shell::{MainModule, ShellState};
 use crate::theme::Theme;
 use crate::ui::components::action::{
-    SegmentedOption, action_button, icon_action, labelled_icon_action, segmented_control,
+    SegmentedOption, action_button, focused_action, icon_action, labelled_icon_action,
+    segmented_control,
 };
 use crate::ui::components::custom_command_editor::{
     CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState,
@@ -70,13 +71,13 @@ use crate::ui::components::volume_scope::{
     automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,
 };
 use crate::ui::metrics::{
-    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, GROUP_HEADER_HEIGHT, PILL_PADDING_X, RADIUS_CONTROL,
-    SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_2, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
-    SPACING_16, SPACING_24, TITLEBAR_HEIGHT,
+    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, GROUP_HEADER_HEIGHT, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT,
+    SIDEBAR_WIDTH, SPACING_4, SPACING_8, SPACING_12, SPACING_16, SPACING_24, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
-    TEXT_LABEL, TEXT_META, TEXT_TITLE, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_PAGE_TITLE,
+    LINE_HEIGHT_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE, TEXT_TITLE,
+    UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 mod clipboard_page;
 mod download_page;
@@ -84,6 +85,8 @@ mod notifications;
 mod quick_launch_page;
 mod shell;
 mod tools_page;
+#[cfg(debug_assertions)]
+pub(crate) mod visual_preview;
 
 use self::clipboard_page::*;
 use self::download_page::*;
@@ -133,7 +136,6 @@ pub(crate) struct MainWindow {
     system_settings: Rc<RefCell<SystemSettings>>,
     notifications: Entity<NotificationCenter>,
     download_search_input: gpui::Entity<InputState>,
-    exclusions_input: gpui::Entity<InputState>,
     custom_command_keyword: gpui::Entity<InputState>,
     custom_command_title: gpui::Entity<InputState>,
     custom_command_program: gpui::Entity<InputState>,
@@ -162,6 +164,8 @@ pub(crate) struct MainWindow {
     custom_command_run_as_admin: bool,
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
+    module_focus: [FocusHandle; 4],
+    tool_focus: FocusHandle,
     recording_hotkey: Option<HotkeyRecordingTarget>,
     clipboard_overview: ClipboardOverview,
     clipboard_overview_generation: u64,
@@ -176,8 +180,8 @@ pub(crate) struct MainWindowShellContext {
     pub(crate) system_settings: Rc<RefCell<SystemSettings>>,
 }
 impl MainWindow {
-    pub(crate) fn render_tools(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        tools_page::render_tools(self, cx)
+    pub(crate) fn render_tools(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        tools_page::render_tools(self, window, cx)
     }
 
     pub(crate) fn new(
@@ -189,21 +193,6 @@ impl MainWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let excluded_processes = clipboard
-            .upgrade()
-            .map(|application| {
-                application
-                    .read(cx)
-                    .clipboard_settings()
-                    .excluded_processes
-                    .join("; ")
-            })
-            .unwrap_or_default();
-        let exclusions_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(excluded_processes)
-                .placeholder("KeePass.exe; Bitwarden.exe")
-        });
         let download_search_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索文件名或地址"));
         let initial_custom_command = quick_launch.upgrade().and_then(|application| {
@@ -254,19 +243,6 @@ impl MainWindow {
                 .default_value(initial_working_directory.clone())
                 .placeholder("可选工作目录")
         });
-        let exclusions_subscription = cx.subscribe_in(
-            &exclusions_input,
-            window,
-            |this, input, event: &InputEvent, _window, cx| {
-                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
-                    let value = input.read(cx).value().to_string();
-                    let _ = this.clipboard.update(cx, |application, _| {
-                        application.set_clipboard_excluded_processes(&value);
-                    });
-                    cx.notify();
-                }
-            },
-        );
         let download_search_subscription = cx.subscribe_in(
             &download_search_input,
             window,
@@ -380,7 +356,7 @@ impl MainWindow {
                     cx.notify();
                 }
             });
-        let mut subscriptions = vec![exclusions_subscription, download_search_subscription];
+        let mut subscriptions = vec![download_search_subscription];
         subscriptions.extend(clipboard_subscription);
         subscriptions.extend(quick_launch_subscription);
         subscriptions.extend(downloads_subscription);
@@ -414,7 +390,6 @@ impl MainWindow {
             system_settings: shell_context.system_settings,
             notifications,
             download_search_input,
-            exclusions_input,
             custom_command_keyword,
             custom_command_title,
             custom_command_program,
@@ -451,6 +426,8 @@ impl MainWindow {
                 .as_ref()
                 .is_some_and(|command| command.run_silently),
             hotkey_focus,
+            module_focus: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
+            tool_focus: cx.focus_handle().tab_stop(true),
             recording_hotkey: None,
             _subscriptions: subscriptions,
         };
@@ -460,11 +437,12 @@ impl MainWindow {
 }
 impl Render for MainWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
         let content = match self.shell.active_module() {
             MainModule::Downloads => self.render_downloads(cx),
             MainModule::QuickFind => self.render_quick_find(cx),
             MainModule::Clipboard => self.render_clipboard(cx),
-            MainModule::Tools => self.render_tools(cx),
+            MainModule::Tools => self.render_tools(window, cx),
         };
         div()
             .id("nxtools-main-window")
@@ -491,7 +469,7 @@ impl Render for MainWindow {
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(self.render_sidebar(cx))
+                    .child(self.render_sidebar(window, cx))
                     .child(div().flex_1().min_w_0().h_full().child(content)),
             )
             .child(self.render_notifications(cx))

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Desktop and native boundary verification"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Diagnostic review"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
+{"file": "docs/reference-code/clipboard.md", "reason": "Link detector and panel behavior"}
+{"file": "docs/reference-code/system-shell.md", "reason": "Windows shell invariants"}
+{"file": "rust/apps/nxtools-desktop/src/tools/link_detector.rs", "reason": "Detector tests"}
+{"file": "rust/apps/nxtools-desktop/src/tools/link_panel.rs", "reason": "Panel route and click tests"}
+{"file": "csharp/NxTools.PlatformHost/Windows/ClipboardShellTarget.cs", "reason": "Existing Explorer selection contract"}

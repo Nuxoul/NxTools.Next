@@ -1,51 +1,5 @@
-# Database Guidelines
+# Browser host staging (SQL not applicable)
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/apps/nxtools-browser-host/src/lib.rs`, `repo:rust/apps/nxtools-browser-host/src/blob_upload.rs#BlobUploadService`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+Host uses Core config and Download IPC; no independent task SQL. Blob capability registry is bounded ephemeral state, staging files are task-owned synthetic/received resources with cleanup; engine store owns handoff idempotency. Receiving exclusive socket lease cannot be reaped mid-write; owner total/per-read deadlines release state on abandonment. Registry/manifest installation belongs C# transaction, not this process. Don't add persistence replay of user URLs/cookies. [Quality lease contract](quality-guidelines.md).

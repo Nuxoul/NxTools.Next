@@ -221,6 +221,7 @@ internal sealed class NativeFileDragCoordinator
             command.SourceWindowHandle,
             out var effect,
             out var error,
+            out var terminalStatus,
             reportDiagnostic);
         reportDiagnostic(
             "operation_completed",
@@ -228,10 +229,12 @@ internal sealed class NativeFileDragCoordinator
             {
                 ["success"] = dragged,
                 ["drop_effect"] = effect,
+                ["terminal_status"] = terminalStatus,
                 ["error"] = error
             });
         return new WindowsCommandResult(
             dragged,
-            dragged ? null : error);
+            dragged ? null : error,
+            Data: System.Text.Json.JsonSerializer.Serialize(new { status = terminalStatus, drop_effect = effect }));
     }
 }

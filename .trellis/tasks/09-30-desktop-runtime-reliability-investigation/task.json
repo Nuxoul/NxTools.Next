@@ -1,0 +1,30 @@
+{
+  "id": "desktop-runtime-reliability-investigation",
+  "name": "desktop-runtime-reliability-investigation",
+  "title": "Investigate Quick Launch flicker and desktop clipboard/runtime reliability",
+  "description": "Collect reproducible evidence and identify causes for Quick Launch result-panel flicker, duplicate/high-resource PlatformHost processes, and intermittent missed clipboard captures; do not change product behavior until findings are reviewed.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-browser-host",
+  "priority": "P1",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-09-30",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-30-quick-launch-result-panel-flicker",
+    "09-27-clipboard-performance-platformhost-crash",
+    "10-01-one-time-uac-trusted-updates"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,2 @@
+{"file": ".trellis\\spec\\nxtools-desktop\\backend\\quality-guidelines.md", "reason": "Rust desktop global settings, correlation and test conventions"}
+{"file": ".trellis\\spec\\nxtools-ipc\\backend\\quality-guidelines.md", "reason": "Correlated PlatformHost command/result contract"}

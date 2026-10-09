@@ -1,54 +1,5 @@
-# Directory Structure
+# Download structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/crates/nxtools-download/src/lib.rs#TransferPlan`, `repo:rust/crates/nxtools-download/src/engine.rs#DownloadEngine`, `repo:rust/crates/nxtools-download/src/message.rs`, `repo:rust/crates/nxtools-download/src/engine/segmented_runner.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+lib defines domain request/task/segment/plan; message owns command/event/fault projection. engine coordinates admission/queue/settings and worker/store state. engine submodules own segmented/HLS/DASH runners; http owns network validation/streaming; artifact/capacity own disk publication; storage owns SQLite; media/ffmpeg_install own bounded child/explicit third-party install; organization/request_policy/rate_limit own reusable rules. GPUI/windows/chrome stay outside library. Don't split by file size without real seam/test benefit or leak raw requests into logs. [Architecture](../../shared/architecture.md).

@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/nxtools-ipc/backend/quality-guidelines.md", "reason": "Review timeout/cancellation/resource cleanup behavior and test the real PlatformHost runner boundary."}
+{"file": ".trellis/spec/nxtools-ipc/backend/logging-guidelines.md", "reason": "Ensure bounded diagnostics remain payload-free and the in-process fix adds no secret-bearing logs."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify the complete caller-to-STA-worker lifecycle and late completion after timeout/cancellation."}

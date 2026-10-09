@@ -67,6 +67,60 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; \
     Flags: nowait postinstall skipifsilent
 
-[UninstallRun]
-; Stop the indexer service if this installation registered it, before files go away.
-Filename: "sc"; Parameters: "stop NxToolsIndexerV1"; Flags: runhidden; RunOnceId: "StopIndexer"
+[Code]
+function SameOwnedPath(const Actual, Expected: String): Boolean;
+begin
+  Result := CompareText(ExpandFileName(Actual), ExpandFileName(Expected)) = 0;
+end;
+
+function OwnedIndexerService(): Boolean;
+var
+  ImagePath, Executable, Arguments, ServiceKey, ProtectedDir, DesktopPath: String;
+  IndexerHash, DesktopHash, PlatformHash: String;
+  ClosingQuote: Integer;
+begin
+  Result := False;
+  ServiceKey := 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1';
+  if not RegQueryStringValue(HKLM64, ServiceKey, 'ImagePath', ImagePath) then Exit;
+  ImagePath := Trim(ImagePath);
+  { Require an unambiguous, quoted executable plus the precise service argument. }
+  if (Length(ImagePath) < 3) or (ImagePath[1] <> '"') then Exit;
+  ClosingQuote := Pos('"', Copy(ImagePath, 2, Length(ImagePath))) + 1;
+  if ClosingQuote <= 1 then Exit;
+  Executable := Copy(ImagePath, 2, ClosingQuote - 2);
+  Arguments := Trim(Copy(ImagePath, ClosingQuote + 1, Length(ImagePath)));
+  if CompareText(Arguments, '--service') <> 0 then Exit;
+  if SameOwnedPath(Executable, ExpandConstant('{app}\NxTools.Indexer.exe')) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  ProtectedDir := ExpandConstant('{commonappdata}\NxTools\NxTools.Next\Service');
+  if not SameOwnedPath(Executable, ProtectedDir + '\NxTools.Indexer.exe') then Exit;
+  if not RegQueryStringValue(HKLM64, ServiceKey, 'NxToolsDesktopPath', DesktopPath) then Exit;
+  if not SameOwnedPath(DesktopPath, ProtectedDir + '\NxTools.exe') then Exit;
+  if not RegQueryStringValue(HKLM64, ServiceKey, 'NxToolsBinarySha256', IndexerHash) then Exit;
+  if not RegQueryStringValue(HKLM64, ServiceKey, 'NxToolsDesktopSha256', DesktopHash) then Exit;
+  if not RegQueryStringValue(HKLM64, ServiceKey, 'NxToolsPlatformHostSha256', PlatformHash) then Exit;
+  { The protected tuple belongs to this installation only when all three actual
+    protected files AND all three installed counterparts match registered identity. }
+  try
+    Result :=
+      (CompareText(GetSHA256OfFile(Executable), IndexerHash) = 0) and
+      (CompareText(GetSHA256OfFile(DesktopPath), DesktopHash) = 0) and
+      (CompareText(GetSHA256OfFile(ProtectedDir + '\NxTools.PlatformHost.exe'), PlatformHash) = 0) and
+      (CompareText(GetSHA256OfFile(ExpandConstant('{app}\NxTools.Indexer.exe')), IndexerHash) = 0) and
+      (CompareText(GetSHA256OfFile(ExpandConstant('{app}\NxTools.exe')), DesktopHash) = 0) and
+      (CompareText(GetSHA256OfFile(ExpandConstant('{app}\NxTools.PlatformHost.exe')), PlatformHash) = 0);
+  except
+    Result := False;
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if (CurUninstallStep = usUninstall) and OwnedIndexerService() then
+    Exec(ExpandConstant('{sys}\sc.exe'), 'stop NxToolsIndexerV1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;

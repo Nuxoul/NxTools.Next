@@ -1,0 +1,8 @@
+{"file": ".trellis\\spec\\nxtools-desktop\\backend\\quality-guidelines.md", "reason": "Review UI changes for lifecycle and behavior regressions"}
+{"file": ".trellis\\tasks\\10-02-staged-desktop-ui\\reference-scope.md", "reason": "Compact cross-module behavior and visual review contract"}
+{"file": "docs\\reference-code\\gpui.md", "reason": "Review GPUI rendering and interaction migrations"}
+{"file": ".trellis/spec/shared/ui-design.md", "reason": "Verify exact approved product palette and changed-surface state matrix"}
+{"file": ".trellis/tasks/10-02-staged-desktop-ui/foundation-scope.md", "reason": "Bounded Foundation acceptance, no phase advance from compiled tests"}
+{"file":"docs/audits/2026-10-09-consolidated-ui-polish.md","reason":"Consolidated source checks, causal failed runs, native screenshot subset and provider/remaining acceptance ledger"}
+{"file":"tests/architecture/ui-motion-policy.ps1","reason":"System preference ownership, retained queue-full state and deferred weak observer boundary"}
+{"file":"tests/architecture/ui-token-boundaries.ps1","reason":"Approved tokens, retired off-grid spacing and migrated Downloads layout regression gate"}

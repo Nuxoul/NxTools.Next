@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Download diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-download/src/engine/segmented_runner.rs`, `repo:rust/crates/nxtools-download/src/engine/dash_runner.rs`, `repo:rust/crates/nxtools-download/src/storage.rs#sqlite_extended_code`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Carry command correlation/task ID/attempt and fixed stage; record probe phase durations, request client reuse, retry/terminal state and native/SQLite code at owning boundary. No source URL/query/path/file/headers/cookies/media keys/FFmpeg output. Never log byte progress/sample ticks as events; coalesce milestones/state. Temporary DEBUG marker removed after causal regression. Store retry logs are bounded and don't alter error. [Shared policy](../../shared/engineering.md); accepted/in-progress is not completed artifact publication.

@@ -10,12 +10,12 @@ use nxtools_core::CustomCommandSettings;
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::{
-    action_button, danger_ghost_button_variant, icon_action, labelled_icon_action,
-    primary_button_variant,
+    action_button, danger_ghost_button_variant, focusable_content, icon_action,
+    labelled_icon_action, primary_button_variant,
 };
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_2, SPACING_4, SPACING_8,
-    SPACING_12, SPACING_16,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,
+    SPACING_16,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_MONO_FONT_FAMILY,
@@ -25,7 +25,7 @@ const COMMAND_MASTER_WIDTH: f32 = 224.0;
 const COMMAND_EDITOR_HEIGHT: f32 = 360.0;
 const COMMAND_MASTER_HEADER_HEIGHT: f32 = 40.0;
 const COMMAND_DETAIL_HEADER_HEIGHT: f32 = 48.0;
-const COMMAND_MASTER_ROW_HEIGHT: f32 = 42.0;
+const COMMAND_MASTER_ROW_HEIGHT: f32 = 40.0;
 
 pub(crate) type SelectHandler =
     Rc<dyn Fn(&(usize, CustomCommandSettings), &mut Window, &mut App) + 'static>;
@@ -215,7 +215,7 @@ fn command_master_row(
         format!("{keyword} · 已停用")
     };
     let selected_command = command.clone();
-    div()
+    let content = div()
         .id(("quick-launch-command", index))
         .debug_selector(move || selector.clone())
         .w_full()
@@ -244,7 +244,7 @@ fn command_master_row(
                     .left_0()
                     .top_0()
                     .h(px(COMMAND_MASTER_ROW_HEIGHT))
-                    .w(px(SPACING_2))
+                    .w(px(2.0))
                     .bg(theme.accent),
             )
         })
@@ -254,7 +254,7 @@ fn command_master_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .debug_selector(move || title_selector.clone())
@@ -281,8 +281,14 @@ fn command_master_row(
                         .child(context),
                 ),
         )
-        .on_click(move |_event, window, cx| on_select(selected_command.clone(), window, cx))
-        .into_any_element()
+        .into_any_element();
+    focusable_content(
+        ("quick-launch-command-action", index),
+        theme,
+        false,
+        content,
+        move |_, window, cx| on_select(selected_command.clone(), window, cx),
+    )
 }
 
 fn command_detail(
@@ -519,4 +525,60 @@ fn bounded_action_slot(selector: &'static str, action: AnyElement) -> AnyElement
         .items_center()
         .child(action)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    struct CommandFixture {
+        selected: Rc<Cell<bool>>,
+    }
+    impl gpui::Render for CommandFixture {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            let selected = self.selected.clone();
+            div().w(px(COMMAND_MASTER_WIDTH)).child(command_master_row(
+                Theme::zed_dark(),
+                0,
+                CustomCommandSettings::default(),
+                false,
+                move |_, _, _| selected.set(true),
+            ))
+        }
+    }
+    #[gpui::test]
+    fn custom_command_master_keyboard_selects_without_executing(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        cx.update(crate::theme::apply_component_theme);
+        let selected = Rc::new(Cell::new(false));
+        let rendered_selected = selected.clone();
+        let (_, window) = cx.add_window_view(move |_, _| CommandFixture {
+            selected: rendered_selected,
+        });
+        window
+            .refresh()
+            .expect("render actual custom command master row");
+        let row = window
+            .debug_bounds("quick-launch-command-0")
+            .expect("master hit bounds");
+        window.update(|window, _| window.focus_next());
+        window.refresh().expect("focus command row");
+        window.simulate_event(gpui::KeyDownEvent {
+            keystroke: gpui::Keystroke::parse("enter").expect("select key"),
+            is_held: false,
+        });
+        assert!(!selected.get(), "selection waits for release");
+        window.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse("enter").expect("select release"),
+        });
+        assert!(
+            selected.get(),
+            "keyboard must select the editor row, not run a command"
+        );
+        window
+            .refresh()
+            .expect("focused command row remains bounded");
+        assert_eq!(window.debug_bounds("quick-launch-command-0"), Some(row));
+        assert_eq!(row.size.height, px(40.0));
+    }
 }

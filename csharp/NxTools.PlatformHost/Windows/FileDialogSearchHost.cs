@@ -24,6 +24,20 @@ internal static class FileDialogSearchHost
            hostVisible &&
            snapshot is not null &&
            snapshot.WindowHandle == foregroundWindowHandle;
+    internal static bool ShouldRefreshDirectorySourceOnReuse(
+        bool autoQuickSwitchEnabled,
+        bool searchEnabled,
+        bool hostVisible,
+        FileDialogSearchHostSnapshot? snapshot,
+        long foregroundWindowHandle,
+        bool trackedSourceIsDirectoryOpus) =>
+        autoQuickSwitchEnabled &&
+        trackedSourceIsDirectoryOpus &&
+        CanReuseForeground(
+            searchEnabled,
+            hostVisible,
+            snapshot,
+            foregroundWindowHandle);
 
     public static FileDialogSearchHostSnapshot? TryCapture(
         FileDialogContext dialog)

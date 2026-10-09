@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Review production GPUI geometry, lifecycle callbacks, regression coverage and diagnostic privacy"}
+{"file": ".trellis/spec/nxtools-ipc/backend/quality-guidelines.md", "reason": "Review correlated Shell command terminal outcomes, failure retry and stale-result suppression"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/reference-scope.md", "reason": "Compact review checklist and recorded source/call chains, including new existing-window selection and directory/file-missing findings"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/prd.md", "reason": "Review scope and observable acceptance outcomes"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/design.md", "reason": "Review UI/C# seam, Windows activation contract and diagnostics"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/implement.md", "reason": "Review phase order, test commands and forbidden DOpus/package side effects"}

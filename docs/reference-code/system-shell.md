@@ -146,3 +146,41 @@ The current PlatformHost path was rechecked against the Listary and SwiftList no
 - Navigation diagnostics compare only bounded target metadata (kind, root, segment count, length and resolved metadata). Raw filesystem paths and URI payloads are intentionally absent from production logs.
 
 The interactive DOpus 13 and real file-dialog soak remains an environment-dependent gate; the PlatformHost regression seam must cover frame-focus capture, same-pane navigation, and stale-source clearing without logging paths or window titles.
+
+### Same-lister DOpus refresh when a known dialog returns — 2026-10-04
+
+The user reports that selecting an already-existing DOpus tab changes the directory, but returning to the already-open file dialog does not switch until the active tab is navigated or a new tab is created. The code-backed gap had two guards: the dialog-return refresh ran only while `_sourceDirty` was true, and `ProcessForeground` returned early for a visible/reused file-dialog search host before the Auto Quick Switch consumer ran.
+
+- Listary's reference contract is to retain a live source controller and call `GetCurrentFolder()` when the same known file dialog returns. A cached path from an earlier tab is not authoritative.
+- On return to a known dialog, PlatformHost identifies the source by its opaque `HostContextId` and registered Directory Opus adapter, passively re-captures the same lister/session, refreshes pane state and path, then lets `AutoQuickSwitchTracker.ObserveFileDialog` consume the result.
+- The visible-search-host reuse branch now still reprocesses the exact same foreground dialog for Auto Quick Switch when Auto Quick Switch is enabled and the retained source is a valid DOpus session. Other sources and unrelated HWNDs retain the existing reuse fast path.
+- Only a changed canonical path marks one new sync. An unchanged path does not navigate. A failed/superseded session refresh discards pending state, so the old path is never used. The first observation of a new dialog does not refresh or navigate from retained history.
+- Refresh never activates, focuses or navigates DOpus and sends no IPC. Diagnostics retain one correlation per passive read and contain only HWND, fixed stage/result and elapsed time, not paths, titles or payload text.
+- Regression uses the real `ThirdPartyFileManagerSessionRegistry` seam for same-lister/session recapture, changed/unchanged paths, one-shot candidate, non-DOpus rejection, lister/session mismatch and failed refresh without stale navigation. Separate foreground-reuse predicate coverage protects the early-return path. These tests do not reproduce the user's DOpus UI gesture; manual DOpus acceptance remains required.
+
+SwiftList is a secondary behavior reference: `ExplorerTracker` listens for `EVENT_OBJECT_FOCUS` and re-reads active paths, while `ExplorerActivePathPoller` coalesces location-change events. NxTools also listens for `EVENT_OBJECT_SELECTION` on the tracked DOpus lister, plus name/focus fallbacks, and coalesces passive source refreshes without activation or navigation. No native event trace was captured for the user's exact DOpus click; the selection event is a bounded compatibility path rather than a claim about every DOpus build. No DOpus adapter was found in the searched old `D:\Code\NxTools` checkout; SwiftList is not DOpus engine source.
+
+## 2026-10-08 SOL remediation: native mutation and cancellation
+
+Reference behavior reverified through ABDM `CompletedDownloadPage.kt:103-143` and legacy `Services\WindowsFileDragService.cs:29-61`: one native OLE boundary; normal cancellation is not an operation error. C# owns the dedicated STA OLE loop, source HWND/capture release and initiating-button checks. No competing gesture framework or payload logging was added.
+
+- `NativeFileDragService` preserves normal Escape cancellation as a non-error and distinguishes cancelled from dropped in terminal result data/diagnostics. Real Shell drag/drop remains untested.
+- `BrowserNativeMessagingRegistrar` delegates all manifest/browser/legacy-key changes to `BrowserRegistrationTransaction.Apply`. Capture all prior bytes/registry values, kinds and children before the first mutation. Record each attempted write before calling it; it may mutate then throw. Compensate each attempted step in reverse order, even if another compensation fails; report incomplete compensation as AggregateException. Tests use synthetic stores only, not real registry injection.
+- `installer/nxtools-next.iss` stops Indexer only after exact ownership validation: quoted ImagePath with --service and exact installed path, or approved protected tuple/hash and matching registered desktop. A service name alone never authorizes stop. This slice was source/ownership-tested, not installer-compiled/executed.
+- Centered native resize is fixed-budget asynchronous work, not work on the serial command reader/EventWindow. Generation/CAS owns replacement/replay/retirement; acceptance is distinct from final applied client readback. See the download reference for layout/lifecycle constraints.
+- Architecture gates follow real Rust extracted modules and C# partial files. SHA256.Create/ComputeHash and ordinal lookup preserve PowerShell 5 checks rather than removing assertions to make gates green.
+
+No package/install, service operation, real DOpus navigation or product launch occurred. See [SOL remediation evidence](../audits/2026-10-08-sol-review-remediation.md); source/native regressions are not a live Windows certification.
+
+## Global per-app settings ownership (2026-10-10)
+
+Reverified old `Views\SettingsWindow.axaml.cs:11-24,56-78,118-175,185-194`: the
+Avalonia Window constructor attaches animation, OnOpened configures the scope, navigation changes
+the local visible section, Apply calls the owner command then closes, and unhandled close calls the
+cancel command. These base Window show/close boundaries do not imply a new native adapter.
+Next keeps one registered fixed global window, local General/Network/Application blacklist tabs,
+scrollable continuous rows and a contained footer. Constructor opening reloads latest durable sections
+outside render; pending apply blocks close and duplicate dispatch. Saved shell intent remains distinct
+from confirmed applied shell state; a rules-only save must not mutate startup/tray registration when
+desired and live shell settings agree. Weak Clipboard/Quick Launch bindings publish rules next-turn
+after one durable transaction, without consumer disk writes. No screenshot visual acceptance is claimed.

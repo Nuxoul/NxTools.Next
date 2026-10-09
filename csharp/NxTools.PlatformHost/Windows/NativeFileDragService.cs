@@ -48,10 +48,12 @@ internal static class NativeFileDragService
         long sourceWindowHandle,
         out int effect,
         out string? error,
+        out string terminalStatus,
         NativeFileDragDiagnostic? reportDiagnostic = null)
     {
         effect = 0;
         error = null;
+        terminalStatus = "failed";
 
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
@@ -110,12 +112,12 @@ internal static class NativeFileDragService
         var leftButtonState = GetAsyncKeyState(VirtualKeyLeftButton);
         if ((leftButtonState & 0x8000) == 0)
         {
-            error = "The file drag gesture ended before Windows received it.";
+            terminalStatus = "cancelled";
             ReportDiagnostic(
                 reportDiagnostic,
                 "gesture_ended_before_ole",
                 PointerStateFields(leftButtonState));
-            return false;
+            return true;
         }
 
         var telemetry = new OleDragTelemetry(
@@ -155,6 +157,8 @@ internal static class NativeFileDragService
         var exitFields = telemetry.Snapshot();
         exitFields["result_hresult"] = FormatHResult(result);
         exitFields["drop_effect"] = effect;
+        terminalStatus = result == DragDropCancel ? "cancelled" : result is Succeeded or DragDropDrop ? "dropped" : "failed";
+        exitFields["terminal_status"] = terminalStatus;
         exitFields["elapsed_ms"] = Stopwatch
             .GetElapsedTime(startedTimestamp)
             .TotalMilliseconds;
@@ -163,14 +167,21 @@ internal static class NativeFileDragService
             "ole_exited",
             sourceWindow,
             exitFields);
-        if (result is Succeeded or DragDropDrop or DragDropCancel)
-        {
-            return true;
-        }
-
-        error = $"Windows DoDragDrop failed with HRESULT 0x{result:X8}.";
-        return false;
+        var terminal = ResultForOleExit(result, effect);
+        error = terminal.Error;
+        return terminal.Success;
     }
+
+    internal static WindowsCommandResult ResultForOleExit(int result, int effect)
+    {
+        var success = result is Succeeded or DragDropDrop or DragDropCancel;
+        var status = result == DragDropCancel ? "cancelled" : success ? "dropped" : "failed";
+        return new WindowsCommandResult(success,
+            success ? null : $"Windows DoDragDrop failed with HRESULT 0x{result:X8}.",
+            Data: System.Text.Json.JsonSerializer.Serialize(new { status, drop_effect = effect }),
+            NativeErrorCode: success ? null : result);
+    }
+
 
     internal static bool TryAttachInputQueues(
         uint currentThreadId,

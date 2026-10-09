@@ -1,0 +1,7 @@
+{"file":"AGENTS.md","reason":"Privacy/reference requirements and no native side effects"}
+{"file":".trellis/tasks/10-09-adjacent-utilities-evaluation/prd.md","reason":"Evaluation-only scope and at most two recommendations"}
+{"file":".trellis/tasks/10-09-project-quality-and-core-polish/prd.md","reason":"Core-workflow intent and operational boundaries"}
+{"file":"docs/reference-code/clipboard.md","reason":"Existing pure-text/capture/import behavior"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Existing calculator/commands/URL actions"}
+{"file":"docs/reference-code/download.md","reason":"Existing batch/intake/URL behavior and signature risks"}
+{"file":".trellis/tasks/10-02-link-detector-panel/prd.md","reason":"Existing link recognition behavior and copy-only defaults"}

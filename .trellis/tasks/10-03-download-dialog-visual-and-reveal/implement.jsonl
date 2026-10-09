@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/index.md", "reason": "Desktop UI source ownership and package gate"}
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Production GPUI callbacks, native Shell action result, diagnostics privacy, and lifecycle regression conventions"}
+{"file": ".trellis/spec/nxtools-ipc/backend/index.md", "reason": "Typed Rust/PlatformHost boundary ownership"}
+{"file": ".trellis/spec/nxtools-ipc/backend/quality-guidelines.md", "reason": "Correlated command result, pending action, timeout/disconnect and generation isolation contracts"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/reference-scope.md", "reason": "Compact required order, exact AB Download Manager/NxTools sources, existing test names and verified legacy/current Explorer behavior without truncating the large index"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/prd.md", "reason": "Reviewed outcome, user scope, evidence and acceptance criteria"}
+{"file": ".trellis/tasks/10-03-download-dialog-visual-and-reveal/design.md", "reason": "Approved UI hierarchy and Rust/IPC/C# Explorer boundary contracts"}

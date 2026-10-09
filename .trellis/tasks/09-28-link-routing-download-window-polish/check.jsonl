@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Parent desktop verification gates"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Diagnostic verification"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
+{"file": "docs/reference-code/clipboard.md", "reason": "Link panel acceptance reference"}
+{"file": "docs/reference-code/system-shell.md", "reason": "Windows shell acceptance reference"}
+{"file": "docs/reference-code/download.md", "reason": "Download lifecycle acceptance reference"}
+{"file": "docs/reference-code/gpui.md", "reason": "Motion acceptance reference"}

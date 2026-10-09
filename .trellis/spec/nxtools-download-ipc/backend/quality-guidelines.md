@@ -1,51 +1,5 @@
-# Quality Guidelines
+# Download IPC quality
 
-> Code quality standards for backend development.
+Evidence: `repo:rust/crates/nxtools-download-ipc/src/lib.rs#tests`, `repo:rust/crates/nxtools-download-ipc/src/lib.rs#DownloadHostReadiness`.
 
----
-
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+Exercise actual temporary pipe/typed frames, incompatible Hello version, matching command identity, event/snapshot sequence and host draining/readiness. A successful pipe connect isn't Ready, nor does an Accepted command mean applied/finished. Caller tests preserve CLI ConnectOnly and browser acceptance identity. Existing readiness fields have serde defaults for compatibility. Run scoped library/lint/check/fmt per [verification](../../shared/verification.md), synthetic data only.

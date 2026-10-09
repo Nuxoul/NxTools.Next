@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Core diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#init_file_logging`, `repo:rust/crates/nxtools-core/src/lib.rs#LogGuard`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+init_file_logging creates daily tracing_appender and nonblocking writer; retain WorkerGuard in process/runtime owner until shutdown. Logging must not change operation result. Environment filtering is configured at initialization, not per hot-path event. Library config/paths errors can carry sensitive context; emit sanitized stage/code, never raw config/path/credentials. Shared process names/IDs and counts are metadata; user window titles/clipboard values are not. Follow [engineering diagnostics](../../shared/engineering.md); no extra per-read/write logging is necessary for pure normalization.

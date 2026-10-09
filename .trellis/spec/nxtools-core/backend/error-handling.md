@@ -1,51 +1,7 @@
-# Error Handling
+# Core errors
 
-> How errors are handled in this project.
+Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#load_from`, `repo:rust/crates/nxtools-core/src/lib.rs#update_section`, `repo:rust/crates/nxtools-core/src/lib.rs#NetworkSettings`.
 
----
+Core composition returns anyhow::Result with IO/serde context; settings validate with existing String errors. Normalize is not validation and must not silently broaden native privilege or erase unknown settings. Missing/corrupt section-save input remains error. Do not turn parse failure into defaults outside explicit first-run creation.
 
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Current IO context includes file paths; never assume Display/Debug is safe for diagnostics. Caller maps to bounded fixed failure stage and preserves native code where appropriate. See [shared error/privacy contract](../../shared/engineering.md). Test actual disk failure and preserved bytes rather than only error text.

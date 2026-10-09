@@ -1,0 +1,5 @@
+{"file": ".trellis\\spec\\nxtools-desktop\\backend\\quality-guidelines.md", "reason": "Desktop architecture, state ownership and UI regression conventions"}
+{"file": ".trellis\\tasks\\10-02-staged-desktop-ui\\reference-scope.md", "reason": "Compact full-app modules, user tokens and lifecycle contracts"}
+{"file": "docs\\reference-code\\gpui.md", "reason": "GPUI lifecycle, ownership and motion behavior reference"}
+{"file": ".trellis/spec/shared/ui-design.md", "reason": "Approved target/current/exception authority; preserve fixed native content budgets"}
+{"file": ".trellis/tasks/10-02-staged-desktop-ui/foundation-scope.md", "reason": "Explicit Foundation source scope, preserved invariants and deferred visual/provider gates"}

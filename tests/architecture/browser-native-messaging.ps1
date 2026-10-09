@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 function Assert-Contains([string]$Text, [string]$Needle, [string]$Message) {
-    if (-not $Text.Contains($Needle, [StringComparison]::Ordinal)) {
+    if ($Text.IndexOf($Needle, [StringComparison]::Ordinal) -lt 0) {
         throw $Message
     }
 }
@@ -20,7 +20,9 @@ if (-not $manifest.key) {
     throw 'Chromium extension identity must remain stable across unpacked and packed installs.'
 }
 $publicKeyBytes = [Convert]::FromBase64String([string]$manifest.key)
-$publicKeyHash = [System.Security.Cryptography.SHA256]::HashData($publicKeyBytes)
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+try { $publicKeyHash = $sha256.ComputeHash($publicKeyBytes) }
+finally { $sha256.Dispose() }
 $extensionAlphabet = 'abcdefghijklmnop'
 $derivedExtensionId = -join ($publicKeyHash[0..15] | ForEach-Object {
         $extensionAlphabet[($_ -shr 4)] + $extensionAlphabet[($_ -band 15)]
@@ -54,7 +56,7 @@ Assert-Contains $background 'info.menuItemId !== "nxtools-download-link"' `
     'The context-menu listener must reject undeclared menu identifiers.'
 Assert-Contains $background 'result?.ok !== true || result?.accepted !== true' `
     'The context-menu success badge requires explicit native acceptance.'
-if ($background.Contains('return { cancel: true };', [StringComparison]::Ordinal)) {
+if ($background.IndexOf('return { cancel: true };', [StringComparison]::Ordinal) -ge 0) {
     throw 'Browser response hooks must not cancel before asynchronous acceptance.'
 }
 
@@ -80,7 +82,7 @@ Assert-Contains $pageHook '__nxtoolsBlobFallbackRequest' `
     'Blob interception must retain an explicit browser-download fallback.'
 Assert-Contains $pageHook 'blob.slice(offset, offset + length).arrayBuffer()' `
     'Blob upload must read bounded slices without Base64 Native Messaging amplification.'
-if ($pageHook.Contains('uploadUrl', [StringComparison]::Ordinal)) {
+if ($pageHook.IndexOf('uploadUrl', [StringComparison]::Ordinal) -ge 0) {
     throw 'The one-time local upload capability must remain outside the untrusted page realm.'
 }
 
@@ -130,7 +132,7 @@ Assert-Contains $nativeHostSource '.arg("--browser-correlation-id")' `
     'Browser confirmation cold start must preserve its correlation ID across the process boundary.'
 Assert-Contains $nativeHostSource 'handoff_id: Some(handoff_id.to_string())' `
     'Native host must echo the accepted handoff ID.'
-if ($nativeHostSource.Contains('error = %error', [StringComparison]::Ordinal)) {
+if ($nativeHostSource.IndexOf('error = %error', [StringComparison]::Ordinal) -ge 0) {
     throw 'Native host lifecycle diagnostics must not log raw error payloads or paths.'
 }
 
@@ -138,7 +140,7 @@ $nativeHostCargo = Get-Content -LiteralPath `
     (Join-Path $root 'rust\apps\nxtools-browser-host\Cargo.toml') -Raw
 Assert-Contains $nativeHostCargo 'name = "nxtools-browser-host"' `
     'Cargo target names must use a legal crate identifier; product renaming belongs to packaging.'
-if ($nativeHostCargo.Contains('name = "NxTools.BrowserHost"', [StringComparison]::Ordinal)) {
+if ($nativeHostCargo.IndexOf('name = "NxTools.BrowserHost"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cargo binary target names cannot contain product filename punctuation.'
 }
 
@@ -163,8 +165,9 @@ Assert-Contains $downloadEngine 'download.browser_blob.rollback_failed' `
     'The engine must report a database/artifact compensation failure as a distinct terminal.'
 
 $desktopDownloads = Get-Content -LiteralPath `
-    (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads.rs') -Raw
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads\browser_handoff_impl.rs') -Raw
 $newWindowStart = $desktopDownloads.IndexOf('fn open_new_download_window_with_request')
+if ($newWindowStart -lt 0) { throw 'Could not locate the add-download window lifecycle entry.' }
 $newWindowEnd = $desktopDownloads.IndexOf('pub(crate) fn open_schedule_window', $newWindowStart)
 if ($newWindowStart -lt 0 -or $newWindowEnd -le $newWindowStart) {
     throw 'Could not isolate the add-download window lifecycle.'
@@ -191,6 +194,7 @@ Assert-Contains $platformEvents 'download.browser_startup.main_window_minimized'
     'Browser startup minimization must report the observed native command result.'
 $windowsAdapter = Get-Content -LiteralPath `
     (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.cs') -Raw
+$windowsAdapter += Get-Content -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.NativeMethods.cs') -Raw
 Assert-Contains $windowsAdapter 'ShowWindow(window, SwShowMinNoActive)' `
     'PlatformHost must show the hidden main window minimized without activation.'
 Assert-Contains $windowsAdapter 'IsWindowVisible(window) && IsIconic(window)' `
@@ -213,8 +217,13 @@ foreach ($browserKey in @(
 }
 Assert-Contains $registrar 'ReleaseBinaryManifest.BrowserHostSha256' `
     'PlatformHost must verify the packaged BrowserHost before registering it.'
-Assert-Contains $registrar 'DeleteSubKeyTree(keyPath, false)' `
+$registrationStore = Get-Content -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\BrowserRegistrationTransaction.cs') -Raw
+Assert-Contains $registrationStore 'DeleteSubKeyTree(keyPath, false)' `
     'Native Messaging registration must support exact current-user removal.'
+Assert-Contains $registrar 'BrowserRegistrationTransaction.Apply' `
+    'Browser manifests and all registry keys must share the compensating transaction.'
+Assert-Contains $registrationStore 'store.Restore(changes[index].Target, prior[index])' `
+    'Registration must restore captured prior state after partial mutation.'
 
 $protectedInstaller = Get-Content -LiteralPath `
     (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\IndexerServiceInstaller.cs') -Raw

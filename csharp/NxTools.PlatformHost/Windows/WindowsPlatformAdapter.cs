@@ -26,7 +26,8 @@ internal readonly record struct NativeWindowPresentationState(
     bool Cloaked,
     long OwnerWindowHandle,
     long ForegroundWindowHandle,
-    NativeWindowRectangle Bounds);
+    NativeWindowRectangle Bounds,
+    NativeWindowRectangle ClientBounds);
 
  internal sealed class ClipboardCaptureDropDiagnosticGate
  {
@@ -80,6 +81,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
     private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate = new();
     private readonly ICompletionSystemActions _completionSystemActions;
+    private static readonly CenteredResizeCoordinator CenteredResizeWorkers = new();
     private EventWindow? _window;
     private Exception? _startupError;
     private bool _disposed;
@@ -277,6 +279,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public bool ClipboardHotKeyAvailable => _window?.ClipboardHotKeyAvailable ?? false;
     public bool QuickLaunchHotKeyAvailable => _window?.QuickLaunchHotKeyAvailable ?? false;
+    internal MotionPreferenceSnapshot SystemMotionSnapshot =>
+        _window?.SystemMotionSnapshot ?? new MotionPreferenceSnapshot(true, -1);
 
     public Task<WindowsCommandResult> ConfigureClipboardAsync(
         ConfigureClipboardCommand command,
@@ -292,9 +296,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public Task<WindowsCommandResult> ConfigureQuickLaunchAsync(
         ConfigureQuickLaunchCommand command,
+        Guid correlationId,
         CancellationToken cancellationToken)
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueueQuickLaunchConfiguration(command, cancellationToken);
+            .EnqueueQuickLaunchConfiguration(command, correlationId, cancellationToken);
 
     public Task<WindowsCommandResult> SetQuickLaunchHotKeyRecordingAsync(
         SetQuickLaunchHotKeyRecordingCommand command,
@@ -304,9 +309,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public Task<WindowsCommandResult> ConfigureDesktopShellAsync(
         ConfigureDesktopShellCommand command,
+        Guid correlationId,
         CancellationToken cancellationToken)
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueueDesktopShellConfiguration(command, cancellationToken);
+            .EnqueueDesktopShellConfiguration(command, correlationId, cancellationToken);
 
     public Task<WindowsCommandResult> PasteTextAsync(
         PasteTextCommand command,
@@ -381,11 +387,159 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             new IntPtr(command.WindowHandle),
             command.Enabled);
 
-    internal static void ReapplyPendingCenteredResizeFor(IntPtr rootWindow) =>
-        NativeMethods.ReapplyPendingCenteredResizeFor(rootWindow);
+    private static void CorrectNativeWindowVisibleCenter(
+        IntPtr window,
+        NativeWindowPresentationState before)
+    {
+        if (!before.Exists ||
+            before.Bounds.Width <= 0 ||
+            before.Bounds.Height <= 0 ||
+            NativeMethods.IsDraggingOrSizing(window))
+        {
+            return;
+        }
 
-    internal static void RetryPendingCenteredResize(IntPtr rootWindow) =>
-        NativeMethods.RetryPendingCenteredResize(rootWindow);
+        var after = NativeMethods.CaptureWindowPresentation(window);
+        if (!after.Exists || after.Bounds.Width <= 0 || after.Bounds.Height <= 0)
+        {
+            return;
+        }
+        var correctionX = (int)Math.Round(
+            ((before.Bounds.Left + before.Bounds.Right) -
+                (after.Bounds.Left + after.Bounds.Right)) / 2.0,
+            MidpointRounding.AwayFromZero);
+        var correctionY = (int)Math.Round(
+            ((before.Bounds.Top + before.Bounds.Bottom) -
+                (after.Bounds.Top + after.Bounds.Bottom)) / 2.0,
+            MidpointRounding.AwayFromZero);
+        if ((correctionX == 0 && correctionY == 0) ||
+            !AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer))
+        {
+            return;
+        }
+        _ = NativeMethods.SetWindowPosition(
+            window,
+            outer.Left + correctionX,
+            outer.Top + correctionY);
+    }
+
+    private static WindowsCommandResult SetWindowBoundsCenteredPreservingCenter(
+        IntPtr window,
+        int width,
+        int height,
+        Guid correlationId = default)
+    {
+        var before = NativeMethods.CaptureWindowPresentation(window);
+        var result = NativeMethods.SetWindowBoundsCentered(
+            window,
+            width,
+            height,
+            correlationId);
+        if (result.Success)
+        {
+            NativeMethods.ParkCenteredResizeForRecovery(
+                window,
+                width,
+                height,
+                correlationId);
+        }
+        if (result.Success)
+        {
+            // Moving a custom-client-chrome HWND can invalidate the client
+            // rectangle again. Correct position first, then size/read back.
+            CorrectNativeWindowVisibleCenter(window, before);
+            var clientCorrection = EnsureRequestedClientSize(
+                window, width, height, correlationId);
+            if (!clientCorrection.Success)
+            {
+                NativeMethods.ParkCenteredResizeForRecovery(
+                    window,
+                    width,
+                    height,
+                    correlationId);
+                return clientCorrection;
+            }
+            var final = NativeMethods.CaptureWindowPresentation(window);
+            if (final.Exists &&
+                (final.ClientBounds.Width != width || final.ClientBounds.Height != height))
+            {
+                NativeMethods.ParkCenteredResizeForRecovery(
+                    window,
+                    width,
+                    height,
+                    correlationId);
+                return new WindowsCommandResult(false, "Final client size does not match the requested layout.");
+            }
+        }
+        return result;
+    }
+
+    internal static CenteredResizeReplayResult ReapplyPendingCenteredResizeFor(IntPtr rootWindow) =>
+        NativeMethods.ReapplyPendingCenteredResizeFor(rootWindow, (pending, before) =>
+        {
+            var window = new IntPtr(pending.WindowHandle);
+            if (!NativeMethods.IsCurrentCenteredResize(rootWindow, pending.Generation))
+                return new WindowsCommandResult(false, "The resize request was superseded.");
+            CorrectNativeWindowVisibleCenter(window, before);
+            if (!NativeMethods.IsCurrentCenteredResize(rootWindow, pending.Generation))
+                return new WindowsCommandResult(false, "The resize request was superseded.");
+            return EnsureRequestedClientSize(
+                window, pending.Width, pending.Height, pending.CorrelationId);
+        });
+
+    internal static CenteredResizeReplayResult ReplayCenteredResizeBarrierForTest(long window, Action barrier) =>
+        NativeMethods.ReapplyPendingCenteredResizeFor(NativeMethods.GetAncestorOrSelf(new IntPtr(window)), beforeApply: barrier);
+
+    internal static CenteredResizeReplayResult ReplayCenteredResizeCommitForTest(long window, Action barrier) =>
+        NativeMethods.ReapplyPendingCenteredResizeFor(NativeMethods.GetAncestorOrSelf(new IntPtr(window)), beforeCommit: barrier);
+
+    internal static CenteredResizeRecoverySnapshot PendingCenteredResizeForTest(long window)
+    {
+        NativeMethods.TryGetPendingCenteredResize(NativeMethods.GetAncestorOrSelf(new IntPtr(window)), out var snapshot);
+        return snapshot;
+    }
+
+    internal static WindowsCommandResult QueueNativeCenteredResizeForTest(long windowHandle, int width, int height)
+    {
+        var snapshot = NativeMethods.BeginCenteredResize(new IntPtr(windowHandle), width, height, Guid.NewGuid());
+        return new WindowsCommandResult(CenteredResizeWorkers.TrySchedule(snapshot.RootWindow,
+            () => { _ = ReapplyPendingCenteredResizeFor(snapshot.RootWindow); }));
+    }
+
+    private bool QueueCenteredResize(IntPtr rootWindow) => CenteredResizeWorkers.TrySchedule(rootWindow, () =>
+    {
+        if (!NativeMethods.TryGetPendingCenteredResize(rootWindow, out var owned)) return;
+        CenteredResizeReplayResult replay;
+        try { replay = ReapplyPendingCenteredResizeFor(rootWindow); }
+        catch (Exception error)
+        {
+            replay = new(true, owned.CorrelationId, owned.WindowHandle, owned.StartedAtTimestamp,
+                owned.AttemptCount, false, false, error.HResult) { Generation = owned.Generation };
+            NativeMethods.CancelPendingCenteredResize(rootWindow, owned.CorrelationId, owned.Generation);
+        }
+        if (replay.HadPendingResize)
+        {
+            try { _log.Write(replay.Success ? "info" : "warning", "download.window_resize.readback", replay.CorrelationId,
+                new Dictionary<string, object?> { ["window_handle"] = replay.WindowHandle, ["generation"] = replay.Generation,
+                    ["success"] = replay.Success, ["pending_recovery"] = replay.StillPending,
+                    ["attempt_count"] = replay.AttemptCount, ["native_error_code"] = replay.NativeErrorCode,
+                    ["requested_client_width"] = replay.RequestedWidth, ["requested_client_height"] = replay.RequestedHeight,
+                    ["actual_client_width"] = replay.ReadbackWidth, ["actual_client_height"] = replay.ReadbackHeight,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(replay.StartedAtTimestamp).TotalMilliseconds }); }
+            catch { }
+        }
+        _ = _window?.RequestCenteredResizeRecovery(rootWindow);
+    });
+    internal static WindowsCommandResult ParkNativeWindowBoundsCenteredForTest(
+        long windowHandle,
+        int width,
+        int height) =>
+        NativeMethods.ParkCenteredResizeForTest(
+            new IntPtr(windowHandle), width, height);
+
+    internal static CenteredResizeReplayResult ReapplyNativeWindowBoundsCenteredForTest(long windowHandle) =>
+        ReapplyPendingCenteredResizeFor(
+            NativeMethods.GetAncestorOrSelf(new IntPtr(windowHandle)));
     public WindowsCommandResult SetWindowNoActivate(SetWindowNoActivateCommand command) =>
         NativeMethods.SetWindowNoActivate(new IntPtr(command.WindowHandle), command.Enabled);
 
@@ -397,11 +551,31 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             command.Width,
             command.Height);
 
-    public WindowsCommandResult SetWindowBoundsCentered(SetWindowBoundsCenteredCommand command) =>
-        NativeMethods.SetWindowBoundsCentered(
-            new IntPtr(command.WindowHandle),
-            command.Width,
-            command.Height);
+
+
+    public WindowsCommandResult SetWindowBoundsCentered(
+        SetWindowBoundsCenteredCommand command,
+        Guid correlationId)
+    {
+        var window = new IntPtr(command.WindowHandle);
+        if (window == IntPtr.Zero || !NativeMethods.IsWindow(window) || command.Width <= 0 || command.Height <= 0)
+            return new WindowsCommandResult(false, "The window or size is invalid.");
+        var snapshot = NativeMethods.BeginCenteredResize(window, command.Width, command.Height, correlationId);
+        if (!QueueCenteredResize(snapshot.RootWindow))
+        {
+            NativeMethods.CancelPendingCenteredResize(snapshot.RootWindow, correlationId, snapshot.Generation);
+            return new WindowsCommandResult(false, "The bounded native resize queue is full.");
+        }
+        _ = _window?.RequestCenteredResizeRecovery(snapshot.RootWindow);
+        try { _log.Write("info", "download.window_resize.accepted", correlationId,
+            new Dictionary<string, object?> { ["window_handle"] = command.WindowHandle, ["generation"] = snapshot.Generation,
+                ["requested_client_width"] = command.Width, ["requested_client_height"] = command.Height }); }
+        catch { }
+        // Success means accepted, NOT final application. Rust observes its HWND client
+        // viewport and keeps the generation pending until that independent readback.
+        return new WindowsCommandResult(true, Data: "{\"status\":\"accepted\",\"applied\":false}");
+    }
+
 
     public WindowsCommandResult MoveWindowCenteredOver(MoveWindowCenteredOverCommand command) =>
         NativeMethods.MoveWindowCenteredOver(
@@ -664,6 +838,23 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         int height)
         => NativeMethods.CenteredRectangle(anchor, width, height);
 
+    internal static WindowsCommandResult SetNativeWindowPositionForTest(
+        long windowHandle,
+        int x,
+        int y) =>
+        NativeMethods.SetWindowPosition(new IntPtr(windowHandle), x, y);
+
+    internal static WindowsCommandResult SetNativeWindowBoundsCenteredForTest(
+        long windowHandle,
+        int width,
+        int height) =>
+        SetWindowBoundsCenteredPreservingCenter(
+            new IntPtr(windowHandle), width, height);
+
+    internal static NativeWindowPresentationState CaptureNativeWindowPresentationForTest(
+        long windowHandle) =>
+        NativeMethods.CaptureWindowPresentation(new IntPtr(windowHandle));
+
     private void LogWindowPresentation(
         string eventName,
         long windowHandle,
@@ -760,8 +951,18 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             WindowsCommandResult result;
             try
             {
-                target.Launch();
-                result = new WindowsCommandResult(true);
+                result = target.Launch(stage =>
+                {
+                    try
+                    {
+                        _log.Write("info", "shell_target.stage", diagnosticCorrelationId,
+                            fields: new Dictionary<string, object?> { ["stage"] = stage });
+                    }
+                    catch
+                    {
+                        // Bounded diagnostics must not affect the native Shell operation.
+                    }
+                });
             }
             catch (Win32Exception error)
             {
@@ -784,6 +985,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 {
                     ["action"] = command.Action,
                     ["success"] = result.Success,
+                    ["stage"] = result.Data ?? (result.Success ? "completed" : "unknown"),
+                    ["native_error_code"] = result.NativeErrorCode,
                     ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
                 });
             }
@@ -1123,6 +1326,35 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     }
 
 
+    internal static WindowsCommandResult CreateDesktopShellApplyFailure(
+        Exception error,
+        string failureStage)
+    {
+        int nativeErrorCode = error switch
+        {
+            Win32Exception win32 => win32.NativeErrorCode,
+            ExternalException external => external.ErrorCode,
+            _ => error.HResult
+        };
+        var (message, stage) = failureStage switch
+        {
+            "startup_registration" => (
+                "Windows could not update the current-user startup registration.",
+                "startup_registration_failed"),
+            "tray_icon" => (
+                "Windows could not create or show the NxTools notification-area icon.",
+                "tray_icon_failed"),
+            _ => (
+                "Windows could not apply desktop shell settings.",
+                "windows_shell_apply_failed")
+        };
+        return new WindowsCommandResult(
+            false,
+            message,
+            NativeErrorCode: nativeErrorCode,
+            Data: stage);
+    }
+
     internal static WindowsCommandResult ApplyStartupRegistration(
         RegistryKey runKey,
         string desktopExecutable,
@@ -1136,7 +1368,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 {
                     return new WindowsCommandResult(
                         false,
-                        "Packaged NxTools desktop executable is unavailable.");
+                        "Packaged NxTools desktop executable is unavailable.",
+                        Data: "desktop_executable_unavailable");
                 }
                 runKey.SetValue("NxTools.Next", $"\"{desktopExecutable}\" --silent-start");
             }
@@ -1149,7 +1382,11 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
-            return new WindowsCommandResult(false, error.Message, NativeErrorCode: error.HResult);
+            return new WindowsCommandResult(
+                false,
+                "Windows could not update the current-user startup registration.",
+                NativeErrorCode: error.HResult,
+                Data: "startup_registration_failed");
         }
     }
 

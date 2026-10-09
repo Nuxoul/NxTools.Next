@@ -96,4 +96,8 @@ foreach ($excludedDirectory in @(
     }
 }
 
+Assert-Contains $packageScript '\[switch\]\s*\$SkipInstaller' `
+    'isolated validation packages must be able to skip the installer side effect'
+Assert-Contains $packageScript 'if\s*\(-not\s+\$SkipInstaller\s+-and\s+\$iscc\s+-and\s+\$Configuration\s+-eq\s+''Release''\)' `
+    'the installer must remain enabled by default and be explicitly skippable for validation packages'
 Write-Host 'Package memory policy gate passed.'

@@ -1,54 +1,5 @@
-# Directory Structure
+# CLI structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/apps/nxtools-cli/src/main.rs`, `repo:rust/apps/nxtools-cli/src/lib.rs#parse_invocation`, `repo:rust/apps/nxtools-cli/src/lib.rs#CliCommand`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+main is process/output composition; library parses invocation/options to typed command and controls DownloadIpcClient. CliHostPolicy ConnectOrStart vs ConnectOnly is explicit; only startup-capable caller may launch host. Use DownloadTaskId/request/schema helpers rather than handwritten engine state. Native Windows actions and SQLite writes stay with owners. No new feature simply by shell passthrough. [Architecture](../../shared/architecture.md).

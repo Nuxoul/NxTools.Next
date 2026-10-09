@@ -64,7 +64,7 @@ foreach ($requiredPopupRenderContract in @(
     '.bg(theme.canvas)',
     '.text_color(theme.text)',
     '.border_color(theme.window_border)',
-    '.border_color(theme.border_subtle)',
+    'theme.border_subtle',
     '.text_color(theme.icon_muted)',
     '.line_height(px(LINE_HEIGHT_BODY))',
     '.when(self.results_visible'
@@ -72,6 +72,10 @@ foreach ($requiredPopupRenderContract in @(
     if (-not $panelRender.Contains($requiredPopupRenderContract)) {
         throw 'Quick Launch must preserve the tokenized collapsed/expanded popup contract.'
     }
+}
+if (-not $panelRender.Contains('theme.focus_ring') -or -not $panelRender.Contains('if search_focused') -or
+    -not $panelRender.Contains('theme.border_subtle')) {
+    throw 'Quick Launch search header must retain distinct focused and neutral token borders.'
 }
 if (-not $quickLaunchSource.Contains(
         'fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface('
@@ -427,7 +431,7 @@ foreach ($requiredCustomCommandEditorContract in @(
     'quick-launch-custom-command-master-detail',
     'quick-launch-custom-command-master',
     'quick-launch-custom-command-detail',
-    'const COMMAND_MASTER_ROW_HEIGHT: f32 = 42.0',
+    'const COMMAND_MASTER_ROW_HEIGHT: f32 = 40.0',
     'CONTROL_HEIGHT_INPUT',
     'CONTROL_HEIGHT_ACTION',
     'Checkbox::new(',
@@ -687,7 +691,7 @@ foreach ($requiredResultRenderContract in @(
     'quick-launch-result-title-',
     'quick-launch-result-subtitle-',
     'quick-launch-result-shortcut-',
-    '.gap(px(SPACING_2))',
+    '.gap(px(SPACING_4))',
     '.text_size(px(TEXT_BODY))',
     '.line_height(px(LINE_HEIGHT_BODY))',
     '.text_size(px(TEXT_LABEL))',
@@ -702,6 +706,7 @@ foreach ($requiredResultRenderContract in @(
 if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
     $resultRender.Contains('RESULT_DETAIL_SIZE') -or
     $resultRender.Contains('.gap(px(1.0))') -or
+    $resultRender.Contains('.gap(px(SPACING_2))') -or
     $resultRender.Contains('.bg(theme.surface_raised)')) {
     throw 'Quick Launch result rows must not restore private type, spacing or decorative icon tiles.'
 }
@@ -1068,6 +1073,8 @@ $thirdPartyAdapterSource = if (Test-Path -LiteralPath $thirdPartyAdapterPath) {
 } else {
     ''
 }
+$directoryOpusDialogReturnRefreshPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\DirectoryOpusDialogReturnRefresh.cs'
+$directoryOpusDialogReturnRefreshSource = Get-Content -Raw -LiteralPath $directoryOpusDialogReturnRefreshPath
 $directoryOpusAdapterPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\DirectoryOpusFileManagerOperations.cs'
 $directoryOpusAdapterSource = if (Test-Path -LiteralPath $directoryOpusAdapterPath) {
     Get-Content -Raw -LiteralPath $directoryOpusAdapterPath
@@ -1768,13 +1775,23 @@ if ($protocolSource -notmatch 'QuickLaunchAutoSwitchRequested' -or
     $quickLaunchSource -notmatch 'auto_quick_switch_command' -or
     $autoQuickSwitchSource -notmatch 'KnownDialogLimit' -or
     $autoQuickSwitchSource -notmatch 'IsCurrent' -or
+    $autoQuickSwitchSource -notmatch 'IsKnownFileDialog' -or
     $fileDialogRecognitionRetrySource -notmatch 'MaxAttempts|_maxAttempts' -or
     $fileDialogRecognitionRetrySource -notmatch 'TryBeginPendingAttempt' -or
+    $directoryOpusDialogReturnRefreshSource -notmatch 'IsKnownFileDialog' -or
+    $directoryOpusDialogReturnRefreshSource -notmatch 'isDirectoryOpusSource' -or
+    $directoryOpusDialogReturnRefreshSource -notmatch 'refreshDirectoryOpusSource' -or
+    $directoryOpusDialogReturnRefreshSource -notmatch 'DiscardPendingSource' -or
+    $directoryOpusDialogReturnRefreshSource -match 'HasPendingDirectorySourceForWindow' -or
+    $thirdPartyAdapterSource -notmatch 'TryRefreshDirectoryOpusSource' -or
+    $thirdPartyAdapterSource -notmatch 'IsDirectoryOpusSource' -or
     $windowsAdapterSource -notmatch 'FileDialogRecognitionTimerId' -or
     $windowsAdapterSource -notmatch 'IsPotentialHost' -or
     $windowsAdapterSource -notmatch 'RetryFileDialogRecognition' -or
     $windowsAdapterSource -notmatch 'TryBeginPendingAttempt' -or
     $windowsAdapterSource -notmatch 'Capture\(new IntPtr\(windowHandle\)\)' -or
+    $windowsAdapterSource -notmatch 'DirectoryOpusDialogReturnRefresh\.Observe' -or
+    $windowsAdapterSource -notmatch 'CanReuseForeground\([\s\S]{0,500}ShouldRefreshDirectorySourceOnReuse' -or
     $windowsAdapterSource -notmatch 'ProcessRecognizedFileDialog\(fileDialog\)' -or
     $windowsAdapterSource -notmatch 'target_destroyed' -or
     $windowsAdapterSource -notmatch 'DiscardPendingSource\(\)' -or

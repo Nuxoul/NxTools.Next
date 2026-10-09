@@ -1,51 +1,5 @@
-# Error Handling
+# Download errors
 
-> How errors are handled in this project.
+Evidence: `repo:rust/crates/nxtools-download/src/message.rs#DownloadFault`, `repo:rust/crates/nxtools-download/src/http.rs#HttpDownloadError`, `repo:rust/crates/nxtools-download/src/storage.rs#DownloadStorageError`, `repo:rust/crates/nxtools-download/src/media.rs#MediaProcessError`.
 
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Typed domain faults preserve code/message/retryable; engine maps HTTP/status/artifact/SQLite/native permission/disk-full/file-in-use/cancel/unavailable distinctly. Expected pause/cancel stops writers before state commit; never erase resumable checkpoint on failed cleanup. Permanent protocol identity mismatch isn't retryable transient network failure. Retry bounds and stalled/body deadlines belong to transfer owner, not UI. reqwest errors use without_url; raw storage/context/child output isn't log safe. [Shared errors](../../shared/engineering.md). Tests obstruct real synthetic artifacts/store commits, not generic catch-all success.

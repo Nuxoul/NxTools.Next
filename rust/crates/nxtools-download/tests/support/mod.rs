@@ -553,7 +553,17 @@ fn serve_connection(
     dynamic_range_attempts: &AtomicU64,
     network_available: &AtomicBool,
 ) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    // Winsock accepted sockets inherit the listener's nonblocking mode.
+    // Wait for request bytes instead of treating WSAEWOULDBLOCK as disconnect.
+    stream
+        .set_nonblocking(false)
+        .expect("make accepted fixture connection blocking");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("bound fixture request reads");
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .expect("bound fixture response writes");
     let mut request_bytes = Vec::new();
     let mut buffer = [0_u8; 1024];
 
@@ -1117,6 +1127,26 @@ fn serve_connection(
             404,
             "Not Found",
         ),
+        "/head-slow" if method == "HEAD" => {
+            thread::sleep(Duration::from_secs(1));
+            write_response(&mut stream, 200, "OK", &[], b"", Some(BODY.len()));
+        }
+        "/head-slow" => serve_range(&mut stream, method, headers.get("range")),
+        "/head-names-the-file" if method == "HEAD" => write_response(
+            &mut stream,
+            200,
+            "OK",
+            &[
+                ("Accept-Ranges", "bytes"),
+                (
+                    "Content-Disposition",
+                    "attachment; filename=\"from-head.bin\"",
+                ),
+            ],
+            b"",
+            Some(BODY.len()),
+        ),
+        "/head-names-the-file" => serve_range(&mut stream, method, headers.get("range")),
         "/head-rejected" if method == "HEAD" => {
             write_response(&mut stream, 405, "Method Not Allowed", &[], b"", None);
         }

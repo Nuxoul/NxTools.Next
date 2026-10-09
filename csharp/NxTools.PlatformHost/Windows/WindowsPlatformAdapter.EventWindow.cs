@@ -15,9 +15,8 @@ internal sealed partial class WindowsPlatformAdapter
 {
     internal sealed class EventWindow : NativeWindow, IWindowsPasteOperations
     {
-        private const int WmClipboardUpdate = 0x031D;
-        private const int WmExitSizeMove = 0x0232;
         private const int WmHotKey = 0x0312;
+        private const int WmClipboardUpdate = 0x031D;
         private const int WmClose = 0x0010;
         private const int WmTimer = 0x0113;
         private const int WmExecutePaste = 0x8001;
@@ -32,6 +31,9 @@ internal sealed partial class WindowsPlatformAdapter
         private const int WmTaskbarOverlayChanged = 0x800A;
         private const int WmConfigureDesktopShell = 0x800B;
         private const int WmSettingChange = 0x001A;
+        private const int WmDirectoryOpusSourceRefresh = 0x800C;
+        private const int WmCenteredResizeRecoveryRequested = 0x800D;
+        private const int WmRefreshSystemMotion = 0x800E;
         private const int WmDisplayChange = 0x007E;
         private const uint EventSystemForeground = 0x0003;
         private const uint EventSystemMoveSizeEnd = 0x000B;
@@ -41,14 +43,22 @@ internal sealed partial class WindowsPlatformAdapter
         private const uint EventObjectHide = 0x8003;
         private const uint EventObjectLocationChange = 0x800B;
         private const uint EventObjectNameChange = 0x800C;
+        private const uint EventObjectFocus = 0x8005;
+        private const uint EventObjectSelection = 0x8006;
         private const int ObjIdWindow = 0;
         private const uint WineventOutOfContext = 0x0000;
         private const uint RetryTimerId = 1;
         private const uint PointerMonitorTimerId = 2;
         private const uint FileDialogRecognitionTimerId = 3;
+        private const uint CenteredResizeRecoveryTimerId = 5;
+        private const uint CenteredResizeRecoveryIntervalMs = 50;
         private const uint DirectorySourceRecognitionTimerId = 4;
-        private const uint PointerMonitorIntervalMs = 40;
-        private const uint FileDialogRecognitionIntervalMs = 30;
+        private const uint DirectoryOpusSourceRefreshTimerId = 6;
+        private const uint SystemMotionRetryTimerId = 7;
+        private const uint DirectoryOpusSourceRefreshIntervalMs = 50;
+        private const long CenteredResizeRecoveryMaximumWaitMs = 30_000;
+        private const int PointerMonitorIntervalMs = 40;
+        private const int FileDialogRecognitionIntervalMs = 30;
         private const int FileDialogRecognitionMaxAttempts = 200;
         private const int DirectorySourceRecognitionMaxAttempts = 20;
         private const int MaxClipboardReadAttempts = 5;
@@ -69,6 +79,11 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly IPlatformLog _log;
         private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate;
         private readonly AutoQuickSwitchTracker _autoQuickSwitch = new();
+        private readonly SystemMotionPreference _systemMotion = new(new WindowsSystemMotionReader());
+        private bool _systemMotionStopped;
+        private bool _systemMotionRetryFailed;
+        private readonly PendingMotionPublication _pendingMotion = new();
+        internal MotionPreferenceSnapshot SystemMotionSnapshot => _systemMotion.Snapshot;
         private readonly FileDialogRecognitionRetry _fileDialogRecognitionRetry =
             new(FileDialogRecognitionMaxAttempts);
         private readonly FileDialogRecognitionRetry _directorySourceRecognitionRetry =
@@ -79,6 +94,8 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly ConcurrentQueue<ClipboardHotKeyRecordingRequest> _hotKeyRecordingRequests = new();
         private readonly ConcurrentQueue<QuickLaunchConfigurationRequest> _quickLaunchConfigurationRequests = new();
         private readonly ConcurrentQueue<QuickLaunchHotKeyRecordingRequest> _quickLaunchHotKeyRecordingRequests = new();
+        private readonly QuickLaunchSummonDiagnosticGate _quickLaunchSummonDiagnosticGate = new();
+        private bool _quickLaunchSuppressInExclusiveFullscreen = true;
         private readonly ConcurrentQueue<DesktopShellConfigurationRequest> _desktopShellConfigurationRequests = new();
         private readonly ConcurrentQueue<(long WindowHandle, string Directory, string DisplayName)>
             _resolvedDirectorySources = new();
@@ -91,19 +108,22 @@ internal sealed partial class WindowsPlatformAdapter
         private IntPtr _fileDialogHideHook;
         private IntPtr _fileDialogLocationHook;
         private IntPtr _fileDialogNameHook;
+        private IntPtr _directoryOpusSelectionHook;
+        private IntPtr _directoryOpusFocusHook;
         private IntPtr _taskbarOverlayMoveSizeEndHook;
         private ForegroundContext? _pendingClipboardSource;
+        private readonly CenteredResizeRecovery _centeredResizeRecovery = new();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<(IntPtr Root, CenteredResizeReplayResult Replay)> _resizeCompletions = new();
         private Task _capturePublishTail = Task.CompletedTask;
         private int _capturePublishPending;
         private int _clipboardReadAttempts;
-        // A centered resize requested while the window is inside a drag/size
-        // modal loop: SetWindowPos is swallowed (or misapplied) during the
-        // loop, so it is remembered and re-applied on WM_EXITSIZEMOVE.
-        private (int X, int Y, int Width, int Height)? _pendingCenteredResize;
         private bool _suppressNextClipboardUpdate;
         private bool _primaryPointerDown;
         private bool _secondaryPointerDown;
         private int _fileDialogStructureRetryPosted;
+        private int _directoryOpusSourceRefreshPosted;
+        private long _pendingDirectoryOpusSourceRefreshWindow;
+        private bool _directoryOpusSourceRefreshTimerActive;
         private ulong _platformEventSequence;
 
         private ulong NextPlatformEventSequence() => ++_platformEventSequence;
@@ -190,11 +210,13 @@ internal sealed partial class WindowsPlatformAdapter
             _fileDialogShowHook = InstallOptionalWindowEventHook(EventObjectShow);
             _fileDialogHideHook = InstallOptionalWindowEventHook(EventObjectHide);
             _fileDialogLocationHook = InstallOptionalWindowEventHook(EventObjectLocationChange);
+            _directoryOpusSelectionHook = InstallOptionalWindowEventHook(EventObjectSelection);
             _fileDialogNameHook = InstallOptionalWindowEventHook(EventObjectNameChange);
+            _directoryOpusFocusHook = InstallOptionalWindowEventHook(EventObjectFocus);
             _taskbarOverlayMoveSizeEndHook = InstallOptionalWindowEventHook(EventSystemMoveSizeEnd);
             SystemEvents.DisplaySettingsChanged += OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged += OnSystemUserPreferenceChanged;
-
+            _systemMotion.Refresh(out _);
             _hotKeyRegistration = new ClipboardHotKeyRegistration(
                 new NativeClipboardHotKeyRegistrar(() => Handle, ClipboardHotKeyId),
                 new ClipboardHotKeyBinding(ModAlt, VkC, "Alt+C"));
@@ -282,12 +304,13 @@ internal sealed partial class WindowsPlatformAdapter
 
         public Task<WindowsCommandResult> EnqueueQuickLaunchConfiguration(
             ConfigureQuickLaunchCommand command,
+            Guid correlationId,
             CancellationToken cancellationToken)
         {
             var completion = new TaskCompletionSource<WindowsCommandResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             _quickLaunchConfigurationRequests.Enqueue(new QuickLaunchConfigurationRequest(
-                command, cancellationToken, completion));
+                command, correlationId, cancellationToken, completion));
             if (!NativeMethods.PostMessage(Handle, WmConfigureQuickLaunch, IntPtr.Zero, IntPtr.Zero))
             {
                 completion.TrySetResult(new WindowsCommandResult(
@@ -320,18 +343,32 @@ internal sealed partial class WindowsPlatformAdapter
 
         public Task<WindowsCommandResult> EnqueueDesktopShellConfiguration(
             ConfigureDesktopShellCommand command,
+            Guid correlationId,
             CancellationToken cancellationToken)
         {
             var completion = new TaskCompletionSource<WindowsCommandResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             _desktopShellConfigurationRequests.Enqueue(new DesktopShellConfigurationRequest(
-                command, cancellationToken, completion));
+                command, correlationId, cancellationToken, completion));
             if (!NativeMethods.PostMessage(Handle, WmConfigureDesktopShell, IntPtr.Zero, IntPtr.Zero))
             {
+                var errorCode = Marshal.GetLastWin32Error();
                 completion.TrySetResult(new WindowsCommandResult(
                     false,
                     "Failed to schedule desktop-shell configuration on the Windows thread.",
-                    NativeErrorCode: Marshal.GetLastWin32Error()));
+                    NativeErrorCode: errorCode,
+                    Data: "windows_shell_enqueue_failed"));
+                WriteDesktopShellDiagnostic("error", "desktop_shell.enqueue_failed", correlationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = "enqueue",
+                        ["native_error_code"] = errorCode
+                    });
+            }
+            else
+            {
+                WriteDesktopShellDiagnostic("info", "desktop_shell.accepted", correlationId,
+                    new Dictionary<string, object?> { ["stage"] = "accepted" });
             }
             return completion.Task;
         }
@@ -382,15 +419,6 @@ internal sealed partial class WindowsPlatformAdapter
         {
             switch (message.Msg)
             {
-                case WmExitSizeMove:
-                    var rootWindow = NativeMethods.GetAncestor(Handle, 2 /* GA_ROOT */);
-                    WindowsPlatformAdapter.ReapplyPendingCenteredResizeFor(rootWindow);
-                    break;
-                case WmTimer when message.WParam.ToInt64() == NativeMethods.CenteredResizeRetryTimerId:
-                    NativeMethods.KillTimer(Handle, NativeMethods.CenteredResizeRetryTimerId);
-                    var retryRoot = NativeMethods.GetAncestor(Handle, 2 /* GA_ROOT */);
-                    WindowsPlatformAdapter.RetryPendingCenteredResize(retryRoot);
-                    return;
                 case WmClipboardUpdate:
                     if (_suppressNextClipboardUpdate)
                     {
@@ -408,7 +436,7 @@ internal sealed partial class WindowsPlatformAdapter
                     }
                     return;
                 case WmHotKey when message.WParam.ToInt32() == QuickLaunchHotKeyId:
-                    PublishQuickLaunchPanelRequest();
+                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.HotKey);
                     return;
                 case WmTimer when message.WParam.ToInt64() == RetryTimerId:
                     _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
@@ -429,6 +457,18 @@ internal sealed partial class WindowsPlatformAdapter
                         (UIntPtr)DirectorySourceRecognitionTimerId);
                     RetryDirectorySourceRecognition();
                     return;
+                case WmTimer when message.WParam.ToInt64() == CenteredResizeRecoveryTimerId:
+                    _ = NativeMethods.KillTimer(Handle, (UIntPtr)CenteredResizeRecoveryTimerId);
+                    RetryCenteredResizeRecovery();
+                    return;
+                case WmCenteredResizeRecoveryRequested:
+                    RegisterCenteredResizeRecovery(new IntPtr(message.LParam.ToInt64()));
+                    return;
+                case WmTimer when message.WParam.ToInt64() == DirectoryOpusSourceRefreshTimerId:
+                    _ = NativeMethods.KillTimer(Handle, (UIntPtr)DirectoryOpusSourceRefreshTimerId);
+                    _directoryOpusSourceRefreshTimerActive = false;
+                    RefreshPendingDirectoryOpusSource();
+                    return;
                 case WmFileDialogGeometryChanged:
                     if (_fileDialogGeometryUpdateGate.TryTake(out var geometryRoot))
                     {
@@ -444,6 +484,12 @@ internal sealed partial class WindowsPlatformAdapter
                         return;
                     }
                     break;
+                case WmRefreshSystemMotion:
+                    RefreshSystemMotionPreference();
+                    return;
+                case WmTimer when message.WParam.ToInt64() == SystemMotionRetryTimerId:
+                    PublishPendingSystemMotion();
+                    return;
                 case WmExecutePaste:
                     DrainPasteRequests();
                     return;
@@ -463,10 +509,15 @@ internal sealed partial class WindowsPlatformAdapter
                     DrainDesktopShellConfigurationRequests();
                     return;
                 case WmQuickLaunchGesture:
-                    PublishQuickLaunchPanelRequest();
+                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.DoubleControl);
                     return;
                 case WmDirectorySourceResolved:
                     DrainResolvedDirectorySources();
+                    return;
+                case WmDirectoryOpusSourceRefresh:
+                    Interlocked.Exchange(ref _directoryOpusSourceRefreshPosted, 0);
+                    Volatile.Write(ref _pendingDirectoryOpusSourceRefreshWindow, message.WParam.ToInt64());
+                    SchedulePendingDirectoryOpusSourceRefresh();
                     return;
                 case WmFileDialogStructureChanged:
                     Interlocked.Exchange(
@@ -494,6 +545,255 @@ internal sealed partial class WindowsPlatformAdapter
             }
             base.WndProc(ref message);
         }
+
+        public bool RequestCenteredResizeRecovery(IntPtr rootWindow)
+        {
+            if (rootWindow == IntPtr.Zero)
+            {
+                return false;
+            }
+            if (NativeMethods.PostMessage(
+                    Handle,
+                    WmCenteredResizeRecoveryRequested,
+                    IntPtr.Zero,
+                    new IntPtr(rootWindow.ToInt64())))
+            {
+                return true;
+            }
+            var nativeErrorCode = Marshal.GetLastWin32Error();
+            if (NativeMethods.TryGetPendingCenteredResize(rootWindow, out var snapshot))
+            {
+                WriteCenteredResizeDiagnostic(
+                    "warning",
+                    "download.window_resize_recovery_failed",
+                    new CenteredResizeReplayResult(
+                        true,
+                        snapshot.CorrelationId,
+                        snapshot.WindowHandle,
+                        snapshot.StartedAtTimestamp,
+                        snapshot.AttemptCount,
+                        false,
+                        true,
+                        nativeErrorCode),
+                    "recovery_request_unavailable");
+            }
+            return false;
+        }
+
+        private void RegisterCenteredResizeRecovery(IntPtr rootWindow)
+        {
+            while (_resizeCompletions.TryDequeue(out var completed))
+            {
+                if (NativeMethods.TryGetPendingCenteredResize(completed.Root, out var live))
+                    _centeredResizeRecovery.TrackPending(live);
+                var decision = _centeredResizeRecovery.Observe(completed.Root, completed.Replay);
+                HandleCenteredResizeRecoveryDecision(completed.Replay, decision);
+            }
+            if (NativeMethods.TryGetPendingCenteredResize(rootWindow, out var snapshot))
+            {
+                _centeredResizeRecovery.TrackPending(snapshot);
+                ScheduleCenteredResizeRecoveryTimer();
+            }
+        }
+
+        private void RetryCenteredResizeRecovery()
+        {
+            foreach (var rootWindow in _centeredResizeRecovery.PendingRoots)
+            {
+                RetryCenteredResizeForRoot(rootWindow);
+            }
+            ScheduleCenteredResizeRecoveryTimer();
+        }
+
+        private void RetryCenteredResizeForRoot(IntPtr rootWindow)
+        {
+            if (!NativeMethods.TryGetPendingCenteredResize(rootWindow, out var snapshot))
+            {
+                _centeredResizeRecovery.Cancel(rootWindow);
+                ScheduleCenteredResizeRecoveryTimer();
+                return;
+            }
+
+            _centeredResizeRecovery.TrackPending(snapshot);
+            var waitDecision = _centeredResizeRecovery.WaitForMoveEnd(
+                rootWindow,
+                Stopwatch.GetTimestamp(),
+                NativeMethods.IsDraggingOrSizing(new IntPtr(snapshot.WindowHandle)));
+            if (waitDecision == CenteredResizeRecoveryDecision.WaitingForMoveEnd)
+            {
+                ScheduleCenteredResizeRecoveryTimer();
+                return;
+            }
+            if (waitDecision == CenteredResizeRecoveryDecision.TimedOut)
+            {
+                NativeMethods.CancelPendingCenteredResize(rootWindow, snapshot.CorrelationId, snapshot.Generation);
+                WriteCenteredResizeDiagnostic(
+                    "warning",
+                    "download.window_resize_recovery_failed",
+                    new CenteredResizeReplayResult(
+                        true,
+                        snapshot.CorrelationId,
+                        snapshot.WindowHandle,
+                        snapshot.StartedAtTimestamp,
+                        snapshot.AttemptCount,
+                        false,
+                        false,
+                        null),
+                    "move_end_timeout");
+                ScheduleCenteredResizeRecoveryTimer();
+                return;
+            }
+            if (waitDecision != CenteredResizeRecoveryDecision.Retry)
+            {
+                return;
+            }
+
+            if (snapshot.AttemptCount >= CenteredResizeRecovery.MaximumAttempts)
+            {
+                NativeMethods.CancelPendingCenteredResize(rootWindow, snapshot.CorrelationId, snapshot.Generation);
+                _centeredResizeRecovery.Cancel(rootWindow);
+                LogCenteredResizeRecoveryTerminal(new(true, snapshot.CorrelationId, snapshot.WindowHandle,
+                    snapshot.StartedAtTimestamp, snapshot.AttemptCount, false, false, null) { Generation = snapshot.Generation },
+                    CenteredResizeRecoveryDecision.Exhausted);
+                return;
+            }
+            _ = CenteredResizeWorkers.TrySchedule(rootWindow, () =>
+            {
+                CenteredResizeReplayResult replay;
+                try { replay = WindowsPlatformAdapter.ReapplyPendingCenteredResizeFor(rootWindow); }
+                catch (Exception failure)
+                {
+                    replay = new(true, snapshot.CorrelationId, snapshot.WindowHandle, snapshot.StartedAtTimestamp,
+                        snapshot.AttemptCount, false, false, failure.HResult) { Generation = snapshot.Generation };
+                    NativeMethods.CancelPendingCenteredResize(rootWindow, snapshot.CorrelationId, snapshot.Generation);
+                }
+                if (replay.HadPendingResize) _resizeCompletions.Enqueue((rootWindow, replay));
+                _ = RequestCenteredResizeRecovery(rootWindow);
+            });
+        }
+
+        private void HandleCenteredResizeRecoveryDecision(
+            CenteredResizeReplayResult replay,
+            CenteredResizeRecoveryDecision decision)
+        {
+            if (decision is CenteredResizeRecoveryDecision.Completed or
+                CenteredResizeRecoveryDecision.Failed or
+                CenteredResizeRecoveryDecision.Exhausted)
+            {
+                if (decision is CenteredResizeRecoveryDecision.Failed or CenteredResizeRecoveryDecision.Exhausted)
+                {
+                    NativeMethods.CancelPendingCenteredResize(
+                        NativeMethods.GetAncestorOrSelf(new IntPtr(replay.WindowHandle)),
+                        replay.CorrelationId, replay.Generation);
+                }
+                LogCenteredResizeRecoveryTerminal(replay, decision);
+            }
+            ScheduleCenteredResizeRecoveryTimer();
+        }
+
+        private void LogCenteredResizeRecoveryTerminal(
+            CenteredResizeReplayResult replay,
+            CenteredResizeRecoveryDecision decision)
+        {
+            var succeeded = decision == CenteredResizeRecoveryDecision.Completed;
+            WriteCenteredResizeDiagnostic(
+                succeeded ? "info" : "warning",
+                succeeded
+                    ? "download.window_resize_recovered"
+                    : "download.window_resize_recovery_failed",
+                replay,
+                decision switch
+                {
+                    CenteredResizeRecoveryDecision.Completed => "client_size_settled",
+                    CenteredResizeRecoveryDecision.Exhausted => "attempt_budget_exhausted",
+                    CenteredResizeRecoveryDecision.Failed when replay.NativeErrorCode is not null => "native_error",
+                    _ => "replay_not_applied"
+                });
+        }
+
+        private void ScheduleCenteredResizeRecoveryTimer()
+        {
+            if (!_centeredResizeRecovery.HasPending)
+            {
+                _ = NativeMethods.KillTimer(Handle, (UIntPtr)CenteredResizeRecoveryTimerId);
+                return;
+            }
+            if (NativeMethods.SetTimer(
+                    Handle,
+                    (UIntPtr)CenteredResizeRecoveryTimerId,
+                    CenteredResizeRecoveryIntervalMs,
+                    IntPtr.Zero) != UIntPtr.Zero)
+            {
+                return;
+            }
+
+            var nativeErrorCode = Marshal.GetLastWin32Error();
+            foreach (var rootWindow in _centeredResizeRecovery.PendingRoots)
+            {
+                if (_centeredResizeRecovery.TryGetSnapshot(rootWindow, out var snapshot))
+                {
+                    NativeMethods.CancelPendingCenteredResize(rootWindow, snapshot.CorrelationId, snapshot.Generation);
+                    WriteCenteredResizeDiagnostic(
+                        "warning",
+                        "download.window_resize_recovery_failed",
+                        new CenteredResizeReplayResult(
+                            true,
+                            snapshot.CorrelationId,
+                            snapshot.WindowHandle,
+                            snapshot.StartedAtTimestamp,
+                            snapshot.AttemptCount,
+                            false,
+                            true,
+                            nativeErrorCode),
+                        "recovery_timer_unavailable");
+                }
+                _centeredResizeRecovery.Cancel(rootWindow);
+            }
+        }
+
+        private void WriteCenteredResizeDiagnostic(
+            string level,
+            string eventName,
+            CenteredResizeReplayResult replay,
+            string reason)
+        {
+            try
+            {
+                var presentation = NativeMethods.CaptureWindowPresentation(
+                    new IntPtr(replay.WindowHandle));
+                var settledNow = eventName == "download.window_resize_recovered" && replay.MatchesCurrentClient(presentation);
+                if (eventName == "download.window_resize_recovered" && !settledNow)
+                {
+                    eventName = "download.window_resize_recovery_failed";
+                    level = "warning";
+                    reason = "client_changed_before_terminal_publication";
+                }
+                _log.Write(level, eventName, replay.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["window_handle"] = replay.WindowHandle,
+                        ["attempt_count"] = replay.AttemptCount,
+                        ["elapsed_ms"] = replay.StartedAtTimestamp == 0
+                            ? 0
+                            : Stopwatch.GetElapsedTime(replay.StartedAtTimestamp).TotalMilliseconds,
+                        ["success"] = settledNow,
+                        ["reason"] = reason,
+                        ["native_error_code"] = replay.NativeErrorCode,
+                        ["generation"] = replay.Generation,
+                        ["requested_client_width"] = replay.RequestedWidth,
+                        ["requested_client_height"] = replay.RequestedHeight,
+                        ["readback_client_width"] = replay.ReadbackWidth,
+                        ["readback_client_height"] = replay.ReadbackHeight,
+                        ["final_client_width"] = presentation.Exists ? presentation.ClientBounds.Width : 0,
+                        ["final_client_height"] = presentation.Exists ? presentation.ClientBounds.Height : 0
+                    });
+            }
+            catch
+            {
+                // Diagnostics cannot change the native resize result.
+            }
+        }
+
 
         internal static bool HasUserClipboardContent(
             string? text,
@@ -918,6 +1218,24 @@ internal sealed partial class WindowsPlatformAdapter
                     _activeFileDialogSearchHost,
                     context.WindowHandle))
             {
+                if (_activeFileDialogSearchHost is { } snapshot &&
+                    FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+                        _autoQuickSwitchEnabled,
+                        _fileDialogSearchEnabled,
+                        _fileDialogSearchHostVisible,
+                        snapshot,
+                        context.WindowHandle,
+                        _autoQuickSwitch.LatestSource is { } source &&
+                        ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                            source.Context.WindowHandle,
+                            source.Context.HostContextId)))
+                {
+                    var reusedFileDialog = FileDialogWindowAdapter.TryCapture(context);
+                    if (reusedFileDialog is not null)
+                    {
+                        ProcessRecognizedFileDialog(reusedFileDialog);
+                    }
+                }
                 return;
             }
             PublishForeground(context);
@@ -1150,13 +1468,207 @@ internal sealed partial class WindowsPlatformAdapter
             _directorySourceRecognitionWindowHandle = 0;
         }
 
+        private bool RefreshDirectoryOpusSourceFromWindow(
+            AutoQuickSwitchDirectorySource previous,
+            string stage)
+        {
+            if (string.IsNullOrWhiteSpace(previous.Context.HostContextId))
+            {
+                return false;
+            }
+            var started = Stopwatch.GetTimestamp();
+            var correlationId = Guid.NewGuid();
+            _log.Write(
+                "info",
+                "quick_launch.directory_opus_source_refresh_started",
+                correlationId,
+                new Dictionary<string, object?>
+                {
+                    ["source_window_handle"] = previous.Context.WindowHandle,
+                    ["stage"] = stage
+                });
+            var foreground = _foregroundContextProvider.Capture(
+                new IntPtr(previous.Context.WindowHandle));
+            var refreshed = ThirdPartyFileManagerAdapter.TryRefreshDirectoryOpusSource(
+                previous.Context.WindowHandle,
+                previous.Context.HostContextId,
+                foreground);
+            if (refreshed is null)
+            {
+                _log.Write(
+                    "warning",
+                    "quick_launch.directory_opus_source_refresh_failed",
+                    correlationId,
+                    fields: new Dictionary<string, object?>
+                    {
+                        ["source_window_handle"] = previous.Context.WindowHandle,
+                        ["stage"] = stage,
+                        ["success"] = false,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                    });
+                return false;
+            }
+
+            var refreshedContext = previous.Context with
+            {
+                CurrentDirectory = refreshed.CurrentDirectory,
+                HostContextId = refreshed.HostContextId
+            };
+            var changed = _autoQuickSwitch.RefreshDirectorySource(
+                refreshedContext,
+                DirectorySourceDisplayName(foreground.ProcessName, refreshedContext));
+            _log.Write(
+                "info",
+                changed
+                    ? "quick_launch.directory_opus_source_refresh_succeeded"
+                    : "quick_launch.directory_opus_source_refresh_unchanged",
+                correlationId,
+                fields: new Dictionary<string, object?>
+                {
+                    ["source_window_handle"] = refreshed.WindowHandle,
+                    ["stage"] = stage,
+                    ["success"] = true,
+                    ["path_changed"] = changed,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                });
+            if (changed &&
+                _fileDialogSearchHostVisible &&
+                _activeFileDialogSearchHost is { } snapshot)
+            {
+                PublishFileDialogSearchHost(snapshot, force: true);
+            }
+            return true;
+        }
+
+        private void QueueDirectoryOpusSourceRefresh(
+            long eventRootWindowHandle,
+            uint eventType,
+            int objectId)
+        {
+            var source = _autoQuickSwitch.LatestSource;
+            if (source is null)
+            {
+                return;
+            }
+            var isDirectoryOpus = ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                source.Context.WindowHandle,
+                source.Context.HostContextId);
+            var refreshWindow = DirectoryOpusSourceRefresh.PendingFocusRefreshWindow(
+                source.Context.WindowHandle,
+                isDirectoryOpus,
+                eventRootWindowHandle,
+                eventType,
+                objectId);
+            if (refreshWindow == 0)
+            {
+                return;
+            }
+            Volatile.Write(ref _pendingDirectoryOpusSourceRefreshWindow, refreshWindow);
+            if (Interlocked.Exchange(ref _directoryOpusSourceRefreshPosted, 1) == 0 &&
+                !NativeMethods.PostMessage(
+                    Handle,
+                    WmDirectoryOpusSourceRefresh,
+                    new IntPtr(refreshWindow),
+                    IntPtr.Zero))
+            {
+                Interlocked.Exchange(ref _directoryOpusSourceRefreshPosted, 0);
+                Volatile.Write(ref _pendingDirectoryOpusSourceRefreshWindow, 0);
+            }
+        }
+
+        private void SchedulePendingDirectoryOpusSourceRefresh()
+        {
+            var pendingWindow = Volatile.Read(ref _pendingDirectoryOpusSourceRefreshWindow);
+            var source = _autoQuickSwitch.LatestSource;
+            var latestWindow = source?.Context.WindowHandle ?? 0;
+            var isDirectoryOpus = source is not null &&
+                ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                    source.Context.WindowHandle,
+                    source.Context.HostContextId);
+            var foreground = _foregroundContextProvider.Capture();
+            var foregroundRoot = NativeMethods.GetRootWindowHandle(
+                new IntPtr(foreground.WindowHandle));
+            if (pendingWindow == 0 ||
+                !DirectoryOpusSourceRefresh.ShouldRefreshPending(
+                    pendingWindow,
+                    foregroundRoot,
+                    isDirectoryOpus,
+                    latestWindow) ||
+                source is null)
+            {
+                Volatile.Write(ref _pendingDirectoryOpusSourceRefreshWindow, 0);
+                return;
+            }
+            if (_directoryOpusSourceRefreshTimerActive)
+            {
+                return;
+            }
+            if (NativeMethods.SetTimer(
+                    Handle,
+                    (UIntPtr)DirectoryOpusSourceRefreshTimerId,
+                    DirectoryOpusSourceRefreshIntervalMs,
+                    IntPtr.Zero) != UIntPtr.Zero)
+            {
+                _directoryOpusSourceRefreshTimerActive = true;
+                return;
+            }
+            _log.Write(
+                "warning",
+                "quick_launch.directory_opus_source_refresh_failed",
+                fields: new Dictionary<string, object?>
+                {
+                    ["source_window_handle"] = pendingWindow,
+                    ["stage"] = "focus_timer_unavailable",
+                    ["success"] = false,
+                    ["native_error_code"] = Marshal.GetLastWin32Error()
+                });
+            Volatile.Write(ref _pendingDirectoryOpusSourceRefreshWindow, 0);
+        }
+
+        private void RefreshPendingDirectoryOpusSource()
+        {
+            var pendingWindow = Interlocked.Exchange(
+                ref _pendingDirectoryOpusSourceRefreshWindow,
+                0);
+            var source = _autoQuickSwitch.LatestSource;
+            var latestWindow = source?.Context.WindowHandle ?? 0;
+            var isDirectoryOpus = source is not null &&
+                ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                    source.Context.WindowHandle,
+                    source.Context.HostContextId);
+            var foreground = _foregroundContextProvider.Capture();
+            var foregroundRoot = NativeMethods.GetRootWindowHandle(
+                new IntPtr(foreground.WindowHandle));
+            if (!DirectoryOpusSourceRefresh.ShouldRefreshPending(
+                    pendingWindow,
+                    foregroundRoot,
+                    isDirectoryOpus,
+                    latestWindow) ||
+                source is null)
+            {
+                return;
+            }
+            _ = RefreshDirectoryOpusSourceFromWindow(
+                source,
+                "lister_focus_change");
+        }
+
+
         private void ProcessRecognizedFileDialog(FileDialogContext fileDialog)
         {
-            var candidate = _autoQuickSwitch.ObserveFileDialog(
-                new DirectoryNavigationContext(
-                    DirectoryNavigationAdapter.FileDialogHost,
-                    fileDialog.WindowHandle,
-                    fileDialog.CurrentDirectory));
+            var target = new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.FileDialogHost,
+                fileDialog.WindowHandle,
+                fileDialog.CurrentDirectory);
+            var candidate = DirectoryOpusDialogReturnRefresh.Observe(
+                _autoQuickSwitch,
+                target,
+                source => ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                    source.Context.WindowHandle,
+                    source.Context.HostContextId),
+                source => RefreshDirectoryOpusSourceFromWindow(
+                    source,
+                    "dialog_return"));
             if (candidate is not null)
             {
                 QueueAutoQuickSwitch(candidate);
@@ -1497,13 +2009,17 @@ internal sealed partial class WindowsPlatformAdapter
         {
             if (eventType == EventSystemMoveSizeEnd)
             {
+                var moveSizeRoot = new IntPtr(NativeMethods.GetRootWindowHandle(window));
+                RetryCenteredResizeForRoot(moveSizeRoot);
                 var overlay = Volatile.Read(ref _taskbarOverlayPlacement);
                 if (overlay is not null && window.ToInt64() == overlay.WindowHandle)
                 {
-                    _events.TryWrite(new TaskbarOverlayEditGestureFinishedEvent(overlay.WindowHandle));
+                    _events.TryWrite(new TaskbarOverlayEditGestureFinishedEvent(
+                        overlay.WindowHandle));
                 }
                 return;
             }
+
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
             if (TaskbarOverlayPlacement.IsTaskbarWindow(window) ||
                 TaskbarOverlayPlacement.IsTaskbarWindow(new IntPtr(rootWindowHandle)))
@@ -1514,6 +2030,7 @@ internal sealed partial class WindowsPlatformAdapter
                     IntPtr.Zero,
                     IntPtr.Zero);
             }
+
             if (eventType == EventObjectDestroy &&
                 objectId == ObjIdWindow &&
                 window.ToInt64() == _directorySourceRecognitionWindowHandle)
@@ -1521,15 +2038,18 @@ internal sealed partial class WindowsPlatformAdapter
                 FailDirectorySourceRecognition("target_destroyed", null);
                 return;
             }
+
+            if (eventType is EventObjectFocus or EventObjectNameChange or EventObjectSelection)
+            {
+                QueueDirectoryOpusSourceRefresh(rootWindowHandle, eventType, objectId);
+            }
+
+
             if ((eventType is EventObjectCreate or EventObjectShow) &&
-                (_fileDialogRecognitionRetry.ShouldRetryForStructureChange(
-                     rootWindowHandle) ||
+                (_fileDialogRecognitionRetry.ShouldRetryForStructureChange(rootWindowHandle) ||
                  ((_fileDialogSearchEnabled || _autoQuickSwitchEnabled) &&
-                  NativeMethods.IsForegroundWindowForTarget(
-                      new IntPtr(rootWindowHandle)))) &&
-                Interlocked.Exchange(
-                    ref _fileDialogStructureRetryPosted,
-                    1) == 0)
+                  NativeMethods.IsForegroundWindowForTarget(new IntPtr(rootWindowHandle)))) &&
+                Interlocked.Exchange(ref _fileDialogStructureRetryPosted, 1) == 0)
             {
                 if (!NativeMethods.PostMessage(
                         Handle,
@@ -1537,12 +2057,11 @@ internal sealed partial class WindowsPlatformAdapter
                         IntPtr.Zero,
                         new IntPtr(rootWindowHandle)))
                 {
-                    Interlocked.Exchange(
-                        ref _fileDialogStructureRetryPosted,
-                        0);
+                    Interlocked.Exchange(ref _fileDialogStructureRetryPosted, 0);
                 }
                 return;
             }
+
             var snapshot = _activeFileDialogSearchHost;
             if (!_fileDialogSearchEnabled ||
                 snapshot is null ||
@@ -1623,8 +2142,73 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void OnSystemUserPreferenceChanged(
             object? sender,
-            UserPreferenceChangedEventArgs eventArgs) =>
+            UserPreferenceChangedEventArgs eventArgs)
+        {
             RequestTaskbarOverlayReposition();
+            // SystemEvents runs on its own broadcast window; marshal SPI reads to our STA.
+            if (!_systemMotionStopped)
+            {
+                _ = NativeMethods.PostMessage(Handle, WmRefreshSystemMotion, IntPtr.Zero, IntPtr.Zero);
+            }
+        }
+
+        private void RefreshSystemMotionPreference()
+        {
+            if (_systemMotionStopped) return;
+            if (_systemMotion.Refresh(out var snapshot)) _pendingMotion.Stage(snapshot);
+            PublishPendingSystemMotion();
+        }
+
+        private void PublishPendingSystemMotion()
+        {
+            if (_systemMotionStopped) return;
+            var delivered = _pendingMotion.TryPublish(value => _events.TryWrite(value));
+            if (_pendingMotion.HasPending)
+            {
+                var timer = NativeMethods.SetTimer(Handle, (UIntPtr)SystemMotionRetryTimerId, 250, IntPtr.Zero);
+                if (timer == UIntPtr.Zero)
+                {
+                    var nativeError = Marshal.GetLastWin32Error();
+                    if (!_systemMotionRetryFailed)
+                    {
+                        _systemMotionRetryFailed = true;
+                        try
+                        {
+                            _log.Write("warning", "system.motion.retry_timer_failed",
+                                _pendingMotion.PendingCorrelationId ?? Guid.Empty,
+                                new Dictionary<string, object?>
+                                {
+                                    ["native_error_code"] = nativeError == 0 ? -1 : nativeError,
+                                    ["pending_retained"] = true
+                                });
+                        }
+                        catch { /* Diagnostics never retire the pending preference. */ }
+                    }
+                }
+                else _systemMotionRetryFailed = false;
+            }
+            else
+            {
+                _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
+                _systemMotionRetryFailed = false;
+            }
+            if (delivered is null) return;
+            var correlationId = delivered.CorrelationId;
+            var snapshot = new MotionPreferenceSnapshot(delivered.ReducedMotion, delivered.NativeErrorCode);
+            var started = Stopwatch.StartNew();
+            try
+            {
+                _log.Write(snapshot.NativeErrorCode == 0 ? "info" : "warning",
+                    "system.motion.preference_changed",
+                    correlationId, new Dictionary<string, object?>
+                    {
+                        ["reduced_motion"] = snapshot.ReducedMotion,
+                        ["native_error_code"] = snapshot.NativeErrorCode,
+                        ["elapsed_ms"] = started.ElapsedMilliseconds
+                    });
+            }
+            catch { /* Diagnostic delivery cannot affect preference state. */ }
+        }
 
         private void RequestTaskbarOverlayReposition()
         {
@@ -1787,7 +2371,45 @@ internal sealed partial class WindowsPlatformAdapter
                 eventSequence));
         }
 
-        private void PublishQuickLaunchPanelRequest()
+        private void PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger trigger)
+        {
+            var decision = QuickLaunchSummonGate.Dispatch(
+                _quickLaunchTriggerEnabled && !_quickLaunchRecording,
+                _quickLaunchSuppressInExclusiveFullscreen,
+                trigger,
+                QuickLaunchSummonGate.QueryWindowsNotificationState,
+                correlationId => PublishQuickLaunchPanelRequestCore(correlationId));
+            if (!_quickLaunchSummonDiagnosticGate.TryAcquire(decision, out var suppressedFailureCount))
+            {
+                return;
+            }
+            try
+            {
+                _log.Write(
+                    decision.QueryHresult is null ? "info" : "warning",
+                    "quick_launch.summon_decision",
+                    decision.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["trigger"] = decision.Trigger == QuickLaunchSummonTrigger.HotKey
+                            ? "registered_hotkey"
+                            : "double_control",
+                        ["decision"] = !decision.TriggerEnabled
+                            ? "disabled"
+                            : decision.Suppressed ? "suppressed" : "published",
+                        ["notification_state"] = decision.NotificationState,
+                        ["native_hresult"] = decision.QueryHresult,
+                        ["elapsed_ms"] = decision.ElapsedMilliseconds,
+                        ["suppressed_failure_count"] = suppressedFailureCount
+                    });
+            }
+            catch
+            {
+                // Logging must never change whether the panel summon is dispatched.
+            }
+        }
+
+        private void PublishQuickLaunchPanelRequestCore(Guid correlationId)
         {
             var target = _foregroundContextProvider.Capture();
             var cursor = NativeMethods.GetCursorLocation();
@@ -1804,7 +2426,8 @@ internal sealed partial class WindowsPlatformAdapter
                 cursor.DisplayIndex,
                 cursor.Dpi,
                 requestedAtUnixMs,
-                directoryNavigationContext));
+                directoryNavigationContext,
+                correlationId));
             if (directoryNavigationContext is null &&
                 DirectoryNavigationAdapter.IsPotentialElevatedHost(target))
             {
@@ -1885,26 +2508,6 @@ internal sealed partial class WindowsPlatformAdapter
             _rightControlDoubleTap.Reset();
         }
 
-        /// Re-applies a centered resize that was swallowed by a drag/size
-        /// modal loop (the confirmed-download window grow during a drag).
-        public void ReapplyPendingCenteredResize()
-        {
-            var pending = _pendingCenteredResize;
-            if (pending is null)
-            {
-                return;
-            }
-            _pendingCenteredResize = null;
-            var (x, y, width, height) = pending.Value;
-            _ = NativeMethods.SetWindowPos(
-                Handle,
-                IntPtr.Zero,
-                x,
-                y,
-                width,
-                height,
-                0x0004 | 0x0010); // SWP_NOZORDER | SWP_NOACTIVATE
-        }
 
         private void DrainPasteRequests()
         {
@@ -1951,6 +2554,73 @@ internal sealed partial class WindowsPlatformAdapter
             }
         }
 
+        private void DrainQuickLaunchConfigurationRequests()
+        {
+            while (_quickLaunchConfigurationRequests.TryDequeue(out var request))
+            {
+                if (request.CancellationToken.IsCancellationRequested)
+                {
+                    request.Completion.TrySetCanceled(request.CancellationToken);
+                    continue;
+                }
+
+                var startedAt = Stopwatch.GetTimestamp();
+                WriteQuickLaunchDiagnostic("info", "quick_launch.configuration.started", request.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = "windows_apply",
+                        ["suppress_in_exclusive_fullscreen"] = request.Command.SuppressInExclusiveFullscreen
+                    });
+                var result = ApplyQuickLaunchConfiguration(request.Command);
+                if (result.Success)
+                {
+                    _quickLaunchSuppressInExclusiveFullscreen = request.Command.Enabled &&
+                        request.Command.SuppressInExclusiveFullscreen;
+                }
+                WriteQuickLaunchDiagnostic(result.Success ? "info" : "error",
+                    result.Success ? "quick_launch.configuration.applied" : "quick_launch.configuration.failed",
+                    request.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = result.Data ?? "windows_apply",
+                        ["success"] = result.Success,
+                        ["native_hresult"] = result.NativeErrorCode,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds
+                    });
+                request.Completion.TrySetResult(result);
+            }
+        }
+
+        private void DrainQuickLaunchHotKeyRecordingRequests()
+        {
+            while (_quickLaunchHotKeyRecordingRequests.TryDequeue(out var request))
+            {
+                if (request.CancellationToken.IsCancellationRequested)
+                {
+                    request.Completion.TrySetCanceled(request.CancellationToken);
+                    continue;
+                }
+                var result = SetQuickLaunchRecording(request.Command.Recording);
+                request.Completion.TrySetResult(result);
+            }
+        }
+
+        private void WriteQuickLaunchDiagnostic(
+            string level,
+            string eventName,
+            Guid correlationId,
+            IReadOnlyDictionary<string, object?> fields)
+        {
+            try
+            {
+                _log.Write(level, eventName, correlationId, fields);
+            }
+            catch
+            {
+                // Diagnostics cannot change hotkey registration or summon results.
+            }
+        }
+
         private WindowsCommandResult ApplyClipboardConfiguration(ConfigureClipboardCommand command)
         {
             var requestedExclusions = ClipboardCaptureExclusions.Create(command.ExcludedProcesses);
@@ -1981,30 +2651,20 @@ internal sealed partial class WindowsPlatformAdapter
             return new WindowsCommandResult(true);
         }
 
-        private void DrainQuickLaunchConfigurationRequests()
-        {
-            while (_quickLaunchConfigurationRequests.TryDequeue(out var request))
-            {
-                if (request.CancellationToken.IsCancellationRequested)
-                {
-                    request.Completion.TrySetCanceled(request.CancellationToken);
-                    continue;
-                }
-                request.Completion.TrySetResult(ApplyQuickLaunchConfiguration(request.Command));
-            }
-        }
 
-        private void DrainQuickLaunchHotKeyRecordingRequests()
+        private void WriteDesktopShellDiagnostic(
+            string level,
+            string eventName,
+            Guid correlationId,
+            IReadOnlyDictionary<string, object?> fields)
         {
-            while (_quickLaunchHotKeyRecordingRequests.TryDequeue(out var request))
+            try
             {
-                if (request.CancellationToken.IsCancellationRequested)
-                {
-                    request.Completion.TrySetCanceled(request.CancellationToken);
-                    continue;
-                }
-                var result = SetQuickLaunchRecording(request.Command.Recording);
-                request.Completion.TrySetResult(result);
+                _log.Write(level, eventName, correlationId, fields);
+            }
+            catch
+            {
+                // Diagnostics must not affect desktop-shell configuration results.
             }
         }
 
@@ -2017,12 +2677,31 @@ internal sealed partial class WindowsPlatformAdapter
                     request.Completion.TrySetCanceled(request.CancellationToken);
                     continue;
                 }
-                request.Completion.TrySetResult(ApplyDesktopShellConfiguration(request.Command));
+
+                var started = Stopwatch.GetTimestamp();
+                WriteDesktopShellDiagnostic("info", "desktop_shell.started", request.CorrelationId,
+                    new Dictionary<string, object?> { ["stage"] = "windows_apply" });
+                var result = ApplyDesktopShellConfiguration(request.Command, request.CorrelationId);
+                WriteDesktopShellDiagnostic(result.Success ? "info" : "error",
+                    result.Success ? "desktop_shell.applied" : "desktop_shell.apply_failed",
+                    request.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = result.Data ?? "unknown",
+                        ["success"] = result.Success,
+                        ["native_error_code"] = result.NativeErrorCode,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                    });
+                request.Completion.TrySetResult(result);
             }
         }
 
-        private WindowsCommandResult ApplyDesktopShellConfiguration(ConfigureDesktopShellCommand command)
+
+        private WindowsCommandResult ApplyDesktopShellConfiguration(
+            ConfigureDesktopShellCommand command,
+            Guid correlationId)
         {
+            var failureStage = "desktop_executable_lookup";
             try
             {
                 var requiresDesktopExecutable =
@@ -2034,16 +2713,21 @@ internal sealed partial class WindowsPlatformAdapter
                 {
                     return new WindowsCommandResult(
                         false,
-                        "The approved protected NxTools desktop executable is unavailable.");
+                        "The approved protected NxTools desktop executable is unavailable.",
+                        Data: "desktop_executable_unavailable");
                 }
 
+                failureStage = "startup_registration";
                 using (var runKey = Registry.CurrentUser.CreateSubKey(
                            @"Software\Microsoft\Windows\CurrentVersion\Run",
                            writable: true))
                 {
                     if (runKey is null)
                     {
-                        return new WindowsCommandResult(false, "Windows startup registry is unavailable.");
+                        return new WindowsCommandResult(
+                            false,
+                            "Windows startup registry is unavailable.",
+                            Data: "startup_registration_failed");
                     }
                     var startup = ApplyStartupRegistration(
                         runKey,
@@ -2051,26 +2735,50 @@ internal sealed partial class WindowsPlatformAdapter
                         command.StartOnLoginSilently);
                     if (!startup.Success)
                     {
+                        WriteDesktopShellDiagnostic("error", "desktop_shell.startup_registration_failed", correlationId,
+                            new Dictionary<string, object?>
+                            {
+                                ["stage"] = startup.Data ?? "startup_registration_failed",
+                                ["native_error_code"] = startup.NativeErrorCode
+                            });
                         return startup;
                     }
+                    WriteDesktopShellDiagnostic("info", "desktop_shell.startup_registration_applied", correlationId,
+                        new Dictionary<string, object?>
+                        {
+                            ["stage"] = "startup_registration_applied",
+                            ["start_on_login_silently"] = command.StartOnLoginSilently
+                        });
                 }
 
-                return ConfigureTrayIcon(
+                failureStage = "tray_icon";
+                var tray = ConfigureTrayIcon(
                     command.TrayIconVisible,
                     desktopExecutable ?? string.Empty);
+                WriteDesktopShellDiagnostic(tray.Success ? "info" : "error",
+                    tray.Success ? "desktop_shell.tray_icon_applied" : "desktop_shell.tray_icon_failed",
+                    correlationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = tray.Data ?? (tray.Success ? "tray_icon_applied" : "tray_icon_failed"),
+                        ["visible"] = command.TrayIconVisible,
+                        ["native_error_code"] = tray.NativeErrorCode
+                    });
+                return tray.Success
+                    ? tray with { Data = "windows_shell_apply_succeeded" }
+                    : tray;
             }
             catch (Exception error)
             {
-                var nativeErrorCode = error switch
-                {
-                    Win32Exception win32 => win32.NativeErrorCode,
-                    ExternalException external => external.ErrorCode,
-                    _ => error.HResult
-                };
-                return new WindowsCommandResult(
-                    false,
-                    error.Message,
-                    NativeErrorCode: nativeErrorCode);
+                var result = WindowsPlatformAdapter.CreateDesktopShellApplyFailure(error, failureStage);
+                WriteDesktopShellDiagnostic("error", "desktop_shell.native_exception", correlationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["stage"] = failureStage,
+                        ["exception_type"] = error.GetType().FullName,
+                        ["native_error_code"] = result.NativeErrorCode
+                    });
+                return result;
             }
         }
 
@@ -2321,6 +3029,9 @@ internal sealed partial class WindowsPlatformAdapter
         private void Stop()
         {
             ConfigureTrayIcon(false, string.Empty);
+            _systemMotionStopped = true;
+            _pendingMotion.Stop();
+            _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
             SystemEvents.DisplaySettingsChanged -= OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
@@ -2331,6 +3042,8 @@ internal sealed partial class WindowsPlatformAdapter
             _ = NativeMethods.KillTimer(
                 Handle,
                 (UIntPtr)DirectorySourceRecognitionTimerId);
+            _ = NativeMethods.KillTimer(Handle, (UIntPtr)CenteredResizeRecoveryTimerId);
+            _ = NativeMethods.KillTimer(Handle, (UIntPtr)DirectoryOpusSourceRefreshTimerId);
             _ = NativeMethods.RemoveClipboardFormatListener(Handle);
             _hotKeyRegistration.Stop();
             _quickLaunchHotKeyRegistration.Stop();
@@ -2352,7 +3065,9 @@ internal sealed partial class WindowsPlatformAdapter
                          _fileDialogHideHook,
                          _fileDialogLocationHook,
                          _fileDialogNameHook,
-                         _taskbarOverlayMoveSizeEndHook
+                        _directoryOpusFocusHook,
+                        _directoryOpusSelectionHook,
+                        _taskbarOverlayMoveSizeEndHook
                      })
             {
                 if (hook != IntPtr.Zero)
@@ -2366,6 +3081,8 @@ internal sealed partial class WindowsPlatformAdapter
             _fileDialogHideHook = IntPtr.Zero;
             _fileDialogLocationHook = IntPtr.Zero;
             _fileDialogNameHook = IntPtr.Zero;
+            _directoryOpusFocusHook = IntPtr.Zero;
+            _directoryOpusSelectionHook = IntPtr.Zero;
             _taskbarOverlayMoveSizeEndHook = IntPtr.Zero;
             while (_pasteRequests.TryDequeue(out var request))
             {
@@ -2432,6 +3149,7 @@ internal sealed partial class WindowsPlatformAdapter
 
     private sealed record QuickLaunchConfigurationRequest(
         ConfigureQuickLaunchCommand Command,
+        Guid CorrelationId,
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 
@@ -2442,11 +3160,11 @@ internal sealed partial class WindowsPlatformAdapter
 
     private sealed record DesktopShellConfigurationRequest(
         ConfigureDesktopShellCommand Command,
+        Guid CorrelationId,
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 
 }
-
 internal readonly record struct ClipboardCaptureLimits(
     ulong MaxTextBytes,
     ulong MaxImageBytes,

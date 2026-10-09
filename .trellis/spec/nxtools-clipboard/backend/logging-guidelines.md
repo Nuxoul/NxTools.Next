@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Clipboard diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-clipboard/src/lib.rs#CaptureSource`, `repo:rust/crates/nxtools-clipboard/src/archive.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard_worker.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Capture/history/asset values are user payload, not log fields: no text/image/path/native-format bytes/source title/icon resource/query. Worker/app owns correlation/generation/start/terminal/elapsed with kind, counts, lengths, fixed storage/database/native code. Superseded queries remain quiet; no scroll/hover/frame logs. Library pure query helpers need no extra logging. [Shared privacy](../../shared/engineering.md); source error Display isn't sanitized by type alone.

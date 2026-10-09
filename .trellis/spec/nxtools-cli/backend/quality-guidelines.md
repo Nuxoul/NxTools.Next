@@ -1,51 +1,5 @@
-# Quality Guidelines
+# CLI quality
 
-> Code quality standards for backend development.
+Evidence: `repo:rust/apps/nxtools-cli/src/lib.rs#tests`, `repo:rust/apps/nxtools-cli/src/lib.rs#parse_invocation`.
 
----
-
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+Test actual parse_invocation/parse_args combinations, optional download prefix, --connect-only placement, invalid schedule/IDs/headers, exit mapping and JSON projection. Watch uses authoritative generation/sequence and bounded caller policy; do not fake completion from launch success. Fixtures use synthetic tasks/temp directories, no product autostart. `cargo test -p nxtools-cli --lib` and strict scoped checks follow [verification](../../shared/verification.md).

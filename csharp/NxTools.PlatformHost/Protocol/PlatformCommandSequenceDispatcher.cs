@@ -11,6 +11,7 @@ internal sealed class PlatformCommandSequenceDispatcher
     private static readonly HashSet<string> DetachedCommands = new(StringComparer.Ordinal)
     {
         NativeFileDragCommand,
+        "present_fixed_window_over_anchor",
         "query_shell_actions",
         "query_shell_submenu",
         "invoke_shell_action",

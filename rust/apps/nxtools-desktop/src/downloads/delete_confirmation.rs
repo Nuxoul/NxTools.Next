@@ -39,7 +39,7 @@ impl Render for DeleteDownloadView {
             .py(px(SPACING_12))
             .flex()
             .flex_col()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .child(
                 div()
                     .text_size(px(TEXT_BODY))
@@ -51,7 +51,7 @@ impl Render for DeleteDownloadView {
                 div()
                     .text_size(px(TEXT_LABEL))
                     .line_height(px(LINE_HEIGHT_LABEL))
-                    .text_color(theme.text_muted)
+                    .text_color(theme.text_secondary)
                     .truncate()
                     .child(path),
             )

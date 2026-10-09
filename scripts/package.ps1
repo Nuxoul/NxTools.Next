@@ -3,6 +3,7 @@
     [string]$Configuration = 'Release',
     [string]$OutputPath = '',
     [switch]$SkipVerification,
+    [switch]$SkipInstaller,
     [ValidateRange(0.0, 1024.0)]
     [double]$MinimumCommitHeadroomGiB = 6.0
 )
@@ -200,7 +201,7 @@ $isccCandidates = @(
     $env:ProgramFiles
 ) | ForEach-Object { Join-Path $_ 'Inno Setup 6\ISCC.exe' }
 $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if ($iscc -and $Configuration -eq 'Release') {
+if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     $installerScript = Join-Path $root 'installer\nxtools-next.iss'
     if (Test-Path $installerScript) {
         & $iscc $installerScript | Write-Host

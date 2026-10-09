@@ -1,0 +1,18 @@
+{"file":"AGENTS.md","reason":"Architecture/reference/security constraints"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/prd.md","reason":"Acceptance and no product-source migration"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/design.md","reason":"Accurate authority/current/target mapping"}
+{"file":".trellis/tasks/10-09-quality-standards-foundation/implement.md","reason":"Scoped verification and gap reporting"}
+{"file":".trellis/tasks/10-02-staged-desktop-ui/design.md","reason":"Approved UI brief must not be replaced by current code"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Real contracts and regressions retained"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Durable shrink/DASH/probe constraints retained"}
+{"file":".trellis/spec/nxtools-clipboard/backend/quality-guidelines.md","reason":"Archive/retention/migration ownership retained"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Admission/Ready/unique USN and release gates retained"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"ID routing and initial-frame deadline retained"}
+{"file":"docs/audits/2026-10-08-sol-review-remediation.md","reason":"No inaccurate all-green release assertion"}
+{"file":".trellis/spec/index.md","reason":"Complete source-backed owner navigation"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Preserved real cross-layer contracts"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Later approved target not overwritten by current metrics"}
+{"file":".trellis/spec/shared/foundation-backlog.md","reason":"No unsupported compliance claims or hidden gaps"}
+{"file":".trellis/spec/shared/verification.md","reason":"Static/compiled/interactive/release evidence separation"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native boundedness/readback/compensation assertions"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Identity/ownership/privacy constraints"}

@@ -1,38 +1,9 @@
-# Backend Development Guidelines
+# Protocol backend
 
-> Best practices for backend development in this project.
+Owner: typed PlatformHost/indexer wire model, not transport/state/persistence. Evidence: `repo:rust/crates/nxtools-protocol/src/lib.rs#Envelope`.
 
----
+## Pre-Development Checklist
+Read [engineering](../../shared/engineering.md), [structure](directory-structure.md), [persistence](database-guidelines.md), [errors](error-handling.md), [logging](logging-guidelines.md), [quality](quality-guidelines.md). Schema changes trace Rust/C#/caller/test, preserve version/defaults and bounds.
 
-## Overview
-
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+## Quality Check
+`cargo test -p nxtools-protocol --lib`; affected IPC/C# roundtrips and lifecycle tests; scoped lint/check/fmt per [verification](../../shared/verification.md). No actual native command required for DTO tests. [Standards entry](../../index.md).

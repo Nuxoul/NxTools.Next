@@ -106,10 +106,11 @@ impl Render for DownloadScheduleView {
         for (index, day) in DownloadWeekday::ALL.into_iter().enumerate() {
             let selected = self.days.contains(&day);
             weekdays = weekdays.child(
-                div()
-                    .id(("download-schedule-day", index))
-                    .w(px(38.0))
-                    .h(px(26.0))
+                Button::new(("download-schedule-day", index))
+                    .ghost()
+                    .debug_selector(move || format!("download-schedule-day-{index}"))
+                    .w(px(40.0))
+                    .h(px(CONTROL_HEIGHT_ACTION))
                     .rounded(px(RADIUS_CONTROL))
                     .border_1()
                     .border_color(if selected {
@@ -122,7 +123,6 @@ impl Render for DownloadScheduleView {
                     } else {
                         theme.canvas
                     })
-                    .cursor_pointer()
                     .flex()
                     .items_center()
                     .justify_center()
@@ -131,9 +131,9 @@ impl Render for DownloadScheduleView {
                     .text_color(if selected {
                         theme.accent_text
                     } else {
-                        theme.text_muted
+                        theme.text_secondary
                     })
-                    .child(day.short_label())
+                    .label(day.short_label())
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.days.insert(day) {
                             this.days.remove(&day);
@@ -336,7 +336,7 @@ pub(crate) fn schedule_trigger_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .text_size(px(TEXT_BODY))
@@ -392,14 +392,14 @@ pub(crate) fn schedule_trigger_row(
                 .border_1()
                 .border_color(theme.border_subtle)
                 .bg(theme.canvas)
-                .px(px(SPACING_6))
+                .px(px(SPACING_8))
                 .flex()
                 .items_center()
                 .child(
                     Input::new(input)
                         .appearance(false)
                         .bordered(false)
-                        .focus_bordered(false),
+                        .focus_bordered(true),
                 )
                 .into_any_element()
         } else {

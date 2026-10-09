@@ -105,6 +105,7 @@ pub struct Pong {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum PlatformEvent {
     TrayActionRequested(TrayActionRequest),
+    SystemMotionPreferenceChanged(SystemMotionPreferenceChanged),
     ForegroundChanged(ForegroundContext),
     GlobalPointerPressed(PointerPressContext),
     ClipboardCaptured(ClipboardCapture),
@@ -115,6 +116,14 @@ pub enum PlatformEvent {
     QuickLaunchFileDialogSearchHostChanged(QuickLaunchFileDialogSearchHost),
     TaskbarOverlayEditGestureFinished(TaskbarOverlayEditGesture),
     ElevatedDirectoryHelperRequested(ElevatedDirectoryHelperRequest),
+}
+
+/// Native Windows client-area animation preference; nonzero native error means fail closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemMotionPreferenceChanged {
+    pub correlation_id: Uuid,
+    pub reduced_motion: bool,
+    pub native_error_code: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +214,8 @@ pub struct QuickLaunchPanelRequest {
     pub cursor_display_index: u32,
     pub cursor_monitor_dpi: u32,
     pub requested_at_unix_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -379,6 +390,7 @@ pub enum PlatformCommand {
     SetWindowNoActivate(SetWindowNoActivateCommand),
     SetWindowBounds(SetWindowBoundsCommand),
     SetWindowBoundsCentered(SetWindowBoundsCenteredCommand),
+    PresentFixedWindowOverAnchor(PresentFixedWindowOverAnchorCommand),
     StashWindowBounds(StashWindowBoundsCommand),
     MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand),
     SetTaskbarProgress(SetTaskbarProgressCommand),
@@ -440,6 +452,8 @@ pub struct ConfigureQuickLaunchCommand {
     pub auto_quick_switch_enabled: bool,
     #[serde(default = "default_true")]
     pub file_dialog_search_enabled: bool,
+    #[serde(default = "default_true")]
+    pub suppress_in_exclusive_fullscreen: bool,
     pub hotkey_modifiers: Vec<String>,
     pub hotkey_key: String,
     pub hotkey_display: String,
@@ -676,6 +690,16 @@ pub struct SetWindowPositionCommand {
     pub window_handle: i64,
     pub x: i32,
     pub y: i32,
+}
+
+/// One-shot hidden-window presentation. Dimensions are final device-pixel client sizes.
+/// Apply bounds centered on the anchor before nonactivating show and native readback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresentFixedWindowOverAnchorCommand {
+    pub window_handle: i64,
+    pub anchor_window_handle: i64,
+    pub width: i32,
+    pub height: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1211,6 +1235,25 @@ mod tests {
     }
 
     #[test]
+    fn fixed_window_presentation_preserves_final_client_dimensions_and_anchor() {
+        let mut envelope = Envelope::new(Message::PlatformCommand(
+            PlatformCommand::PresentFixedWindowOverAnchor(PresentFixedWindowOverAnchorCommand {
+                window_handle: 702,
+                anchor_window_handle: 701,
+                width: 560,
+                height: 278,
+            }),
+        ));
+        envelope.correlation_id = Some(envelope.id);
+        let line = envelope.encode_line().expect("encode fixed presentation");
+        assert!(line.contains("present_fixed_window_over_anchor"));
+        assert_eq!(
+            Envelope::decode_line(&line).expect("decode fixed presentation"),
+            envelope
+        );
+    }
+
+    #[test]
     fn window_placement_resize_and_shell_commands_round_trip() {
         let commands = [
             PlatformCommand::SetWindowPosition(SetWindowPositionCommand {
@@ -1227,6 +1270,12 @@ mod tests {
                 window_handle: 778,
             }),
             PlatformCommand::ActivateWindow(ActivateWindowCommand { window_handle: 778 }),
+            PlatformCommand::PresentFixedWindowOverAnchor(PresentFixedWindowOverAnchorCommand {
+                window_handle: 779,
+                anchor_window_handle: 778,
+                width: 700,
+                height: 348,
+            }),
             PlatformCommand::BeginWindowResize(BeginWindowResizeCommand { window_handle: 779 }),
             PlatformCommand::BeginWindowMove(BeginWindowMoveCommand { window_handle: 780 }),
             PlatformCommand::BeginFileDrag(BeginFileDragCommand {
@@ -1301,6 +1350,27 @@ mod tests {
                 Envelope::decode_line(&event.encode_line().expect("encode tray event"))
                     .expect("decode tray event"),
                 event
+            );
+        }
+    }
+
+    #[test]
+    fn system_motion_preference_event_round_trips_with_correlation_and_failure() {
+        for (reduced_motion, native_error_code) in [(false, 0), (true, 0), (true, 5)] {
+            let correlation_id = Uuid::new_v4();
+            let mut envelope = Envelope::new(Message::PlatformEvent(
+                PlatformEvent::SystemMotionPreferenceChanged(SystemMotionPreferenceChanged {
+                    correlation_id,
+                    reduced_motion,
+                    native_error_code,
+                }),
+            ));
+            envelope.correlation_id = Some(correlation_id);
+            let encoded = envelope.encode_line().expect("encode motion event");
+            assert!(encoded.contains("system_motion_preference_changed"));
+            assert_eq!(
+                Envelope::decode_line(&encoded).expect("decode motion event"),
+                envelope
             );
         }
     }
@@ -1381,12 +1451,14 @@ mod tests {
                 enabled: true,
                 auto_quick_switch_enabled: true,
                 file_dialog_search_enabled: true,
+                suppress_in_exclusive_fullscreen: true,
                 hotkey_modifiers: Vec::new(),
                 hotkey_key: "Control".into(),
                 hotkey_display: "双击 Ctrl".into(),
             }),
         ));
-        let request = Envelope::new(Message::PlatformEvent(
+        let request_id = Uuid::new_v4();
+        let mut request = Envelope::new(Message::PlatformEvent(
             PlatformEvent::QuickLaunchPanelRequested(QuickLaunchPanelRequest {
                 target: fixture_context(),
                 directory_navigation_context: Some(DirectoryNavigationContext {
@@ -1400,8 +1472,24 @@ mod tests {
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
                 requested_at_unix_ms: 1_700_000_000_000,
+                correlation_id: Some(request_id),
             }),
         ));
+        request.correlation_id = Some(request_id);
+        assert_eq!(request.correlation_id, Some(request_id));
+        let Message::PlatformEvent(PlatformEvent::QuickLaunchPanelRequested(request_payload)) =
+            &request.message
+        else {
+            panic!("expected Quick Launch panel event");
+        };
+        assert_eq!(request_payload.correlation_id, Some(request_id));
+        let legacy_config: ConfigureQuickLaunchCommand = serde_json::from_str(
+            r#"{"enabled":true,"hotkey_modifiers":[],"hotkey_key":"Control","hotkey_display":"双击 Ctrl"}"#,
+        )
+        .expect("legacy Quick Launch config must remain readable");
+        assert!(legacy_config.suppress_in_exclusive_fullscreen);
+        assert!(legacy_config.auto_quick_switch_enabled);
+        assert!(legacy_config.file_dialog_search_enabled);
         let dialog_request = Envelope::new(Message::PlatformEvent(
             PlatformEvent::QuickLaunchPanelRequested(QuickLaunchPanelRequest {
                 target: fixture_context(),
@@ -1415,7 +1503,8 @@ mod tests {
                 cursor_y: 200,
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
-                requested_at_unix_ms: 1_700_000_000_000,
+                correlation_id: None,
+                requested_at_unix_ms: 1_700_000_000_100,
             }),
         ));
         let recording = Envelope::new(Message::PlatformCommand(

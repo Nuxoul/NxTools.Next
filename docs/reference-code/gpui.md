@@ -8,6 +8,12 @@ This note records only visual-component behavior used by the NxTools.Next P0 des
 It does not make Zed a behavioral source of truth for download, clipboard, quick-launch or Windows
 Shell workflows.
 
+For new visual migration, use [the standards entry](../../.trellis/spec/index.md) and
+[approved-target/current matrix](../../.trellis/spec/shared/ui-design.md). Numeric Zed/P0
+measurements here remain historical reference evidence; the later approved staged design
+governs target tokens. This does not retire lifecycle, native geometry, lease or accessibility
+limitations recorded in this note.
+
 ## Zed source entries
 
 Root: `D:\Code\zed-main`
@@ -182,3 +188,21 @@ Template invariants:
 - Production download, quick-launch and clipboard surfaces exercise the shared empty/loading/error
   states and prove identical icon/title/description geometry without changing their existing query,
   task-detail or clipboard-history ownership.
+
+## Foundation start evidence — 2026-10-09
+
+Approved staged UI tokens override the historical Zed numbers above, not lifecycle semantics. Before shared-shell changes, rechecked Zed button_like.rs (one state/focus/action boundary) and list_item.rs (continuous selected rows); old NxTools MainWindow.axaml/axaml.cs constructor/Open/Closed/OnClosing/tray flow and WindowAnimationService Attach/Open/closing cancellation/final Close. Avalonia native/base implementation is absent. Current MainWindow render/titlebar routes native commands through C#; local module switch preserves controller state and clears outgoing menu focus. Tools render -> open_tool_settings_window owns one registered window per tool; tool settings persist through deferred ClipboardApplication updates. Foundation changes no Windows show/hide/resize owner.
+
+Pinned vendor Button supplies focus/tab/disabled/style processing; its own render has no activation listener because GPUI0.2.2 elements/div.rs::paint_click_listeners generates Enter/Space ClickEvent::Keyboard on a focused node. Focus is therefore the missing boundary on the old custom sidebar, not another activation framework. Reuse track_focus/on_click, add visible focus/Tab navigation and suppress held activation before the built-in click path; prove single dispatch. Native screenshots/provider evidence remain separate from TestAppContext bounds.
+
+Foundation implemented approved palette and shared control/radius mapping,48px four-grid module rail and continuous Tools representative row on2026-10-09. Fixed42px settings-row budget retained after actual media/network regressions; no global content-height workaround. Directed review verified GPUI tab stops globally sort unscoped explicit indices, so Foundation uses render order; actual Downloads->QuickFind and reverse focus covered. Primary hover/pressed remain distinct. Detailed actual commands/red evidence/native visual limits: docs/audits/2026-10-09-foundation-ui-polish.md. No native screenshots or phase acceptance inferred from444 desktop tests.
+
+Native visual follow-up now supplies Debug-only isolated production MainWindow/Root and synthetic NewDownloadView rendering with owned-HWND PrintWindow screenshots at100% DPI. MainWindow window-message pointer and Tab/Enter selection verified. Entry intercepts before all runtime/protected/summon initialization; Release rejects it. In-memory download fixture does not probe/submit or connect platform. See Foundation audit follow-up; browser screenshot guest unavailable, so PNG acquisition is not agent aesthetic approval or C# resize/pointer/DPI acceptance.
+
+## Consolidated common UI verification — 2026-10-09
+User approved all module/common capability implementation before consolidated acceptance. Rechecked old SettingsWindow.axaml.cs constructor WindowAnimationService.Attach, OnOpened/ConfigureForCurrentScope, native drag and apply/close handlers plus old MainWindow Open/Closed/tray-preserving close. Current settings_shell keeps fixed footer and bounded content; settings_toggle was pointer-only. Zed ButtonLike tracks focus and accessible roles, whereas pinned GPUI0.2.2 exposes focused KeyUp clicks but its source contains no accessibility/accesskit/WM_GETOBJECT/UIAutomation node provider or role builder. A platform.rs label match belongs to unrelated platform data, not rendered elements. Actual reader names/roles require an unavailable GPUI-native provider seam; tooltips are not a replacement. Shared toggle/caption keyboard work uses existing keyed focus/GPUI click, preserves native drag area and defers cross-owner effects.
+
+### Shared selection-row keyboard continuation
+Rechecked ABDM AddDownloadPage.kt `OnDuplicateStrategySolutionItem` (single row clickable plus same checkbox callback) and legacy AddDownloadWindow.axaml ListBox/HLS/duplicate selectors and category ComboBox. Shared `compact_list_row` and `radio_list_row` currently own a single selection callback, not lifecycle or native policy. Preserve that callback and measured40px row/content/radio-dot geometry; add keyed focus through the existing GPUI KeyUp click boundary and an overlay focus ring, never a second Enter handler. A disabled category is visually disabled for automatic classification but remains selectable in settings for editing; it is not a disabled action. Compact result horizontal padding migrates7→8 without changing row heights. Existing category search menus retain one Up/Down/Enter controller. Native show/hide, cancellation, center/placement and auxiliary focus boundaries are unchanged.
+
+Shared-settings continuation rechecked Zed list_item.rs `on_click`/accessible actionable node and old SettingsWindow.axaml command/control composition. Pinned vendor Checkbox has its own focused KeyUp click even with no callback; a nested display-only checkbox therefore must not expose an inert tab stop. Volume-scope rows will own one focus/click action, with noninteractive checkbox glyphs. Custom-command master selection remains editor-only (no execution), measured18+4+16 fits40px; enabled/delete remain detail actions. Exclusion paths retain the existing parent Up/Down/Delete controller. `hotkey_field` entry is pointer-only before this continuation; the MainWindow recording controller only captures KeyDown while `recording_hotkey` is set, so a single focused KeyUp entry safely transfers focus into that controller without recording its activation key. Applying/waiting/recording eligibility must be preserved. No native placement/show/failure/cancellation boundary changes.

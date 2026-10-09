@@ -1,0 +1,3 @@
+# System authorization
+
+Exclusive delegated files: rust/apps/nxtools-indexer and its tests plus indexer architecture script if necessary. Shared IPC/core/protocol/C# owned by parent; propose necessary seam before editing outside scope. Read reference quick-launch/indexer notes and protected release policy first. Use actual pipe client process path/hash/session evidence for authority; no payload-selected executable, no grants widened. Avoid locking shared service for unauthorized/stalled handshake. Require snapshot existence rather than Ready label to distinguish first-build failure. USN budgeting dedups candidates before bounds, remains bounded. Do not claim Listary native implementation inspected.

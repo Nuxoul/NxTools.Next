@@ -1,0 +1,29 @@
+{
+  "id": "link-routing-download-window-polish",
+  "name": "link-routing-download-window-polish",
+  "title": "Repair link routing and download window transitions",
+  "description": "Ensure local executable links open in Explorer and make download sniffing-to-download window transitions stable and polished.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-browser-host",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "refactor/ui-gpui-kit",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-28-local-executable-link-routing",
+    "09-28-download-window-transition-polish"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

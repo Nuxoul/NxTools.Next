@@ -126,6 +126,8 @@ pub(crate) fn apply_journal_batch(
     let mut updated = snapshot.clone();
     let mut changed_directories = Vec::new();
     let mut upserts = Vec::new();
+    let mut seen_directories = HashSet::new();
+    let mut seen_upserts = HashSet::new();
     let mut live_work = 0_usize;
     let mut overlay_children = overlay_children_index(&updated);
     for record in batch.records {
@@ -171,12 +173,17 @@ pub(crate) fn apply_journal_batch(
                 overlay_children
                     .entry(record.parent_reference)
                     .or_default()
-                    .push(record.file_reference);
+                    .insert(record.file_reference);
                 if !was_visible {
                     updated.record_visible_insert();
                 }
-                upserts.push(record.file_reference);
-                if record.is_directory && path_changed {
+                if seen_upserts.insert(record.file_reference) {
+                    upserts.push(record.file_reference);
+                }
+                if record.is_directory
+                    && path_changed
+                    && seen_directories.insert(record.file_reference)
+                {
                     changed_directories.push(record.file_reference);
                 }
             }
@@ -261,7 +268,7 @@ fn resolve_visible_path(
 fn refresh_descendant_paths(
     snapshot: &mut MftSnapshot,
     directory_reference: u64,
-    overlay_children: &HashMap<u64, Vec<u64>>,
+    overlay_children: &HashMap<u64, HashSet<u64>>,
     live_work: &mut usize,
 ) -> std::result::Result<(), JournalApplyError> {
     let mut queue = VecDeque::from([directory_reference]);
@@ -312,7 +319,7 @@ fn refresh_descendant_paths(
 fn delete_visible_subtree(
     snapshot: &mut MftSnapshot,
     root: u64,
-    overlay_children: &HashMap<u64, Vec<u64>>,
+    overlay_children: &HashMap<u64, HashSet<u64>>,
     live_work: &mut usize,
 ) -> std::result::Result<(), JournalApplyError> {
     let mut queue = VecDeque::from([root]);
@@ -347,7 +354,7 @@ fn delete_visible_subtree(
 fn hide_unreachable_entry(
     snapshot: &mut MftSnapshot,
     file_reference: u64,
-    overlay_children: &HashMap<u64, Vec<u64>>,
+    overlay_children: &HashMap<u64, HashSet<u64>>,
     live_work: &mut usize,
 ) -> std::result::Result<(), JournalApplyError> {
     let Some(entry) = snapshot.visible_entry(file_reference) else {
@@ -366,8 +373,8 @@ fn hide_unreachable_entry(
     Ok(())
 }
 
-fn overlay_children_index(snapshot: &MftSnapshot) -> HashMap<u64, Vec<u64>> {
-    let mut children = HashMap::<u64, Vec<u64>>::new();
+fn overlay_children_index(snapshot: &MftSnapshot) -> HashMap<u64, HashSet<u64>> {
+    let mut children = HashMap::<u64, HashSet<u64>>::new();
     for identity in snapshot
         .overlay
         .replacements
@@ -377,34 +384,45 @@ fn overlay_children_index(snapshot: &MftSnapshot) -> HashMap<u64, Vec<u64>> {
         children
             .entry(identity.parent_reference)
             .or_default()
-            .push(identity.file_reference);
+            .insert(identity.file_reference);
     }
     children
 }
 
 fn bounded_visible_child_candidates(
     snapshot: &MftSnapshot,
-    overlay_children: &HashMap<u64, Vec<u64>>,
+    overlay_children: &HashMap<u64, HashSet<u64>>,
     parent: u64,
     mutations_used: usize,
 ) -> std::result::Result<Vec<u64>, JournalApplyError> {
     let base = snapshot.base_children(parent);
-    let replacements = overlay_children
-        .get(&parent)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let candidate_count = base.len().saturating_add(replacements.len());
+    let replacements = overlay_children.get(&parent);
     let remaining = MAX_RECURSIVE_WORK_UNITS_PER_BATCH.saturating_sub(mutations_used);
-    if candidate_count > remaining {
+    if base.len() > remaining {
         return Err(JournalApplyError::RebuildRequired(format!(
             "{} directory reference {} has at least {} child candidates; rebuilding before expansion",
-            snapshot.mount_point, parent, candidate_count
+            snapshot.mount_point,
+            parent,
+            base.len()
         )));
     }
-    let mut children = Vec::with_capacity(candidate_count);
-    children.extend_from_slice(&base);
-    children.extend_from_slice(replacements);
-    Ok(children)
+    let mut unique =
+        HashSet::with_capacity(remaining.min(base.len() + replacements.map_or(0, HashSet::len)));
+    unique.extend(base);
+    if let Some(replacements) = replacements {
+        for &reference in replacements {
+            unique.insert(reference);
+            if unique.len() > remaining {
+                return Err(JournalApplyError::RebuildRequired(format!(
+                    "{} directory reference {} has at least {} child candidates; rebuilding before expansion",
+                    snapshot.mount_point,
+                    parent,
+                    unique.len()
+                )));
+            }
+        }
+    }
+    Ok(unique.into_iter().collect())
 }
 
 fn reserve_recursive_work(
@@ -1004,6 +1022,28 @@ mod tests {
             updated.overlay.replacements.len(),
             MAX_RECURSIVE_WORK_UNITS_PER_BATCH + 1
         );
+    }
+
+    #[test]
+    fn duplicate_heavy_batch_does_not_consume_recursive_candidate_budget() {
+        let records = (0..MAX_RECURSIVE_WORK_UNITS_PER_BATCH + 2)
+            .map(|_| UsnRecord::upsert(10, 5, "Renamed", true))
+            .collect();
+        let updated = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records,
+            },
+        )
+        .expect("one distinct directory child must fit within the subtree budget");
+        assert_eq!(
+            updated.visible_entry(11).expect("descendant").path,
+            r"C:\Renamed\notes.txt"
+        );
+        assert_eq!(updated.next_usn, Some(110));
     }
 
     #[test]

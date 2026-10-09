@@ -22,7 +22,7 @@ use nxtools_clipboard::{
 use nxtools_core::{
     AppConfig, ClipboardClickAction, ClipboardClickModifier, ClipboardHotKey,
     ClipboardHotKeyModifier, ClipboardImagePasteProfile, ClipboardSettings, LinkPanelPosition,
-    clipboard_image_paste_profile,
+    ProcessBlacklistFeature, ProcessBlacklistSettings, clipboard_image_paste_profile,
 };
 use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
@@ -100,6 +100,8 @@ pub struct ClipboardApplication {
     notifications: Entity<NotificationCenter>,
     last_cleanup_at_unix_ms: i64,
     pending_configuration: HashSet<uuid::Uuid>,
+    pending_blacklist_configuration: HashMap<uuid::Uuid, (uuid::Uuid, std::time::Instant)>,
+    deferred_blacklist_correlation: Option<uuid::Uuid>,
     pending_hotkey_configuration: Option<(uuid::Uuid, ClipboardHotKey)>,
     pending_hotkey_recording: Option<(uuid::Uuid, bool)>,
     hotkey_recording_active: bool,
@@ -396,6 +398,8 @@ impl ClipboardApplication {
             notifications,
             last_cleanup_at_unix_ms: 0,
             pending_configuration: HashSet::new(),
+            pending_blacklist_configuration: HashMap::new(),
+            deferred_blacklist_correlation: None,
             pending_hotkey_configuration: None,
             pending_hotkey_recording: None,
             hotkey_recording_active: false,
@@ -417,6 +421,66 @@ impl ClipboardApplication {
 
     pub(crate) fn clipboard_settings(&self) -> ClipboardSettings {
         self.config.clipboard.clone()
+    }
+
+    /// Publishes already-durable global rules; this consumer never writes settings.
+    pub(crate) fn apply_live_blacklist(
+        &mut self,
+        settings: ProcessBlacklistSettings,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let started_at = std::time::Instant::now();
+        self.config.set_process_blacklist_settings(settings);
+        info!(event = "global.blacklist.clipboard_updated", %correlation_id,
+            rule_count = self.config.process_blacklist.entries().len(),
+            excluded_count = self.config.clipboard.excluded_processes.len(),
+            elapsed_ms = started_at.elapsed().as_millis(), "clipboard live rules updated");
+        if self.pending_hotkey_configuration.is_some() {
+            self.clipboard_configuration_dirty = true;
+            self.deferred_blacklist_correlation = Some(correlation_id);
+        } else {
+            let settings = self.config.clipboard.clone();
+            if let Some(command_id) =
+                self.send_clipboard_configuration_correlated(&settings, Some(correlation_id))
+            {
+                self.schedule_blacklist_configuration_timeout(command_id, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn schedule_blacklist_configuration_timeout(
+        &self,
+        command_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |owner, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(5))
+                .await;
+            let _ = owner.update(cx, |owner, cx| {
+                if let Some((correlation_id, started_at)) =
+                    owner.pending_blacklist_configuration.remove(&command_id)
+                {
+                    warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
+                        failure_kind = "timeout", elapsed_ms = started_at.elapsed().as_millis(),
+                        "Windows did not confirm clipboard rules");
+                    owner.clipboard_configuration_status =
+                        "规则已保存，Windows 尚未确认；请重启后重试。".into();
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn abandon_blacklist_configuration(&mut self) {
+        for (_, (correlation_id, started_at)) in self.pending_blacklist_configuration.drain() {
+            warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
+                failure_kind = "connection_reset", elapsed_ms = started_at.elapsed().as_millis(),
+                "clipboard rules await platform reconnection");
+        }
     }
 
     pub(crate) fn clipboard_configuration_status(&self) -> &str {
@@ -774,6 +838,7 @@ impl ClipboardApplication {
 
     fn start_clipboard_storage_migration(&mut self, destination: PathBuf, cx: &mut Context<Self>) {
         let history_worker = self.history_worker.clone();
+        let config_path = self.config_path.clone();
         self.management_operation_active = true;
         self.notify_progress(
             STORAGE_NOTIFICATION_ID,
@@ -786,48 +851,21 @@ impl ClipboardApplication {
                 .background_executor()
                 .spawn(async move {
                     history_worker
-                        .migrate_storage(destination)
+                        .migrate_storage(destination, config_path)
                         .map_err(anyhow::Error::msg)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok(report) => {
-                        let mut candidate = this.config.clone();
-                        candidate.clipboard.storage_directory = report
-                            .database_path
-                            .parent()
-                            .unwrap_or_else(|| Path::new("."))
-                            .to_string_lossy()
-                            .into_owned();
-                        match candidate.save_to(&this.config_path) {
-                            Ok(()) => {
-                                this.config = candidate;
-                                let message = format!(
-                                    "迁移完成：{} 条记录、{} 个资源；原目录已保留 · {}",
-                                    report.item_count,
-                                    report.asset_count,
-                                    report.database_path.display()
-                                );
-                                this.notify_success(
-                                    STORAGE_NOTIFICATION_ID,
-                                    "存储迁移",
-                                    message.clone(),
-                                    cx,
-                                );
-                            }
-                            Err(error) => {
-                                let message = format!(
-                                    "迁移数据已生成，但配置保存失败，worker 已切换到新目录：{error}"
-                                );
-                                this.notify_error(
-                                    STORAGE_NOTIFICATION_ID,
-                                    "存储迁移",
-                                    message.clone(),
-                                    cx,
-                                );
-                            }
-                        }
+                    Ok((report, merged)) => {
+                        this.refresh_committed_migration_config(merged);
+                        let message = format!(
+                            "迁移完成：{} 条记录、{} 个资源；原目录已保留 · {}",
+                            report.item_count,
+                            report.asset_count,
+                            report.database_path.display()
+                        );
+                        this.notify_success(STORAGE_NOTIFICATION_ID, "存储迁移", message, cx);
                     }
                     Err(error) => {
                         let message = format!("存储迁移失败：{error}");
@@ -838,6 +876,12 @@ impl ClipboardApplication {
             });
         })
         .detach();
+    }
+
+    fn refresh_committed_migration_config(&mut self, committed: AppConfig) {
+        // A settings save can land after the worker's commit but before this
+        // result callback. Never publish that earlier snapshot over newer edits.
+        self.config = AppConfig::load_from(&self.config_path).unwrap_or(committed);
     }
 
     fn finish_clipboard_management_operation(&mut self, cx: &mut Context<Self>) {
@@ -1205,10 +1249,9 @@ impl ClipboardApplication {
                 }
             }
             LinkPanelRoute::OpenShell { action } => {
-                if !matches!(
-                    target_kind,
-                    DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory
-                ) {
+                let Some(command) =
+                    crate::tools::link_panel::link_panel_shell_command(route, target, target_kind)
+                else {
                     warn!(
                         event = "tools.link_panel.route_rejected",
                         %correlation_id,
@@ -1219,14 +1262,11 @@ impl ClipboardApplication {
                         "link panel refused to send a web target to the shell"
                     );
                     return;
-                }
-                match self.platform.send_command_correlated(
-                    PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
-                        target: target.to_owned(),
-                        action,
-                    }),
-                    correlation_id,
-                ) {
+                };
+                match self
+                    .platform
+                    .send_command_correlated(command, correlation_id)
+                {
                     Ok(command_id) => {
                         info!(
                             event = "tools.link_panel.shell_accepted",
@@ -1281,7 +1321,7 @@ impl ClipboardApplication {
     }
 
     fn persist_clipboard_config(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.config.save_to(&self.config_path) {
+        if let Err(error) = self.save_clipboard_section() {
             error!(%error, "could not persist clipboard tool preferences");
             return;
         }
@@ -1387,31 +1427,31 @@ impl ClipboardApplication {
         }
     }
 
-    pub(crate) fn set_clipboard_excluded_processes(&mut self, text: &str) {
-        self.config.clipboard.excluded_processes = text
-            .split([';', ',', '\n', '\r'])
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .collect();
-        self.config.clipboard.normalize();
-        let _ = self.persist_clipboard_configuration();
-        if self.pending_hotkey_configuration.is_some() {
-            self.clipboard_configuration_dirty = true;
-            self.clipboard_configuration_status = "等待热键确认后应用".into();
-        } else {
-            self.send_clipboard_configuration();
+    fn persist_clipboard_configuration(&mut self) -> bool {
+        match self.save_clipboard_section() {
+            Ok(()) => true,
+            Err(error) => {
+                self.clipboard_configuration_status = format!("保存失败：{error}");
+                error!(%error, "failed to persist clipboard configuration");
+                false
+            }
         }
     }
 
-    fn persist_clipboard_configuration(&mut self) -> bool {
-        if let Err(error) = self.config.save_to(&self.config_path) {
-            self.clipboard_configuration_status = format!("保存失败：{error}");
-            error!(%error, "failed to persist clipboard configuration");
-            false
-        } else {
-            true
-        }
+    /// Persists only the clipboard sections (settings and panel size), merged
+    /// into the file as it is now, then refreshes the cache from the merge so
+    /// a stale copy of another module's section is never written back.
+    fn save_clipboard_section(&mut self) -> anyhow::Result<()> {
+        let mut clipboard = self.config.clipboard.clone();
+        let panel = self.config.clipboard_panel;
+        let merged = AppConfig::update_section(&self.config_path, |config| {
+            // Only the worker migration transaction owns the storage root.
+            clipboard.storage_directory = config.clipboard.storage_directory.clone();
+            config.clipboard = clipboard;
+            config.clipboard_panel = panel;
+        })?;
+        self.config = merged;
+        Ok(())
     }
 
     fn send_clipboard_configuration(&mut self) {
@@ -1423,40 +1463,65 @@ impl ClipboardApplication {
         &mut self,
         settings: &ClipboardSettings,
     ) -> Option<uuid::Uuid> {
-        match self
-            .platform
-            .send_command(PlatformCommand::ConfigureClipboard(
-                ConfigureClipboardCommand {
-                    hotkey_modifiers: settings
-                        .hotkey
-                        .modifiers
-                        .iter()
-                        .map(|modifier| match modifier {
-                            ClipboardHotKeyModifier::Control => "control",
-                            ClipboardHotKeyModifier::Alt => "alt",
-                            ClipboardHotKeyModifier::Shift => "shift",
-                            ClipboardHotKeyModifier::Win => "win",
-                        })
-                        .map(ToOwned::to_owned)
-                        .collect(),
-                    hotkey_key: settings.hotkey.key.clone(),
-                    hotkey_display: settings.hotkey.display.clone(),
-                    excluded_processes: settings.excluded_processes.clone(),
-                    max_text_bytes: settings.max_text_bytes,
-                    max_image_bytes: settings.max_image_bytes,
-                    max_image_pixels: settings.max_image_pixels,
-                },
-            )) {
+        self.send_clipboard_configuration_correlated(settings, None)
+    }
+
+    fn send_clipboard_configuration_correlated(
+        &mut self,
+        settings: &ClipboardSettings,
+        correlation_id: Option<uuid::Uuid>,
+    ) -> Option<uuid::Uuid> {
+        let command = PlatformCommand::ConfigureClipboard(ConfigureClipboardCommand {
+            hotkey_modifiers: settings
+                .hotkey
+                .modifiers
+                .iter()
+                .map(|modifier| match modifier {
+                    ClipboardHotKeyModifier::Control => "control",
+                    ClipboardHotKeyModifier::Alt => "alt",
+                    ClipboardHotKeyModifier::Shift => "shift",
+                    ClipboardHotKeyModifier::Win => "win",
+                })
+                .map(ToOwned::to_owned)
+                .collect(),
+            hotkey_key: settings.hotkey.key.clone(),
+            hotkey_display: settings.hotkey.display.clone(),
+            excluded_processes: settings.excluded_processes.clone(),
+            max_text_bytes: settings.max_text_bytes,
+            max_image_bytes: settings.max_image_bytes,
+            max_image_pixels: settings.max_image_pixels,
+        });
+        let queued = match correlation_id {
+            Some(correlation_id) => self
+                .platform
+                .send_command_correlated(command, correlation_id),
+            None => self.platform.send_command(command),
+        };
+        match queued {
             Ok(command_id) => {
                 self.pending_configuration.insert(command_id);
+                if let Some(correlation_id) = correlation_id {
+                    self.pending_blacklist_configuration
+                        .insert(command_id, (correlation_id, std::time::Instant::now()));
+                    info!(event = "global.blacklist.clipboard_native_started", %correlation_id, %command_id,
+                        excluded_count = settings.excluded_processes.len(), "clipboard rules queued for Windows");
+                }
                 self.clipboard_configuration_status = "正在应用".into();
                 Some(command_id)
             }
             Err(PlatformBridgeError::Disconnected) => {
+                if let Some(correlation_id) = correlation_id {
+                    warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
+                        failure_kind = "disconnected", elapsed_ms = 0, "clipboard rules await platform connection");
+                }
                 self.clipboard_configuration_status = "等待 Windows 适配器".into();
                 None
             }
             Err(error) => {
+                if let Some(correlation_id) = correlation_id {
+                    warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
+                        failure_kind = "enqueue", elapsed_ms = 0, "clipboard rules could not be queued");
+                }
                 self.clipboard_configuration_status = format!("应用失败：{error}");
                 None
             }
@@ -1482,18 +1547,9 @@ impl ClipboardApplication {
         }
     }
 
-    fn is_process_excluded(&self, process_name: &str) -> bool {
-        fn normalized_process_name(value: &str) -> String {
-            let value = value.trim().to_ascii_lowercase();
-            value.strip_suffix(".exe").unwrap_or(&value).to_owned()
-        }
-
-        let normalized = normalized_process_name(process_name);
+    pub(crate) fn is_process_excluded(&self, process_name: &str) -> bool {
         self.config
-            .clipboard
-            .excluded_processes
-            .iter()
-            .any(|excluded| normalized_process_name(excluded) == normalized)
+            .process_is_blacklisted(process_name, ProcessBlacklistFeature::Clipboard)
     }
 
     fn arm_capture_suppression(&mut self, action: ClipboardAction) {
@@ -1532,13 +1588,21 @@ impl ClipboardApplication {
         target: &ForegroundContext,
         action: ClipboardAction,
         native_formats: Vec<StoredClipboardNativeFormat>,
+        command_id: uuid::Uuid,
     ) -> anyhow::Result<uuid::Uuid> {
         let command = command_for_action(entry, target, action, native_formats)?;
         self.arm_capture_suppression(action);
-        match self.platform.send_command(command) {
-            Ok(command_id) => {
-                info!(item_id = entry.id, ?action, %command_id, target = %target.process_name, "clipboard action command sent");
-                Ok(command_id)
+        match self.platform.send_command_with_id(command, command_id) {
+            Ok(accepted_id) => {
+                info!(
+                    event = "clipboard.action.accepted",
+                    operation_id = %command_id,
+                    command_id = %accepted_id,
+                    item_id = entry.id,
+                    ?action,
+                    "clipboard action command sent"
+                );
+                Ok(accepted_id)
             }
             Err(error) => {
                 self.capture_suppression = None;
@@ -2223,6 +2287,8 @@ impl ClipboardApplication {
             PlatformNotification::Connected => {
                 // A reconnect invalidates every command that was pending on the previous pipe.
                 self.pending_configuration.clear();
+                self.abandon_blacklist_configuration();
+                self.deferred_blacklist_correlation = None;
                 self.abandon_pending_link_panel_actions("connection_reset");
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
@@ -2288,6 +2354,7 @@ impl ClipboardApplication {
                     "clipboard invalidated commands from the disconnected PlatformHost session"
                 );
                 self.pending_configuration.clear();
+                self.abandon_blacklist_configuration();
                 self.abandon_pending_link_panel_actions("disconnected");
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
@@ -2299,7 +2366,13 @@ impl ClipboardApplication {
                 }
                 self.preview.pending_stage = None;
                 self.preview.generation = self.preview.generation.wrapping_add(1);
-                self.pending_hotkey_configuration = None;
+                if let Some(current) = self.popup.lifecycle.current().cloned() {
+                    let _ = current.window.update(cx, |_, _window, app| {
+                        let _ = current.panel.update(app, |panel, cx| {
+                            panel.handle_platform_disconnected(cx);
+                        });
+                    });
+                }
                 self.pending_hotkey_recording = None;
                 self.hotkey_recording_active = false;
                 self.hotkey_recording_desired = false;
@@ -2422,6 +2495,13 @@ impl ClipboardApplication {
                     return;
                 }
                 if self.pending_configuration.remove(&correlation_id) {
+                    if let Some((operation_id, started_at)) =
+                        self.pending_blacklist_configuration.remove(&correlation_id)
+                    {
+                        info!(event = "global.blacklist.clipboard_native_completed", correlation_id = %operation_id,
+                            success = result.success, native_error_code = result.native_error_code,
+                            elapsed_ms = started_at.elapsed().as_millis(), "Windows clipboard rules terminal result");
+                    }
                     let hotkey_result = resolve_pending_hotkey(
                         &mut self.pending_hotkey_configuration,
                         correlation_id,
@@ -2446,7 +2526,17 @@ impl ClipboardApplication {
                         && self.clipboard_configuration_dirty
                     {
                         self.clipboard_configuration_dirty = false;
-                        self.send_clipboard_configuration();
+                        if let Some(operation_id) = self.deferred_blacklist_correlation.take() {
+                            let settings = self.config.clipboard.clone();
+                            if let Some(command_id) = self.send_clipboard_configuration_correlated(
+                                &settings,
+                                Some(operation_id),
+                            ) {
+                                self.schedule_blacklist_configuration_timeout(command_id, cx);
+                            }
+                        } else {
+                            self.send_clipboard_configuration();
+                        }
                     }
                     cx.notify();
                     return;
@@ -2757,6 +2847,7 @@ impl ClipboardApplication {
                 });
             }
             PlatformEvent::TrayActionRequested(_)
+            | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::QuickLaunchPanelRequested(_)
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
             | PlatformEvent::QuickLaunchAutoSwitchRequested(_)
@@ -3498,5 +3589,69 @@ mod asset_tests {
             88,
             88
         ));
+    }
+
+    #[gpui::test]
+    fn settings_save_during_migration_result_delay_preserves_committed_destination(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let temporary = tempfile::tempdir().expect("create synthetic migration directory");
+        let source = temporary.path().join("source");
+        let destination = temporary.path().join("destination");
+        std::fs::create_dir_all(&source).expect("create source store");
+        let config_path = temporary.path().join("config.json");
+        let mut cached = AppConfig::default();
+        cached.clipboard.storage_directory = source.to_string_lossy().into_owned();
+        cached.save_to(&config_path).expect("seed source config");
+        let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+            source.join("clipboard.db"),
+            source.join("assets"),
+            ClipboardRetentionPolicy {
+                max_items: 1000,
+                retention_days: 30,
+            },
+            1000,
+        )
+        .expect("spawn source worker");
+        let shutdown = worker.clone();
+        let (platform, _) = nxtools_ipc::platform_bridge(8);
+        let application = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            cx.new(|cx| {
+                ClipboardApplication::new(
+                    worker,
+                    Rc::new(platform),
+                    cached,
+                    config_path.clone(),
+                    notifications,
+                    cx,
+                )
+            })
+        });
+        let live_worker = cx.read(|cx| application.read(cx).history_worker.clone());
+        // Real worker commits, but deliberately do not apply its UI result yet.
+        let (_, committed) = live_worker
+            .migrate_storage(destination.clone(), config_path.clone())
+            .expect("worker commits destination before UI result");
+        application.update(cx, |app, _| {
+            app.config.clipboard.link_panel_copy_only = true;
+            app.save_clipboard_section()
+                .expect("save setting during result delay");
+        });
+        let disk = AppConfig::load_from(&config_path).expect("reload latest persisted config");
+        assert_eq!(
+            disk.clipboard.storage_directory,
+            destination.to_string_lossy()
+        );
+        assert!(disk.clipboard.link_panel_copy_only);
+        assert_eq!(
+            live_worker.database_path(),
+            destination.join("clipboard.db")
+        );
+        application.update(cx, |app, _| {
+            app.refresh_committed_migration_config(committed);
+            assert!(app.config.clipboard.link_panel_copy_only);
+        });
+        shutdown.shutdown().expect("flush synthetic worker");
     }
 }

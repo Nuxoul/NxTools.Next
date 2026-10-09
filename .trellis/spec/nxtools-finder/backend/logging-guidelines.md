@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Finder diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-finder/src/lib.rs#SearchResult`, `repo:rust/crates/nxtools-finder/src/lib.rs#CatalogStatus`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Caller owns bounded refresh/search/action lifecycle. Query strings, target paths, custom argv, history keys and labels may contain payload; log only request/generation/kind/count/length/elapsed, no full SearchResult or catalog Debug. A scan error with path context must be mapped before logging. No keystroke/result-row per-frame logs. [Shared diagnostics](../../shared/engineering.md).

@@ -907,6 +907,205 @@ fn confirmed_clipboard_action_marks_the_item_used_before_the_panel_closes() {
     assert!(handler.find("mark_used_async(item_id").is_some());
 }
 
+#[gpui::test]
+fn clipboard_panel_registers_action_before_platform_command_and_clears_it_on_result(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_component::init);
+    let directory = tempfile::tempdir().expect("clipboard action test directory");
+    let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+        directory.path().join("clipboard.db"),
+        directory.path().join("images"),
+        nxtools_clipboard::ClipboardRetentionPolicy {
+            max_items: 100,
+            retention_days: 30,
+        },
+        1_000,
+    )
+    .expect("start clipboard action worker");
+    let panel_worker = worker.clone();
+    let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
+    endpoint.set_connected_for_contract_test(true);
+    let notifications =
+        cx.update(|cx| cx.new(|_| crate::notifications::NotificationCenter::default()));
+    let application = cx.update(|cx| {
+        cx.new(|cx| {
+            crate::clipboard::ClipboardApplication::new(
+                worker,
+                Rc::new(platform),
+                nxtools_core::AppConfig::default(),
+                directory.path().join("config.json"),
+                notifications,
+                cx,
+            )
+        })
+    });
+    let application_for_panel = application.downgrade();
+    let panel_slot = Rc::new(RefCell::new(None));
+    let panel_slot_for_window = Rc::clone(&panel_slot);
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(300.0), px(440.0)));
+        let item = ClipboardItem {
+            id: 17,
+            kind: ClipboardKind::Text,
+            text: "plain text fixture".into(),
+            image_path: String::new(),
+            image_width: 0,
+            image_height: 0,
+            file_paths: Vec::new(),
+            source: nxtools_clipboard::CaptureSource {
+                window_handle: 1,
+                process_id: 2,
+                process_name: "editor".into(),
+                process_icon_path: String::new(),
+                window_title: "document".into(),
+            },
+            captured_at_unix_ms: 1,
+            last_used_at_unix_ms: 1,
+            copy_count: 1,
+            is_favorite: false,
+            is_pinned: false,
+            deleted_at_unix_ms: None,
+        };
+        let page = ClipboardHistoryPage {
+            items: vec![item],
+            total: 1,
+            has_more: false,
+        };
+        let panel = cx.new(|cx| {
+            ClipboardPanel::new(
+                page,
+                vec![ClipboardCategory {
+                    id: BUILTIN_ALL_CATEGORY_ID.into(),
+                    name: "全部".into(),
+                    kind: ClipboardCategoryKind::All,
+                    sort_order: 0,
+                }],
+                HashMap::new(),
+                Vec::new(),
+                ClipboardModifierActions::default(),
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 42,
+                    focus_window_handle: 43,
+                    process_id: 7,
+                    process_name: "editor".into(),
+                    window_title: "document".into(),
+                },
+                panel_worker.clone(),
+                application_for_panel,
+                uuid::Uuid::new_v4(),
+                None,
+                window,
+                cx,
+            )
+        });
+        *panel_slot_for_window.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    window.refresh().expect("render clipboard action panel");
+    let panel = panel_slot.borrow().clone().expect("clipboard panel entity");
+    let item = window.read(|cx| panel.read(cx).entries.borrow()[0].clone());
+
+    panel.update_in(window, |panel, window, cx| {
+        panel.activate_entry(&item, ClipboardAction::PlainText, window, cx);
+    });
+    let (command_id, operation_id) = window.read(|cx| {
+        let panel = panel.read(cx);
+        let (command_id, _, _) = panel
+            .pending_action
+            .expect("the panel must register the command before dispatch can complete");
+        let (operation_id, _) = panel
+            .pending_action_started_at
+            .expect("the bounded action watchdog must be active");
+        (command_id, operation_id)
+    });
+    assert_eq!(command_id, operation_id);
+    window.run_until_parked();
+    let envelope = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("plain-text paste command");
+    assert_eq!(envelope.id, command_id);
+    panel.update_in(window, |panel, window, cx| {
+        panel.handle_command_result(
+            command_id,
+            PlatformCommandResult {
+                success: false,
+                error: Some("test platform rejection".into()),
+                native_error_code: Some(5),
+                data: None,
+            },
+            window,
+            cx,
+        );
+    });
+    window.read(|cx| {
+        let panel = panel.read(cx);
+        assert!(panel.pending_action.is_none());
+        assert!(panel.pending_action_started_at.is_none());
+        assert!(matches!(panel.status, PanelStatus::Error(_)));
+        assert!(panel.is_open);
+    });
+    panel.update_in(window, |panel, _window, cx| {
+        panel.pending_action = Some((command_id, ClipboardAction::PlainText, item.id));
+        panel.pending_action_started_at = Some((operation_id, std::time::Instant::now()));
+        cx.notify();
+    });
+    panel.update_in(window, |panel, _window, cx| {
+        panel.handle_platform_disconnected(cx);
+    });
+    window.read(|cx| {
+        let panel = panel.read(cx);
+        assert!(panel.pending_action.is_none());
+        assert!(panel.pending_action_started_at.is_none());
+        assert!(matches!(panel.status, PanelStatus::Error(_)));
+        assert!(panel.is_open);
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.handle_command_result(
+            command_id,
+            PlatformCommandResult {
+                success: true,
+                error: None,
+                native_error_code: None,
+                data: None,
+            },
+            window,
+            cx,
+        );
+    });
+    window.read(|cx| {
+        let panel = panel.read(cx);
+        assert!(panel.pending_action.is_none());
+        assert!(panel.is_open);
+        assert!(matches!(panel.status, PanelStatus::Error(_)));
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.activate_entry(&item, ClipboardAction::PlainText, window, cx);
+    });
+    let stale_operation_id = window.read(|cx| {
+        panel
+            .read(cx)
+            .pending_action_started_at
+            .expect("second action watchdog")
+            .0
+    });
+    panel.update_in(window, |panel, _window, cx| {
+        panel.handle_platform_disconnected(cx);
+    });
+    window.run_until_parked();
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "native-format preparation invalidated by disconnect must not enqueue a stale command"
+    );
+    window.read(|cx| {
+        let panel = panel.read(cx);
+        assert!(panel.pending_action.is_none());
+        assert!(panel.pending_action_started_at.is_none());
+        assert!(matches!(panel.status, PanelStatus::Error(_)));
+    });
+    assert_ne!(stale_operation_id, operation_id);
+}
+
 #[test]
 fn panel_render_never_reads_the_parent_application_entity() {
     let source = include_str!("mod.rs");
@@ -1038,7 +1237,7 @@ fn clipboard_query_results_require_matching_generation_query_category_and_scope(
 
 #[test]
 fn clipboard_hover_action_rail_has_stable_geometry() {
-    assert_eq!(HOVER_ACTION_RAIL_WIDTH, 112.0);
+    assert_eq!(HOVER_ACTION_RAIL_WIDTH, 140.0);
     let source = include_str!("history.rs");
     let rail_start = source
         .find(".w(px(HOVER_ACTION_RAIL_WIDTH))")
@@ -1055,8 +1254,8 @@ fn clipboard_hover_action_rail_has_stable_geometry() {
         "the clipboard hover rail must stay transparent; only its buttons may paint hover feedback"
     );
 
-    let button_width = 20.0_f32;
-    let gap = 2.0_f32;
+    let button_width = 24.0_f32;
+    let gap = 4.0_f32;
     for button_count in [3_usize, 4, 5] {
         let buttons_width =
             button_count as f32 * button_width + button_count.saturating_sub(1) as f32 * gap;

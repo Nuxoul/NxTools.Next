@@ -376,6 +376,56 @@ fn transfer_plan_splits_only_the_unwritten_tail_after_a_durable_checkpoint() {
 }
 
 #[test]
+fn synced_shrink_merges_a_waiting_tail_into_the_surviving_waiting_range() {
+    let mut plan = TransferPlan::new(
+        TransferProtocol::Http,
+        "https://cdn.example.test/large.bin".to_owned(),
+        Some(1024),
+        true,
+        ResourceValidator::default(),
+        vec![
+            DownloadSegment::new(0, 0, 639, 256, DownloadSegmentState::Waiting)
+                .expect("synced left prefix"),
+            DownloadSegment::new(1, 640, 1023, 0, DownloadSegmentState::Waiting)
+                .expect("unwritten right tail"),
+        ],
+    )
+    .expect("durable split plan");
+    plan.merge_waiting_segment(1, 0)
+        .expect("merge synced waiting worker");
+    assert_eq!(
+        plan.segments(),
+        &[
+            DownloadSegment::new(0, 0, 1023, 256, DownloadSegmentState::Waiting)
+                .expect("expected merged prefix")
+        ]
+    );
+}
+
+#[test]
+fn synced_shrink_rejects_prepend_to_a_progressing_right_range() {
+    let mut plan = TransferPlan::new(
+        TransferProtocol::Http,
+        "https://cdn.example.test/large.bin".to_owned(),
+        Some(1024),
+        true,
+        ResourceValidator::default(),
+        vec![
+            DownloadSegment::new(0, 0, 639, 0, DownloadSegmentState::Waiting)
+                .expect("unwritten left range"),
+            DownloadSegment::new(1, 640, 1023, 128, DownloadSegmentState::Waiting)
+                .expect("synced right prefix"),
+        ],
+    )
+    .expect("durable split plan");
+    assert!(
+        plan.merge_waiting_segment(0, 1).is_err(),
+        "a right-hand checkpoint cannot become a prefix of the combined range"
+    );
+    assert_eq!(plan.segments().len(), 2);
+}
+
+#[test]
 fn deserialization_cannot_bypass_task_or_segment_invariants() {
     let task = DownloadTask::new(request(), RequestOrigin::Ui, 1_000);
     let mut task_json = serde_json::to_value(task).expect("serialize task");

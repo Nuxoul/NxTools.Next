@@ -5,6 +5,7 @@ $adapterPath = Join-Path $repositoryRoot "csharp\NxTools.PlatformHost\Windows\Wi
 $placementPath = Join-Path $repositoryRoot "csharp\NxTools.PlatformHost\Windows\AnchoredWindowPlacement.cs"
 
 $adapter = Get-Content -LiteralPath $adapterPath -Raw
+$adapter += Get-Content -LiteralPath (Join-Path $repositoryRoot 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.EventWindow.cs') -Raw
 $placement = Get-Content -LiteralPath $placementPath -Raw
 
 if ($placement -notmatch '\bSwpNoZOrder\b') {

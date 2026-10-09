@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Check lifecycle, safe process ownership, and bounded diagnostics."}
+{"file": ".trellis/spec/nxtools-clipboard/backend/quality-guidelines.md", "reason": "Check capture/storage/UI data flow and clipboard compatibility."}
+{"file": ".trellis/spec/nxtools-clipboard/backend/logging-guidelines.md", "reason": "Check investigation artifacts and telemetry for payload privacy."}
+{"file": ".trellis/spec/nxtools-ipc/backend/logging-guidelines.md", "reason": "Check cross-process correlation and low-noise diagnostic requirements."}

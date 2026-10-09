@@ -5,7 +5,7 @@ $sourcePath = Join-Path $repositoryRoot "rust\apps\nxtools-desktop\src\quick_lau
 $source = Get-Content -Raw $sourcePath
 $rowMatch = [regex]::Match(
     $source,
-    '(?s)fn row\(&self, index: usize, cx: &mut Context<Self>\).*?(?=\n    \})')
+    '(?s)fn row\(&self, index: usize, window: &mut Window, cx: &mut Context<Self>\).*?(?=\n    \})')
 if (-not $rowMatch.Success) {
     throw "Could not locate the file-dialog search result-row renderer."
 }
@@ -14,7 +14,7 @@ if ($rowMatch.Value -notmatch '\.w_full\(\)') {
 }
 $defaultRowMatch = [regex]::Match(
     $source,
-    '(?s)fn default_source_row\(&self, cx: &mut Context<Self>\).*?(?=\n    fn row)')
+    '(?s)fn default_source_row\(\s*&self,\s*window: &mut Window,\s*cx: &mut Context<Self>,?\s*\).*?(?=\n    fn row)')
 if (-not $defaultRowMatch.Success) {
     throw "Could not locate the file-dialog default-source renderer."
 }
@@ -25,7 +25,7 @@ if (-not $renderMatch.Success) {
     throw "Could not locate the file-dialog search production renderer."
 }
 foreach ($requiredToken in @(
-    'SPACING_2',
+    'SPACING_4',
     'SPACING_8',
     'SPACING_12',
     'TEXT_BODY',

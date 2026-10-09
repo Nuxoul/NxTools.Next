@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Trace the persisted Rust setting through typed IPC to the native PlatformHost hotkey decision boundary."}
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Preserve Quick Launch GPUI callback deferral, configuration persistence and lifecycle conventions."}
+{"file": ".trellis/spec/nxtools-ipc/backend/quality-guidelines.md", "reason": "Add a backward-compatible typed ConfigureQuickLaunch field and preserve platform command semantics."}

@@ -44,6 +44,170 @@ impl AppPaths {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessBlacklistFeature {
+    Clipboard,
+    QuickLaunch,
+}
+
+/// One application, with independently selectable feature scopes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProcessBlacklistRule {
+    pub process: String,
+    #[serde(default)]
+    pub disable_clipboard: bool,
+    #[serde(default)]
+    pub disable_quick_launch: bool,
+}
+
+impl ProcessBlacklistRule {
+    pub fn new(
+        process: &str,
+        disable_clipboard: bool,
+        disable_quick_launch: bool,
+    ) -> std::result::Result<Self, String> {
+        let process = normalize_process_name(process);
+        if process.is_empty()
+            || process
+                .chars()
+                .any(|c| c.is_control() || "<>:\"|?*;,".contains(c))
+        {
+            return Err("请输入有效的应用进程名，例如 notepad.exe".into());
+        }
+        Ok(Self {
+            process,
+            disable_clipboard,
+            disable_quick_launch,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProcessBlacklistSettings {
+    /// None is legacy; Some(empty) is authoritative and must never remigrate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<ProcessBlacklistRule>>,
+    #[serde(default)]
+    pub processes: Vec<String>,
+    #[serde(default = "default_true")]
+    pub disable_clipboard: bool,
+    #[serde(default)]
+    pub disable_quick_launch: bool,
+}
+
+impl Default for ProcessBlacklistSettings {
+    fn default() -> Self {
+        Self {
+            entries: Some(
+                default_clipboard_excluded_processes()
+                    .into_iter()
+                    .map(|process| ProcessBlacklistRule {
+                        process: normalize_process_name(&process),
+                        disable_clipboard: true,
+                        disable_quick_launch: false,
+                    })
+                    .collect(),
+            ),
+            processes: default_clipboard_excluded_processes(),
+            disable_clipboard: true,
+            disable_quick_launch: false,
+        }
+    }
+}
+
+fn legacy_process_blacklist() -> ProcessBlacklistSettings {
+    ProcessBlacklistSettings {
+        entries: None,
+        processes: Vec::new(),
+        disable_clipboard: true,
+        disable_quick_launch: false,
+    }
+}
+
+fn normalize_process_name(value: &str) -> String {
+    // Lowercase before stripping the extension: Windows file names are case
+    // insensitive, so `Notepad.EXE` must match a `notepad` entry.
+    let value = value.trim().replace('/', "\\").to_ascii_lowercase();
+    let value = value.rsplit('\\').next().unwrap_or(&value);
+    value.strip_suffix(".exe").unwrap_or(value).to_owned()
+}
+
+impl ProcessBlacklistSettings {
+    pub fn from_entries(entries: Vec<ProcessBlacklistRule>) -> Self {
+        let mut settings = Self {
+            entries: Some(entries),
+            processes: Vec::new(),
+            disable_clipboard: false,
+            disable_quick_launch: false,
+        };
+        settings.normalize();
+        settings
+    }
+
+    pub fn entries(&self) -> Vec<ProcessBlacklistRule> {
+        self.entries.clone().unwrap_or_else(|| {
+            self.processes
+                .iter()
+                .filter_map(|process| {
+                    ProcessBlacklistRule::new(
+                        process,
+                        self.disable_clipboard,
+                        self.disable_quick_launch,
+                    )
+                    .ok()
+                })
+                .collect()
+        })
+    }
+
+    pub fn normalize(&mut self) {
+        let mut merged: Vec<ProcessBlacklistRule> = Vec::new();
+        for entry in self.entries() {
+            let Ok(entry) = ProcessBlacklistRule::new(
+                &entry.process,
+                entry.disable_clipboard,
+                entry.disable_quick_launch,
+            ) else {
+                continue;
+            };
+            if let Some(existing) = merged
+                .iter_mut()
+                .find(|existing| existing.process == entry.process)
+            {
+                existing.disable_clipboard |= entry.disable_clipboard;
+                existing.disable_quick_launch |= entry.disable_quick_launch;
+            } else {
+                merged.push(entry);
+            }
+        }
+        self.processes = merged.iter().map(|entry| entry.process.clone()).collect();
+        self.entries = Some(merged);
+    }
+
+    pub fn clipboard_processes(&self) -> Vec<String> {
+        self.entries()
+            .into_iter()
+            .filter(|entry| entry.disable_clipboard)
+            .map(|entry| entry.process)
+            .collect()
+    }
+
+    pub fn contains(&self, process_name: &str, feature: ProcessBlacklistFeature) -> bool {
+        let process_name = normalize_process_name(process_name);
+        let matches = |entry: &ProcessBlacklistRule| {
+            normalize_process_name(&entry.process) == process_name
+                && match feature {
+                    ProcessBlacklistFeature::Clipboard => entry.disable_clipboard,
+                    ProcessBlacklistFeature::QuickLaunch => entry.disable_quick_launch,
+                }
+        };
+        match &self.entries {
+            Some(entries) => entries.iter().any(matches),
+            None => self.entries().iter().any(matches),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
     pub theme: ThemePreference,
@@ -58,6 +222,8 @@ pub struct AppConfig {
     pub clipboard: ClipboardSettings,
     #[serde(default)]
     pub quick_launch: QuickLaunchSettings,
+    #[serde(default = "legacy_process_blacklist")]
+    pub process_blacklist: ProcessBlacklistSettings,
     #[serde(default)]
     pub download: DownloadSettings,
 }
@@ -72,11 +238,11 @@ impl Default for AppConfig {
             clipboard_panel: ClipboardPanelSize::default(),
             clipboard: ClipboardSettings::default(),
             quick_launch: QuickLaunchSettings::default(),
+            process_blacklist: ProcessBlacklistSettings::default(),
             download: DownloadSettings::default(),
         }
     }
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SystemSettings {
     #[serde(default)]
@@ -533,6 +699,8 @@ pub struct QuickLaunchSettings {
     pub auto_quick_switch: bool,
     #[serde(default = "default_true")]
     pub file_dialog_search: bool,
+    #[serde(default = "default_true")]
+    pub suppress_in_exclusive_fullscreen: bool,
     #[serde(default = "default_quick_launch_hotkey")]
     pub hotkey: ClipboardHotKey,
     #[serde(default)]
@@ -549,6 +717,7 @@ impl Default for QuickLaunchSettings {
             enabled: true,
             auto_quick_switch: true,
             file_dialog_search: true,
+            suppress_in_exclusive_fullscreen: true,
             hotkey: default_quick_launch_hotkey(),
             indexed_volumes: Vec::new(),
             excluded_paths: Vec::new(),
@@ -983,37 +1152,127 @@ impl AppConfig {
         self.clipboard_panel =
             ClipboardPanelSize::clamped(self.clipboard_panel.width, self.clipboard_panel.height);
         self.clipboard.normalize();
+        if self.process_blacklist.entries.is_none() {
+            let mut entries = self.process_blacklist.entries();
+            for process in &self.clipboard.excluded_processes {
+                if let Ok(rule) = ProcessBlacklistRule::new(process, true, false)
+                    && !entries.iter().any(|entry| entry.process == rule.process)
+                {
+                    entries.push(rule);
+                }
+            }
+            self.process_blacklist = ProcessBlacklistSettings::from_entries(entries);
+        }
+        self.process_blacklist.normalize();
+        self.clipboard.excluded_processes = self.process_blacklist.clipboard_processes();
         self.quick_launch.normalize();
         self.download.normalize();
     }
 
+    pub fn process_is_blacklisted(
+        &self,
+        process_name: &str,
+        feature: ProcessBlacklistFeature,
+    ) -> bool {
+        self.process_blacklist.contains(process_name, feature)
+    }
+
+    pub fn set_process_blacklist(
+        &mut self,
+        processes: Vec<String>,
+        disable_clipboard: bool,
+        disable_quick_launch: bool,
+    ) {
+        self.process_blacklist = ProcessBlacklistSettings {
+            entries: None,
+            processes,
+            disable_clipboard,
+            disable_quick_launch,
+        };
+        self.process_blacklist.normalize();
+        self.clipboard.excluded_processes = self.process_blacklist.clipboard_processes();
+    }
+
+    pub fn process_blacklist_processes(&self) -> Vec<String> {
+        self.process_blacklist.processes.clone()
+    }
+
+    /// Atomically replaces the config file: the JSON is written to a sibling
+    /// temporary file, flushed to disk, then renamed over the target. A crash
+    /// or power loss leaves either the old or the new file, never a torn one.
     pub fn save_to(&self, path: &Path) -> Result<()> {
-        fs::write(path, serde_json::to_string_pretty(self)?)
-            .with_context(|| format!("failed to write {}", path.display()))
+        let json = serde_json::to_string_pretty(self)?;
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "config.json".into());
+        let temporary = path.with_file_name(format!(
+            ".{file_name}.{}.{:x}.tmp",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
+        ));
+        let write = (|| -> std::io::Result<()> {
+            use std::io::Write;
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temporary, path)
+        })();
+        if let Err(error) = write {
+            let _ = fs::remove_file(&temporary);
+            return Err(error).with_context(|| format!("failed to write {}", path.display()));
+        }
+        Ok(())
+    }
+
+    /// Read-modify-write one logical section of the config under an
+    /// inter-process lock. Long-lived modules keep their own in-memory
+    /// `AppConfig`, so saving that copy whole would overwrite sections other
+    /// modules changed since startup. Here the file is re-read, only the
+    /// caller's fields are changed, and the merged result is returned so the
+    /// caller can refresh its cache.
+    ///
+    /// The file must already exist and parse. A missing file means something
+    /// removed or moved it; recreating it from defaults would silently reset
+    /// every section this caller does not own, so that is an error. A file that
+    /// cannot be parsed is likewise never silently replaced.
+    pub fn update_section(path: &Path, mutate: impl FnOnce(&mut Self)) -> Result<Self> {
+        let lock_path = path.with_extension("json.lock");
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .with_context(|| format!("failed to open {}", lock_path.display()))?;
+        lock.lock_exclusive()
+            .with_context(|| format!("failed to lock {}", lock_path.display()))?;
+        let result = (|| {
+            let mut config = Self::load_from(path)?;
+            mutate(&mut config);
+            config.normalize();
+            config.save_to(path)?;
+            Ok(config)
+        })();
+        let _ = FileExt::unlock(&lock);
+        result
     }
 
     pub fn update_download_settings(path: &Path, mut settings: DownloadSettings) -> Result<Self> {
         settings.normalize();
-        let mut config = Self::load_from(path)?;
-        config.download = settings;
-        config.save_to(path)?;
-        Ok(config)
+        Self::update_section(path, |config| config.download = settings)
     }
 
     pub fn update_network_settings(path: &Path, mut settings: NetworkSettings) -> Result<Self> {
         settings.normalize();
         settings.validate().map_err(anyhow::Error::msg)?;
-        let mut config = Self::load_from(path)?;
-        config.network = settings;
-        config.save_to(path)?;
-        Ok(config)
+        Self::update_section(path, |config| config.network = settings)
     }
 
     pub fn update_system_settings(path: &Path, settings: SystemSettings) -> Result<Self> {
-        let mut config = Self::load_from(path)?;
-        config.system = settings;
-        config.save_to(path)?;
-        Ok(config)
+        Self::update_section(path, |config| config.system = settings)
     }
 
     pub fn update_global_settings(
@@ -1023,11 +1282,51 @@ impl AppConfig {
     ) -> Result<Self> {
         network.normalize();
         network.validate().map_err(anyhow::Error::msg)?;
-        let mut config = Self::load_from(path)?;
-        config.network = network;
-        config.system = system;
-        config.save_to(path)?;
-        Ok(config)
+        Self::update_section(path, |config| {
+            config.network = network;
+            config.system = system;
+        })
+    }
+
+    pub fn update_global_settings_with_blacklist(
+        path: &Path,
+        mut network: NetworkSettings,
+        system: SystemSettings,
+        blacklist: ProcessBlacklistSettings,
+    ) -> Result<Self> {
+        network.normalize();
+        network.validate().map_err(anyhow::Error::msg)?;
+        Self::update_section(path, |config| {
+            config.network = network;
+            config.system = system;
+            config.set_process_blacklist_settings(blacklist);
+        })
+    }
+
+    pub fn update_quick_launch_settings(
+        path: &Path,
+        settings: QuickLaunchSettings,
+    ) -> Result<Self> {
+        Self::update_section(path, |config| config.quick_launch = settings)
+    }
+
+    pub fn update_clipboard_settings(path: &Path, settings: ClipboardSettings) -> Result<Self> {
+        Self::update_section(path, |config| config.clipboard = settings)
+    }
+
+    pub fn update_process_blacklist(
+        path: &Path,
+        settings: ProcessBlacklistSettings,
+    ) -> Result<Self> {
+        Self::update_section(path, |config| {
+            config.set_process_blacklist_settings(settings)
+        })
+    }
+
+    pub fn set_process_blacklist_settings(&mut self, mut settings: ProcessBlacklistSettings) {
+        settings.normalize();
+        self.clipboard.excluded_processes = settings.clipboard_processes();
+        self.process_blacklist = settings;
     }
 }
 
@@ -1305,7 +1604,7 @@ mod tests {
         assert!(config.quick_launch.enabled);
         assert!(config.quick_launch.auto_quick_switch);
         assert!(config.quick_launch.file_dialog_search);
-        assert_eq!(config.quick_launch.hotkey.display, "双击 Ctrl");
+        assert!(config.quick_launch.suppress_in_exclusive_fullscreen);
         assert!(config.quick_launch.hotkey.modifiers.is_empty());
     }
 
@@ -1587,6 +1886,7 @@ mod tests {
         assert!(config.quick_launch.enabled);
         assert!(config.quick_launch.auto_quick_switch);
         assert!(config.quick_launch.file_dialog_search);
+        assert!(config.quick_launch.suppress_in_exclusive_fullscreen);
         assert_eq!(config.quick_launch.hotkey.key, "Control");
     }
 
@@ -1598,6 +1898,24 @@ mod tests {
         .expect("partial quick-launch config must remain readable");
 
         assert_eq!(config.quick_launch.hotkey.display, "双击 Ctrl");
+    }
+    #[test]
+    fn exclusive_fullscreen_suppression_setting_defaults_on_and_round_trips() {
+        let legacy: QuickLaunchSettings =
+            serde_json::from_str(r#"{"enabled":true}"#).expect("legacy quick launch settings");
+        assert!(legacy.suppress_in_exclusive_fullscreen);
+
+        let settings = QuickLaunchSettings {
+            suppress_in_exclusive_fullscreen: false,
+            ..QuickLaunchSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).expect("serialize quick launch settings");
+        let decoded: QuickLaunchSettings =
+            serde_json::from_str(&encoded).expect("deserialize quick launch settings");
+        assert!(!decoded.suppress_in_exclusive_fullscreen);
+        assert_eq!(decoded.hotkey, settings.hotkey);
+        assert_eq!(decoded.indexed_volumes, settings.indexed_volumes);
+        assert_eq!(decoded.excluded_paths, settings.excluded_paths);
     }
 
     #[test]
@@ -1750,6 +2068,267 @@ mod tests {
             restored.clipboard.storage_directory,
             r"D:\NxToolsData\Clipboard"
         );
+    }
+
+    #[test]
+    fn canonical_blacklist_roundtrip_remove_empty_and_sibling_merge() {
+        let directory = unique_config_dir("canonical-rules");
+        let path = directory.join("config.json");
+        AppConfig::default().save_to(&path).expect("seed config");
+        let rules = ProcessBlacklistSettings::from_entries(vec![
+            ProcessBlacklistRule::new("C:\\Apps\\Editor.EXE", true, false).expect("editor"),
+            ProcessBlacklistRule::new("editor.exe", false, true).expect("duplicate editor"),
+            ProcessBlacklistRule::new("Game.exe", false, true).expect("game"),
+        ]);
+        let merged = AppConfig::update_global_settings_with_blacklist(
+            &path,
+            NetworkSettings::default(),
+            SystemSettings::default(),
+            rules,
+        )
+        .expect("atomic global save");
+        assert_eq!(merged.process_blacklist.entries().len(), 2);
+        assert!(merged.process_is_blacklisted("EDITOR.EXE", ProcessBlacklistFeature::Clipboard));
+        assert!(merged.process_is_blacklisted("editor", ProcessBlacklistFeature::QuickLaunch));
+        assert!(!merged.process_is_blacklisted("game", ProcessBlacklistFeature::Clipboard));
+        assert!(merged.process_is_blacklisted("game", ProcessBlacklistFeature::QuickLaunch));
+        assert_eq!(merged.clipboard.excluded_processes, ["editor"]);
+        let mut clipboard = merged.clipboard.clone();
+        clipboard.max_items = 2048;
+        AppConfig::update_clipboard_settings(&path, clipboard).expect("sibling save");
+        let only_game = ProcessBlacklistSettings::from_entries(vec![
+            ProcessBlacklistRule::new("Game.exe", false, true).expect("game"),
+        ]);
+        AppConfig::update_process_blacklist(&path, only_game).expect("remove editor");
+        let reloaded = AppConfig::load_from(&path).expect("reload removed entry");
+        assert!(!reloaded.process_is_blacklisted("editor", ProcessBlacklistFeature::Clipboard));
+        assert_eq!(reloaded.clipboard.max_items, 2048);
+        AppConfig::update_process_blacklist(&path, ProcessBlacklistSettings::from_entries(vec![]))
+            .expect("explicit empty save");
+        let empty = AppConfig::load_from(&path).expect("reload empty");
+        assert!(empty.process_blacklist.entries().is_empty());
+        assert!(empty.clipboard.excluded_processes.is_empty());
+        fs::remove_dir_all(directory).expect("remove fixture");
+    }
+
+    #[test]
+    fn canonical_rules_ignore_stale_legacy_and_keep_unchecked_rows() {
+        let mut config = AppConfig {
+            process_blacklist: ProcessBlacklistSettings::from_entries(vec![
+                ProcessBlacklistRule::new("Keepass.exe", false, false).expect("unchecked row"),
+            ]),
+            ..Default::default()
+        };
+        config.clipboard.excluded_processes = vec!["KeePass.exe".into(), "Old.exe".into()];
+        config.normalize();
+        assert_eq!(config.process_blacklist.entries().len(), 1);
+        assert!(!config.process_is_blacklisted("keepass", ProcessBlacklistFeature::Clipboard));
+        assert!(config.clipboard.excluded_processes.is_empty());
+        assert!(ProcessBlacklistRule::new("  ", true, false).is_err());
+        assert!(ProcessBlacklistRule::new("bad;name.exe", true, false).is_err());
+    }
+
+    #[test]
+    fn legacy_blacklist_migrates_from_disk_once_and_never_reimports_projection() {
+        let directory = unique_config_dir("legacy-rule-migration");
+        let path = directory.join("config.json");
+        let mut json = serde_json::to_value(AppConfig::default()).expect("legacy seed");
+        json["process_blacklist"] = serde_json::json!({
+            "processes": ["C:\\Apps\\Game.EXE"], "disable_clipboard": false, "disable_quick_launch": true
+        });
+        json["clipboard"]["excluded_processes"] = serde_json::json!(["Game.exe", "Editor.exe"]);
+        fs::write(&path, serde_json::to_vec(&json).expect("encode legacy")).expect("legacy disk");
+        let migrated = AppConfig::load_from(&path).expect("migrate legacy");
+        assert!(!migrated.process_is_blacklisted("game", ProcessBlacklistFeature::Clipboard));
+        assert!(migrated.process_is_blacklisted("game", ProcessBlacklistFeature::QuickLaunch));
+        assert!(migrated.process_is_blacklisted("editor", ProcessBlacklistFeature::Clipboard));
+        assert!(!migrated.process_is_blacklisted("editor", ProcessBlacklistFeature::QuickLaunch));
+        AppConfig::update_process_blacklist(&path, ProcessBlacklistSettings::from_entries(vec![]))
+            .expect("remove all");
+        assert!(
+            AppConfig::load_from(&path)
+                .expect("no resurrection")
+                .process_blacklist
+                .entries()
+                .is_empty()
+        );
+        json.as_object_mut()
+            .expect("object")
+            .remove("process_blacklist");
+        json["clipboard"]["excluded_processes"] = serde_json::json!([]);
+        fs::write(&path, serde_json::to_vec(&json).expect("encode absent")).expect("absent legacy");
+        assert!(
+            AppConfig::load_from(&path)
+                .expect("explicit legacy empty")
+                .process_blacklist
+                .entries()
+                .is_empty()
+        );
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn process_blacklist_normalizes_legacy_clipboard_entries_and_merges_features() {
+        let mut config = AppConfig::default();
+        config.process_blacklist.entries = None;
+        config.clipboard.excluded_processes = vec!["Game.exe".into(), "Editor.exe".into()];
+        config.process_blacklist.disable_quick_launch = true;
+        config.normalize();
+
+        assert!(config.process_is_blacklisted("GAME", ProcessBlacklistFeature::Clipboard));
+        assert!(!config.process_is_blacklisted("game.exe", ProcessBlacklistFeature::QuickLaunch));
+        assert!(config.process_is_blacklisted("Editor.exe", ProcessBlacklistFeature::Clipboard));
+    }
+
+    #[test]
+    fn process_blacklist_round_trips_per_feature_flags() {
+        let mut config = AppConfig::default();
+        config.process_blacklist.entries = None;
+        config.process_blacklist.processes = vec!["Editor.exe".into(), "Game.exe".into()];
+        config.process_blacklist.disable_clipboard = false;
+        config.process_blacklist.disable_quick_launch = true;
+        config.process_blacklist.normalize();
+
+        let encoded = serde_json::to_string(&config).expect("serialize process blacklist");
+        let restored: AppConfig =
+            serde_json::from_str(&encoded).expect("deserialize process blacklist");
+        assert!(!restored.process_is_blacklisted("editor.exe", ProcessBlacklistFeature::Clipboard));
+        assert!(restored.process_is_blacklisted("game.exe", ProcessBlacklistFeature::QuickLaunch));
+    }
+
+    #[test]
+    fn process_blacklist_matches_executable_names_case_insensitively() {
+        let mut settings = ProcessBlacklistSettings {
+            entries: None,
+            processes: vec![
+                "KeePass.exe".into(),
+                "notepad".into(),
+                "C:\\Tools\\App.EXE".into(),
+                "Foo.Exe".into(),
+            ],
+            disable_clipboard: true,
+            disable_quick_launch: true,
+        };
+        settings.normalize();
+
+        assert_eq!(
+            settings.processes,
+            ["keepass", "notepad", "app", "foo"],
+            "entries are stored without extension, directory or case"
+        );
+        for probe in [
+            "KEEPASS.EXE",
+            "keepass.exe",
+            "KeePass",
+            "Notepad.EXE",
+            "c:\\x\\APP.EXE",
+            "Foo.EXE",
+        ] {
+            assert!(
+                settings.contains(probe, ProcessBlacklistFeature::Clipboard),
+                "{probe} must be treated as blacklisted"
+            );
+        }
+        assert!(!settings.contains("keepass2.exe", ProcessBlacklistFeature::Clipboard));
+    }
+
+    fn unique_config_dir(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-core-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("create config directory");
+        directory
+    }
+
+    #[test]
+    fn saving_a_stale_cached_copy_through_update_section_keeps_other_modules_changes() {
+        let directory = unique_config_dir("merge");
+        let path = directory.join("config.json");
+        AppConfig::default().save_to(&path).expect("seed config");
+
+        // Quick Launch caches a full copy at startup.
+        let stale_quick_launch_copy = AppConfig::load_from(&path).expect("cache at startup");
+
+        // The user later changes download and network settings.
+        let download = DownloadSettings {
+            default_connection_limit: 24,
+            ..Default::default()
+        };
+        AppConfig::update_download_settings(&path, download).expect("save download settings");
+        AppConfig::update_network_settings(
+            &path,
+            NetworkSettings {
+                proxy: NetworkProxySettings {
+                    mode: NetworkProxyMode::ManualHttp,
+                    host: "127.0.0.1".into(),
+                    port: 7890,
+                },
+            },
+        )
+        .expect("save network settings");
+
+        // Quick Launch now saves only its own section.
+        let quick_launch = stale_quick_launch_copy.quick_launch.clone();
+        AppConfig::update_quick_launch_settings(&path, quick_launch).expect("save quick launch");
+
+        let merged = AppConfig::load_from(&path).expect("reload merged config");
+        assert_eq!(merged.download.default_connection_limit, 24);
+        assert_eq!(merged.network.proxy.mode, NetworkProxyMode::ManualHttp);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn save_to_leaves_no_temporary_file_and_never_exposes_a_torn_file() {
+        let directory = unique_config_dir("atomic");
+        let path = directory.join("config.json");
+        AppConfig::default().save_to(&path).expect("first save");
+        AppConfig::default().save_to(&path).expect("second save");
+
+        let leftovers = fs::read_dir(&directory)
+            .expect("list config directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0, "temporary files must be renamed or removed");
+        AppConfig::load_from(&path).expect("saved config parses");
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn update_section_refuses_to_overwrite_a_corrupt_config() {
+        let directory = unique_config_dir("corrupt");
+        let path = directory.join("config.json");
+        fs::write(&path, b"{ \"theme\": ").expect("write torn config");
+
+        let result = AppConfig::update_system_settings(&path, SystemSettings::default());
+
+        assert!(result.is_err(), "a corrupt file must surface as an error");
+        assert_eq!(
+            fs::read(&path).expect("read corrupt config"),
+            b"{ \"theme\": ",
+            "the corrupt file must be left untouched for recovery"
+        );
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn update_section_does_not_resurrect_a_missing_config_from_defaults() {
+        let directory = unique_config_dir("missing");
+        let path = directory.join("config.json");
+
+        let result = AppConfig::update_system_settings(&path, SystemSettings::default());
+
+        assert!(
+            result.is_err(),
+            "a vanished config must not reset every section"
+        );
+        assert!(!path.exists(), "no default config may be written");
+        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]

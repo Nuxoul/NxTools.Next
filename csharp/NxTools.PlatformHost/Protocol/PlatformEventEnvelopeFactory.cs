@@ -7,6 +7,11 @@ internal static class PlatformEventEnvelopeFactory
     public static ProtocolEnvelope Create(WindowsPlatformEvent platformEvent) =>
         platformEvent switch
         {
+            SystemMotionPreferenceChangedEvent motion => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "system_motion_preference_changed",
+                Data = new { motion.CorrelationId, motion.ReducedMotion, motion.NativeErrorCode }
+            }, motion.CorrelationId),
             TrayActionRequestedEvent tray => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "tray_action_requested",
@@ -68,9 +73,10 @@ internal static class PlatformEventEnvelopeFactory
                     panel.CursorDisplayIndex,
                     panel.CursorMonitorDpi,
                     panel.RequestedAtUnixMs,
-                    panel.DirectoryNavigationContext
+                    panel.DirectoryNavigationContext,
+                    panel.CorrelationId
                 }
-            }),
+            }, panel.CorrelationId),
             QuickLaunchDirectoryContextResolvedEvent resolved =>
                 ProtocolEnvelope.Create("platform_event", new
                 {

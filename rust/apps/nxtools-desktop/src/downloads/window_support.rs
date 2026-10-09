@@ -206,7 +206,7 @@ impl CompletedTaskWindowAction {
                 button_id: "download-complete-reveal",
                 role_selector: "download-complete-secondary-reveal-action",
                 icon: MaterialIcon::Folder,
-                label: Some("打开所在目录"),
+                label: Some("打开所在文件夹"),
                 emphasis: CompletedTaskWindowEmphasis::Outline,
                 tooltip: None,
                 tooltip_selector: None,
@@ -253,16 +253,18 @@ pub(crate) fn download_window_metric(
         .flex_1()
         .flex()
         .flex_col()
-        .gap(px(2.0))
+        .gap(px(0.0))
         .child(
             div()
                 .text_size(px(TEXT_LABEL))
-                .text_color(theme.text_muted)
+                .line_height(px(LINE_HEIGHT_LABEL))
+                .text_color(theme.text_secondary)
                 .child(label),
         )
         .child(
             div()
-                .text_size(px(TEXT_META))
+                .text_size(px(TEXT_LABEL))
+                .line_height(px(LINE_HEIGHT_LABEL))
                 .font_weight(FontWeight::MEDIUM)
                 .truncate()
                 .child(value),
@@ -272,7 +274,7 @@ pub(crate) fn download_window_metric(
 pub(crate) fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoElement {
     div()
         .h(px(34.0))
-        .pl(px(14.0))
+        .pl(px(SPACING_16))
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface)
@@ -315,27 +317,18 @@ pub(crate) fn download_settings_titlebar(
 }
 
 pub(crate) fn download_primary_button_variant(theme: Theme, cx: &gpui::App) -> ButtonCustomVariant {
-    ButtonCustomVariant::new(cx)
-        .color(theme.accent.into())
-        .foreground(theme.accent_text.into())
-        .border(theme.border_active.into())
-        .hover(theme.border_active.into())
-        .active(theme.accent.into())
+    crate::ui::components::action::primary_button_variant(theme, cx)
 }
 
 pub(crate) fn download_window_close_button(theme: Theme) -> impl IntoElement {
-    div()
-        .id("download-window-close")
-        .w(px(38.0))
-        .h_full()
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .justify_center()
-        .hover(move |style| style.bg(theme.danger).text_color(gpui::white()))
+    icon_action("download-window-close", MaterialIcon::Close, "关闭下载窗口")
+        .danger()
+        .ghost()
+        .w(px(40.0))
+        .text_color(theme.text_secondary)
+        .h(px(32.0))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(|_, window, _| window.remove_window())
-        .child(Icon::new(MaterialIcon::Close).size(px(15.0)))
 }
 
 pub(crate) fn download_task_status(status: DownloadStatus) -> (&'static str, gpui::Rgba) {

@@ -228,14 +228,17 @@ pub(crate) async fn run_dash_task(
         let staging_path = working_directory.join(format!("{index:08}.part"));
         let completed_path = working_directory.join(format!("{index:08}.fragment"));
         remove_async_file_if_exists(&staging_path).await?;
+        let checkpoint = stored_fragments.get(&(*kind, *segment_index));
         match tokio::fs::metadata(&completed_path).await {
-            Ok(metadata) if metadata.len() > 0 => {
-                if stored_fragments
-                    .get(&(*kind, *segment_index))
-                    .is_none_or(|fragment| {
-                        fragment.state != DownloadSegmentState::Completed
-                            || fragment.downloaded_bytes != metadata.len()
-                    })
+            Ok(metadata)
+                if metadata.len() > 0
+                    && !checkpoint.is_some_and(|fragment| {
+                        fragment.state == DownloadSegmentState::Completed
+                            && fragment.downloaded_bytes != metadata.len()
+                    }) =>
+            {
+                if !checkpoint
+                    .is_some_and(|fragment| fragment.state == DownloadSegmentState::Completed)
                 {
                     adopted_fragments = adopted_fragments.saturating_add(1);
                 }

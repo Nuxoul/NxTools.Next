@@ -1,9 +1,9 @@
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::components::action::icon_action;
+use crate::ui::components::action::{focused_action, icon_action};
 use crate::ui::metrics::{
-    CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT, SETTINGS_ROW_MIN_HEIGHT,
-    SPACING_2, SPACING_8, SPACING_12,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_DEFAULT, RADIUS_CONTROL, SETTINGS_FOOTER_HEIGHT,
+    SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY,
@@ -14,6 +14,8 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 const TOGGLE_KNOB_SIZE: f32 = 16.0;
+// Internal knob clearance, not a layout spacing token: 24 - two 2px borders - 16px knob.
+const TOGGLE_KNOB_CLEARANCE: f32 = 2.0;
 
 pub(crate) struct SettingsShellIds {
     pub root: &'static str,
@@ -170,7 +172,7 @@ pub(crate) fn feature_settings_window(
                         .flex_1()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_2))
+                        .gap(px(SPACING_4))
                         .child(
                             div()
                                 .id(ids.title)
@@ -257,7 +259,7 @@ pub(crate) fn settings_section(
         .flex_col()
         .child(
             div()
-                .h(px(26.0))
+                .h(px(CONTROL_HEIGHT_ACTION))
                 .px(px(SPACING_8))
                 .border_b_1()
                 .border_color(theme.border_subtle)
@@ -293,7 +295,7 @@ pub(crate) fn settings_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .text_size(px(TEXT_BODY))
@@ -318,35 +320,72 @@ pub(crate) fn settings_toggle(
     enabled: bool,
     on_toggle: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    div()
-        .id(id)
-        .debug_selector(move || id.into())
-        .w(px(40.0))
-        .h(px(CONTROL_HEIGHT_DEFAULT))
-        .p(px(2.0))
-        .rounded(px(CONTROL_HEIGHT_DEFAULT / 2.0))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(if enabled {
-            theme.accent_soft
-        } else {
-            theme.surface
-        })
-        .cursor_pointer()
-        .flex()
-        .when(enabled, |toggle| toggle.justify_end())
-        .on_click(on_toggle)
-        .child(
-            div()
-                .size(px(TOGGLE_KNOB_SIZE))
-                .rounded(px(TOGGLE_KNOB_SIZE / 2.0))
-                .bg(if enabled {
-                    theme.accent_text
+    SettingsToggle {
+        theme,
+        id,
+        enabled,
+        on_toggle: Box::new(on_toggle),
+    }
+    .into_any_element()
+}
+
+#[derive(gpui::IntoElement)]
+struct SettingsToggle {
+    theme: Theme,
+    id: &'static str,
+    enabled: bool,
+    on_toggle: crate::ui::components::action::ClickHandler,
+}
+
+impl gpui::RenderOnce for SettingsToggle {
+    fn render(self, window: &mut Window, cx: &mut gpui::App) -> impl IntoElement {
+        let Self {
+            theme,
+            id,
+            enabled,
+            on_toggle,
+        } = self;
+        let focus = window
+            .use_keyed_state(
+                gpui::SharedString::from(format!("{id}-focus")),
+                cx,
+                |_, cx| cx.focus_handle().tab_stop(true),
+            )
+            .read(cx)
+            .clone();
+        focused_action(id, &focus, theme, false, window, on_toggle)
+            .debug_selector(move || id.into())
+            .w(px(40.0))
+            .h(px(CONTROL_HEIGHT_DEFAULT))
+            .p(px(TOGGLE_KNOB_CLEARANCE))
+            .rounded(px(CONTROL_HEIGHT_DEFAULT / 2.0))
+            .bg(if enabled {
+                theme.accent_soft
+            } else {
+                theme.surface
+            })
+            .hover(move |style| {
+                style.bg(if enabled {
+                    theme.element_selected
                 } else {
-                    theme.text_muted
-                }),
-        )
-        .into_any_element()
+                    theme.surface_hover
+                })
+            })
+            .active(move |style| style.bg(theme.surface_pressed))
+            .flex()
+            .items_center()
+            .when(enabled, |toggle| toggle.justify_end())
+            .child(
+                div()
+                    .size(px(TOGGLE_KNOB_SIZE))
+                    .rounded(px(TOGGLE_KNOB_SIZE / 2.0))
+                    .bg(if enabled {
+                        theme.accent_text
+                    } else {
+                        theme.text_secondary
+                    }),
+            )
+    }
 }
 
 pub(crate) fn dialog_footer(content: AnyElement) -> AnyElement {
@@ -477,6 +516,27 @@ mod tests {
                 .enabled
         }));
         assert!(window.debug_bounds("feature-settings-test-body").is_some());
+
+        window.refresh().expect("paint toggle keyboard focus");
+        window.simulate_keystrokes("space");
+        window.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse("space").expect("Space stroke"),
+        });
+        window.run_until_parked();
+        assert!(
+            window.read(|cx| view_slot
+                .borrow()
+                .as_ref()
+                .expect("keyboard toggle view")
+                .read(cx)
+                .enabled),
+            "Space release must toggle the same setting once"
+        );
+        assert_eq!(
+            window.debug_bounds("feature-settings-test-toggle"),
+            Some(toggle),
+            "keyboard focus must not move or inflate the toggle"
+        );
 
         window.simulate_click(close.center(), Modifiers::default());
         window.run_until_parked();

@@ -48,8 +48,11 @@ pub struct DownloadEngine {
     inner: Arc<DownloadEngineInner>,
 }
 
+type OperationHttpClients = HashMap<(u64, String, bool), (HttpDownloadClient, Instant)>;
+
 pub(crate) struct DownloadEngineInner {
     http_template: HttpDownloadClient,
+    http_clients: Mutex<OperationHttpClients>,
     network_policy: NetworkPolicy,
     download_http_policy: DownloadHttpPolicy,
     download_organization_policy: DownloadOrganizationPolicy,
@@ -119,6 +122,9 @@ struct TransferRateSampler {
 /// Progress events are coalesced to at most 10 Hz per task (the plan's
 /// 5-10 Hz band); terminal states always publish immediately.
 const PROGRESS_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
+/// How long a built HTTP client (with its warm connection pool) is reused for
+/// probes and transfers before the system proxy is re-read.
+const HTTP_CLIENT_REUSE_TTL: Duration = Duration::from_secs(30);
 const ADAPTIVE_SAMPLE_COUNT: usize = 5;
 const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
 const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
@@ -171,6 +177,7 @@ impl AdaptiveSegmentController {
         &mut self,
         bytes_per_second: u64,
         segment_count: u16,
+        initial_segment_count: u16,
         retry_observed: bool,
     ) -> AdaptiveConnectionDecision {
         if self.disabled {
@@ -201,6 +208,14 @@ impl AdaptiveSegmentController {
         }
         let average = self.samples.iter().copied().sum::<u64>()
             / u64::try_from(self.samples.len()).unwrap_or(1);
+        // Sample once and give shedding an already-grown plan priority over
+        // benefit failure or another growth batch. Neither may consume/clear
+        // the stable window before shrink inspects it.
+        if self.shrink_from_window(average, segment_count, initial_segment_count) {
+            self.samples.clear();
+            self.pending_evaluation = None;
+            return AdaptiveConnectionDecision::Shrink;
+        }
         if let Some((baseline_speed, baseline_segments, target_segments)) = self.pending_evaluation
         {
             let baseline_segments = baseline_segments.max(1);
@@ -224,6 +239,12 @@ impl AdaptiveSegmentController {
             return AdaptiveConnectionDecision::Hold;
         }
         if segment_count >= self.max_segments {
+            // A resumed grown plan has no in-memory pre-growth history. Its
+            // first full stable window is the baseline for later slowdown.
+            if self.growth_baseline.is_none() && segment_count > initial_segment_count {
+                self.growth_baseline = Some((average, segment_count));
+                self.samples.clear();
+            }
             return AdaptiveConnectionDecision::Hold;
         }
         let baseline_segments = segment_count.max(1);
@@ -233,36 +254,19 @@ impl AdaptiveSegmentController {
         AdaptiveConnectionDecision::Grow
     }
 
-    /// Shrink fires when the transfer has grown beyond its initial segment
-    /// count and a full stability window now averages below the configured
-    /// share of the pre-growth baseline: the extra segments stopped paying
-    /// for themselves, so shed one.
-    fn observe_shrink(
-        &mut self,
-        bytes_per_second: u64,
+    /// Read the window collected by observe; never feed a sample a second time.
+    fn shrink_from_window(
+        &self,
+        average: u64,
         segment_count: u16,
         initial_segment_count: u16,
-    ) -> AdaptiveConnectionDecision {
-        if self.disabled || segment_count <= initial_segment_count || segment_count <= 1 {
-            return AdaptiveConnectionDecision::Hold;
+    ) -> bool {
+        if segment_count <= initial_segment_count || segment_count <= 1 {
+            return false;
         }
         let Some((baseline_speed, baseline_segments)) = self.growth_baseline else {
-            return AdaptiveConnectionDecision::Hold;
+            return false;
         };
-        if baseline_speed == 0 {
-            return AdaptiveConnectionDecision::Hold;
-        }
-        self.samples.push_back(bytes_per_second);
-        while self.samples.len() > ADAPTIVE_SAMPLE_COUNT {
-            self.samples.pop_front();
-        }
-        if self.samples.len() < ADAPTIVE_SAMPLE_COUNT || !adaptive_samples_are_stable(&self.samples)
-        {
-            return AdaptiveConnectionDecision::Hold;
-        }
-        let average = self.samples.iter().copied().sum::<u64>()
-            / u64::try_from(self.samples.len()).unwrap_or(1);
-        self.samples.clear();
         let baseline_segments = u128::from(baseline_segments.max(1));
         let grown_segments = u128::from(segment_count.max(1));
         // The baseline earned by baseline_segments is the reference; the
@@ -273,11 +277,7 @@ impl AdaptiveSegmentController {
             .saturating_div(baseline_segments)
             .saturating_mul(u128::from(ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT))
             / 100;
-        if u128::from(average) < expected {
-            AdaptiveConnectionDecision::Shrink
-        } else {
-            AdaptiveConnectionDecision::Hold
-        }
+        u128::from(average) < expected
     }
 
     fn confirm_growth_target(&mut self, target_segments: u16) {
@@ -295,14 +295,6 @@ impl AdaptiveSegmentController {
     fn cancel_growth(&mut self) {
         self.pending_evaluation = None;
         self.samples.clear();
-    }
-
-    fn record_completed_growth(&mut self, grown_segments: u16) {
-        if let Some((baseline_speed, baseline_segments)) = self.growth_baseline
-            && grown_segments > baseline_segments
-        {
-            self.growth_baseline = Some((baseline_speed, grown_segments.min(self.max_segments)));
-        }
     }
 }
 
@@ -670,6 +662,7 @@ impl DownloadEngine {
         let engine = Self {
             inner: Arc::new(DownloadEngineInner {
                 http_template: http,
+                http_clients: Mutex::new(HashMap::new()),
                 network_policy,
                 download_http_policy,
                 download_organization_policy: DownloadOrganizationPolicy::from_download_settings(
@@ -1129,16 +1122,21 @@ impl DownloadEngine {
             .download_http_policy
             .apply_to_request(&mut request);
         let certificate_policy = request.certificate_policy;
+        let client_started = Instant::now();
         let client = policy_result
             .map_err(DownloadEngineError::from)
-            .and_then(|()| self.inner.http_for_operation(certificate_policy));
+            .and_then(|()| self.inner.http_for_operation_traced(certificate_policy));
+        let client_ms = client_started.elapsed().as_millis() as u64;
+        let client_reused = client.as_ref().is_ok_and(|(_, reused)| *reused);
         let (proxy_mode, proxy_source) =
-            client.as_ref().map_or(("unavailable", "policy"), |client| {
-                (
-                    proxy_mode_name(client.network_proxy_mode()),
-                    client.network_proxy_source(),
-                )
-            });
+            client
+                .as_ref()
+                .map_or(("unavailable", "policy"), |(client, _)| {
+                    (
+                        proxy_mode_name(client.network_proxy_mode()),
+                        client.network_proxy_source(),
+                    )
+                });
         info!(
             event = "download.probe.started",
             %correlation_id,
@@ -1147,18 +1145,23 @@ impl DownloadEngine {
             certificate_policy = certificate_policy_name(certificate_policy),
             "download resource probe started"
         );
+        let mut stage_timings = None;
         let result = (|| {
             request.validate()?;
-            let client = client?;
+            let client = client?.0;
             let (sender, receiver) = std::sync::mpsc::sync_channel(1);
             download_runtime()?.spawn(async move {
-                let _ = sender.send(client.probe(&request).await);
+                let _ = sender.send(client.probe_timed(&request).await);
             });
             receiver
                 .recv()
                 .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
                 .map_err(DownloadEngineError::from)
-        })();
+        })()
+        .map(|(probe, timings)| {
+            stage_timings = Some(timings);
+            probe
+        });
         match result {
             Ok(probe) => {
                 let (media_kind, variant_count) = match probe.media.as_ref() {
@@ -1171,6 +1174,7 @@ impl DownloadEngine {
                     ),
                     None => ("http", 0),
                 };
+                let timings = stage_timings.unwrap_or_default();
                 info!(
                     event = "download.probe.completed",
                     %correlation_id,
@@ -1179,6 +1183,12 @@ impl DownloadEngine {
                     certificate_policy = certificate_policy_name(certificate_policy),
                     media_kind,
                     variant_count,
+                    client_reused,
+                    client_ms,
+                    head_ms = timings.head_ms,
+                    range_ms = timings.range_ms,
+                    fallback_ms = timings.fallback_ms,
+                    manifest_ms = timings.manifest_ms,
                     elapsed_ms = started.elapsed().as_millis(),
                     "download resource probe completed"
                 );
@@ -3752,10 +3762,49 @@ impl DownloadEngineInner {
         &self,
         certificate_policy: crate::DownloadCertificatePolicy,
     ) -> Result<HttpDownloadClient, DownloadEngineError> {
+        self.http_for_operation_traced(certificate_policy)
+            .map(|(client, _)| client)
+    }
+
+    /// Returns the operation client and whether it came from the reuse cache.
+    ///
+    /// Building a `reqwest::Client` re-reads the system proxy and TLS roots and
+    /// starts with an empty connection pool, so every probe used to pay a full
+    /// TCP+TLS handshake. Clients are reused per (policy generation, route,
+    /// certificate policy). A policy update bumps the generation, so a changed
+    /// proxy setting takes effect on the next operation; the TTL only bounds
+    /// how long a changed *system* proxy (which raises no signal) can be
+    /// ignored.
+    fn http_for_operation_traced(
+        &self,
+        certificate_policy: crate::DownloadCertificatePolicy,
+    ) -> Result<(HttpDownloadClient, bool), DownloadEngineError> {
+        // Read the generation before the snapshot: if an update lands in
+        // between, the client is stored under the older generation and is
+        // never served again, instead of an old client masquerading as new.
+        let generation = self.network_policy.generation();
         let snapshot = self.network_policy.snapshot()?;
-        Ok(self
+        let key = (
+            generation,
+            snapshot.route_key(),
+            certificate_policy == crate::DownloadCertificatePolicy::AcceptInvalid,
+        );
+        if let Ok(cache) = self.http_clients.lock()
+            && let Some((client, built_at)) = cache.get(&key)
+            && built_at.elapsed() < HTTP_CLIENT_REUSE_TTL
+        {
+            return Ok((client.clone(), true));
+        }
+        let client = self
             .http_template
-            .for_network_snapshot(&snapshot, certificate_policy)?)
+            .for_network_snapshot(&snapshot, certificate_policy)?;
+        if let Ok(mut cache) = self.http_clients.lock() {
+            cache.retain(|(cached_generation, _, _), (_, built_at)| {
+                *cached_generation == generation && built_at.elapsed() < HTTP_CLIENT_REUSE_TTL
+            });
+            cache.insert(key, (client.clone(), Instant::now()));
+        }
+        Ok((client, false))
     }
 
     fn lock_tasks(
@@ -4938,12 +4987,12 @@ mod tests {
 
         for speed in [10_000, 10_400, 9_800, 10_200] {
             assert_eq!(
-                controller.observe(speed, 4, false),
+                controller.observe(speed, 4, 4, false),
                 AdaptiveConnectionDecision::Hold
             );
         }
         assert_eq!(
-            controller.observe(10_100, 4, false),
+            controller.observe(10_100, 4, 4, false),
             AdaptiveConnectionDecision::Grow
         );
         controller.confirm_growth_target(8);
@@ -4953,28 +5002,30 @@ mod tests {
     fn adaptive_segments_use_only_post_growth_samples_for_the_benefit_window() {
         let mut controller = AdaptiveSegmentController::new(8, true);
         for speed in [10_000, 10_100, 9_900, 10_000, 10_050] {
-            let _ = controller.observe(speed, 4, false);
+            let _ = controller.observe(speed, 4, 4, false);
         }
         controller.confirm_growth_target(8);
 
         for speed in [10_100, 10_200, 10_000, 10_150, 10_100] {
             assert_eq!(
-                controller.observe(speed, 5, false),
+                controller.observe(speed, 5, 4, false),
                 AdaptiveConnectionDecision::Hold
             );
         }
-        for speed in [10_100, 10_200, 10_000, 10_150] {
+        // This window is low-benefit, but not a severe slowdown: shrink has
+        // priority below 60% of the proportional baseline (about 12,000).
+        for speed in [14_100, 14_200, 14_000, 14_150] {
             assert_eq!(
-                controller.observe(speed, 8, false),
+                controller.observe(speed, 8, 4, false),
                 AdaptiveConnectionDecision::Hold
             );
         }
         assert_eq!(
-            controller.observe(10_100, 8, false),
+            controller.observe(14_100, 8, 4, false),
             AdaptiveConnectionDecision::DisabledForLowBenefit
         );
         assert_eq!(
-            controller.observe(40_000, 8, false),
+            controller.observe(40_000, 8, 4, false),
             AdaptiveConnectionDecision::Hold
         );
     }
@@ -4984,12 +5035,12 @@ mod tests {
         let mut controller = AdaptiveSegmentController::new(8, true);
 
         assert_eq!(
-            controller.observe(10_000, 4, true),
+            controller.observe(10_000, 4, 4, true),
             AdaptiveConnectionDecision::DisabledAfterRetry
         );
         for _ in 0..5 {
             assert_eq!(
-                controller.observe(20_000, 4, false),
+                controller.observe(20_000, 4, 4, false),
                 AdaptiveConnectionDecision::Hold
             );
         }
@@ -5001,7 +5052,7 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(
-                controller.observe(20_000, 8, false),
+                controller.observe(20_000, 8, 8, false),
                 AdaptiveConnectionDecision::Hold
             );
         }
@@ -5040,6 +5091,62 @@ mod tests {
             .expect("read browser task")
             .expect("browser task exists");
         assert_eq!(task.total_bytes, Some(12_345));
+    }
+
+    #[test]
+    fn operation_client_is_reused_until_the_network_policy_changes() {
+        use nxtools_core::{NetworkProxyMode, NetworkProxySettings, NetworkSettings};
+
+        let policy = NetworkPolicy::new(NetworkSettings::default()).expect("direct policy");
+        let engine = DownloadEngine::open_in_memory_with_network_policy(policy.clone())
+            .expect("open engine");
+        let strict = crate::DownloadCertificatePolicy::Strict;
+
+        let (_, first_reused) = engine
+            .inner
+            .http_for_operation_traced(strict)
+            .expect("first client");
+        let (_, second_reused) = engine
+            .inner
+            .http_for_operation_traced(strict)
+            .expect("second client");
+        assert!(!first_reused, "the first operation builds a client");
+        assert!(second_reused, "an unchanged policy reuses the warm client");
+
+        policy
+            .update(NetworkSettings {
+                proxy: NetworkProxySettings {
+                    mode: NetworkProxyMode::ManualHttp,
+                    host: "127.0.0.1".into(),
+                    port: 3128,
+                },
+            })
+            .expect("switch to a manual proxy");
+        let (rebuilt, rebuilt_reused) = engine
+            .inner
+            .http_for_operation_traced(strict)
+            .expect("client after the policy change");
+        assert!(
+            !rebuilt_reused,
+            "a policy update must not be served a client built for the old route"
+        );
+        assert_eq!(
+            rebuilt.network_proxy_mode(),
+            NetworkProxyMode::ManualHttp,
+            "the rebuilt client must follow the new route"
+        );
+
+        // A same-value update still bumps the generation and rebuilds once;
+        // that is conservative, never stale.
+        policy
+            .update(NetworkSettings::default())
+            .expect("switch back to direct");
+        let (back, back_reused) = engine
+            .inner
+            .http_for_operation_traced(strict)
+            .expect("client after switching back");
+        assert!(!back_reused);
+        assert_eq!(back.network_proxy_mode(), NetworkProxyMode::Direct);
     }
 
     #[test]

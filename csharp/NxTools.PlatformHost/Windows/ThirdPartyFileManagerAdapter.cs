@@ -66,6 +66,15 @@ internal static class ThirdPartyFileManagerAdapter
     public static WindowsCommandResult Navigate(
         NavigateThirdPartyFileManagerCommand command) =>
         Registry.Navigate(command, Directory.Exists);
+    public static ThirdPartyFileManagerContext? TryRefreshDirectoryOpusSource(
+        long windowHandle,
+        string? hostContextId,
+        ForegroundContext foreground) =>
+        Registry.TryRefreshDirectoryOpusSource(windowHandle, hostContextId, foreground);
+    public static bool IsDirectoryOpusSource(
+        long windowHandle,
+        string? hostContextId) =>
+        Registry.IsDirectoryOpusSource(windowHandle, hostContextId);
 }
 
 internal sealed class ThirdPartyFileManagerSessionRegistry
@@ -77,10 +86,11 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
     private readonly IReadOnlyList<IThirdPartyFileManagerOperations> _adapters;
     private readonly Dictionary<string, CapturedSession> _sessions =
         new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ConsumedDirectoryOpusSource> _consumedDirectoryOpusSources =
+        new(StringComparer.Ordinal);
     private readonly LinkedList<string> _sessionOrder = new();
     private readonly Dictionary<string, LinkedListNode<string>>
         _sessionOrderNodes = new(StringComparer.Ordinal);
-
     public ThirdPartyFileManagerSessionRegistry(
         IReadOnlyList<IThirdPartyFileManagerOperations> adapters)
     {
@@ -121,6 +131,7 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
                 _sessions[contextId] = new CapturedSession(
                     adapter,
                     foreground.WindowHandle,
+                    foreground.ProcessId,
                     capture.PaneState,
                     DateTimeOffset.UtcNow);
                 _sessionOrderNodes[contextId] =
@@ -135,6 +146,113 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
         }
         return new ThirdPartyFileManagerCaptureAttempt(null);
     }
+
+    public ThirdPartyFileManagerContext? TryRefreshDirectoryOpusSource(
+        long windowHandle,
+        string? hostContextId,
+        ForegroundContext foreground)
+    {
+        if (windowHandle == 0 ||
+            foreground.WindowHandle != windowHandle ||
+            foreground.ProcessId == 0 ||
+            string.IsNullOrWhiteSpace(hostContextId))
+        {
+            return null;
+        }
+
+        CapturedSession? previous = null;
+        ConsumedDirectoryOpusSource? consumed = null;
+        lock (_gate)
+        {
+            Cleanup(DateTimeOffset.UtcNow);
+            if (_sessions.TryGetValue(hostContextId, out var active) &&
+                active.WindowHandle == windowHandle &&
+                active.ProcessId == foreground.ProcessId &&
+                active.Adapter.Id.Equals("Directory Opus", StringComparison.Ordinal))
+            {
+                previous = active;
+            }
+            else if (_consumedDirectoryOpusSources.TryGetValue(hostContextId, out var retired) &&
+                     retired.WindowHandle == windowHandle &&
+                     retired.ProcessId == foreground.ProcessId)
+            {
+                consumed = retired;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        var adapter = previous?.Adapter ?? consumed!.Adapter;
+        if (!adapter.TryCapture(foreground, out var capture, out _) || capture is null)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            if (previous is not null)
+            {
+                if (!_sessions.TryGetValue(hostContextId, out var current) ||
+                    !ReferenceEquals(current, previous))
+                {
+                    return null;
+                }
+                _sessions[hostContextId] = previous with
+                {
+                    PaneState = capture.PaneState,
+                    CapturedAt = DateTimeOffset.UtcNow
+                };
+                return new ThirdPartyFileManagerContext(
+                    windowHandle,
+                    capture.CurrentDirectory,
+                    hostContextId);
+            }
+
+            if (!_consumedDirectoryOpusSources.TryGetValue(hostContextId, out var currentConsumed) ||
+                !ReferenceEquals(currentConsumed, consumed))
+            {
+                return null;
+            }
+            _consumedDirectoryOpusSources.Remove(hostContextId);
+            var refreshedContextId = Guid.NewGuid().ToString("N");
+            _sessions[refreshedContextId] = new CapturedSession(
+                adapter,
+                windowHandle,
+                foreground.ProcessId,
+                capture.PaneState,
+                DateTimeOffset.UtcNow);
+            _sessionOrderNodes[refreshedContextId] =
+                _sessionOrder.AddLast(refreshedContextId);
+            TrimToCapacity();
+            return new ThirdPartyFileManagerContext(
+                windowHandle,
+                capture.CurrentDirectory,
+                refreshedContextId);
+        }
+    }
+
+
+    public bool IsDirectoryOpusSource(
+        long windowHandle,
+        string? hostContextId)
+    {
+        if (windowHandle == 0 || string.IsNullOrWhiteSpace(hostContextId))
+        {
+            return false;
+        }
+        lock (_gate)
+        {
+            Cleanup(DateTimeOffset.UtcNow);
+            return (_sessions.TryGetValue(hostContextId, out var session) &&
+                    session.WindowHandle == windowHandle &&
+                    session.Adapter.Id.Equals("Directory Opus", StringComparison.Ordinal)) ||
+                (_consumedDirectoryOpusSources.TryGetValue(hostContextId, out var consumed) &&
+                 consumed.WindowHandle == windowHandle);
+        }
+    }
+
 
     public WindowsCommandResult Navigate(
         NavigateThirdPartyFileManagerCommand command,
@@ -199,6 +317,16 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
         }
         lock (_gate)
         {
+            if (session.Adapter.Id.Equals("Directory Opus", StringComparison.Ordinal))
+            {
+                _consumedDirectoryOpusSources[command.HostContextId!] =
+                    new ConsumedDirectoryOpusSource(
+                        session.Adapter,
+                        session.WindowHandle,
+                        session.ProcessId,
+                        DateTimeOffset.UtcNow);
+                TrimConsumedDirectoryOpusSources();
+            }
             RemoveSession(command.HostContextId!);
         }
         return new WindowsCommandResult(true);
@@ -235,6 +363,13 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
                 RemoveSession(contextId);
             }
         }
+        foreach (var (contextId, consumed) in _consumedDirectoryOpusSources.ToArray())
+        {
+            if (now - consumed.ConsumedAt > SessionLifetime)
+            {
+                _consumedDirectoryOpusSources.Remove(contextId);
+            }
+        }
         TrimToCapacity();
     }
 
@@ -244,6 +379,20 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
                _sessionOrder.First is { } oldest)
         {
             RemoveSession(oldest.Value);
+        }
+    }
+
+    private void TrimConsumedDirectoryOpusSources()
+    {
+        while (_consumedDirectoryOpusSources.Count > MaximumSessions)
+        {
+            var oldest = _consumedDirectoryOpusSources
+                .MinBy(static pair => pair.Value.ConsumedAt);
+            if (oldest.Key is null)
+            {
+                return;
+            }
+            _consumedDirectoryOpusSources.Remove(oldest.Key);
         }
     }
 
@@ -259,9 +408,17 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
     private sealed record CapturedSession(
         IThirdPartyFileManagerOperations Adapter,
         long WindowHandle,
+        uint ProcessId,
         object PaneState,
         DateTimeOffset CapturedAt);
+
+    private sealed record ConsumedDirectoryOpusSource(
+        IThirdPartyFileManagerOperations Adapter,
+        long WindowHandle,
+        uint ProcessId,
+        DateTimeOffset ConsumedAt);
 }
+
 
 internal static class ThirdPartyFileManagerPath
 {

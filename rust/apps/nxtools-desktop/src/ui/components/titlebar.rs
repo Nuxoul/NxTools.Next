@@ -10,8 +10,8 @@ use crate::ui::metrics::{
     CONTROL_HEIGHT_ACTION, MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
-    LINE_HEIGHT_LABEL, LINE_HEIGHT_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_TITLE, UI_FONT_FAMILY,
-    UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_PAGE_TITLE,
+    UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
 
 pub(crate) struct ModuleHeader {
@@ -82,9 +82,9 @@ impl ModuleHeader {
                     .id(title_selector)
                     .debug_selector(move || title_selector.into())
                     .flex_none()
-                    .h(px(LINE_HEIGHT_TITLE))
-                    .text_size(px(TEXT_TITLE))
-                    .line_height(px(LINE_HEIGHT_TITLE))
+                    .h(px(LINE_HEIGHT_PAGE_TITLE))
+                    .text_size(px(TEXT_PAGE_TITLE))
+                    .line_height(px(LINE_HEIGHT_PAGE_TITLE))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
             )

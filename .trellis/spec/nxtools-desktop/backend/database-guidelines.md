@@ -1,51 +1,5 @@
-# Database Guidelines
+# Desktop persistence boundary
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/apps/nxtools-desktop/src/clipboard_worker.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard.rs#save_clipboard_section`, `repo:rust/apps/nxtools-desktop/src/runtime.rs#DesktopRuntime`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+Desktop composes DownloadEngine/store, FinderCatalog and ClipboardHistory; it is not a new SQL/schema owner. Clipboard jobs own live history connection and stage migration then durable config commit before switching. Query reply validates generation/query/category/scope; retain bounded four-page window and immutable cursor. Ordinary UI save merges only owned Core section; storage_directory remains migration authority. No SQLite wait or file/native IO in render. Tests use actual synthetic worker/config/DB delay/failure; direct rusqlite dependency doesn't authorize UI-owned ad hoc queries. [Shared persistence contract](../../shared/engineering.md).

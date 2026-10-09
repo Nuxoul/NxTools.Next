@@ -500,6 +500,55 @@ fn unique_download_settings_test_directory(label: &str) -> PathBuf {
     ))
 }
 
+#[test]
+fn completed_reveal_uses_existing_file_directory_or_save_directory_fallback() {
+    let directory = unique_download_settings_test_directory("artifact-reveal-target");
+    std::fs::create_dir_all(&directory).expect("create artifact test directory");
+    let file = directory.join("final.bin");
+    std::fs::write(&file, b"done").expect("create final artifact");
+    let missing = directory.join("removed.bin");
+
+    assert_eq!(
+        resolve_download_artifact_target(
+            Some(&file),
+            &directory,
+            ShellOpenAction::SelectInExplorer,
+        ),
+        Ok((file.clone(), false))
+    );
+    assert_eq!(
+        resolve_download_artifact_target(
+            Some(&directory),
+            &directory,
+            ShellOpenAction::SelectInExplorer,
+        ),
+        Ok((directory.clone(), false))
+    );
+    assert_eq!(
+        resolve_download_artifact_target(
+            Some(&missing),
+            &directory,
+            ShellOpenAction::SelectInExplorer,
+        ),
+        Ok((directory.clone(), true))
+    );
+    assert!(
+        resolve_download_artifact_target(Some(&missing), &directory, ShellOpenAction::Open,)
+            .is_err()
+    );
+    assert!(
+        resolve_download_artifact_target(
+            Some(&missing),
+            &directory,
+            ShellOpenAction::SelectInExplorer,
+        )
+        .expect("Reveal falls back only to the save directory")
+        .0
+        .is_dir()
+    );
+
+    let _ = std::fs::remove_dir_all(directory);
+}
 #[gpui::test]
 fn taskbar_overlay_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
@@ -1135,6 +1184,42 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
         "schedule Popover must stay bounded at 304x240, got {:?}",
         shell.size
     );
+    let time_row = window
+        .debug_bounds("download-new-schedule-time-row")
+        .expect("production schedule time row");
+    let action_row = window
+        .debug_bounds("download-new-schedule-action-row")
+        .expect("production schedule action row");
+    let clear_button = window
+        .debug_bounds("download-new-schedule-clear-button")
+        .expect("visible clear button hit target");
+    let confirm_button = window
+        .debug_bounds("download-new-schedule-confirm-button")
+        .expect("visible confirm button hit target");
+    for (name, button) in [("clear", clear_button), ("confirm", confirm_button)] {
+        assert_eq!(
+            button.size.height,
+            px(CONTROL_HEIGHT_ACTION),
+            "schedule {name} hit target must use the shared action tier"
+        );
+        assert!(button.left() >= action_row.left() && button.right() <= action_row.right());
+        assert!(button.top() >= action_row.top() && button.bottom() <= action_row.bottom());
+        assert!(button.left() >= shell.left() && button.right() <= shell.right());
+        assert!(button.top() >= shell.top() && button.bottom() <= shell.bottom());
+    }
+    assert!(
+        (clear_button.top().as_f32() - confirm_button.top().as_f32()).abs() <= 1.0
+            && (clear_button.bottom().as_f32() - confirm_button.bottom().as_f32()).abs() <= 1.0,
+        "schedule buttons must share a vertical baseline"
+    );
+    assert!(
+        clear_button.right() < confirm_button.left(),
+        "schedule button hit targets must not overlap"
+    );
+    assert!(clear_button.left() - action_row.left() >= px(SPACING_8));
+    assert!(action_row.right() - confirm_button.right() >= px(SPACING_8));
+    assert!(time_row.top() >= shell.top() && time_row.bottom() <= shell.bottom());
+    assert!(action_row.top() >= time_row.bottom());
     for (name, selector) in [
         (
             "previous month",
@@ -1445,14 +1530,31 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
     };
     let confirmed_probe_size = new_download_window_size_for_probe(&probe);
     new_download_window
-        .update(cx, move |_, native_window, cx| {
+        .update(cx, move |_, _native_window, cx| {
             view.update(cx, |view, cx| {
                 view.probe = Some(probe);
+                view.confirmed_target_height = Some(confirmed_probe_size.height);
+                // Even an expired gate cannot release a clipped form.
+                view.confirmed_gate_expired = true;
                 cx.notify();
             });
-            native_window.resize(confirmed_probe_size);
         })
-        .expect("confirm production probe stage");
+        .expect("stage confirmed metadata while the native client remains compact");
+    window.run_until_parked();
+    window
+        .refresh()
+        .expect("render pending native confirmation");
+    assert!(
+        window
+            .debug_bounds("download-new-probe-inspector")
+            .is_none(),
+        "confirmation metadata must not paint into the old compact client"
+    );
+    new_download_window
+        .update(cx, |_, native_window, _| {
+            native_window.resize(confirmed_probe_size)
+        })
+        .expect("native confirmation resize");
     window.run_until_parked();
     // The test surface keeps its initial size when only the cached window
     // bounds change; simulate the real confirmed surface so the geometry
@@ -1470,10 +1572,14 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
         compact_size.width.as_f32(),
         "probe confirmation must not change the dialog width"
     );
+    assert!(
+        confirmed_size.height.as_f32() >= NEW_DOWNLOAD_CONFIRMED_HEIGHT,
+        "confirmed probe must use the generous client-height floor"
+    );
     assert_eq!(
         confirmed_size.height.as_f32() - compact_size.height.as_f32(),
-        102.0,
-        "probe confirmation must add only the destination form height"
+        NEW_DOWNLOAD_CONFIRMED_HEIGHT - 176.0,
+        "probe confirmation must switch to the full destination form height"
     );
 
     let form_grid = window
@@ -1525,6 +1631,86 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
         .debug_bounds("download-new-footer")
         .expect("confirmed new-download footer");
     assert!(inspector.bottom() <= confirmed_footer.top());
+    let form_content = window
+        .debug_bounds("download-new-form-grid")
+        .expect("confirmed form content bounds");
+    assert!(form_content.top().as_f32() >= 0.0);
+    assert!(form_content.bottom().as_f32() <= confirmed_footer.top().as_f32());
+    for field in [directory_row, file_name_field, inspector] {
+        assert!(field.left().as_f32() >= form_content.left().as_f32());
+        assert!(field.right().as_f32() <= form_content.right().as_f32());
+        assert!(field.bottom().as_f32() <= confirmed_footer.top().as_f32());
+    }
+
+    window.simulate_resize(new_download_window_size(false));
+    window.run_until_parked();
+    let compact_viewport = new_download_window
+        .update(cx, |_, window, _| window.viewport_size())
+        .expect("read restored compact viewport");
+    assert_eq!(compact_viewport, new_download_window_size(false));
+    let restored_gate = new_download_window
+        .update(cx, |_, native_window, cx| {
+            let app = application.read(cx);
+            let view = app
+                .new_download_view
+                .as_ref()
+                .expect("new download view")
+                .read(cx);
+            (
+                view.confirmed_target_height,
+                confirmed_window_pending(
+                    view.confirmed_target_height,
+                    view.confirmed_gate_expired,
+                    native_window.viewport_size().height,
+                ),
+            )
+        })
+        .expect("read compact confirmation gate");
+    assert!(
+        restored_gate.1,
+        "compact gate must be pending: {:?}",
+        restored_gate
+    );
+    window
+        .refresh()
+        .expect("render compact client after a confirmed frame");
+    let compact_guidance = window
+        .debug_bounds("download-new-probe-guidance")
+        .expect("current compact confirmation-pending guidance");
+    let compact_footer = window
+        .debug_bounds("download-new-footer")
+        .expect("compact recovery footer");
+    let compact_root = window
+        .debug_bounds("download-new-root")
+        .expect("compact recovery root");
+    let cancel_action = window
+        .debug_bounds("download-new-cancel-action")
+        .expect("visible compact cancel action");
+    assert!(compact_footer.bottom() <= compact_root.bottom());
+    assert!(
+        cancel_action.top() >= compact_footer.top()
+            && cancel_action.bottom() <= compact_footer.bottom()
+    );
+    assert!(compact_guidance.bottom() <= compact_footer.top());
+    window.simulate_resize(confirmed_probe_size);
+    window.run_until_parked();
+    window
+        .refresh()
+        .expect("render settled client after compact restoration");
+    let settled_footer = window
+        .debug_bounds("download-new-footer")
+        .expect("settled footer");
+    let settled_inspector = window
+        .debug_bounds("download-new-probe-inspector")
+        .expect("restored confirmation inspector");
+    let submit_action = window
+        .debug_bounds("download-new-footer-primary-action")
+        .expect("restored download action");
+    assert!(settled_inspector.bottom() <= settled_footer.top());
+    assert!(
+        submit_action.top() >= settled_footer.top()
+            && submit_action.bottom() <= settled_footer.bottom()
+    );
 
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -1567,6 +1753,7 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
         })
         .expect("run failing probe");
     window.run_until_parked();
+    window.simulate_resize(new_download_error_window_size(false));
     window.refresh().expect("render error reserve");
 
     let base = new_download_window_size(false);
@@ -1991,6 +2178,36 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
         size(px(CONTROL_HEIGHT_ACTION), px(CONTROL_HEIGHT_ACTION)),
         "refresh must remain a square shared action"
     );
+    let footer_actions = [
+        schedule,
+        refresh,
+        window
+            .debug_bounds("download-add-to-queue")
+            .expect("queue-only footer action"),
+        window
+            .debug_bounds("download-start-now")
+            .expect("start-now footer action"),
+        window
+            .debug_bounds("download-new-cancel-action")
+            .expect("cancel footer action"),
+    ];
+    let footer_action_top = footer_actions[0].top().as_f32();
+    let footer_action_bottom = footer_actions[0].bottom().as_f32();
+    for (index, action) in footer_actions.iter().enumerate().skip(1) {
+        assert!(
+            (action.top().as_f32() - footer_action_top).abs() <= 1.0
+                && (action.bottom().as_f32() - footer_action_bottom).abs() <= 1.0,
+            "footer action {index} must share the schedule button's vertical baseline"
+        );
+    }
+    assert!(
+        (schedule.left().as_f32() - (footer.left().as_f32() + 16.0)).abs() <= 1.0,
+        "the schedule action must align with the footer's leading inset"
+    );
+    assert!(
+        (footer_actions[4].right().as_f32() - (footer.right().as_f32() - 16.0)).abs() <= 1.0,
+        "the cancel action must align with the footer's trailing inset"
+    );
     window.simulate_click(schedule.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render opened schedule popover");
@@ -2208,7 +2425,10 @@ fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut Tes
     let first_selected_dot = window
         .debug_bounds("download-hls-quality-0-radio-selected")
         .expect("selected HLS radio dot");
-    assert_eq!(first_selected_dot.size, size(px(SPACING_6), px(SPACING_6)));
+    assert_eq!(
+        first_selected_dot.size,
+        size(px(RADIO_SELECTION_DOT_SIZE), px(RADIO_SELECTION_DOT_SIZE))
+    );
     assert!(
         first_radio.contains(&first_selected_dot.origin)
             && first_radio.contains(&first_selected_dot.bottom_right()),
@@ -2332,7 +2552,7 @@ fn media_probe_window_height_tracks_the_visible_choice_rows() {
         new_download_window_size_for_probe(&dash_probe)
             .height
             .as_f32(),
-        333.0,
+        353.0,
         "a one-video/one-audio DASH choice should use one visible row, not the maximum scroller height"
     );
 
@@ -2364,7 +2584,7 @@ fn media_probe_window_height_tracks_the_visible_choice_rows() {
         new_download_window_size_for_probe(&hls_probe)
             .height
             .as_f32(),
-        402.0,
+        418.0,
         "five HLS choices should use the bounded three-row viewport without extra footer whitespace"
     );
 }
@@ -2494,7 +2714,10 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
     let first_video_dot = window
         .debug_bounds("download-dash-video-track-0-radio-selected")
         .expect("selected DASH video radio dot");
-    assert_eq!(first_video_dot.size, size(px(SPACING_6), px(SPACING_6)));
+    assert_eq!(
+        first_video_dot.size,
+        size(px(RADIO_SELECTION_DOT_SIZE), px(RADIO_SELECTION_DOT_SIZE))
+    );
     assert!(
         window
             .debug_bounds("download-dash-video-track-1-radio-selected")
@@ -3337,6 +3560,26 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     assert_eq!(titlebar.bottom(), body.top());
     assert_eq!(body.bottom(), footer.top());
     assert_eq!(footer.bottom(), shell.bottom());
+    let progress_identity = window
+        .debug_bounds("download-window-progress-identity")
+        .expect("download progress identity row");
+    let progress_percent = window
+        .debug_bounds("download-window-progress-percent")
+        .expect("prominent progress value");
+    let progress_track = window
+        .debug_bounds("download-window-progress-track")
+        .expect("dedicated progress track");
+    let progress_metrics = window
+        .debug_bounds("download-window-progress-metrics")
+        .expect("aligned progress metrics");
+    let progress_path = window
+        .debug_bounds("download-window-progress-path")
+        .expect("bounded destination line");
+    assert!(progress_percent.size.height >= px(16.0));
+    assert!(progress_identity.bottom() <= progress_track.top());
+    assert!(progress_track.bottom() <= progress_metrics.top());
+    assert!(progress_metrics.bottom() <= progress_path.top());
+    assert!(progress_path.bottom() <= footer.top());
     while platform_endpoint
         .try_receive_command_for_contract_test()
         .is_ok()
@@ -3397,6 +3640,17 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
             .expect("failed shared body")
     );
 
+    let failure_detail = window
+        .debug_bounds("download-window-failure-detail")
+        .expect("readable multi-line failure detail");
+    let failed_footer = window
+        .debug_bounds("download-task-window-footer")
+        .expect("failed footer");
+    assert!(
+        failure_detail.size.height >= px(30.0),
+        "the failure message must wrap across readable lines instead of truncating to one"
+    );
+    assert!(failure_detail.bottom() <= failed_footer.top());
     let mut completed_snapshot = base_snapshot;
     for (status, timestamp) in [
         (DownloadStatus::Probing, 2),
@@ -3412,7 +3666,9 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     }
     completed_snapshot.total_bytes = Some(4096);
     completed_snapshot.downloaded_bytes = 4096;
-    completed_snapshot.final_path = Some(directory.join("shared-skeleton.bin"));
+    let final_artifact = directory.join("shared-skeleton.bin");
+    std::fs::write(&final_artifact, b"fixture").expect("create completed artifact");
+    completed_snapshot.final_path = Some(final_artifact);
     cx.update(|cx| {
         application.update(cx, |application, cx| {
             application.replace_tasks_for_test(vec![completed_snapshot]);
@@ -3435,6 +3691,33 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         window
             .debug_bounds("download-task-window-body")
             .expect("completed shared body")
+    );
+    let completed_summary = window
+        .debug_bounds("download-complete-summary")
+        .expect("completed file summary");
+    let completed_name = window
+        .debug_bounds("download-complete-name")
+        .expect("completed file name");
+    let completed_size = window
+        .debug_bounds("download-complete-size")
+        .expect("completed file size");
+    let completed_path = window
+        .debug_bounds("download-complete-path")
+        .expect("completed destination");
+    for item in [completed_name, completed_size, completed_path] {
+        assert!(item.left() >= completed_summary.left());
+        assert!(item.right() <= completed_summary.right());
+        assert!(item.top() >= completed_summary.top());
+        assert!(item.bottom() <= completed_summary.bottom());
+    }
+    assert!(completed_name.top() <= completed_size.top());
+    assert!(completed_size.bottom() <= completed_path.top());
+    assert!(
+        completed_path.bottom()
+            <= window
+                .debug_bounds("download-task-window-footer")
+                .expect("completed footer")
+                .top()
     );
     let drag_action = window
         .debug_bounds("download-complete-secondary-drag-action")
@@ -3501,11 +3784,11 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
 
     window.simulate_click(reveal_action.center(), Modifiers::default());
     window.run_until_parked();
+    let reveal_envelope = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("completed reveal platform command");
     assert_eq!(
-        platform_endpoint
-            .try_receive_command_for_contract_test()
-            .expect("completed reveal platform command")
-            .message,
+        reveal_envelope.message,
         nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
             OpenShellTargetCommand {
                 target: directory.join("shared-skeleton.bin").display().to_string(),
@@ -3513,10 +3796,119 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
             }
         ))
     );
+    assert!(cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)));
+    window.simulate_click(reveal_action.center(), Modifiers::default());
+    window.run_until_parked();
+    assert!(
+        platform_endpoint
+            .try_receive_command_for_contract_test()
+            .is_err(),
+        "a repeated reveal while its correlated result is pending must not queue another Shell request"
+    );
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: reveal_envelope.id,
+                    result: PlatformCommandResult {
+                        success: false,
+                        error: Some("Explorer activation failed".into()),
+                        native_error_code: Some(5),
+                        data: None,
+                    },
+                },
+                cx,
+            );
+        });
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+        "a failed Shell action must leave the completed window available for retry"
+    );
+
+    window.simulate_click(reveal_action.center(), Modifiers::default());
+    window.run_until_parked();
+    let timed_out_reveal = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("reveal command that will time out");
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.artifact_action_timed_out(timed_out_reveal.id, cx);
+        });
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+        "a timed-out Shell action must leave its completed window available for retry"
+    );
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: timed_out_reveal.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+        });
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+        "a late success after timeout must not close the completed window"
+    );
+
+    window.simulate_click(reveal_action.center(), Modifiers::default());
+    window.run_until_parked();
+    let disconnected_reveal = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("reveal command invalidated by PlatformHost disconnect");
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::Disconnected {
+                    generation: 1,
+                    pending_command_ids: vec![disconnected_reveal.id],
+                },
+                cx,
+            );
+        });
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+        "a PlatformHost disconnect must leave the completed window available for retry"
+    );
+    platform_endpoint.set_connected_for_contract_test(true);
+
+    window.simulate_click(reveal_action.center(), Modifiers::default());
+    window.run_until_parked();
+    let reveal_retry = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("reveal retry platform command");
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: reveal_retry.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+        });
+    });
     assert!(
         !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
-        "opening the artifact from the completed window must close the terminal window"
+        "a confirmed reveal must close its originating completed window"
     );
+
     cx.update(|cx| {
         application.update(cx, |application, cx| {
             let directive = application
@@ -3531,20 +3923,19 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         });
     });
     cx.run_until_parked();
-    let reopened_handle = cx.read(|cx| {
-            application
-                .read(cx)
-                .task_windows
-                .get(&task_id)
-                .map(|entry| {
-                    assert_ne!(
-                        entry.generation, generation,
-                        "the artifact-open close must release the keyed registration so a reopen creates a fresh window"
-                    );
-                    entry.window
-                })
-                .expect("reopened completed task window")
-        });
+    let (reopened_handle, reopened_generation) = cx.read(|cx| {
+        let application = application.read(cx);
+        let entry = application
+            .task_windows
+            .get(&task_id)
+            .expect("reopened completed task window");
+        assert_ne!(
+            entry.generation, generation,
+            "the artifact-open close must release the keyed registration so a reopen creates a fresh window"
+        );
+        (entry.window, entry.generation)
+    });
+    assert_ne!(reopened_generation, generation);
     let mut window = VisualTestContext::from_window(reopened_handle, cx);
     window.refresh().expect("render reopened completed window");
     while platform_endpoint
@@ -3553,11 +3944,11 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     {}
     window.simulate_click(open_action.center(), Modifiers::default());
     window.run_until_parked();
+    let open_envelope = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("completed open platform command");
     assert_eq!(
-        platform_endpoint
-            .try_receive_command_for_contract_test()
-            .expect("completed open platform command")
-            .message,
+        open_envelope.message,
         nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
             OpenShellTargetCommand {
                 target: directory.join("shared-skeleton.bin").display().to_string(),
@@ -3565,9 +3956,26 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
             }
         ))
     );
+    assert!(cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)));
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: open_envelope.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+        });
+    });
     assert!(
         !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
-        "the Open action must also close the completed window"
+        "a confirmed Open action must close its originating completed window"
     );
 
     let _ = task_window_handle.update(cx, |_, window, _| window.remove_window());
@@ -5195,10 +5603,11 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     let (application, directory) =
         download_application_for_window_test(cx, "category-settings-layout");
     let config_path = directory.join("config.json");
-    let persisted_before_actions = AppConfig::default();
-    persisted_before_actions
+    AppConfig::default()
         .save_to(&config_path)
         .expect("save category action persistence fixture");
+    let persisted_before_actions =
+        AppConfig::load_from(&config_path).expect("load normalized category persistence fixture");
     cx.update(|cx| {
         application.update(cx, |application, cx| {
             application.open_settings_window(cx);
@@ -6554,7 +6963,7 @@ fn task_windows_use_compact_content_driven_phase_sizes() {
     );
     assert_eq!(
         (completed.width.as_f32(), completed.height.as_f32()),
-        (440.0, 180.0)
+        (440.0, 184.0)
     );
     let collapsed = download_task_window_size_for_details(DownloadWindowPhase::Progress, false);
     let expanded = download_task_window_size_for_details(DownloadWindowPhase::Progress, true);
@@ -6581,6 +6990,14 @@ fn probe_resize_delegates_move_size_recovery_to_platform_host() {
     assert!(source.contains("this.probe_generation != generation"));
     assert!(!source.contains("gpui::Timer::after(retry_delay)"));
     assert!(!source.contains("Duration::from_millis(4_000)"));
+    assert_eq!(
+        source.matches("window.resize(window_size)").count(),
+        1,
+        "only HWND-less test/fallback windows use GPUI resize; production has one native owner"
+    );
+    assert!(source.contains("self.resize_window_with_correlation("));
+    assert!(source.contains("let correlation_id = uuid::Uuid::new_v4();"));
+    assert!(source.contains("correlation_id,"));
 }
 
 #[test]
@@ -6771,7 +7188,66 @@ fn new_download_window_expands_only_after_probe_confirmation() {
     );
     assert_eq!(
         (confirmed.width.as_f32(), confirmed.height.as_f32()),
-        (560.0, 278.0)
+        (560.0, NEW_DOWNLOAD_CONFIRMED_HEIGHT)
+    );
+}
+
+#[test]
+fn confirmed_form_is_withheld_until_the_native_viewport_reaches_its_height() {
+    let target = Some(px(NEW_DOWNLOAD_CONFIRMED_HEIGHT));
+
+    // A window dragged during the probe keeps the compact 176px viewport:
+    // the confirmed form must not paint into it.
+    assert!(confirmed_window_pending(target, false, px(176.0)));
+    // Once WM_SIZE reports the confirmed height the form is released.
+    assert!(!confirmed_window_pending(
+        target,
+        false,
+        px(NEW_DOWNLOAD_CONFIRMED_HEIGHT)
+    ));
+    // The gate is derived from the live viewport, so a drag that rewrites the
+    // compact size after the first release withholds the form again.
+    assert!(confirmed_window_pending(target, false, px(176.0)));
+    // Timeout never makes a too-short viewport safe to render into.
+    assert!(confirmed_window_pending(target, true, px(176.0)));
+    // Error layouts and non-native windows never set a target.
+    assert!(!confirmed_window_pending(None, false, px(176.0)));
+}
+
+#[test]
+fn successful_probe_uses_one_fixed_window_handoff_not_a_resize_watchdog() {
+    let source = include_str!("../downloads/new_download_view.rs");
+    let owner = include_str!("../downloads/browser_handoff_impl.rs");
+    assert!(source.contains("create_fixed_confirmation"));
+    assert!(!source.contains("NEW_DOWNLOAD_CONFIRMED_GATE_TIMEOUT"));
+    assert!(!source.contains("download.confirmed_gate.expired"));
+    assert!(owner.contains("PresentFixedWindowOverAnchor"));
+    assert!(owner.contains("FIXED_CONFIRMATION_IPC_TIMEOUT"));
+    assert!(owner.contains("self.pending_new_download_handoff = Some("));
+    assert!(owner.contains("send_command_with_id(command, operation_id)"));
+    assert!(owner.contains("view.probe_generation == generation"));
+}
+
+#[test]
+fn withheld_confirmed_form_cannot_be_submitted_by_enter_or_any_button() {
+    let source = include_str!("../downloads/new_download_view.rs");
+    let submit = source
+        .split("    pub(crate) fn submit(")
+        .nth(1)
+        .and_then(|body| body.split("\n    }\n").next())
+        .expect("NewDownloadView::submit body");
+    assert!(
+        submit.contains("self.confirmed_window_pending(window)"),
+        "submit is the single choke point for Enter, Download and Queue"
+    );
+    let enter = source
+        .split("let enter_listener = cx.listener(")
+        .nth(1)
+        .and_then(|body| body.split("let enter_subscription").next())
+        .expect("Enter listener body");
+    assert!(
+        enter.contains("!this.confirmed_window_pending(window)"),
+        "Enter must neither submit nor start another probe while the form is withheld"
     );
 }
 
@@ -7018,16 +7494,25 @@ fn retrying_an_expanded_task_window_resets_details_and_native_progress_height(
         "the progress window must render details before retry"
     );
     assert!(cx.read(|cx| task_view.read(cx).details_expanded));
-    assert_eq!(
-        task_window
-            .update(cx, |_, window, _| window.bounds().size.height)
-            .expect("read expanded task-window height"),
-        px(TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT)
+    let mut native_details_requested = false;
+    while let Ok(command) = platform_endpoint.try_receive_command_for_contract_test() {
+        if let nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowBoundsCentered(
+            size,
+        )) = command.message
+            && size.height == (TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT * scale).round() as i32
+        {
+            assert_eq!(size.window_handle, 42);
+            native_details_requested = true;
+        }
+    }
+    assert!(
+        native_details_requested,
+        "details must supersede any collapsed native recovery request"
     );
-    while platform_endpoint
-        .try_receive_command_for_contract_test()
-        .is_ok()
-    {}
+    window.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
 
     let mut failed_snapshot = base_snapshot.clone();
     failed_snapshot
@@ -7107,7 +7592,7 @@ fn retrying_an_expanded_task_window_resets_details_and_native_progress_height(
         .expect("render retried progress task window");
     assert!(
         window
-            .debug_bounds("download-window-collapsed-path")
+            .debug_bounds("download-window-progress-path")
             .is_some(),
         "restored progress must render the collapsed content path"
     );
@@ -7173,4 +7658,190 @@ fn download_rows_use_the_complete_task_uuid_for_identity() {
     let source = include_str!("../main_window/download_page.rs");
     assert!(source.contains("let element_id = task_id.as_uuid().to_string();"));
     assert!(!source.contains("task_id.as_uuid().as_u64_pair()"));
+}
+#[test]
+fn confirmed_download_inspector_motion_is_generation_scoped_and_opacity_only() {
+    let source = include_str!("../downloads/new_download_view.rs");
+    let inspector = source
+        .split("pub(crate) fn new_download_probe_inspector(")
+        .nth(1)
+        .and_then(|body| body.split("pub(crate) fn hls_quality_options(").next())
+        .expect("production probe inspector");
+    let animation = inspector
+        .split(".with_animation(")
+        .nth(1)
+        .and_then(|body| body.split(".into_any_element()").next())
+        .expect("probe inspector content animation");
+
+    assert!(animation.contains("(\"download-new-probe-inspector\", generation)"));
+    assert!(animation.contains("crate::ui::motion::ENTER_DURATION"));
+    assert!(animation.contains("surface.opacity(0.94 + 0.06 * delta)"));
+    assert!(
+        !animation.contains(".top("),
+        "the fixed form/footer row must not move"
+    );
+    assert!(!animation.contains("SetWindowBoundsCentered"));
+}
+
+#[gpui::test]
+fn invalid_probe_retires_confirmed_generation_and_keeps_compact_error_visible(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_component::init);
+    let (application, directory) =
+        download_application_for_window_test(cx, "invalid-probe-generation");
+    application.update(cx, |application, cx| {
+        application.open_new_download_window(cx)
+    });
+    cx.run_until_parked();
+    let handle = cx
+        .read(|cx| application.read(cx).new_download_window)
+        .expect("add window");
+    let view = cx
+        .read(|cx| application.read(cx).new_download_view.clone())
+        .expect("add view");
+    let mut window = VisualTestContext::from_window(handle, cx);
+    window.update(|native, cx| {
+        view.update(cx, |view, cx| {
+            view.probe_generation = 17;
+            view.confirmed_target_height = Some(px(278.0));
+            view.confirmed_gate_expired = false;
+            view.begin_probe(native, cx); // empty URL: validation failure before dispatch
+            assert_ne!(
+                view.probe_generation, 17,
+                "invalid request must retire old results/watchdog"
+            );
+            assert!(
+                view.confirmed_target_height.is_none(),
+                "no old layout gate may survive validation failure"
+            );
+            assert!(!view.probing);
+        });
+    });
+    window.run_until_parked();
+    window.simulate_resize(new_download_window_size(false));
+    window.refresh().expect("compact error frame");
+    let error = window
+        .debug_bounds("download-new-probe-guidance")
+        .expect("visible compact feedback");
+    let footer = window
+        .debug_bounds("download-new-footer")
+        .expect("retry footer");
+    assert!(
+        error.bottom() <= footer.top(),
+        "feedback fits before native error resize arrives"
+    );
+    window.update(|_, cx| assert!(view.read(cx).error.is_some()));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui::test]
+fn compact_probe_error_replaces_guidance_before_native_reserve_arrives(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let (application, directory) =
+        download_application_for_window_test(cx, "compact-error-feedback");
+    application.update(cx, |application, cx| {
+        application.open_new_download_window(cx)
+    });
+    cx.run_until_parked();
+    let handle = cx
+        .read(|cx| application.read(cx).new_download_window)
+        .expect("add window");
+    let view = cx
+        .read(|cx| application.read(cx).new_download_view.clone())
+        .expect("add view");
+    let mut window = VisualTestContext::from_window(handle, cx);
+    window.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.error = Some("窗口尺寸未能更新，请松开鼠标后重试探测".into());
+            cx.notify();
+        })
+    });
+    window.simulate_resize(new_download_window_size(false));
+    window.refresh().expect("compact failure frame");
+    assert!(
+        window.debug_bounds("download-inline-error").is_none(),
+        "no extra clipped row before reserve exists"
+    );
+    let feedback = window
+        .debug_bounds("download-new-probe-guidance")
+        .expect("compact feedback");
+    let footer = window
+        .debug_bounds("download-new-footer")
+        .expect("retry controls");
+    assert!(feedback.bottom() <= footer.top());
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui::test]
+fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let (application, directory) = download_application_for_window_test(cx, "media-submit-layout");
+    application.update(cx, |application, cx| {
+        application.open_new_download_window(cx)
+    });
+    cx.run_until_parked();
+    let handle = cx
+        .read(|cx| application.read(cx).new_download_window)
+        .expect("window");
+    let view = cx
+        .read(|cx| application.read(cx).new_download_view.clone())
+        .expect("view");
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let variant = nxtools_download::HlsVariantProbe {
+        playlist_url: "https://example.test/video.m3u8".into(),
+        bandwidth: 1_000_000,
+        average_bandwidth: None,
+        resolution: None,
+        frame_rate_milli: None,
+        codecs: "avc1".into(),
+        audio_group: None,
+        subtitles_group: None,
+    };
+    surface.simulate_resize(size(px(560.0), px(424.0)));
+    surface.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.probe = Some(DownloadProbe {
+                final_url: "https://example.test/master.m3u8".into(),
+                file_name: Some("master.ts".into()),
+                total_bytes: None,
+                supports_ranges: false,
+                content_type: None,
+                validator: Default::default(),
+                media: Some(nxtools_download::DownloadMediaProbe::Hls(
+                    nxtools_download::HlsProbe {
+                        is_master: true,
+                        variants: vec![variant; 5],
+                    },
+                )),
+            });
+            view.confirmed_target_height = Some(px(418.0));
+            // Empty URL causes the same validation error before queue dispatch.
+            view.submit(DownloadSubmitMode::StartNow, window, cx);
+            assert!(view.error.is_some());
+        });
+        assert_eq!(
+            window.bounds().size.height,
+            px(456.0),
+            "measured media base 418 plus error reserve 38"
+        );
+    });
+    surface.simulate_resize(size(px(560.0), px(456.0)));
+    surface.refresh().expect("media error layout");
+    assert!(
+        surface
+            .debug_bounds("download-new-probe-inspector")
+            .is_some()
+    );
+    let footer = surface.debug_bounds("download-new-footer").expect("footer");
+    let error = surface
+        .debug_bounds("download-inline-error")
+        .expect("inline error");
+    assert!(
+        error.bottom() <= footer.top(),
+        "media error={error:?}, footer={footer:?}, options={:?}, form={:?}",
+        surface.debug_bounds("download-hls-quality-options"),
+        surface.debug_bounds("download-new-confirmed-form")
+    );
+    let _ = std::fs::remove_dir_all(directory);
 }

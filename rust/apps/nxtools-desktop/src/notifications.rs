@@ -252,6 +252,12 @@ impl NotificationCenter {
         if !self.begin_dismiss_generation(id.as_ref(), generation) {
             return;
         }
+        if crate::ui::motion::reduced_motion(cx) {
+            if self.remove_generation(id.as_ref(), generation) {
+                cx.notify();
+            }
+            return;
+        }
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor()
@@ -321,6 +327,37 @@ mod tests {
                 .iter()
                 .all(|item| item.id != "clipboard.database")
         );
+    }
+
+    #[gpui::test]
+    fn reduced_motion_notification_dismissal_is_immediate_and_generation_scoped(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            cx.set_global(crate::ui::motion::UiMotionPreference::Known {
+                reduced_motion: true,
+            })
+        });
+        let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+        center.update(cx, |center, cx| {
+            center.show_progress("motion", "进度", "合成通知", cx)
+        });
+        let old = center.read_with(cx, |center, _| center.items()[0].generation());
+        center.update(cx, |center, cx| {
+            center.show_progress("motion", "替换进度", "新代次", cx);
+            center.dismiss_generation("motion", old, cx);
+            assert_eq!(
+                center.items().len(),
+                1,
+                "old generation cannot dismiss replacement"
+            );
+            let current = center.items()[0].generation();
+            center.dismiss_generation("motion", current, cx);
+            assert!(
+                center.items().is_empty(),
+                "no animation timer retains reduced-motion notification"
+            );
+        });
     }
 
     #[test]

@@ -15,6 +15,11 @@ namespace NxTools.PlatformHost.Windows;
 internal static partial class BrowserNativeMessagingRegistrar
 {
     private const string HostName = "com.nxtools.next.browser";
+    private static readonly object RegistrationGate = new();
+    private static readonly string[] BrowserKeys = [
+        @"Software\Google\Chrome\NativeMessagingHosts\",
+        @"Software\Microsoft\Edge\NativeMessagingHosts\",
+        @"Software\Mozilla\NativeMessagingHosts\" ];
 
 
     /// <summary>
@@ -110,7 +115,15 @@ internal static partial class BrowserNativeMessagingRegistrar
         IPlatformLog log,
         Guid correlationId)
     {
+        lock (RegistrationGate) return EnsureTransaction(command, log, correlationId);
+    }
+
+    private static WindowsCommandResult EnsureTransaction(
+        EnsureBrowserNativeMessagingCommand command, IPlatformLog log, Guid correlationId)
+    {
         var started = Stopwatch.GetTimestamp();
+        WriteRegistrationLog(log, "info", "browser_native_messaging.registration_started", correlationId,
+            new Dictionary<string, object?> { ["enabled"] = command.Enabled, ["browser_count"] = 3 });
         try
         {
             ValidateExtensionId(command.ChromiumExtensionId, ChromiumExtensionIdPattern());
@@ -125,12 +138,11 @@ internal static partial class BrowserNativeMessagingRegistrar
             var firefoxManifestPath = Path.Combine(manifestDirectory, "firefox-host.json");
             if (!command.Enabled)
             {
-                RemoveRegistryManifest($@"Software\Google\Chrome\NativeMessagingHosts\{HostName}");
-                RemoveRegistryManifest($@"Software\Microsoft\Edge\NativeMessagingHosts\{HostName}");
-                RemoveRegistryManifest($@"Software\Mozilla\NativeMessagingHosts\{HostName}");
-                DeleteManifest(chromiumManifestPath);
-                DeleteManifest(firefoxManifestPath);
-                log.Write("info", "browser_native_messaging.registration_removed", correlationId,
+                BrowserRegistrationTransaction.Apply(new WindowsBrowserRegistrationStore(),
+                    BrowserKeys.Select(key => new BrowserRegistrationChange("key:" + key + HostName, null))
+                        .Concat(new[] { new BrowserRegistrationChange("manifest:" + chromiumManifestPath, null),
+                            new BrowserRegistrationChange("manifest:" + firefoxManifestPath, null) }).ToArray());
+                WriteRegistrationLog(log, "info", "browser_native_messaging.registration_removed", correlationId,
                     new Dictionary<string, object?>
                     {
                         ["browser_count"] = 3,
@@ -166,13 +178,10 @@ internal static partial class BrowserNativeMessagingRegistrar
             // stale registrations pointing at dead paths, and browsers report
             // "forbidden" on them. The current extension only speaks to
             // "com.nxtools.next.browser", so retire the legacy keys.
-            RemoveRegistryManifest(@"Software\Google\Chrome\NativeMessagingHosts\com.nxtools.next");
-            RemoveRegistryManifest(@"Software\Microsoft\Edge\NativeMessagingHosts\com.nxtools.next");
-            RemoveRegistryManifest(@"Software\Mozilla\NativeMessagingHosts\com.nxtools.next");
 
             Directory.CreateDirectory(manifestDirectory);
             var chromiumOrigins = ChromiumAllowedOrigins(command.ChromiumExtensionId);
-            WriteManifestAtomically(chromiumManifestPath, new
+            var chromiumManifest = JsonSerializer.Serialize(new
             {
                 name = HostName,
                 description = "NxTools.Next browser download bridge",
@@ -180,7 +189,7 @@ internal static partial class BrowserNativeMessagingRegistrar
                 type = "stdio",
                 allowed_origins = chromiumOrigins
             });
-            WriteManifestAtomically(firefoxManifestPath, new
+            var firefoxManifest = JsonSerializer.Serialize(new
             {
                 name = HostName,
                 description = "NxTools.Next browser download bridge",
@@ -189,17 +198,15 @@ internal static partial class BrowserNativeMessagingRegistrar
                 allowed_extensions = new[] { command.FirefoxExtensionId }
             });
 
-            WriteRegistryManifest(
-                $@"Software\Google\Chrome\NativeMessagingHosts\{HostName}",
-                chromiumManifestPath);
-            WriteRegistryManifest(
-                $@"Software\Microsoft\Edge\NativeMessagingHosts\{HostName}",
-                chromiumManifestPath);
-            WriteRegistryManifest(
-                $@"Software\Mozilla\NativeMessagingHosts\{HostName}",
-                firefoxManifestPath);
+            BrowserRegistrationTransaction.Apply(new WindowsBrowserRegistrationStore(), new[] {
+                new BrowserRegistrationChange("manifest:" + chromiumManifestPath, chromiumManifest),
+                new BrowserRegistrationChange("manifest:" + firefoxManifestPath, firefoxManifest),
+                new BrowserRegistrationChange("key:" + BrowserKeys[0] + HostName, chromiumManifestPath),
+                new BrowserRegistrationChange("key:" + BrowserKeys[1] + HostName, chromiumManifestPath),
+                new BrowserRegistrationChange("key:" + BrowserKeys[2] + HostName, firefoxManifestPath)
+            }.Concat(BrowserKeys.Select(key => new BrowserRegistrationChange("key:" + key + "com.nxtools.next", null))).ToArray());
 
-            log.Write("info", "browser_native_messaging.registration_completed", correlationId,
+            WriteRegistrationLog(log, "info", "browser_native_messaging.registration_completed", correlationId,
                 new Dictionary<string, object?>
                 {
                     ["browser_count"] = 3,
@@ -213,7 +220,7 @@ internal static partial class BrowserNativeMessagingRegistrar
         }
         catch (Exception error)
         {
-            log.Write("error", "browser_native_messaging.registration_failed", correlationId,
+            WriteRegistrationLog(log, "error", "browser_native_messaging.registration_failed", correlationId,
                 new Dictionary<string, object?>
                 {
                     ["exception_type"] = error.GetType().Name,
@@ -224,39 +231,12 @@ internal static partial class BrowserNativeMessagingRegistrar
         }
     }
 
-    private static void WriteManifestAtomically(string path, object manifest)
-    {
-        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(manifest));
-            File.Move(temporaryPath, path, true);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
-    }
 
-    private static void WriteRegistryManifest(string keyPath, string manifestPath)
+    private static void WriteRegistrationLog(IPlatformLog log, string level, string eventName,
+        Guid correlationId, IReadOnlyDictionary<string, object?> fields)
     {
-        using var key = Registry.CurrentUser.CreateSubKey(keyPath, true)
-            ?? throw new InvalidOperationException($"Unable to create native messaging key '{keyPath}'.");
-        key.SetValue(null, manifestPath, RegistryValueKind.String);
-    }
-
-    private static void RemoveRegistryManifest(string keyPath) =>
-        Registry.CurrentUser.DeleteSubKeyTree(keyPath, false);
-
-    private static void DeleteManifest(string path)
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
+        try { log.Write(level, eventName, correlationId, fields); }
+        catch { /* Observing a transaction must not change its outcome. */ }
     }
 
     private static void ValidateExtensionId(string value, Regex pattern)

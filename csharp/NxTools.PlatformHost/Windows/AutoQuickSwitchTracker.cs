@@ -192,6 +192,60 @@ internal sealed class AutoQuickSwitchTracker
         }
     }
 
+    public bool HasPendingDirectorySourceForWindow(long windowHandle)
+    {
+        lock (_gate)
+        {
+            return _sourceDirty &&
+                windowHandle != 0 &&
+                _latestSource?.Context.WindowHandle == windowHandle;
+        }
+    }
+    public bool IsKnownFileDialog(long windowHandle)
+    {
+        if (windowHandle == 0)
+        {
+            return false;
+        }
+        lock (_gate)
+        {
+            return _knownDialogs.Contains(windowHandle);
+        }
+    }
+
+    public bool RefreshDirectorySource(
+        DirectoryNavigationContext context,
+        string displayName)
+    {
+        if (context.WindowHandle == 0 ||
+            !context.Host.Equals(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+        lock (_gate)
+        {
+            if (!_trackSources ||
+                _latestSource is not { } previous ||
+                previous.Context.WindowHandle != context.WindowHandle ||
+                !previous.Context.Host.Equals(context.Host, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            var changed = !ThirdPartyFileManagerPath.SameDirectory(
+                previous.Context.CurrentDirectory,
+                context.CurrentDirectory);
+            _latestSource = new AutoQuickSwitchDirectorySource(context, displayName);
+            if (changed)
+            {
+                _sourceDirty = _autoSwitchEnabled;
+                AdvanceGeneration();
+            }
+            return changed;
+        }
+    }
+
     public bool IsCurrent(AutoQuickSwitchCandidate candidate)
     {
         lock (_gate)

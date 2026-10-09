@@ -332,6 +332,98 @@ fn a_completed_mft_snapshot_is_searchable_through_the_process_protocol() {
 }
 
 #[test]
+fn failed_first_build_without_a_snapshot_never_publishes_ready() {
+    let mut service =
+        IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"C:\", "NTFS")]);
+    service.rebuild_with(|_| anyhow::bail!("initial scan failed"));
+    assert_eq!(service.status.phase, IndexPhase::VolumesReady);
+    assert!(service.snapshots.is_empty());
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("initial scan failed")
+    );
+
+    service.record_build_failure(vec![r"C:\".into()], "worker panicked".into());
+    assert_eq!(service.status.phase, IndexPhase::VolumesReady);
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("worker panicked")
+    );
+}
+
+#[test]
+fn failed_maintenance_build_keeps_last_good_snapshot_ready_and_searchable() {
+    let mut service =
+        IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"C:\", "NTFS")]);
+    service.rebuild_with(|mount_point| {
+        Ok(test_snapshot(
+            mount_point,
+            Some(17),
+            Some(100),
+            vec![test_entry(r"C:\Work\Budget.xlsx", "Budget.xlsx", false)],
+        ))
+    });
+    service.begin_snapshot_maintenance();
+    service.rebuild_with(|_| anyhow::bail!("replacement scan failed"));
+    assert_eq!(service.status.phase, IndexPhase::Ready);
+    assert_eq!(service.snapshots.len(), 1);
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("replacement scan failed")
+    );
+    service.record_build_failure(vec![r"C:\".into()], "worker panicked".into());
+    assert_eq!(service.status.phase, IndexPhase::Ready);
+    assert_eq!(
+        service
+            .search_snapshot(&IndexSearchRequest {
+                generation: 1,
+                query: "budget".into(),
+                limit: 20,
+                context: IndexSearchContext {
+                    include_files: true,
+                    include_directories: true,
+                    ..IndexSearchContext::default()
+                },
+            })
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn preadmitted_session_rejects_non_hello_before_state_or_ack() {
+    let mut service = IndexerService::from_volume_descriptors([]);
+    let mut output = Vec::new();
+    let result = serve_session_with_sources_and_handshake(
+        Cursor::new(Vec::<u8>::new()),
+        &mut output,
+        &mut service,
+        Arc::new(|_| anyhow::bail!("unexpected scan")),
+        Arc::new(|_| Ok(usn::JournalPoll::NoChange)),
+        None,
+        Some(Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 1 }))),
+    );
+    assert!(result.is_err());
+    assert!(
+        output.is_empty(),
+        "invalid handshake cannot publish HelloAck"
+    );
+    assert!(service.active_generation.is_none());
+}
+
+#[test]
 fn process_search_uses_the_shared_query_language() {
     let mut service =
         IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"D:\", "NTFS")]);

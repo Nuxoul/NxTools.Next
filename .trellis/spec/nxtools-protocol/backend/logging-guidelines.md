@@ -1,51 +1,5 @@
-# Logging Guidelines
+# Protocol diagnostics
 
-> How logging is done in this project.
+Evidence: `repo:rust/crates/nxtools-protocol/src/lib.rs#Envelope`, `repo:rust/crates/nxtools-protocol/src/lib.rs#PlatformEvent`.
 
----
-
-## Overview
-
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Protocol is a serialization library; caller owns lifecycle logging. Envelope/command Debug may contain clipboard/URL/path/native-format values, so never log full messages. IDs/version/kind/frame byte length/native fixed code are sufficient. Carry one operation correlation across IPC/native without swapping task/session/generation identity. Do not log ping/frame streams at high frequency. [Shared diagnostics](../../shared/engineering.md).

@@ -1,4 +1,39 @@
 use super::*;
+use crate::ui::metrics::SPACING_4;
+use gpui_component::button::{Button, ButtonVariants};
+
+/// Keep keyboard focus/ring outside the fixed 40/26/48 content rails.
+pub(super) fn quick_launch_focusable_row(
+    id: impl Into<gpui::ElementId>,
+    theme: Theme,
+    disabled: bool,
+    content: AnyElement,
+    window: &mut Window,
+    cx: &mut App,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::Stateful<Div> {
+    let id = id.into();
+    let focus = window
+        .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle().tab_stop(true))
+        .read(cx)
+        .clone();
+    let focused = focus.is_focused(window) && !disabled;
+    crate::ui::components::action::focused_action(id, &focus, theme, disabled, window, on_click)
+        .border_0()
+        .w_full()
+        .flex_none()
+        .child(content)
+        .when(focused, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .border_2()
+                    .rounded(px(RADIUS_CONTROL))
+                    .border_color(theme.focus_ring),
+            )
+        })
+}
 
 pub(crate) struct QuickLaunchPanel {
     pub(crate) theme: Theme,
@@ -33,7 +68,8 @@ pub(crate) fn quick_launch_row_shell(theme: Theme, selected: bool) -> Div {
         .w_full()
         .h(px(COMPACT_RESULT_ROW_HEIGHT))
         .px(px(SPACING_8))
-        .rounded(px(RADIUS_CONTROL))
+        .border_l_2()
+        .border_color(if selected { theme.accent } else { theme.canvas })
         .flex()
         .items_center()
         .gap(px(SPACING_8))
@@ -215,6 +251,19 @@ impl QuickLaunchPanel {
             state.set_placeholder("搜索应用、文件或文件夹", window, cx);
             state.set_value(String::new(), window, cx);
         });
+        cx.notify();
+    }
+
+    pub(crate) fn prepare_for_hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.is_open = false;
+        self.results_visible = false;
+        self.results_appearance_generation =
+            self.results_appearance_generation.wrapping_add(1).max(1);
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.action_mode = None;
+        self.dismiss_preview(cx);
+        window.resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
         cx.notify();
     }
 
@@ -920,12 +969,12 @@ impl QuickLaunchPanel {
         result: &SearchResult,
         query: String,
         panel: WeakEntity<QuickLaunchPanel>,
+        render: (&mut Window, &mut App),
     ) -> AnyElement {
+        let (window, cx) = render;
         let theme = self.theme;
         let selected = index == self.selected;
         let source = result.entry.source;
-        let result_for_click = result.clone();
-        let application = self.application.clone();
         let click_action = if self.recent_directory_mode {
             recent_directory_navigation_action(result, self.navigation_context.as_ref())
         } else {
@@ -935,7 +984,9 @@ impl QuickLaunchPanel {
         let preview_result = result.clone();
         let pointer_panel = panel.clone();
         let press_panel = panel.clone();
-        let right_click_panel = panel;
+        let right_click_panel = panel.clone();
+        let navigation_panel = panel.clone();
+        let click_panel = panel;
         let icon_path = self.icons.get(&result.entry.id).cloned();
         let has_icon_path = icon_path.is_some();
         let subtitle = if let Some(subtitle) = &result.subtitle {
@@ -959,9 +1010,10 @@ impl QuickLaunchPanel {
                 )
             })
             .collect::<Vec<_>>();
-        quick_launch_row_shell(theme, selected)
+        let row = quick_launch_row_shell(theme, selected)
             .id(("quick-launch-result", index))
-            .debug_selector(|| "quick-launch-result-row".into())
+            .active(move |row| row.bg(theme.surface_pressed))
+            .debug_selector(move || format!("quick-launch-result-row-{index}"))
             .cursor_pointer()
             .on_hover(move |hovered, window, cx| {
                 let entered = *hovered;
@@ -999,26 +1051,6 @@ impl QuickLaunchPanel {
                 });
                 cx.stop_propagation();
             })
-            .on_click(move |_event, _window, cx| {
-                let Some(action) = click_action.clone() else {
-                    return;
-                };
-                let result = result_for_click.clone();
-                let query = query.clone();
-                schedule_application_update(
-                    application.clone(),
-                    move |application, cx| {
-                        application.execute(
-                            result,
-                            action,
-                            query,
-                            QuickLaunchActionTrigger::Pointer,
-                            cx,
-                        )
-                    },
-                    cx,
-                );
-            })
             .child(
                 div()
                     .debug_selector(move || format!("quick-launch-result-icon-{index}"))
@@ -1055,7 +1087,7 @@ impl QuickLaunchPanel {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(SPACING_2))
+                    .gap(px(SPACING_4))
                     .child(
                         div()
                             .debug_selector(move || format!("quick-launch-result-title-{index}"))
@@ -1075,11 +1107,7 @@ impl QuickLaunchPanel {
                             .h(px(LINE_HEIGHT_LABEL))
                             .text_size(px(TEXT_LABEL))
                             .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(if selected {
-                                theme.text_secondary
-                            } else {
-                                theme.text_muted
-                            })
+                            .text_color(theme.text_secondary)
                             .truncate()
                             .child(subtitle),
                     ),
@@ -1098,7 +1126,53 @@ impl QuickLaunchPanel {
                     .text_color(theme.text_muted)
                     .when_some(shortcut_hint, |rail, hint| rail.child(hint)),
             )
-            .into_any_element()
+            .into_any_element();
+        quick_launch_focusable_row(
+            gpui::SharedString::from(format!("quick-launch-result-focus-{}", result.entry.id)),
+            theme,
+            click_action.is_none(),
+            row,
+            window,
+            cx,
+            move |event, _window, cx| {
+                let Some(action) = click_action.clone() else {
+                    return;
+                };
+                let _ = click_panel.update(cx, |panel, cx| {
+                    panel.select_result(index, cx);
+                    let trigger = if event.is_keyboard() {
+                        QuickLaunchActionTrigger::Enter
+                    } else {
+                        QuickLaunchActionTrigger::Pointer
+                    };
+                    panel.activate_selected(action, trigger, cx);
+                });
+            },
+        )
+        .on_key_down(move |event, window, cx| {
+            if event.keystroke.modifiers.modified()
+                || !matches!(
+                    event.keystroke.key.as_str(),
+                    "up" | "down" | "right" | "escape"
+                )
+            {
+                return;
+            }
+            let _ = navigation_panel.update(cx, |panel, cx| {
+                panel.select_result(index, cx);
+                panel.focus_search(window, cx);
+                if panel.handle_navigation_key(
+                    &event.keystroke.key,
+                    event.keystroke.modifiers,
+                    window,
+                    cx,
+                ) {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            });
+        })
+        .into_any_element()
     }
 
     pub(crate) fn render_action(
@@ -1106,6 +1180,8 @@ impl QuickLaunchPanel {
         index: usize,
         item: QuickLaunchActionItem,
         panel: WeakEntity<QuickLaunchPanel>,
+        window: &mut Window,
+        cx: &mut App,
     ) -> AnyElement {
         let theme = self.theme;
         let selected = self
@@ -1115,24 +1191,25 @@ impl QuickLaunchPanel {
         let enabled = item.is_activatable();
         let has_submenu = item.submenu.is_some();
         let pointer_panel = panel.clone();
+        let navigation_panel = panel.clone();
         let click_panel = panel;
         let section_label = item.section_label.clone();
         let divider_before = item.divider_before;
         let row = quick_launch_row_shell(theme, selected)
             .id(("quick-launch-action", index))
+            .when(enabled, |row| {
+                row.active(move |row| row.bg(theme.surface_pressed))
+            })
             .debug_selector(move || format!("quick-launch-action-row-{index}"))
+            .when(!enabled, |row| {
+                row.bg(theme.canvas).text_color(theme.text_muted)
+            })
             .when(enabled, |row| row.cursor_pointer())
             .when(enabled, |row| {
                 row.on_mouse_move(move |event, _window, cx| {
                     let position = (event.position.x.as_f32(), event.position.y.as_f32());
                     let _ = pointer_panel.update(cx, |panel, cx| {
                         panel.pointer_moved_action(index, position, cx);
-                    });
-                })
-                .on_click(move |_event, window, cx| {
-                    let _ = click_panel.update(cx, |panel, cx| {
-                        panel.select_action(index, cx);
-                        panel.activate_selected_action(window, cx);
                     });
                 })
             })
@@ -1166,10 +1243,12 @@ impl QuickLaunchPanel {
                     .child(
                         div()
                             .debug_selector(move || format!("quick-launch-action-title-{index}"))
+                            .min_w_0()
+                            .w_full()
                             .h(px(LINE_HEIGHT_BODY))
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_BODY))
-                            .text_color(if item.enabled {
+                            .text_color(if enabled {
                                 theme.text
                             } else {
                                 theme.text_muted
@@ -1195,19 +1274,68 @@ impl QuickLaunchPanel {
                         )
                     }),
             );
+        let focus_id = gpui::SharedString::from(format!(
+            "quick-launch-action-focus-{}-{}-{index}",
+            self.action_mode
+                .as_ref()
+                .expect("rendered action mode")
+                .id(),
+            self.action_mode
+                .as_ref()
+                .expect("rendered action level")
+                .current_level_id(),
+        ));
+        let row = quick_launch_focusable_row(
+            focus_id,
+            theme,
+            !enabled,
+            row.into_any_element(),
+            window,
+            cx,
+            move |_event, window, cx| {
+                let _ = click_panel.update(cx, |panel, cx| {
+                    panel.select_action(index, cx);
+                    panel.activate_selected_action(window, cx);
+                });
+            },
+        )
+        .on_key_down(move |event, window, cx| {
+            if !enabled
+                || event.keystroke.modifiers.modified()
+                || !matches!(
+                    event.keystroke.key.as_str(),
+                    "up" | "down" | "right" | "left" | "backspace" | "escape"
+                )
+            {
+                return;
+            }
+            let _ = navigation_panel.update(cx, |panel, cx| {
+                panel.select_action(index, cx);
+                panel.focus_search(window, cx);
+                if panel.handle_navigation_key(
+                    &event.keystroke.key,
+                    event.keystroke.modifiers,
+                    window,
+                    cx,
+                ) {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            });
+        });
         div()
             .when(divider_before, |container| {
                 container
-                    .mt(px(4.0))
-                    .pt(px(4.0))
+                    .mt(px(SPACING_4))
+                    .pt(px(SPACING_4))
                     .border_t_1()
                     .border_color(theme.border_subtle)
             })
             .when_some(section_label, |container, label| {
                 container.child(
                     div()
-                        .h(px(22.0))
-                        .px(px(8.0))
+                        .h(px(24.0))
+                        .px(px(SPACING_8))
                         .flex()
                         .items_center()
                         .text_size(px(TEXT_META))
@@ -1222,7 +1350,9 @@ impl QuickLaunchPanel {
 }
 
 impl Render for QuickLaunchPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
+        let search_focused = self.search_input.focus_handle(cx).is_focused(window);
         let theme = self.theme;
         let panel = cx.entity().downgrade();
         let recent_button_panel = panel.clone();
@@ -1244,7 +1374,7 @@ impl Render for QuickLaunchPanel {
             mode.visible_actions()
                 .into_iter()
                 .enumerate()
-                .map(|(index, item)| self.render_action(index, item, panel.clone()))
+                .map(|(index, item)| self.render_action(index, item, panel.clone(), window, cx))
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -1256,14 +1386,14 @@ impl Render for QuickLaunchPanel {
                 .min_h_0()
                 .track_scroll(&self.action_scroll)
                 .overflow_y_scroll()
-                .p(px(SPACING_6))
+                .p(px(SPACING_8))
                 .flex()
                 .flex_col()
                 .child(
                     div()
                         .debug_selector(|| "quick-launch-action-context".into())
                         .h(px(QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT))
-                        .mb(px(SPACING_2))
+                        .mb(px(SPACING_4))
                         .px(px(SPACING_8))
                         .flex()
                         .items_center()
@@ -1328,7 +1458,7 @@ impl Render for QuickLaunchPanel {
             let list = uniform_list(
                 "quick-launch-results",
                 result_count,
-                cx.processor(move |panel, visible_range: Range<usize>, _window, cx| {
+                cx.processor(move |panel, visible_range: Range<usize>, window, cx| {
                     let visible_start = visible_range.start;
                     panel.update_presented_results(visible_range.clone(), cx);
                     visible_range
@@ -1340,6 +1470,7 @@ impl Render for QuickLaunchPanel {
                                     result,
                                     result_query.clone(),
                                     result_panel.clone(),
+                                    (window, cx),
                                 )
                             })
                         })
@@ -1347,7 +1478,7 @@ impl Render for QuickLaunchPanel {
                 }),
             )
             .size_full()
-            .p(px(SPACING_6))
+            .p(px(SPACING_8))
             .track_scroll(self.result_scroll.clone());
             div()
                 .id("quick-launch-results-scroll")
@@ -1374,12 +1505,18 @@ impl Render for QuickLaunchPanel {
             .min_h_0()
             .flex()
             .flex_col()
-            .child(result_surface)
-            .with_animation(
-                ("quick-launch-results", self.results_appearance_generation),
-                Animation::new(RESULTS_APPEAR_DURATION).with_easing(ease_out_quint()),
-                |surface, delta| surface.relative().top(px(1.0 * (1.0 - delta))),
-            );
+            .child(result_surface);
+        let result_surface = if crate::ui::motion::motion_allowed(cx) {
+            result_surface
+                .with_animation(
+                    ("quick-launch-results", self.results_appearance_generation),
+                    Animation::new(RESULTS_APPEAR_DURATION).with_easing(ease_out_quint()),
+                    |surface, delta| surface.relative().top(px(1.0 * (1.0 - delta))),
+                )
+                .into_any_element()
+        } else {
+            result_surface.into_any_element()
+        };
         div()
             .id("quick-launch-window")
             .debug_selector(|| "quick-launch-window".into())
@@ -1400,7 +1537,11 @@ impl Render for QuickLaunchPanel {
                     .px(px(SPACING_8))
                     .flex_none()
                     .border_b_1()
-                    .border_color(theme.border_subtle)
+                    .border_color(if search_focused {
+                        theme.focus_ring
+                    } else {
+                        theme.border_subtle
+                    })
                     .bg(theme.canvas)
                     .flex()
                     .items_center()
@@ -1424,14 +1565,14 @@ impl Render for QuickLaunchPanel {
                     )
                     .when(recent_button_visible, |header| {
                         header.child(
-                            div()
-                                .id("quick-launch-recent-directories")
-                                .size(px(27.0))
+                            Button::new("quick-launch-recent-directories")
+                                .ghost()
+                                .tooltip("最近目录")
+                                .size(px(28.0))
                                 .rounded(px(RADIUS_CONTROL))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .cursor_pointer()
                                 .text_color(if recent_directory_mode {
                                     theme.icon
                                 } else {
@@ -1442,7 +1583,6 @@ impl Render for QuickLaunchPanel {
                                 } else {
                                     theme.canvas
                                 })
-                                .hover(|button| button.bg(theme.surface_hover))
                                 .on_click(move |_event, window, cx| {
                                     let _ = recent_button_panel.update(cx, |panel, cx| {
                                         if panel.recent_directory_mode {
@@ -1463,20 +1603,21 @@ impl Render for QuickLaunchPanel {
                 panel.child(
                     div()
                         .absolute()
-                        .left(px(12.0))
-                        .right(px(12.0))
-                        .bottom(px(8.0))
+                        .left(px(SPACING_12))
+                        .right(px(SPACING_12))
+                        .bottom(px(SPACING_8))
                         .h(px(28.0))
                         .px(px(12.0))
                         .rounded(px(RADIUS_CONTROL))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface_raised)
-                        .shadow_sm()
                         .flex()
+                        .min_w_0()
                         .items_center()
                         .text_size(px(TEXT_META))
                         .text_color(theme.text_secondary)
+                        .truncate()
                         .child(status),
                 )
             })

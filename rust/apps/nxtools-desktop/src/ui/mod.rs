@@ -18,6 +18,7 @@ use gpui::{
 };
 use gpui_component::Icon;
 use gpui_component::PixelsExt;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::ContextMenuExt;
 use gpui_component::scroll::ScrollableElement;
@@ -36,6 +37,7 @@ use crate::clipboard::ClipboardApplication;
 use crate::icons::MaterialIcon;
 use crate::popup_lifecycle::PopupCloseReason;
 use crate::theme::{Theme, UI_FONT_FAMILY};
+use crate::ui::components::action::{focusable_content, focused_action};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::{empty_state, inline_error_state, progress_state};
 use crate::ui::metrics::{
@@ -54,7 +56,7 @@ pub(crate) use preview::{
 const CATEGORY_GAP: f32 = 4.0;
 const CATEGORY_ICON_WIDTH: f32 = 12.0;
 const CATEGORY_ICON_TEXT_GAP: f32 = 4.0;
-const CATEGORY_HORIZONTAL_PADDING: f32 = 14.0;
+const CATEGORY_HORIZONTAL_PADDING: f32 = 16.0;
 const CATEGORY_TEXT_CELL_WIDTH: f32 = 7.0;
 const PANEL_CONTENT_INSET: f32 = 8.0;
 const CATEGORY_EDITOR_TOP: f32 = 104.0;
@@ -65,12 +67,13 @@ const CATEGORY_EDITOR_SOURCE_LIST_HEIGHT: f32 = 72.0;
 // the user could move the mouse in, so the panel opened and instantly hid.
 const POPUP_OPEN_GRACE: Duration = Duration::from_millis(900);
 const HISTORY_PAGE_PREFETCH_ITEMS: usize = 8;
-pub(crate) const HOVER_ACTION_RAIL_WIDTH: f32 = 112.0;
+const CLIPBOARD_ACTION_TIMEOUT: Duration = Duration::from_secs(12);
+// Up to five 20px actions plus four 4px gaps, with 4px leading clearance.
+pub(crate) const HOVER_ACTION_RAIL_WIDTH: f32 = 140.0;
 const IMAGE_RESOURCE_CACHE_CAPACITY: usize = 96;
 const CLIPBOARD_SEARCH_DEBOUNCE: Duration = Duration::from_millis(100);
 const HISTORY_PAGE_SIZE: usize = 80;
 const HISTORY_WINDOW_SIZE: usize = HISTORY_PAGE_SIZE * 4;
-
 fn schedule_entity_update<T, F>(entity: WeakEntity<T>, update: F, cx: &mut App)
 where
     T: 'static,
@@ -305,6 +308,7 @@ pub(crate) struct ClipboardPanel {
     page_request_pending: bool,
     status: PanelStatus,
     pending_action: Option<(uuid::Uuid, ClipboardAction, i64)>,
+    pending_action_started_at: Option<(uuid::Uuid, Instant)>,
     is_open: bool,
     hide_suppressed_until: Instant,
     categories: Vec<ClipboardCategory>,
@@ -341,8 +345,46 @@ impl ClipboardPanel {
         cx.notify();
     }
     pub(crate) fn handle_platform_reconnected(&mut self, cx: &mut Context<Self>) {
-        if self.pending_action.take().is_some() {
-            self.status = PanelStatus::Error("Windows 适配器已重连，请重试粘贴".into());
+        self.abandon_pending_action(
+            "Windows 适配器已重连，请重试粘贴",
+            "platform_reconnected",
+            cx,
+        );
+    }
+
+    pub(crate) fn handle_platform_disconnected(&mut self, cx: &mut Context<Self>) {
+        self.abandon_pending_action(
+            "Windows 适配器已断开，请重试粘贴",
+            "platform_disconnected",
+            cx,
+        );
+    }
+
+    fn abandon_pending_action(
+        &mut self,
+        message: &'static str,
+        failure_kind: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let pending_action = self.pending_action.take();
+        let pending_started_at = self.pending_action_started_at.take();
+        if pending_action.is_some() || pending_started_at.is_some() {
+            let operation_id = pending_action
+                .map(|(command_id, _, _)| command_id)
+                .or_else(|| pending_started_at.map(|(operation_id, _)| operation_id));
+            let elapsed_ms = pending_started_at
+                .map(|(_, started_at)| started_at.elapsed().as_millis())
+                .unwrap_or_default();
+            warn!(
+                event = "clipboard.action.failed",
+                session_id = %self.session_id,
+                correlation_id = ?operation_id,
+                operation_id = ?operation_id,
+                failure_kind,
+                elapsed_ms,
+                "clipboard action invalidated by PlatformHost lifecycle"
+            );
+            self.status = PanelStatus::Error(message.into());
             cx.notify();
         }
     }
@@ -595,15 +637,16 @@ impl ClipboardPanel {
             page_request_pending: false,
             status,
             pending_action: None,
+            pending_action_started_at: None,
             is_open: true,
-            hide_suppressed_until: Instant::now() + POPUP_OPEN_GRACE,
             categories,
+            hide_suppressed_until: Instant::now() + POPUP_OPEN_GRACE,
             category_sources,
             source_process_names,
-            category_request_generation: 0,
             active_category_id,
-            category_scroll: ScrollHandle::new(),
+            category_request_generation: 0,
             category_editor: None,
+            category_scroll: ScrollHandle::new(),
             modifier_actions,
             active_modifier_action: None,
             list_scroll,
@@ -614,8 +657,8 @@ impl ClipboardPanel {
             list_width: 0.0,
             search_input,
             search_scope: ClipboardSearchScope::Content,
-            selected_entry_index: has_entries.then_some(0),
             query_dispatch_generation: 0,
+            selected_entry_index: has_entries.then_some(0),
             search_pending: false,
             query_error: initial_error,
             edit_input,
@@ -1463,7 +1506,7 @@ impl ClipboardPanel {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pending_action.is_some() {
+        if self.pending_action.is_some() || self.pending_action_started_at.is_some() {
             self.status = PanelStatus::Pending("正在等待剪贴板操作结果…");
             cx.notify();
             return;
@@ -1488,6 +1531,47 @@ impl ClipboardPanel {
         } else {
             "正在粘贴…"
         });
+        let action_operation_id = uuid::Uuid::new_v4();
+        self.pending_action = Some((action_operation_id, action, entry.id));
+        self.pending_action_started_at = Some((action_operation_id, Instant::now()));
+        info!(
+            event = "clipboard.action.started",
+            session_id = %self.session_id,
+            operation_id = %action_operation_id,
+            item_id = entry.id,
+            ?action,
+            "clipboard action preparation started"
+        );
+        let panel_for_timeout = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            cx.background_executor()
+                .timer(CLIPBOARD_ACTION_TIMEOUT)
+                .await;
+            let _ = panel_for_timeout.update(cx, |panel, cx| {
+                if panel
+                    .pending_action_started_at
+                    .is_some_and(|(operation_id, _)| operation_id == action_operation_id)
+                {
+                    let elapsed_ms = panel
+                        .pending_action_started_at
+                        .map(|(_, started_at)| started_at.elapsed().as_millis());
+                    panel.pending_action = None;
+                    panel.pending_action_started_at = None;
+                    panel.status = PanelStatus::Error("剪贴板操作超时，请重试".into());
+                    warn!(
+                        event = "clipboard.action.failed",
+                        session_id = %panel.session_id,
+                        correlation_id = %action_operation_id,
+                        operation_id = %action_operation_id,
+                        failure_kind = "timeout",
+                        elapsed_ms = elapsed_ms.unwrap_or_default(),
+                        "clipboard action timed out"
+                    );
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
         cx.spawn(async move |_, cx| {
             let result = async {
                 let native_formats = if matches!(
@@ -1501,6 +1585,18 @@ impl ClipboardPanel {
                 } else {
                     Vec::new()
                 };
+                let route_is_current =
+                    panel
+                        .update(cx, |panel, _| {
+                            panel.pending_action == Some((action_operation_id, action, entry.id))
+                                && panel.pending_action_started_at.is_some_and(
+                                    |(operation_id, _)| operation_id == action_operation_id,
+                                )
+                        })
+                        .unwrap_or(false);
+                if !route_is_current {
+                    return Ok(None);
+                }
                 application
                     .update(cx, |application, _| {
                         application.send_clipboard_action_with_native_formats(
@@ -1508,20 +1604,47 @@ impl ClipboardPanel {
                             &target,
                             action,
                             native_formats,
+                            action_operation_id,
                         )
                     })
-                    .map_err(|error| {
-                        anyhow::anyhow!("clipboard application unavailable: {error}")
-                    })?
+                    .map_err(|error| anyhow::anyhow!("clipboard application unavailable: {error}"))
+                    .and_then(|result| result.map(Some))
             }
             .await;
             let _ = panel.update(cx, |panel, cx| {
+                if panel
+                    .pending_action_started_at
+                    .is_none_or(|(operation_id, _)| operation_id != action_operation_id)
+                {
+                    return;
+                }
                 match result {
-                    Ok(command_id) => {
-                        panel.pending_action = Some((command_id, action, entry.id));
+                    Ok(Some(command_id)) => {
+                        debug_assert_eq!(command_id, action_operation_id);
+                    }
+                    Ok(None) => {
+                        panel.pending_action = None;
+                        panel.pending_action_started_at = None;
                     }
                     Err(error) => {
-                        error!(%error, "failed to prepare clipboard action");
+                        let elapsed_ms = panel
+                            .pending_action_started_at
+                            .map(|(_, started_at)| started_at.elapsed().as_millis())
+                            .unwrap_or_default();
+                        panel.pending_action = None;
+                        panel.pending_action_started_at = None;
+                        warn!(
+                            event = "clipboard.action.failed",
+                            correlation_id = %action_operation_id,
+                            operation_id = %action_operation_id,
+                            session_id = %panel.session_id,
+                            item_id = entry.id,
+                            ?action,
+                            failure_kind = "preparation_or_dispatch",
+                            error_present = true,
+                            elapsed_ms,
+                            "clipboard action failed before terminal result"
+                        );
                         panel.status = PanelStatus::Error(format!("无法粘贴：{error}"));
                     }
                 }
@@ -1544,9 +1667,21 @@ impl ClipboardPanel {
         if pending_id != correlation_id {
             return;
         }
+        let elapsed_ms = self
+            .pending_action_started_at
+            .take()
+            .map(|(_, started_at)| started_at.elapsed().as_millis());
         self.pending_action = None;
         if result.success {
-            info!(%correlation_id, ?action, "clipboard action completed");
+            info!(
+                event = "clipboard.action.completed",
+                correlation_id = %correlation_id,
+                session_id = %self.session_id,
+                item_id,
+                ?action,
+                elapsed_ms = elapsed_ms.unwrap_or_default(),
+                "clipboard action completed"
+            );
             let worker = self.history_worker.clone();
             let panel = (action == ClipboardAction::CopyOnly).then(|| cx.entity().downgrade());
             cx.spawn(async move |_, cx| {
@@ -1575,8 +1710,19 @@ impl ClipboardPanel {
                 );
             }
         } else {
+            warn!(
+                event = "clipboard.action.failed",
+                correlation_id = %correlation_id,
+                session_id = %self.session_id,
+                item_id,
+                ?action,
+                failure_kind = "platform_result",
+                error_present = result.error.is_some(),
+                native_error_code = ?result.native_error_code,
+                elapsed_ms = elapsed_ms.unwrap_or_default(),
+                "clipboard action failed"
+            );
             let reason = result.error.unwrap_or_else(|| "Windows 未返回原因".into());
-            error!(%correlation_id, %reason, "paste command failed");
             self.status = PanelStatus::Error(format!("粘贴失败：{}", reason));
             window.activate_window();
             cx.notify();
@@ -1786,7 +1932,9 @@ impl Render for ClipboardPanel {
             self.list_is_scrolled = false;
         }
         self.list_width = list_width;
-        let available_image_width = (list_width - 24.0).max(28.0);
+        // The shared result row supplies 7px on each side; image wells also
+        // carry 4px inset each side. Keep the aspect-ratio budget aligned.
+        let available_image_width = (list_width - 22.0).max(28.0);
         let scroll_to_top = self.list_scroll.clone();
         let panel = cx.entity().downgrade();
         let categories = self.categories.clone();
@@ -1831,7 +1979,7 @@ impl Render for ClipboardPanel {
                     .h(px(CONTROL_HEIGHT_INPUT))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(px(8.0))
                     .cursor_default()
                     .on_mouse_down(gpui::MouseButton::Left, move |_event, window, cx| {
                         cx.stop_propagation();
@@ -1846,7 +1994,7 @@ impl Render for ClipboardPanel {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.0))
+                            .gap(px(8.0))
                             .child(
                                 Icon::new(MaterialIcon::ContentPaste)
                                     .size(px(16.0))
@@ -1966,35 +2114,49 @@ impl Render for ClipboardPanel {
                             ),
                     )
                     .child(
-                        div()
-                            .id("add-clipboard-category")
-                            .size(px(CONTROL_HEIGHT_ACTION))
-                            .rounded(px(RADIUS_CONTROL))
-                            .cursor_pointer()
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(theme.text_secondary)
-                            .hover(move |style| style.bg(theme.surface_hover))
-                            .drag_over::<CategoryDrag>(move |style, _, _, _| {
-                                style.bg(theme.accent_soft).text_color(theme.accent_text)
-                            })
-                            .on_drop({
-                                let panel = add_category_panel.clone();
-                                move |drag: &CategoryDrag, _window, app| {
-                                    let _ = panel.update(app, |panel, cx| {
-                                        panel.reorder_category(&drag.category.id, None, cx);
+                        focused_action(
+                            "add-clipboard-category",
+                            window
+                                .use_keyed_state("clipboard-category-add-action", cx, |_, cx| {
+                                    cx.focus_handle().tab_stop(true)
+                                })
+                                .read(cx),
+                            theme,
+                            false,
+                            window,
+                            {
+                                let add_panel = add_category_panel.clone();
+                                move |_event, window, app| {
+                                    let _ = add_panel.update(app, |panel, cx| {
+                                        panel.begin_category_editor(None, window, cx);
                                     });
                                 }
-                            })
-                            .on_click(move |_event, window, app| {
-                                let _ = add_category_panel.update(app, |panel, cx| {
-                                    panel.begin_category_editor(None, window, cx);
+                            },
+                        )
+                        .debug_selector(|| "add-clipboard-category".into())
+                        .size(px(CONTROL_HEIGHT_ACTION))
+                        .rounded(px(RADIUS_CONTROL))
+                        .cursor_pointer()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_color(theme.text_secondary)
+                        .hover(move |style| style.bg(theme.surface_hover))
+                        .drag_over::<CategoryDrag>(move |style, _, _, _| {
+                            style.bg(theme.accent_soft).text_color(theme.accent_text)
+                        })
+                        .on_drop({
+                            let panel = add_category_panel.clone();
+                            move |drag: &CategoryDrag, _window, app| {
+                                let _ = panel.update(app, |panel, cx| {
+                                    panel.reorder_category(&drag.category.id, None, cx);
                                 });
-                            })
-                            .tooltip(|window, cx| Tooltip::new("新建分类").build(window, cx))
-                            .child(Icon::new(MaterialIcon::Add).size(px(14.0))),
+                            }
+                        })
+                        .active(move |style| style.bg(theme.surface_pressed))
+                        .tooltip(|window, cx| Tooltip::new("新建分类").build(window, cx))
+                        .child(Icon::new(MaterialIcon::Add).size(px(14.0))),
                     ),
             ))
             .child(inset_panel_section(
@@ -2034,9 +2196,10 @@ impl Render for ClipboardPanel {
                                     ),
                             )
                             .child(
-                                div()
-                                    .id("search-scope-toggle")
-                                    .size(px(20.0))
+                                Button::new("search-scope-toggle")
+                                    .ghost()
+                                    .p_0()
+                                    .size(px(24.0))
                                     .flex_none()
                                     .rounded(px(RADIUS_CONTROL))
                                     .flex()
@@ -2053,14 +2216,10 @@ impl Render for ClipboardPanel {
                                     } else {
                                         theme.text_muted
                                     })
-                                    .hover(move |style| style.bg(theme.surface_hover))
-                                    .tooltip(move |window, cx| {
-                                        Tooltip::new(if extended_search {
-                                            "关闭扩展搜索"
-                                        } else {
-                                            "扩展搜索：图片名、文件路径、来源进程和窗口标题"
-                                        })
-                                        .build(window, cx)
+                                    .tooltip(if extended_search {
+                                        "关闭扩展搜索"
+                                    } else {
+                                        "扩展搜索：图片名、文件路径、来源进程和窗口标题"
                                     })
                                     .on_click(move |_event, _window, app| {
                                         let _ = search_scope_panel.update(app, |panel, cx| {
@@ -2131,7 +2290,7 @@ impl Render for ClipboardPanel {
                         let image_resource_cache = Rc::clone(&self.image_resource_cache);
                         let theme = self.theme;
                         container.child(
-                            list(self.list_scroll.clone(), move |index, _window, app| {
+                            list(self.list_scroll.clone(), move |index, window, app| {
                                 let Some(entry) = entries.borrow().get(index).cloned() else {
                                     return div().into_any_element();
                                 };
@@ -2209,8 +2368,11 @@ impl Render for ClipboardPanel {
                                           _window: &mut Window,
                                           app: &mut App| {
                                         app.stop_propagation();
-                                        let _ = open_application.update(app, |application, _cx| {
-                                            application.open_quick_target(&target);
+                                        let application = open_application.clone();
+                                        app.defer(move |cx| {
+                                            let _ = application.update(cx, |application, _cx| {
+                                                application.open_quick_target(&target);
+                                            });
                                         });
                                     },
                                 );
@@ -2226,8 +2388,9 @@ impl Render for ClipboardPanel {
                                         if !preview_enabled {
                                             return;
                                         }
-                                        let _ =
-                                            preview_application.update(app, |application, cx| {
+                                        let application = preview_application.clone();
+                                        app.defer(move |cx| {
+                                            let _ = application.update(cx, |application, cx| {
                                                 application.schedule_preview(
                                                     entered,
                                                     item,
@@ -2237,8 +2400,38 @@ impl Render for ClipboardPanel {
                                                     cx,
                                                 );
                                             });
+                                        });
                                     },
                                 );
+                                let actions_focused = ["edit", "pin", "favorite", "delete"]
+                                    .into_iter()
+                                    .map(|key| {
+                                        gpui::SharedString::from(format!(
+                                            "clipboard-item-action-{index}-{key}"
+                                        ))
+                                    })
+                                    .any(|id| {
+                                        window
+                                            .use_keyed_state(id, app, |_, cx| cx.focus_handle())
+                                            .read(app)
+                                            .is_focused(window)
+                                    })
+                                    || window
+                                        .use_keyed_state(
+                                            ("clipboard-open-target", index),
+                                            app,
+                                            |_, cx| cx.focus_handle(),
+                                        )
+                                        .read(app)
+                                        .is_focused(window)
+                                    || window
+                                        .use_keyed_state(
+                                            ("history-row-action", index),
+                                            app,
+                                            |_, cx| cx.focus_handle(),
+                                        )
+                                        .read(app)
+                                        .is_focused(window);
                                 history_row(
                                     theme,
                                     entry,
@@ -2256,6 +2449,7 @@ impl Render for ClipboardPanel {
                                         open: on_open,
                                         preview: on_preview,
                                     },
+                                    actions_focused,
                                 )
                                 .into_any_element()
                             })
@@ -2273,8 +2467,9 @@ impl Render for ClipboardPanel {
                                 .flex()
                                 .justify_center()
                                 .child(
-                                    div()
-                                        .id("back-to-top")
+                                    Button::new("back-to-top")
+                                        .ghost()
+                                        .p_0()
                                         .h(px(28.0))
                                         .px_3()
                                         .rounded(px(RADIUS_CONTROL))
@@ -2283,7 +2478,6 @@ impl Render for ClipboardPanel {
                                         .bg(theme.surface_raised)
                                         .shadow_md()
                                         .cursor_pointer()
-                                        .hover(move |style| style.bg(theme.surface_hover))
                                         .text_size(px(TEXT_META))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .flex()
@@ -2316,8 +2510,9 @@ impl Render for ClipboardPanel {
                                 .flex()
                                 .justify_center()
                                 .child(
-                                    div()
-                                        .id("undo-clipboard-delete")
+                                    Button::new("undo-clipboard-delete")
+                                        .ghost()
+                                        .p_0()
                                         .h(px(GROUP_HEADER_HEIGHT))
                                         .px_3()
                                         .rounded(px(RADIUS_CONTROL))
@@ -2326,7 +2521,6 @@ impl Render for ClipboardPanel {
                                         .bg(theme.surface_raised)
                                         .shadow_md()
                                         .cursor_pointer()
-                                        .hover(move |style| style.bg(theme.surface_hover))
                                         .text_size(px(TEXT_META))
                                         .text_color(theme.text)
                                         .flex()
@@ -2540,7 +2734,7 @@ impl Render for ClipboardPanel {
                                     .overflow_y_scrollbar()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(2.0))
+                                    .gap(px(4.0))
                                     .when(category_source_choices.is_empty(), |list| {
                                         list.child(
                                             div()
@@ -2560,87 +2754,86 @@ impl Render for ClipboardPanel {
                                                 let selected = selected_sources
                                                     .contains(&source.to_lowercase());
                                                 let process_name = source.clone();
-                                                div()
-                                                    .id(gpui::SharedString::from(format!(
-                                                        "clipboard-category-source-{index}"
-                                                    )))
-                                                    .debug_selector(move || {
-                                                        format!(
-                                                            "clipboard-category-source-{index}"
-                                                        )
-                                                    })
-                                                    .h(px(26.0))
-                                                    .px_2()
-                                                    .rounded(px(RADIUS_CONTROL))
-                                                    .cursor_pointer()
-                                                    .bg(if selected {
-                                                        theme.accent_soft
-                                                    } else {
-                                                        gpui::rgba(0x00000000)
-                                                    })
-                                                    .on_mouse_down(
-                                                        MouseButton::Left,
-                                                        |_event, _window, cx| {
-                                                            cx.stop_propagation();
-                                                        },
-                                                    )
-                                                    .on_click({
-                                                        let source_panel = source_panel.clone();
-                                                        move |_event, _window, app| {
-                                                            app.stop_propagation();
-                                                            let _ = source_panel.update(
-                                                                app,
-                                                                |panel, cx| {
-                                                                    panel
-                                                                        .toggle_category_editor_source(
-                                                                            &process_name,
-                                                                            cx,
-                                                                        );
-                                                                },
-                                                            );
-                                                        }
-                                                    })
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_2()
-                                                    .child(
-                                                        div()
-                                                            .size(px(14.0))
-                                                            .rounded(px(2.0))
-                                                            .border_1()
-                                                            .border_color(if selected {
-                                                                theme.accent
-                                                            } else {
-                                                                theme.border
-                                                            })
-                                                            .bg(if selected {
-                                                                theme.accent
-                                                            } else {
-                                                                theme.surface
-                                                            })
-                                                            .flex()
-                                                            .items_center()
-                                                            .justify_center()
-                                                            .when(selected, |checkbox| {
-                                                                checkbox.child(
-                                                                    Icon::new(MaterialIcon::Check)
-                                                                        .size(px(11.0))
-                                                                        .text_color(theme.accent_text),
-                                                                )
-                                                            }),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .min_w_0()
-                                                            .truncate()
-                                                            .text_size(px(TEXT_LABEL))
-                                                            .text_color(if selected {
-                                                                theme.accent_text
-                                                            } else {
-                                                                theme.text_secondary
-                                                            })
-                                                            .child(source),
-                                                    )
+                                                Button::new(gpui::SharedString::from(format!(
+                                                    "clipboard-category-source-{index}"
+                                                )))
+                                                .ghost()
+                                                .p_0()
+                                                .debug_selector(move || {
+                                                    format!("clipboard-category-source-{index}")
+                                                })
+                                                .h(px(28.0))
+                                                .px_2()
+                                                .rounded(px(RADIUS_CONTROL))
+                                                .cursor_pointer()
+                                                .bg(if selected {
+                                                    theme.accent_soft
+                                                } else {
+                                                    gpui::rgba(0x00000000)
+                                                })
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    |_event, _window, cx| {
+                                                        cx.stop_propagation();
+                                                    },
+                                                )
+                                                .on_click({
+                                                    let source_panel = source_panel.clone();
+                                                    move |_event, _window, app| {
+                                                        app.stop_propagation();
+                                                        let _ = source_panel.update(
+                                                            app,
+                                                            |panel, cx| {
+                                                                panel
+                                                                    .toggle_category_editor_source(
+                                                                        &process_name,
+                                                                        cx,
+                                                                    );
+                                                            },
+                                                        );
+                                                    }
+                                                })
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.0))
+                                                .child(
+                                                    div()
+                                                        .size(px(16.0))
+                                                        .rounded(px(RADIUS_CONTROL))
+                                                        .border_1()
+                                                        .border_color(if selected {
+                                                            theme.accent
+                                                        } else {
+                                                            theme.border
+                                                        })
+                                                        .bg(if selected {
+                                                            theme.accent
+                                                        } else {
+                                                            theme.surface
+                                                        })
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .when(selected, |checkbox| {
+                                                            checkbox.child(
+                                                                Icon::new(MaterialIcon::Check)
+                                                                    .size(px(11.0))
+                                                                    .text_color(theme.accent_text),
+                                                            )
+                                                        }),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .min_w_0()
+                                                        .truncate()
+                                                        .text_size(px(TEXT_LABEL))
+                                                        .text_color(if selected {
+                                                            theme.accent_text
+                                                        } else {
+                                                            theme.text_secondary
+                                                        })
+                                                        .child(source),
+                                                )
                                             }
                                         },
                                     )),
@@ -2657,9 +2850,10 @@ impl Render for ClipboardPanel {
                                         "取消",
                                         false,
                                         move |_event, window, app| {
-                                            let _ = cancel_category_panel.update(app, |panel, cx| {
-                                                panel.cancel_category_editor(window, cx);
-                                            });
+                                            let _ =
+                                                cancel_category_panel.update(app, |panel, cx| {
+                                                    panel.cancel_category_editor(window, cx);
+                                                });
                                         },
                                     ))
                                     .child(dialog_button(
@@ -2990,10 +3184,11 @@ fn category_tab(
     let is_custom = category.kind == ClipboardCategoryKind::Custom;
     let tab = div()
         .id(gpui::SharedString::from(format!("category-{category_id}")))
+        .tooltip(move |window, cx| Tooltip::new(tooltip_label.clone()).build(window, cx))
         .h(px(CONTROL_HEIGHT_ACTION))
         .w(px(tab_width))
         .flex_none()
-        .px(px(7.0))
+        .px(px(8.0))
         .border_b_2()
         .border_color(if selected {
             theme.accent
@@ -3011,18 +3206,6 @@ fn category_tab(
         .flex()
         .items_center()
         .gap_1()
-        .cursor_pointer()
-        .hover(move |style| style.bg(theme.surface_hover))
-        .tooltip(move |window, cx| Tooltip::new(tooltip_label.clone()).build(window, cx))
-        .on_click({
-            let panel = panel.clone();
-            move |_event, _window, app| {
-                let category_id = click_category_id.clone();
-                let _ = panel.update(app, |panel, cx| {
-                    panel.select_category(category_id, cx);
-                });
-            }
-        })
         .on_drag(drag, |drag: &CategoryDrag, position, _window, cx| {
             cx.new(|_| drag.clone().at(position))
         })
@@ -3048,7 +3231,8 @@ fn category_tab(
             theme.text_secondary
         }))
         .child(label);
-    if is_custom {
+    let click_panel = panel.clone();
+    let tab = if is_custom {
         tab.context_menu(move |menu, _window, _cx| {
             context_menu_shell(menu)
                 .item(
@@ -3091,49 +3275,67 @@ fn category_tab(
         .into_any_element()
     } else {
         tab.into_any_element()
-    }
+    };
+    div()
+        .w(px(tab_width))
+        .h(px(CONTROL_HEIGHT_ACTION))
+        .flex_none()
+        .child(focusable_content(
+            gpui::SharedString::from(format!("category-action-{category_id}")),
+            theme,
+            false,
+            tab,
+            move |_event, _window, app| {
+                let category_id = click_category_id.clone();
+                let _ = click_panel.update(app, |panel, cx| {
+                    panel.select_category(category_id, cx);
+                });
+            },
+        ))
+        .into_any_element()
 }
-
 fn dialog_button(
     theme: Theme,
     label: &'static str,
     primary: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(gpui::SharedString::from(format!(
-            "clipboard-dialog-button-{label}"
-        )))
-        .h(px(28.0))
-        .px_3()
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(if primary { theme.accent } else { theme.border })
-        .bg(if primary {
-            theme.accent_soft
-        } else {
-            theme.surface_raised
-        })
-        .text_size(px(TEXT_LABEL))
-        .line_height(px(LINE_HEIGHT_LABEL))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(if primary {
-            theme.accent_text
-        } else {
-            theme.text_secondary
-        })
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .justify_center()
-        .hover(move |style| style.bg(theme.surface_hover))
-        .on_click(move |event, window, cx| {
+    focusable_content(
+        gpui::SharedString::from(format!("clipboard-dialog-button-{label}")),
+        theme,
+        false,
+        div()
+            .h(px(28.0))
+            .px_3()
+            .rounded(px(RADIUS_CONTROL))
+            .border_1()
+            .border_color(if primary { theme.accent } else { theme.border })
+            .bg(if primary {
+                theme.accent_soft
+            } else {
+                theme.surface_raised
+            })
+            .text_size(px(TEXT_LABEL))
+            .line_height(px(LINE_HEIGHT_LABEL))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(if primary {
+                theme.accent_text
+            } else {
+                theme.text_secondary
+            })
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_center()
+            .hover(move |style| style.bg(theme.surface_hover))
+            .child(label)
+            .into_any_element(),
+        move |event, window, cx| {
             cx.stop_propagation();
             on_click(event, window, cx);
-        })
-        .child(label)
+        },
+    )
 }
-
 pub(crate) fn panel_bounds(
     request: &ClipboardPanelRequest,
     panel_size: nxtools_core::ClipboardPanelSize,
@@ -3191,6 +3393,8 @@ fn clamp_pixels(value: gpui::Pixels, minimum: gpui::Pixels, maximum: gpui::Pixel
     }
 }
 
+#[cfg(test)]
+mod polish_tests;
 #[cfg(test)]
 #[cfg(test)]
 mod tests;

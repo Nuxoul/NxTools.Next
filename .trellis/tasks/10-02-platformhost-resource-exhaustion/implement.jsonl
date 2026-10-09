@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Map caller, worker, completion signal and cancellation-resource ownership across the synchronous STA boundary."}
+{"file": ".trellis/spec/nxtools-ipc/backend/quality-guidelines.md", "reason": "Preserve bounded platform-operation and error/result contracts while repairing host resource ownership."}

@@ -1,53 +1,8 @@
-# Database Guidelines
+# Download SQLite ownership
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/crates/nxtools-download/src/storage.rs#SqliteDownloadStore`, `repo:rust/crates/nxtools-download/tests/storage_contract.rs`, `repo:rust/crates/nxtools-download/tests/engine_contract.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
+Mutex<Connection> owns schema version12 and parameterized transactions; reject newer schema, set WAL only when needed, bounded open retry, quarantine zero-byte file only without WAL/SHM. Commit before memory/events; writer sync before checkpoint, close/rename before Completed. Redownload marker/queue/transfer operations remain store-atomic. No UI SQL shortcuts. Migration/reopen/crash-window tests use temp store. [Engineering](../../shared/engineering.md), [verification](../../shared/verification.md); retain scenario below.
 
 ## Scenario: Redownload and compact snapshot consistency
 
@@ -96,4 +51,3 @@ let replacement = store.save_redownload_task_with_transfer_and_queue(old_id, ...
 cleanup_old_owned_artifacts(old_id)?;
 store.complete_redownload_operation(old_id, replacement)?;
 ```
-(To be filled by the team)

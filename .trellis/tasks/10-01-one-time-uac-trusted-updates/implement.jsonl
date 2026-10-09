@@ -1,0 +1,6 @@
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Use the existing protected desktop/PlatformHost/indexer atomic-release and no-name-only process rules while investigating updates."}
+{"file":".trellis/spec/nxtools-desktop/backend/error-handling.md","reason":"Trace installer/service failures and distinguish cancellation, service-start failure, and package verification failure."}
+{"file":".trellis/spec/nxtools-ipc/backend/index.md","reason":"Trace the EnsureIndexerService command and elevated service/update boundary."}
+{"file":".trellis/spec/nxtools-ipc/backend/logging-guidelines.md","reason":"Keep cross-process update diagnostics correlated, bounded, and free of credentials or trust secrets."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Analyze trust and update state across installer, user process, PlatformHost, SCM and protected binaries."}
+{"file": ".trellis/tasks/10-01-one-time-uac-trusted-updates/research/reference-uac-comparison.md", "reason": "Read-only comparison evidence from Throne-dev and satelite-proxy-main."}

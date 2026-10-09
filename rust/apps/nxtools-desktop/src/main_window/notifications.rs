@@ -22,8 +22,11 @@ impl MainWindow {
             .w(px(NOTIFICATION_CARD_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(SPACING_6));
+            .gap(px(SPACING_8));
         for notification in notifications {
+            if notification.exiting && crate::ui::motion::reduced_motion(cx) {
+                continue;
+            }
             let accent = match notification.level {
                 NotificationLevel::Progress | NotificationLevel::Info => theme.accent,
                 NotificationLevel::Success => theme.success,
@@ -48,7 +51,7 @@ impl MainWindow {
                 .pr(px(SPACING_24))
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .debug_selector(move || title_selector.clone())
@@ -78,8 +81,8 @@ impl MainWindow {
                         .border_t_1()
                         .border_color(theme.border_subtle)
                         .flex()
-                        .flex_col()
-                        .gap(px(SPACING_2))
+                        .items_center()
+                        .gap(px(SPACING_8))
                         .child(
                             div()
                                 .text_size(px(TEXT_META))
@@ -90,9 +93,9 @@ impl MainWindow {
                         .child(
                             div()
                                 .id(detail_id)
-                                .w_full()
-                                .whitespace_normal()
-                                .line_clamp(1)
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
                                 .font_family(UI_MONO_FONT_FAMILY)
                                 .text_size(px(TEXT_LABEL))
                                 .line_height(px(LINE_HEIGHT_LABEL))
@@ -234,18 +237,22 @@ impl MainWindow {
             } else {
                 NOTIFICATION_ENTER_DURATION
             };
-            stack = stack.child(card.with_animation(
-                gpui::SharedString::from(format!(
-                    "notification-transition-{}-{}-{}",
-                    notification_id, notification_generation, notification_exiting
-                )),
-                Animation::new(transition_duration).with_easing(ease_in_out),
-                move |card, delta| {
-                    let (opacity, vertical_offset) =
-                        notification_transition(delta, notification_exiting);
-                    card.opacity(opacity).relative().top(px(vertical_offset))
-                },
-            ));
+            if crate::ui::motion::motion_allowed(cx) {
+                stack = stack.child(card.with_animation(
+                    gpui::SharedString::from(format!(
+                        "notification-transition-{}-{}-{}",
+                        notification_id, notification_generation, notification_exiting
+                    )),
+                    Animation::new(transition_duration).with_easing(ease_in_out),
+                    move |card, delta| {
+                        let (opacity, vertical_offset) =
+                            notification_transition(delta, notification_exiting);
+                        card.opacity(opacity).relative().top(px(vertical_offset))
+                    },
+                ));
+            } else {
+                stack = stack.child(card);
+            }
         }
         stack.into_any_element()
     }

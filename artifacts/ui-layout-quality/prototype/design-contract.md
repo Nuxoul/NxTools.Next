@@ -1,0 +1,15 @@
+# Browser prototype contract
+
+Scope: design-only, synthetic fixtures, no runtime, IPC, clipboard, disk persistence, requests or native actions. Approval of this prototype is not production/native acceptance. Existing behavioral evidence was read in docs/reference-code/{gpui,download,clipboard,quick-launch-research,link-detector}. The supplied brief overrides historical numeric rail/type measurements.
+
+Mission: make frequent Windows utility work legible and predictable through one quiet continuous work surface, disciplined alignment and purpose-sized transient windows. The signature is the single-line 176px module rail, not accent decoration.
+
+Tokens: canvas #18181b; work #1f1f23; recessed #121215; raised/border #27272a; action/focus #38bdf8; hover #7dd3fc; primary #f4f4f5; secondary #a1a1aa; muted #71717a. Semantic success #6fbf8f, warning #d6a85f, error #ff6b78. Microsoft YaHei UI / Microsoft YaHei / Segoe UI / sans-serif; Consolas only paths, file sizes, shortcuts and other machine data. Workbench body13/20, support12/18, title16/24, group14/20. Fixed small windows12/18. Spacing4/8/12/16/20/24; controls32 and compact28; rail176; chrome36; header48; rows40/48; radius3 controls,6 floating frames. Immediate hover/press, 140ms state entrance with cubic-bezier(.2,.9,.25,1.15); no idle animation; reduced motion eliminates entrances.
+
+Do: left-align prose and executable names; keep checkbox columns shared between header/rows/editor; stable fixed footer and busy geometry; use semantic native HTML controls; show complete long information in detail/wrapped fields; own overflow through named scroll regions; distinguish empty from error; mark every simulated action and fixture.
+
+Don't: gradients, card walls, tiny metadata used for primary copy, centered labels under left headings, network/persist claims, native drag/provider claims, huge unified configuration, enlargement of fixed windows, silent scaling, invisible tab stops.
+
+Geometry: main1060×650 (minimum920×480); global720×480; Quick popup620×410 with42px search/40px rows, preserving verified production budget; clipboard300×440; probe560×176; ordinary confirmation560×278; task progress/completed440×184 content-only; expanded440×280; failed440×196. Media separate DASH560×353, HLS560×418, error560×456; never pack these rows into ordinary confirmation. Native DPI/focus remains unverified.
+
+Assumptions: workbench controls live outside app frames. Main caption buttons only show an in-memory simulation notice. Quick and Clipboard main pages are settings. Global uses draft Apply/Cancel; module settings update memory immediately without an Apply step. Preview/provider, Shell, drag, extension capture and native shutdown boundaries are labeled wireframes, not emulated services. No font/assets fetched. Scrollable prototype view can be smaller than app pixels: 100% means CSS pixel1:1 at browser zoom100%; Fit is explicitly scaled. Actual Windows DPI, no-activate HWND and screen-reader provider behavior remain outside this prototype.

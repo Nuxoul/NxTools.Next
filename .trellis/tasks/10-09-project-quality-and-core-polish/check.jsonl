@@ -1,0 +1,6 @@
+{"file":"AGENTS.md","reason":"Preserve references, single native owner, privacy and memory/release rules"}
+{"file":".trellis/tasks/10-09-project-quality-and-core-polish/prd.md","reason":"Requirements and out-of-scope check"}
+{"file":".trellis/tasks/10-09-project-quality-and-core-polish/design.md","reason":"No duplicate owners or implicit authority override"}
+{"file":".trellis/tasks/10-09-project-quality-and-core-polish/implement.md","reason":"Order, actual evidence and restricted side effects"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Existing GPUI/native/migration regressions must survive"}
+{"file":"docs/audits/2026-10-08-sol-review-remediation.md","reason":"Do not convert known failing/deferred checks into all-green claims"}

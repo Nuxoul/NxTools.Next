@@ -82,23 +82,33 @@ Assert-SourceContains `
     -Pattern '.map(new_download_window_size_for_probe)' `
     -Message "The add window must choose its confirmed size from the typed probe result."
 Assert-SourceContains `
-    -Pattern 'window.resize(window_size);' `
-    -Message "The add window must apply the probe-state size at the real GPUI window boundary."
+    -Pattern 'PresentFixedWindowOverAnchor' `
+    -Message "Successful probe must present a NEW final-size confirmation window through the native adapter."
 Assert-SourceContains `
-    -Pattern 'gpui::Timer::after(retry_delay)' `
-    -Message "Probe completion must retry native resizing after a move/size modal loop."
+    -Pattern 'apply_new_download_window_resize_with_correlation(' `
+    -Message "The add window must apply native resizing through platform host with a correlated generation."
 Assert-SourceContains `
-    -Pattern 'view.probe_generation == generation' `
+    -Pattern 'this.probe_generation != generation' `
     -Message "A stale probe generation must not resize a newer add window state."
-Assert-SourceContains `
-    -Pattern 'Duration::from_millis(4_000)' `
-    -Message "Probe completion must keep retrying long enough to outlive a dragged window move loop."
 Assert-SourceContains `
     -Pattern 'window_min_size: Some(new_download_window_size(false))' `
     -Message "The add window minimum must allow browser and retry probes to return to compact height."
 Assert-SourceContains `
     -Pattern 'new_download_window_options(window_bounds)' `
     -Message "The add window must pass the tested compact minimum through the production GPUI window-open boundary."
+$fixedOwner = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\browser_handoff_impl.rs') -Raw
+$fixedView = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\new_download_view.rs') -Raw
+foreach ($fixedContract in @('options.show = false', 'options.focus = false', 'fixed_source_is_current', 'FIXED_CONFIRMATION_IPC_TIMEOUT', 'cleanup_new_download_handoff', '重试打开确认')) {
+    Assert-SourceContains -Pattern $fixedContract -Message "Fixed confirmation handoff must preserve hidden create, identity/cancel, bounded IPC and retry contracts."
+}
+$install = $fixedOwner.IndexOf('self.pending_new_download_handoff = Some(')
+$dispatch = $fixedOwner.IndexOf('send_command_with_id(command, operation_id)')
+if ($install -lt 0 -or $dispatch -le $install) { throw 'Fixed handoff pending ownership must be installed before dispatch.' }
+if ($fixedView.Contains('NEW_DOWNLOAD_CONFIRMED_GATE_TIMEOUT') -or $fixedView.Contains('download.confirmed_gate.expired')) { throw 'Successful probes must not be erased by an in-place resize watchdog.' }
+$finishStart = $fixedOwner.IndexOf('pub(crate) fn finish_new_download_handoff(')
+$finishEnd = $fixedOwner.IndexOf('pub(crate) fn import_browser_blob(', $finishStart)
+$finishBody = $fixedOwner.Substring($finishStart, $finishEnd - $finishStart)
+if ($finishBody.Contains('window.activate_window()')) { throw 'Fixed hidden target must not replay GPUI initial_placement on activation.' }
 Assert-SourceContains `
     -Pattern 'size: size(px(440.0), px(184.0))' `
     -Message "The progress window must remain compact and content-driven."
@@ -106,8 +116,15 @@ Assert-SourceContains `
     -Pattern 'size: size(px(440.0), px(196.0))' `
     -Message "The failed window must remain compact and content-driven."
 Assert-SourceContains `
-    -Pattern 'size: size(px(440.0), px(180.0))' `
-    -Message "The completed window must remain compact and content-driven."
+    -Pattern 'size: size(px(440.0), px(184.0))' `
+    -Message "Ordinary completion must keep the collapsed progress geometry."
+$taskLayout = Get-Content (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_window.rs') -Raw
+$taskOwner = Get-Content (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_windows_impl.rs') -Raw
+if ([regex]::Matches($taskLayout, 'size: size\(px\(440\.0\), px\(184\.0\)\)').Count -ne 2 -or
+    -not $taskOwner.Contains('if previous_size != Some(next_size)') -or
+    -not $taskOwner.Contains('window_min_size: Some(task_window_minimum_size())')) {
+    throw 'Task completion must preserve same-size geometry and permit taller phases to collapse.'
+}
 Assert-SourceContains `
     -Pattern 'fn download_task_window_phase_layout(' `
     -Message "Task-window phase size and selector metadata must stay centralized."
@@ -293,6 +310,23 @@ if ($newViewStart -lt 0 -or $requestStart -le $newViewStart) {
 $newViewBody = $source.Substring($newViewStart, $requestStart - $newViewStart)
 if ($newViewBody.Contains("confirmed_request = None") -or $newViewBody.Contains("probe = None")) {
     throw "Changing only the local destination must not invalidate remote probe metadata."
+}
+
+
+$clientResize = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.ClientResize.cs') -Raw
+$nativeResize = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.NativeMethods.cs') -Raw
+if ($clientResize.Contains('ClientResizePostMessage') -or $clientResize.Contains('PostClientResizeMessage')) {
+    throw 'Client-size synchronization must not queue a stale requested-size WM_SIZE payload.'
+}
+if (-not $clientResize.Contains('RefreshCurrentClientSize') -or -not $clientResize.Contains('EntryPoint = "SendMessageW"') -or
+    $clientResize.Contains('SendMessageTimeoutW') -or -not $clientResize.Contains('ref ClientResizeWindowPosition')) {
+    throw 'Current-client refresh must retain WINDOWPOS until owner-thread processing finishes, within fixed native workers.'
+}
+$commitBoundary = $nativeResize.IndexOf('beforeCommit?.Invoke();')
+$retirementReadback = $nativeResize.IndexOf('var final = CaptureWindowPresentation(pending.Window);', $commitBoundary)
+$retire = $nativeResize.IndexOf('var committed = stable', $commitBoundary)
+if ($commitBoundary -lt 0 -or $retirementReadback -lt $commitBoundary -or $retire -lt $retirementReadback) {
+    throw 'Centered resize must read the final native client at the pending-retirement boundary.'
 }
 
 Write-Host "Download UI lifecycle architecture gate passed."

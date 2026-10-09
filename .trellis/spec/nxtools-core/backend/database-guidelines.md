@@ -1,51 +1,7 @@
-# Database Guidelines
+# Core persistence (SQL not applicable)
 
-> Database patterns and conventions for this project.
+Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#save_to`, `repo:rust/crates/nxtools-core/src/lib.rs#update_section`, `repo:rust/crates/nxtools-core/src/lib.rs#load_or_create`.
 
----
+Core has no SQL connection/schema. AppConfig JSON uses typed section wrappers and locked reread/merge; save_to writes a sibling temporary, syncs, closes and renames. Missing/corrupt update targets error, never silently replace unrelated sections. Returned merged config refreshes cache. First-run load_or_create directly creates defaults—observed initialization, not same locked-update guarantee. See [durable section contract](../../shared/engineering.md).
 
-## Overview
-
-<!--
-Document your project's database conventions here.
-
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+Application blacklist canonical entries hold independent Clipboard/Quick Launch flags per normalized executable basename. Absent entries migrate legacy shared flags and Clipboard exclusions once; present-empty entries are authoritative and never reimport stale exclusions. Clipboard exclusions are a derived native projection only. Global settings atomically commits network/system/rules through one locked transaction, then defers no-persistence consumer publication. Only migration worker changes live storage root; ordinary clipboard save preserves disk latest root. Tests: stale cached update keeps other sections, canonical-empty reload/removal, mixed scopes, legacy-once migration, corrupt config refusal and missing config non-resurrection. Don't invent SQL migrations or log raw JSON/path/error context.

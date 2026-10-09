@@ -1,0 +1,40 @@
+{
+  "id": "download-dialog-visual-and-reveal",
+  "name": "download-dialog-visual-and-reveal",
+  "title": "Improve download dialogs and Explorer reveal",
+  "description": "Redesign download-related dialogs, align the deferred-download footer, and reliably foreground Explorer when revealing completed files.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-03",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "refactor/ui-gpui-kit",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+    "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+    "rust/apps/nxtools-desktop/src/downloads.rs",
+    "csharp/NxTools.PlatformHost/Windows/ExplorerShellActivation.cs",
+    "csharp/NxTools.PlatformHost/Windows/ClipboardShellTarget.cs",
+    "csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs",
+    "csharp/NxTools.PlatformHost.Tests/Program.cs",
+    "tests/architecture/download-ui-lifecycle.ps1",
+    "docs/reference-code/download.md"
+  ],
+  "notes": "Implemented the approved download-dialog and Explorer Reveal slice. Automated bounds, path-resolution, task-window lifecycle and injected Explorer activation tests pass. Manual native-DPI visual review, screenshot comparison and live Explorer foreground/file-selection smoke remain pending. No packaging, installation, deployment, service operation, DOpus navigation or official artifact changes were performed.",
+  "meta": {
+    "implementation_status": "automated_checks_passed_manual_windows_acceptance_pending"
+  }
+}

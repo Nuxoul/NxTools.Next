@@ -1,38 +1,9 @@
-# Backend Development Guidelines
+# Indexer backend
 
-> Best practices for backend development in this project.
+Evidence: `repo:rust/apps/nxtools-indexer/src/lib.rs`, `repo:rust/apps/nxtools-indexer/src/windows_service_host.rs`, `repo:rust/apps/nxtools-indexer/src/mft/cache.rs`.
 
----
+## Pre-Development Checklist
+Read [Quick Launch reference](../../../../docs/reference-code/quick-launch-research.md), [architecture](../../shared/architecture.md), [structure](directory-structure.md), [cache/persistence](database-guidelines.md), [errors](error-handling.md), [logging](logging-guidelines.md), [quality](quality-guidelines.md). Listary managed boundary only, not native source. Protected-session authorization differs from dev stdin harness.
 
-## Overview
-
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+## Quality Check
+Focused synthetic state/admission/USN/cache tests and strict checks per [verification](../../shared/verification.md). Real-volume test suites may scan; do not run unrestricted without permission. Changed MFT/USN/service/cache release needs packaged LocalSystem idle/restart/base+delta/search/hash gate when authorized. Ready/search unit result isn't release acceptance. [Entry](../../index.md).

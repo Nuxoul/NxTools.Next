@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Desktop regression and GPUI lifecycle quality gates"}
+{"file": ".trellis/spec/nxtools-desktop/backend/logging-guidelines.md", "reason": "Bounded diagnostics and payload-secret exclusion"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Rust/C#/IPC ownership boundary"}
+{"file": "docs/reference-code/clipboard.md", "reason": "Link-detector call chain, panel lifecycle, and native shell boundary"}
+{"file": "docs/reference-code/system-shell.md", "reason": "Existing Explorer shell action and diagnostic invariants"}
+{"file": "rust/apps/nxtools-desktop/src/tools/link_detector.rs", "reason": "Detector classification and existing-path recognition"}
+{"file": "rust/apps/nxtools-desktop/src/tools/link_panel.rs", "reason": "Row click dispatch and panel close/echo lifecycle"}
+{"file": "rust/apps/nxtools-desktop/src/clipboard.rs", "reason": "Link panel ownership and settings behavior"}
+{"file": "csharp/NxTools.PlatformHost/Windows/ClipboardShellTarget.cs", "reason": "SelectInExplorer validation and native launch semantics"}

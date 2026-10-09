@@ -1,0 +1,25 @@
+# Standards execution plan
+
+1. After final parent approval, activate this child. Snapshot dirty paths and read references/specs; do not use clean/reset as prerequisite.
+2. Inventory actual first-party Rust/C#/extension ownership and applicable topics. Record baseline placeholders, missing navigation, repeated rules and numeric UI conflicts.
+3. Resolve authority: AGENTS/reference behavior -> approved task intent -> executable spec guidance. Create target/current/exception matrix; do not change product consumers.
+4. Populate shared architecture/quality/privacy/test conventions with real source examples and checks. Update each applicable package/layer topic; delete non-applicable boilerplate carefully, preserve seven recent quality scenarios with traceable references.
+5. Complete UI guidance for semantic tokens, typography/density/layout/component states, keyboard/focus/accessibility, reduced-motion and DPI/native surfaces; list mismatches for Foundation owner.
+6. Wire indexes and small deterministic spec checks if justified; test checker against scratch bad fixtures then live tree. No generic tooling framework or new dependency.
+7. Validate links, no applicable placeholders, accurate signatures/env/commands, no reference contradictions. Run existing source architecture gates relevant to any changed rule. Do not run Cargo solely for docs; if a script change requires it, coordinate one memory-constrained Cargo command with no duplicate build.
+8. Publish standards coverage/gap report and handoff to existing Foundation stage. Keep unresolved live/release gate status; no commit/archive/package/install/service/product operations.
+
+## Rollback / stop
+Only own doc/script changes can be reversed; no unrecognized dirty file restore. Unsupported product requirement -> stop for user intent, do not invent it. A new checker exposing existing production violations records scoped backlog, never blanket suppression to pass. First UI stage requires fresh scoped baseline and visual review.
+
+## Execution / verification — 2026-10-09
+- User approved final planning/queue; task.py start changed this child planning->in_progress only. Parent and staged UI remain planning; bootstrap and all unrelated task states preserved.
+- Single-owner source/spec writing; one bounded SOL read-only C#/extension evidence helper, no implementation/review loop. Source maps in research.md; product rules remain Rust state/layout, GPUI rendering and C# native.
+- Retained72 package topic paths, replaced template prefixes/content with actual owner/spec guidance; root standards entry, shared architecture/engineering/verification/UI/backlog and C#/extension topics added.15 existing scenario bodies across9 docs preserved, older native invariant-list scenario gained seven sections.87 Markdown docs/12 Rust owners/20 scenarios; applicable templates gone.
+- Added target/current/exception table, full actionable states, keyboard/focus/DPI/motion/provider limits and13 gap entries. Later approved design governs numeric target; no current-code override or fake exception. No product UI/token/behavior/dependency/runtime changes.
+- Small Python spec checker and10 scratch-only regression tests: real CLI good/bad status, missing links/evidence/navigation, incomplete/empty sections, unclosed fence, valid nested subheading and bounds. Empty/fence and subheading regressions observed red then green. Checker validates docs/paths/structure, not symbol or product semantics.
+- Final checks pass: checker10/10; live87 docs/12 owners;13 existing architecture gates; extension Node21/21 and direct Blob policy asserts;503 product/source/asset SHA256 unchanged;15 original scenario bodies retained; diff check. No Cargo/.NET compiled verification needed/performed for docs-only scope. Logs standards-* and baseline snapshots in scratch.
+- Entry links in AGENTS/README/history/reference make authority discoverable; historical evidence kept. Native queue/log lifecycle and extension popup-vs-shadow ARIA/motion differences accurately labeled. Download IPC draining wording narrowed to mutation rejection with read/status still allowed.
+- Report docs/audits/2026-10-09-quality-standards-foundation.md captures coverage/actual checks/gaps. Existing engine fixture103/103 is closed, real pointer/DPI/LocalSystem/registry/installer/service-dev compatibility still pending; no new failure claimed.
+- No package/install/product launch/service/registry/DOpus/real-user-payload action, commit/archive/reset or subsequent Foundation/module/tool work. Task remains in_progress by no-archive workflow; documentation deliverable verified, next UI stage requires refreshed owner scope and prior visual acceptance.
+- Final closeout separately validates21 README/AGENTS/report/reference links,37 curated context entries and503 unchanged product hashes; live87-doc gate and diff remain pass. An initial ad-hoc PowerShell root-document link check had empty-parent errors and was not counted; corrected absolute-directory/error-stop check passed. No further code/test review cycle or build.

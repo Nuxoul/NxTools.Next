@@ -1,5 +1,6 @@
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
+use gpui_component::Selectable;
 
 pub(crate) fn quick_find_scroll_target(
     current: f32,
@@ -256,6 +257,12 @@ impl MainWindow {
     pub(crate) fn animate_quick_find_scroll_to(&mut self, target: f32, cx: &mut Context<Self>) {
         self.quick_find_scroll_target = target;
         self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1);
+        if crate::ui::motion::reduced_motion(cx) {
+            self.quick_find_scroll
+                .set_offset(point(px(0.0), px(target)));
+            cx.notify();
+            return;
+        }
         let generation = self.quick_find_scroll_animation;
         let scroll = self.quick_find_scroll.clone();
         let background = cx.background_executor().clone();
@@ -265,6 +272,11 @@ impl MainWindow {
                 let done = this
                     .update(cx, |this, cx| {
                         if this.quick_find_scroll_animation != generation {
+                            return true;
+                        }
+                        if crate::ui::motion::reduced_motion(cx) {
+                            scroll.set_offset(point(px(0.0), px(this.quick_find_scroll_target)));
+                            cx.notify();
                             return true;
                         }
                         let current = scroll.offset().y.as_f32();
@@ -474,8 +486,11 @@ impl MainWindow {
             "quick-launch-auto-quick-switch",
             auto_quick_switch_enabled,
             move |_event, _window, cx| {
-                let _ = auto_quick_switch.update(cx, |application, cx| {
-                    application.set_auto_quick_switch(!auto_quick_switch_enabled, cx);
+                let application = auto_quick_switch.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.set_auto_quick_switch(!auto_quick_switch_enabled, cx);
+                    });
                 });
             },
         );
@@ -486,33 +501,55 @@ impl MainWindow {
             "quick-launch-file-dialog-search",
             file_dialog_search_enabled,
             move |_event, _window, cx| {
-                let _ = file_dialog_search.update(cx, |application, cx| {
-                    application.set_file_dialog_search(!file_dialog_search_enabled, cx);
+                let application = file_dialog_search.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.set_file_dialog_search(!file_dialog_search_enabled, cx);
+                    });
                 });
             },
         );
+        let suppress_exclusive_fullscreen = self.quick_launch.clone();
+        let suppress_exclusive_fullscreen_enabled = settings.suppress_in_exclusive_fullscreen;
+        let suppress_exclusive_fullscreen_control = compact_toggle(
+            theme,
+            "quick-launch-exclusive-fullscreen-suppression",
+            suppress_exclusive_fullscreen_enabled,
+            move |_event, _window, cx| {
+                let quick_launch = suppress_exclusive_fullscreen.clone();
+                cx.defer(move |cx| {
+                    let _ = quick_launch.update(cx, |application, cx| {
+                        application.set_exclusive_fullscreen_suppression(
+                            !suppress_exclusive_fullscreen_enabled,
+                            cx,
+                        );
+                    });
+                });
+            },
+        );
+
         let refresh_volumes = self.quick_launch.clone();
-        let refresh_volumes_control = Button::new("quick-launch-refresh-volumes")
-            .ghost()
-            .compact()
-            .xsmall()
-            .h(px(26.0))
-            .px(px(PILL_PADDING_X))
-            .rounded(px(RADIUS_CONTROL))
-            .border_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.surface_raised)
-            .child(div().text_size(px(TEXT_LABEL)).child(if indexer_connected {
+        let refresh_volumes_control = action_button(
+            "quick-launch-refresh-volumes",
+            if indexer_connected {
                 "刷新"
             } else {
                 "安装"
-            }))
-            .on_click(move |_event, _window, cx| {
-                let _ = refresh_volumes.update(cx, |application, cx| {
+            },
+        )
+        .ghost()
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface_raised)
+        .on_click(move |_event, _window, cx| {
+            let application = refresh_volumes.clone();
+            cx.defer(move |cx| {
+                let _ = application.update(cx, |application, cx| {
                     application.prepare_file_index(cx);
                 });
-            })
-            .into_any_element();
+            });
+        })
+        .into_any_element();
         let available_volumes = index_status
             .as_ref()
             .map(|status| status.drives.clone())
@@ -892,6 +929,12 @@ impl MainWindow {
                     ),
                     compact_setting_row(
                         theme,
+                        "全屏游戏中暂不呼出",
+                        "仅 Direct3D 独占全屏；无边框全屏仍可呼出速启",
+                        suppress_exclusive_fullscreen_control,
+                    ),
+                    compact_setting_row(
+                        theme,
                         "键盘动作",
                         "↑↓ 选择；Enter 打开；Ctrl+Enter 定位；Esc 清空或隐藏",
                         div()
@@ -967,7 +1010,7 @@ impl MainWindow {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(SPACING_6))
+                            .gap(px(SPACING_8))
                             .child(
                                 div()
                                     .text_size(px(TEXT_META))
@@ -1031,43 +1074,32 @@ impl MainWindow {
                 div()
                     .id(page_metadata.navigation_id)
                     .debug_selector(move || page_metadata.navigation_id.into())
-                    .relative()
                     .h(px(QUICK_LAUNCH_SETTINGS_NAV_ROW_HEIGHT))
-                    .px(px(SPACING_12))
-                    .cursor_pointer()
-                    .flex()
-                    .items_center()
-                    .bg(if selected {
-                        theme.element_selected
-                    } else {
-                        theme.canvas
-                    })
-                    .hover(move |style| style.bg(theme.surface_hover))
-                    .when(selected, |row| {
-                        row.child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .top(px(SPACING_8))
-                                .bottom(px(SPACING_8))
-                                .w(px(SPACING_2))
-                                .bg(theme.accent),
-                        )
-                    })
+                    .w_full()
                     .child(
-                        div()
-                            .text_size(px(TEXT_BODY))
-                            .line_height(px(LINE_HEIGHT_BODY))
+                        Button::new(page_metadata.navigation_id)
+                            .ghost()
+                            .selected(selected)
+                            .w_full()
+                            .h_full()
+                            .rounded(px(RADIUS_CONTROL))
+                            .px(px(SPACING_12))
                             .text_color(if selected {
                                 theme.text
                             } else {
                                 theme.text_secondary
                             })
-                            .child(page_metadata.label),
-                    )
-                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                        this.select_quick_launch_settings_page(page, cx);
-                    })),
+                            .when(selected, |button| {
+                                button
+                                    .bg(theme.element_selected)
+                                    .border_l_2()
+                                    .border_color(theme.accent)
+                            })
+                            .label(page_metadata.label)
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.select_quick_launch_settings_page(page, cx);
+                            })),
+                    ),
             );
         }
         div()
@@ -1191,25 +1223,27 @@ pub(crate) fn compact_setting_row(
     let description_selector = title.clone();
     div()
         .min_h(px(48.0))
-        .py(px(6.0))
+        .py(px(SPACING_8))
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .flex_col()
-        .gap(px(3.0))
+        .gap(px(SPACING_4))
         .child(
             div()
                 .w_full()
                 .min_w_0()
                 .flex()
                 .items_center()
-                .gap(px(12.0))
+                .gap(px(SPACING_12))
                 .child(
                     div()
                         .min_w_0()
                         .flex_1()
                         .truncate()
                         .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .text_color(theme.text)
                         .child(title.clone()),
                 )
                 .child(control),
@@ -1219,11 +1253,12 @@ pub(crate) fn compact_setting_row(
                 .id(title)
                 .debug_selector(move || description_selector.to_string())
                 .w_full()
+                .min_w_0()
                 .tooltip(compact_setting_tooltip(description.clone()))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
                 .whitespace_normal()
-                .text_color(theme.text_muted)
+                .text_color(theme.text_secondary)
                 .child(description),
         )
         .into_any_element()
@@ -1235,11 +1270,11 @@ pub(crate) fn compact_toggle(
     enabled: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    div()
-        .id(id)
+    Button::new(id)
+        .debug_selector(move || id.into())
+        .small()
         .h(px(BADGE_HEIGHT))
-        .min_w(px(54.0))
-        .px(px(7.0))
+        .px(px(SPACING_8))
         .rounded(px(RADIUS_CONTROL))
         .border_1()
         .border_color(if enabled {
@@ -1252,21 +1287,13 @@ pub(crate) fn compact_toggle(
         } else {
             theme.canvas
         })
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap(px(4.0))
-        .text_size(px(TEXT_LABEL))
         .text_color(if enabled {
             theme.accent_text
         } else {
-            theme.text_muted
+            theme.text_secondary
         })
-        .when(enabled, |control| {
-            control.child(Icon::new(MaterialIcon::Check).size(px(11.0)))
-        })
-        .child(if enabled { "开启" } else { "关闭" })
+        .selected(enabled)
+        .label(if enabled { "✓ 开启" } else { "关闭" })
         .on_click(on_click)
         .into_any_element()
 }
@@ -1280,8 +1307,6 @@ pub(crate) fn quick_launch_settings_group_page(
         .id(selector)
         .debug_selector(move || selector.into())
         .w_full()
-        .border_1()
-        .border_color(theme.border_subtle)
         .bg(theme.surface)
         .px(px(SPACING_12))
         .child(group)
@@ -1294,7 +1319,7 @@ pub(crate) fn compact_group(
     rows: Vec<AnyElement>,
 ) -> AnyElement {
     div()
-        .pb(px(2.0))
+        .pb(px(SPACING_4))
         .child(
             div()
                 .h(px(GROUP_HEADER_HEIGHT))

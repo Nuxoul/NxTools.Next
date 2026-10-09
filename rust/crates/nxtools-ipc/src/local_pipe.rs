@@ -48,6 +48,15 @@ pub struct LocalPipeConnection {
 
 pub struct LocalPipeReader {
     file: File,
+    initial_frame_deadline: Option<Instant>,
+}
+
+impl LocalPipeReader {
+    /// Bounds an untrusted initial newline-framed handshake, not a healthy
+    /// long-lived session. Partial trickle reads do not reset this deadline.
+    pub fn set_initial_frame_timeout(&mut self, timeout: Duration) {
+        self.initial_frame_deadline = Some(Instant::now() + timeout);
+    }
 }
 
 impl Read for LocalPipeReader {
@@ -57,6 +66,15 @@ impl Read for LocalPipeReader {
         }
         let mut idle_wait = Duration::from_millis(1);
         loop {
+            if self
+                .initial_frame_deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+            {
+                return Err(std::io::Error::new(
+                    ErrorKind::TimedOut,
+                    "local pipe handshake expired",
+                ));
+            }
             let mut available = 0_u32;
             let peeked = unsafe {
                 PeekNamedPipe(
@@ -84,7 +102,11 @@ impl Read for LocalPipeReader {
                 continue;
             }
             let bytes = (available as usize).min(buffer.len());
-            return self.file.read(&mut buffer[..bytes]);
+            let read = self.file.read(&mut buffer[..bytes])?;
+            if buffer[..read].contains(&b'\n') {
+                self.initial_frame_deadline = None;
+            }
+            return Ok(read);
         }
     }
 }
@@ -289,6 +311,7 @@ fn connection_from_handle(
     }
     let reader = LocalPipeReader {
         file: unsafe { File::from_raw_handle(handle) },
+        initial_frame_deadline: None,
     };
     let writer = unsafe { File::from_raw_handle(writer_handle) };
     Ok(LocalPipeConnection {
@@ -426,5 +449,67 @@ mod tests {
         client.reader.read_line(&mut pong).expect("read pong");
         assert_eq!(pong, "pong\n");
         server.join().expect("join pipe server");
+    }
+
+    #[test]
+    fn partial_initial_frame_expires_without_resetting_deadline() {
+        let name = format!(r"\\.\pipe\nxtools-handshake-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let server = std::thread::spawn(move || {
+            let mut connection =
+                accept_current_user_pipe(&server_name).expect("accept synthetic client");
+            connection
+                .reader
+                .get_mut()
+                .set_initial_frame_timeout(Duration::from_millis(80));
+            let mut frame = String::new();
+            let failure = connection
+                .reader
+                .read_line(&mut frame)
+                .expect_err("incomplete Hello must expire");
+            assert_eq!(failure.kind(), ErrorKind::TimedOut);
+        });
+        let mut client =
+            connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        client
+            .writer
+            .write_all(b"partial hello")
+            .expect("partial frame");
+        client.writer.flush().expect("flush");
+        server.join().expect("bounded handshake thread exits");
+    }
+
+    #[test]
+    fn complete_initial_frame_disarms_deadline_for_normal_session() {
+        let name = format!(r"\\.\pipe\nxtools-handshake-done-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let server = std::thread::spawn(move || {
+            let mut connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            connection
+                .reader
+                .get_mut()
+                .set_initial_frame_timeout(Duration::from_millis(100));
+            let mut hello = String::new();
+            connection
+                .reader
+                .read_line(&mut hello)
+                .expect("hello frame");
+            assert_eq!(hello, "hello\n");
+            std::thread::sleep(Duration::from_millis(150));
+            let mut next = String::new();
+            connection
+                .reader
+                .read_line(&mut next)
+                .expect("session remains readable");
+            assert_eq!(next, "ping\n");
+        });
+        let mut client =
+            connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        client.writer.write_all(b"hello\n").expect("hello");
+        client.writer.flush().expect("flush hello");
+        std::thread::sleep(Duration::from_millis(180));
+        client.writer.write_all(b"ping\n").expect("session ping");
+        client.writer.flush().expect("flush ping");
+        server.join().expect("join fixture");
     }
 }

@@ -81,7 +81,8 @@ internal sealed class DesktopTrayController : IDisposable
             : new WindowsCommandResult(
                 false,
                 "Windows could not fully release the NxTools notification-area icon.",
-                NativeErrorCode: failure);
+                NativeErrorCode: failure,
+                Data: "tray_icon_failed");
     }
 
     private static int? DisposeCandidates(
@@ -106,5 +107,6 @@ internal sealed class DesktopTrayController : IDisposable
             "Windows could not create or show the NxTools notification-area icon.",
             NativeErrorCode: cleanupCode ?? (error is System.ComponentModel.Win32Exception native
                 ? native.NativeErrorCode
-                : error.HResult));
+                : error.HResult),
+            Data: "tray_icon_failed");
 }

@@ -20,7 +20,10 @@ use gpui::{
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::{PixelsExt, Root};
-use nxtools_core::{AppConfig, ClipboardHotKey, ClipboardHotKeyModifier, QuickLaunchSettings};
+use nxtools_core::{
+    AppConfig, ClipboardHotKey, ClipboardHotKeyModifier, ProcessBlacklistFeature,
+    QuickLaunchSettings,
+};
 #[cfg(test)]
 use nxtools_finder::query_requests_file_index;
 use nxtools_finder::{
@@ -50,7 +53,7 @@ use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
-    RADIUS_CONTROL, SPACING_2, SPACING_6, SPACING_8, SPACING_12,
+    RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
@@ -66,6 +69,25 @@ use file_dialog_search::FileDialogSearchSession;
 /// into at most one log record per interval while structural changes always
 /// log immediately.
 const INDEX_COUNT_STATUS_LOG_INTERVAL: Duration = Duration::from_secs(60);
+const VALIDATION_INSTALL_DIRECTORY_NAME: &str = "NxTools.Next-Validation-20261004";
+
+pub(crate) fn should_manage_indexer_service_for_executable(executable: &Path) -> bool {
+    executable
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| {
+            !name
+                .to_string_lossy()
+                .eq_ignore_ascii_case(VALIDATION_INSTALL_DIRECTORY_NAME)
+        })
+        .unwrap_or(true)
+}
+
+fn should_manage_indexer_service() -> bool {
+    std::env::current_exe()
+        .map(|executable| should_manage_indexer_service_for_executable(&executable))
+        .unwrap_or(true)
+}
 
 pub(crate) fn should_log_index_status_change(
     count_only: bool,
@@ -86,14 +108,19 @@ const RESULT_LIMIT: usize = 200;
 const RECENT_DIRECTORY_LIMIT: usize = 64;
 const INDEX_CANDIDATE_LIMIT: usize = 200;
 const ICON_PREFETCH_LIMIT: usize = 10;
+const ICON_RESOURCE_CACHE_LIMIT: usize = 96;
 const ICON_VISIBLE_OVERSCAN: usize = 2;
-const ICON_RESOURCE_CACHE_LIMIT: usize = 1_024;
+
+pub(crate) fn quick_launch_process_is_blacklisted(config: &AppConfig, process_name: &str) -> bool {
+    config.process_is_blacklisted(process_name, ProcessBlacklistFeature::QuickLaunch)
+}
+
 const ICON_RETRY_DELAY: Duration = Duration::from_millis(500);
 const REQUEST_MAX_AGE_MS: i64 = 1_000;
 const AUTO_QUICK_SWITCH_REQUEST_MAX_AGE_MS: i64 = 3_000;
 const OPEN_GRACE: Duration = Duration::from_millis(180);
 const FAILED_NAVIGATION_FOREGROUND_GUARD: Duration = Duration::from_millis(750);
-const RESULTS_APPEAR_DURATION: Duration = Duration::from_millis(80);
+const RESULTS_APPEAR_DURATION: Duration = crate::ui::motion::ENTER_DURATION;
 const SEARCH_INPUT_DEBOUNCE: Duration = Duration::from_millis(65);
 const QUICK_LAUNCH_PREVIEW_HOVER_DELAY: Duration = Duration::from_millis(420);
 const QUICK_LAUNCH_PREVIEW_SWITCH_DELAY: Duration = Duration::from_millis(110);
@@ -113,6 +140,7 @@ const QUICK_LAUNCH_TEXT_PREVIEW_LIMIT: usize = 96 * 1024;
 const QUICK_LAUNCH_IMAGE_FILE_LIMIT: u64 = 24 * 1024 * 1024;
 const QUICK_LAUNCH_IMAGE_PIXEL_LIMIT: u64 = 16_000_000;
 const QUICK_LAUNCH_PREVIEW_STAGING_COORDINATE: i32 = -32_000;
+const QUICK_LAUNCH_PANEL_STAGING_COORDINATE: i32 = -30_000;
 mod actions;
 mod icon;
 mod panel;
@@ -275,6 +303,35 @@ impl QuickLaunchApplication {
         }
     }
 
+    /// Rust foreground filtering consumes the same durable global rule snapshot.
+    pub(crate) fn apply_live_blacklist(
+        &mut self,
+        settings: nxtools_core::ProcessBlacklistSettings,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let started_at = std::time::Instant::now();
+        self.config.set_process_blacklist_settings(settings);
+        info!(event = "global.blacklist.quick_launch_updated", %correlation_id,
+            rule_count = self.config.process_blacklist.entries().len(),
+            elapsed_ms = started_at.elapsed().as_millis(), "quick launch live rules updated");
+        cx.notify();
+    }
+
+    pub(crate) fn is_process_excluded(&self, process_name: &str) -> bool {
+        quick_launch_process_is_blacklisted(&self.config, process_name)
+    }
+
+    /// Persists only the Quick Launch section, merged into the file as it is
+    /// now, then refreshes the other cached sections from the merged result so
+    /// this module never writes a stale copy of anything it does not own.
+    fn save_quick_launch_section(&mut self) -> anyhow::Result<()> {
+        let quick_launch = self.config.quick_launch.clone();
+        let merged = AppConfig::update_quick_launch_settings(&self.config_path, quick_launch)?;
+        self.config = merged;
+        Ok(())
+    }
+
     pub(crate) fn settings(&self) -> QuickLaunchSettings {
         self.config.quick_launch.clone()
     }
@@ -421,6 +478,9 @@ impl QuickLaunchApplication {
             self.refresh_index_volumes(cx);
             return;
         }
+        if !should_manage_indexer_service() {
+            return;
+        }
         self.ensure_indexer_service(false, cx);
     }
 
@@ -515,6 +575,18 @@ impl QuickLaunchApplication {
         self.persist_and_sync_quick_launch_behavior(cx);
     }
 
+    pub(crate) fn set_exclusive_fullscreen_suppression(
+        &mut self,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.config.quick_launch.suppress_in_exclusive_fullscreen == enabled {
+            return;
+        }
+        self.config.quick_launch.suppress_in_exclusive_fullscreen = enabled;
+        self.persist_and_sync_quick_launch_behavior(cx);
+    }
+
     pub(crate) fn add_custom_command(&mut self, cx: &mut Context<Self>) -> usize {
         let index = self.config.quick_launch.custom_commands.len();
         self.config
@@ -577,7 +649,7 @@ impl QuickLaunchApplication {
     }
 
     fn persist_custom_commands(&mut self, cx: &mut Context<Self>) -> bool {
-        if let Err(error) = self.config.save_to(&self.config_path) {
+        if let Err(error) = self.save_quick_launch_section() {
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
                     "quick-launch-custom-command-save",
@@ -594,7 +666,7 @@ impl QuickLaunchApplication {
     }
 
     fn persist_and_sync_quick_launch_behavior(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.config.save_to(&self.config_path) {
+        if let Err(error) = self.save_quick_launch_section() {
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
                     "quick-launch-context-settings",
@@ -728,7 +800,7 @@ impl QuickLaunchApplication {
 
     fn persist_and_sync_index_settings(&mut self, cx: &mut Context<Self>) {
         self.config.quick_launch.normalize();
-        if let Err(error) = self.config.save_to(&self.config_path) {
+        if let Err(error) = self.save_quick_launch_section() {
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
                     "quick-launch-index-settings",
@@ -985,7 +1057,7 @@ impl QuickLaunchApplication {
             PlatformNotification::Connected => {
                 let prepare_indexer = self.indexer_service_bootstrap.on_platform_connected();
                 self.send_configuration();
-                if prepare_indexer {
+                if prepare_indexer && should_manage_indexer_service() {
                     self.ensure_indexer_service(true, cx);
                 }
             }
@@ -1097,7 +1169,10 @@ impl QuickLaunchApplication {
             }
             PlatformEvent::QuickLaunchPanelRequested(request) => {
                 let age = nxtools_ipc::unix_time_ms().saturating_sub(request.requested_at_unix_ms);
-                if age <= REQUEST_MAX_AGE_MS && !self.hotkey_recording_active() {
+                if age <= REQUEST_MAX_AGE_MS
+                    && !self.hotkey_recording_active()
+                    && !self.is_process_excluded(&request.target.process_name)
+                {
                     self.toggle_panel(request, cx);
                 }
             }
@@ -1201,6 +1276,7 @@ impl QuickLaunchApplication {
                 }
             }
             PlatformEvent::TrayActionRequested(_)
+            | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::ClipboardCaptured(_)
             | PlatformEvent::ClipboardPanelRequested(_)
             | PlatformEvent::TaskbarOverlayEditGestureFinished(_) => {}
@@ -1235,7 +1311,7 @@ impl QuickLaunchApplication {
                 warn!(
                     %error,
                     target_window_handle = request.target.window_handle,
-                    source_directory = %request.source_directory,
+                    source_directory_present = !request.source_directory.is_empty(),
                     "could not queue automatic file-dialog directory switch"
                 );
             }
@@ -1629,7 +1705,7 @@ impl QuickLaunchApplication {
             };
             if result.success {
                 self.config.quick_launch.hotkey = hotkey;
-                if let Err(error) = self.config.save_to(&self.config_path) {
+                if let Err(error) = self.save_quick_launch_section() {
                     self.configuration_status = format!("热键已生效，但保存失败：{error}");
                     self.hotkey_error = Some(self.configuration_status.clone());
                 } else {
@@ -1894,6 +1970,7 @@ impl QuickLaunchApplication {
             enabled: settings.enabled,
             auto_quick_switch_enabled: settings.auto_quick_switch,
             file_dialog_search_enabled: settings.file_dialog_search,
+            suppress_in_exclusive_fullscreen: settings.suppress_in_exclusive_fullscreen,
             hotkey_modifiers: settings
                 .hotkey
                 .modifiers
@@ -1963,7 +2040,7 @@ impl QuickLaunchApplication {
                 RESULT_LIMIT,
             )
             .unwrap_or_else(|error| {
-                error!(%error, %query, "quick-launch unified search failed");
+                error!(%error, query_length = query.chars().count(), "quick-launch unified search failed");
                 Vec::new()
             })
     }
@@ -2839,7 +2916,7 @@ impl QuickLaunchApplication {
                     );
                 }
                 Err(error) => {
-                    warn!(%error, %resource_key, "could not request a quick-launch icon");
+                    warn!(%error, "could not request a quick-launch icon");
                     self.record_icon_failure(resource_key, cx);
                 }
             }
@@ -3033,11 +3110,11 @@ impl QuickLaunchApplication {
                     target_has_trailing_separator,
                     "quick-launch action accepted"
                 );
-                // Hide immediately after dispatch: waiting for the completion
-                // result made Enter feel slow on slow shell launches (measured
-                // 1-2s). The completion handler still records activation and
-                // shows errors — the panel just isn't visible for it.
-                if execute_session_id == self.popup_session_id {
+                // Copy actions keep the current nested action mode available for
+                // confirmation or retry; launch-like actions close on acceptance.
+                if execute_session_id == self.popup_session_id
+                    && action_success_policy(&action) != ActionSuccessPolicy::KeepOpen
+                {
                     self.hide_popup(cx);
                 }
                 self.pending_actions.insert(
@@ -3122,15 +3199,27 @@ impl QuickLaunchApplication {
         let captured_navigation_context = request.directory_navigation_context.clone();
         let (bounds, _) = quick_launch_bounds(&request, false, cx);
         let scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
+        let target_x = (bounds.origin.x.as_f32() * scale).round() as i32;
+        let target_y = (bounds.origin.y.as_f32() * scale).round() as i32;
+        let collapsed_width = (PANEL_WIDTH * scale).round() as i32;
+        let collapsed_height = (COLLAPSED_PANEL_HEIGHT * scale).round() as i32;
         let _ = self
             .platform
-            .send_command(PlatformCommand::SetWindowPosition(
-                SetWindowPositionCommand {
+            .send_command(PlatformCommand::SetWindowVisibility(
+                SetWindowVisibilityCommand {
                     window_handle: popup.native_window_handle,
-                    x: (bounds.origin.x.as_f32() * scale).round() as i32,
-                    y: (bounds.origin.y.as_f32() * scale).round() as i32,
+                    visible: false,
                 },
             ));
+        let _ =
+            self.platform
+                .send_command(PlatformCommand::SetWindowBounds(SetWindowBoundsCommand {
+                    window_handle: popup.native_window_handle,
+                    x: QUICK_LAUNCH_PANEL_STAGING_COORDINATE,
+                    y: QUICK_LAUNCH_PANEL_STAGING_COORDINATE,
+                    width: collapsed_width,
+                    height: collapsed_height,
+                }));
         let _ = self
             .platform
             .send_command(PlatformCommand::SetWindowVisibility(
@@ -3152,13 +3241,62 @@ impl QuickLaunchApplication {
                 );
             });
         });
-        self.begin_window_activation(popup.native_window_handle);
+        self.schedule_popup_reveal(popup.clone(), target_x, target_y, cx);
         self.schedule_captured_directory_record(captured_navigation_context.as_ref(), cx);
         info!(
             window_handle = popup.native_window_handle,
             "quick-launch popup reused"
         );
         self.request_catalog_refresh(cx);
+    }
+
+    fn schedule_popup_reveal(
+        &mut self,
+        popup: QuickLaunchWindow,
+        target_x: i32,
+        target_y: i32,
+        cx: &mut Context<Self>,
+    ) {
+        let application = cx.entity().downgrade();
+        let platform = Rc::clone(&self.platform);
+        let session_id = self.popup_session_id;
+        let window_handle = popup.native_window_handle;
+        let _ = popup.window.update(cx, |_, window, _| {
+            window.on_next_frame(move |_, app| {
+                let _ = application.update(app, |application, _cx| {
+                    if application.active_summon.is_none()
+                        || application.popup_session_id != session_id
+                        || application.popup.as_ref().is_none_or(
+                            |current| current.native_window_handle != window_handle,
+                        )
+                    {
+                        return;
+                    }
+                    if let Err(error) = platform.send_command(PlatformCommand::SetWindowPosition(
+                        SetWindowPositionCommand {
+                            window_handle,
+                            x: target_x,
+                            y: target_y,
+                        },
+                    )) {
+                        warn!(%error, window_handle, "failed to position quick-launch popup before reveal");
+                        return;
+                    }
+                    if let Err(error) = platform.send_command(PlatformCommand::SetWindowVisibility(
+                        SetWindowVisibilityCommand {
+                            window_handle,
+                            visible: true,
+                        },
+                    )) {
+                        warn!(%error, window_handle, "failed to reveal quick-launch popup after first frame");
+                        return;
+                    }
+                    application.begin_window_activation(window_handle);
+                    info!(event = "quick_launch.popup.revealed", window_handle, "quick-launch popup revealed after first frame");
+                });
+            });
+            window.refresh();
+        });
     }
 
     fn open_popup(&mut self, request: QuickLaunchPanelRequest, cx: &mut Context<Self>) {
@@ -3175,6 +3313,16 @@ impl QuickLaunchApplication {
             Vec::new()
         };
         let (bounds, display_id) = quick_launch_bounds(&request, false, cx);
+        let scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
+        let staged_bounds = Bounds::new(
+            point(
+                px(QUICK_LAUNCH_PANEL_STAGING_COORDINATE as f32 / scale),
+                px(QUICK_LAUNCH_PANEL_STAGING_COORDINATE as f32 / scale),
+            ),
+            bounds.size,
+        );
+        let staged_device_bounds = staged_bounds.to_device_pixels(scale);
+        let platform = Rc::clone(&self.platform);
         let application = cx.entity().downgrade();
         let target = request.target;
         let navigation_context = request.directory_navigation_context;
@@ -3185,10 +3333,10 @@ impl QuickLaunchApplication {
         let opened_native_slot = Rc::clone(&native_slot);
         let opened = cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_bounds: Some(WindowBounds::Windowed(staged_bounds)),
                 titlebar: None,
                 focus: false,
-                show: true,
+                show: false,
                 kind: WindowKind::PopUp,
                 is_movable: false,
                 is_resizable: false,
@@ -3202,6 +3350,24 @@ impl QuickLaunchApplication {
             },
             move |window, cx| {
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
+                let native_handle = *opened_native_slot.borrow();
+                if native_handle != 0 {
+                    let _ = platform.send_command(PlatformCommand::SetWindowBounds(
+                        SetWindowBoundsCommand {
+                            window_handle: native_handle,
+                            x: staged_device_bounds.origin.x.into(),
+                            y: staged_device_bounds.origin.y.into(),
+                            width: staged_device_bounds.size.width.into(),
+                            height: staged_device_bounds.size.height.into(),
+                        },
+                    ));
+                    let _ = platform.send_command(PlatformCommand::SetWindowVisibility(
+                        SetWindowVisibilityCommand {
+                            window_handle: native_handle,
+                            visible: true,
+                        },
+                    ));
+                }
                 let panel = cx.new(|cx| {
                     QuickLaunchPanel::new(
                         results,
@@ -3228,9 +3394,11 @@ impl QuickLaunchApplication {
                     panel,
                     native_window_handle: *native_slot.borrow(),
                 };
-                let native_window_handle = popup.native_window_handle;
-                self.popup = Some(popup);
-                self.begin_window_activation(native_window_handle);
+                let target_scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
+                let target_x = (bounds.origin.x.as_f32() * target_scale).round() as i32;
+                let target_y = (bounds.origin.y.as_f32() * target_scale).round() as i32;
+                self.popup = Some(popup.clone());
+                self.schedule_popup_reveal(popup, target_x, target_y, cx);
                 self.schedule_captured_directory_record(captured_navigation_context.as_ref(), cx);
                 self.request_catalog_refresh(cx);
                 info!("quick-launch popup opened");
@@ -3334,9 +3502,10 @@ impl QuickLaunchApplication {
         let Some(popup) = self.popup.clone() else {
             return;
         };
-        let _ = popup.panel.update(cx, |panel, cx| {
-            panel.is_open = false;
-            cx.notify();
+        let _ = popup.window.update(cx, |_, window, app| {
+            let _ = popup.panel.update(app, |panel, cx| {
+                panel.prepare_for_hide(window, cx);
+            });
         });
         info!(
             event = "quick_launch.popup.hide_requested",
@@ -3485,5 +3654,7 @@ fn apply_indexer_notification(
         }
     }
 }
+#[cfg(test)]
+mod polish_tests;
 #[cfg(test)]
 mod tests;

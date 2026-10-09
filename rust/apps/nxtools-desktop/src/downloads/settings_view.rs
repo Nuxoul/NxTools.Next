@@ -887,7 +887,7 @@ impl Render for DownloadSettingsView {
             .w(px(286.0))
             .flex()
             .items_center()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .child(download_settings_input(
                 theme,
                 "download-settings-default-directory-field",
@@ -1037,7 +1037,7 @@ impl Render for DownloadSettingsView {
                 div()
                     .debug_selector(|| "download-settings-category-add".into())
                     .w_full()
-                    .p(px(SPACING_6))
+                    .p(px(SPACING_8))
                     .border_t_1()
                     .border_color(theme.border_subtle)
                     .child(
@@ -1407,7 +1407,7 @@ impl Render for DownloadSettingsView {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .child(
                 div().flex_1().min_w_0().child(field_shell(
                     theme,
@@ -1488,7 +1488,7 @@ impl Render for DownloadSettingsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .child(
                 div()
                     .debug_selector(|| "download-settings-ffmpeg-install".into())
@@ -1539,7 +1539,7 @@ impl Render for DownloadSettingsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(SPACING_6))
+            .gap(px(SPACING_8))
             .child(
                 div()
                     .debug_selector(|| "download-settings-ffmpeg-gyan".into())
@@ -1917,18 +1917,18 @@ impl Render for DownloadSettingsView {
                                             "导出 Chrome / Edge (.crx)",
                                         )
                                         .on_click(cx.listener(|this, _, _, cx| {
-                                            let outcome = this.application.update(
-                                                cx,
-                                                |application, _| {
-                                                    application
-                                                        .request_browser_extension_export("chrome")
-                                                },
-                                            );
-                                            this.browser_extension_export_status =
-                                                Some(match outcome {
-                                                    Ok(()) => "正在导出 Chrome / Edge 扩展…".into(),
-                                                    Err(error) => format!("导出失败:{error}"),
-                                                });
+                                            this.browser_extension_export_status = Some("正在导出 Chrome / Edge 扩展…".into());
+                                            let application = this.application.clone();
+                                            let view = cx.entity().downgrade();
+                                            cx.defer(move |cx| {
+                                                let outcome = application.update(cx, |application, _| application.request_browser_extension_export("chrome"));
+                                                if let Err(error) = outcome {
+                                                    let _ = view.update(cx, |view, cx| {
+                                                        view.browser_extension_export_status = Some(format!("导出失败:{error}"));
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            });
                                             cx.notify();
                                         })),
                                     )
@@ -1938,18 +1938,18 @@ impl Render for DownloadSettingsView {
                                             "导出 Firefox (.xpi)",
                                         )
                                         .on_click(cx.listener(|this, _, _, cx| {
-                                            let outcome = this.application.update(
-                                                cx,
-                                                |application, _| {
-                                                    application
-                                                        .request_browser_extension_export("firefox")
-                                                },
-                                            );
-                                            this.browser_extension_export_status =
-                                                Some(match outcome {
-                                                    Ok(()) => "正在导出 Firefox 扩展…".into(),
-                                                    Err(error) => format!("导出失败:{error}"),
-                                                });
+                                            this.browser_extension_export_status = Some("正在导出 Firefox 扩展…".into());
+                                            let application = this.application.clone();
+                                            let view = cx.entity().downgrade();
+                                            cx.defer(move |cx| {
+                                                let outcome = application.update(cx, |application, _| application.request_browser_extension_export("firefox"));
+                                                if let Err(error) = outcome {
+                                                    let _ = view.update(cx, |view, cx| {
+                                                        view.browser_extension_export_status = Some(format!("导出失败:{error}"));
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            });
                                             cx.notify();
                                         })),
                                     ),
@@ -2741,7 +2741,7 @@ pub(crate) fn download_settings_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_2))
+                .gap(px(SPACING_4))
                 .child(
                     div()
                         .debug_selector(move || format!("download-settings-row-{title}-title"))
@@ -2775,12 +2775,12 @@ pub(crate) fn download_settings_stacked_row(
         .w_full()
         .min_h(px(72.0))
         .px(px(SPACING_8))
-        .py(px(SPACING_6))
+        .py(px(SPACING_4))
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .flex_col()
-        .gap(px(SPACING_6))
+        .gap(px(SPACING_8))
         .child(
             div()
                 .flex()
@@ -2937,30 +2937,32 @@ pub(crate) fn download_settings_navigation_item(
     selected: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    div()
-        .id(id)
+    let content = div()
+        .id(gpui::SharedString::from(format!("{id}-visual")))
         .debug_selector(move || selector.into())
         .mx(px(SPACING_8))
         .min_h(px(48.0))
         .px(px(SPACING_8))
-        .py(px(SPACING_6))
+        .py(px(SPACING_4))
         .rounded(px(RADIUS_CONTROL))
-        .border_1()
+        .border_l_2()
         .border_color(if selected {
-            theme.border_active
+            theme.accent
         } else {
-            theme.surface
+            gpui::rgba(0x00000000)
         })
         .bg(if selected {
             theme.element_selected
         } else {
             theme.surface
         })
+        .hover(move |style| style.bg(theme.surface_hover))
+        .active(move |style| style.bg(theme.surface_pressed))
         .cursor_pointer()
         .flex()
         .flex_col()
         .justify_center()
-        .gap(px(SPACING_2))
+        .gap(px(SPACING_4))
         .child(
             div()
                 .debug_selector(move || format!("{selector}-title"))
@@ -2986,6 +2988,6 @@ pub(crate) fn download_settings_navigation_item(
                 .text_color(theme.text_muted)
                 .child(description),
         )
-        .on_click(on_click)
-        .into_any_element()
+        .into_any_element();
+    crate::ui::components::action::focusable_content(id, theme, false, content, on_click)
 }

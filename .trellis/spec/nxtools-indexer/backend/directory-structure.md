@@ -1,54 +1,5 @@
-# Directory Structure
+# Indexer structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/apps/nxtools-indexer/src/main.rs`, `repo:rust/apps/nxtools-indexer/src/lib.rs`, `repo:rust/apps/nxtools-indexer/src/mft.rs`, `repo:rust/apps/nxtools-indexer/src/usn.rs`, `repo:rust/apps/nxtools-indexer/src/windows_service_host.rs`, `repo:rust/apps/nxtools-indexer/src/elevated_helper_broker.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+lib orchestrates snapshot/search workers and maintenance; mft/cache owns scan/map/base+overlay, usn incremental journal, settings last-good durable scope, service host pipe admission and SCM lifecycle, broker protected native helper authorization. Rust owns raw-volume index, C# owns deployment/Windows UI helpers; no GPUI. Query generations/cancellation and bounded candidate/materialization are explicit; never move full scanning into desktop query callback. [Architecture](../../shared/architecture.md).

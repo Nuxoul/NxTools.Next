@@ -20,6 +20,12 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
+            ("system motion synthetic reader and wire round trip", SystemMotionPreferenceTests.SyntheticReaderChangeDedupAndWireRoundTrip),
+            ("owned GPUI fixed compact to confirmation transition", GpuiFixedTransitionTests.OwnedGpuiFixedTransition),
+            ("owned GPUI new fixed confirmation placement", GpuiFixedTransitionTests.OwnedGpuiFixedPresentation),
+            ("fixed presentation synthetic cancel and final client", FixedPresentationTests.FixedOneShotPreservesAnchorAndCancel),
+            ("owned GPUI production probe fixed presentation", GpuiFixedTransitionTests.OwnedProductionProbePresentation),
+            ("owned GPUI task completion preserves native center", GpuiFixedTransitionTests.OwnedTaskCompletionPreservesCenter),
             ("command result preserves native error code", CommandResultPreservesNativeErrorCode),
             ("parser exceptions produce correlated failure results", ParserExceptionsProduceCorrelatedFailureResults),
             ("detached sync commands schedule before invocation", DetachedSyncCommandsScheduleBeforeInvocation),
@@ -34,7 +40,13 @@ internal static class Program
             ("clipboard configuration preserves hotkey, exclusions and capture limits", ClipboardConfigurationRoundTrips),
             ("clipboard capture limits clamp sizes without payload data", ClipboardCaptureLimitsClampAndReject),
             ("quick-launch configuration and panel request preserve Windows context", QuickLaunchContractsRoundTrip),
+            ("Quick Launch diagnostics keep published correlations and rate-limit failures", QuickLaunchSummonDiagnosticsKeepPublishedCorrelationAndRateLimitFailures),
+            ("Quick Launch suppresses both triggers only during exclusive D3D fullscreen", QuickLaunchFullscreenSuppressionIsPrecise),
+            ("Quick Launch WndProc routes both native summon sources through the fullscreen gate", QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate),
             ("auto quick switch only consumes an Explorer source after a dialog is known", AutoQuickSwitchRequiresKnownDialog),
+            ("auto quick switch refreshes a changed Directory Opus source path for the same dialog", AutoQuickSwitchRefreshesChangedDirectoryOpusSource),
+            ("Directory Opus dialog return refreshes the current path of an existing tab", DirectoryOpusDialogReturnRefreshesExistingTabPath),
+            ("Directory Opus existing-tab selection refreshes the tracked source after navigation", DirectoryOpusExistingTabSelectionRefreshesTrackedSource),
             ("auto quick switch invalidates stale asynchronous candidates", AutoQuickSwitchInvalidatesStaleCandidates),
             ("auto quick switch accepts supported third-party directory sources", AutoQuickSwitchAcceptsThirdPartySources),
             ("fixed file-dialog search retains directory sources without automatic switching", FileDialogSearchRetainsSourcesWithoutAutoSwitch),
@@ -43,6 +55,7 @@ internal static class Program
             ("file-dialog child creation immediately re-arms pending recognition", FileDialogStructureChangeRearmsPendingRecognition),
             ("file-dialog movement ignores children and coalesces root geometry", FileDialogMovementCoalescesRootGeometry),
             ("visible file-dialog foreground repeats reuse the recognized host", VisibleFileDialogForegroundRepeatsReuseRecognizedHost),
+            ("visible dialog reuse still observes a returning DOpus source", VisibleDialogReuseObservesReturningDirectoryOpusSource),
             ("elevated directory helper request preserves its opaque rendezvous", ElevatedDirectoryHelperRequestRoundTrips),
             ("deferred directory capture expires with its summon budget", DeferredDirectoryCaptureExpires),
             ("directory navigation resolves library URIs and preserves nested path metadata", DirectoryNavigationTargetResolvesLibraryAndNestedPaths),
@@ -51,10 +64,10 @@ internal static class Program
             ("file-dialog navigation keeps the captured host window", FileDialogNavigationKeepsCapturedWindow),
             ("third-party file manager navigation keeps the captured host and active pane", ThirdPartyFileManagerNavigationKeepsCapturedHost),
             ("Directory Opus adapter requires the real lister and preserves the active pane", DirectoryOpusAdapterPreservesActivePane),
+            ("Directory Opus source refresh accepts tracked lister name and focus events", DirectoryOpusSourceRefreshRequiresTrackedListerNameChange),
             ("Directory Opus frame focus keeps captured pane navigable", DirectoryOpusFrameFocusKeepsCapturedPaneNavigable),
             ("Directory Opus pane selection uses title and geometry before cached pane", DirectoryOpusPaneSelectionUsesReferenceEvidence),
             ("Directory source recognition failure clears stale source", DirectorySourceRecognitionFailureClearsStaleSource),
-            ("Directory source recognition survives return to a known file dialog", DirectorySourceRecognitionSurvivesReturnToKnownFileDialog),
             ("pending directory source recognition is bounded and superseded safely", PendingDirectorySourceRecognitionIsBoundedAndSuperseded),
             ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
             ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
@@ -64,6 +77,8 @@ internal static class Program
             ("Files identity matches the Listary process and UIA root contract", FilesIdentityMatchesListaryContract),
             ("Files adapter requires its real window and confirms navigation on the captured host", FilesAdapterPreservesCapturedWindow),
             ("Files navigation succeeds only after its path control confirms the target", FilesNavigationRequiresReadback),
+            ("bounded STA completion signal contains callback failures", BoundedStaCompletionSignalContainsCallbackFailures),
+            ("bounded STA operations release completion wait handles", BoundedStaOperationsReleaseCompletionWaitHandles),
             ("bounded STA operations cancel before a stalled provider can perform late work", BoundedStaOperationsCancelLateWork),
             ("canceled STA dialog drops its late result", CanceledStaDialogDropsLateResult),
             ("canceled detached drain does not block reconnect", CanceledDetachedDrainDoesNotBlockReconnect),
@@ -80,9 +95,12 @@ internal static class Program
             ("file-dialog recognition rejects unrelated #32770 windows", FileDialogRecognitionUsesStructuralMarkers),
             ("file-dialog navigation writes a directory and restores its edit focus", FileDialogNavigationUsesCapturedControls),
             ("modern file-dialog navigation uses its address edit without replacing the file name", ModernFileDialogNavigationUsesAddressEdit),
-            ("file-dialog search submits a selected file through the captured dialog", FileDialogSearchSubmitsSelectedFile),
             ("file-dialog hotkey capture normalizes paths without filesystem access", FileDialogPathCaptureAvoidsFilesystemValidation),
             ("real Explorer Shell window resolves its exact HWND and self-navigates", RealExplorerShellWindowResolvesExactHwnd),
+            ("Explorer activation selects files despite an existing matching folder window", ExplorerActivationSelectsFileInExistingFolder),
+            ("Explorer activation opens existing directories directly", ExplorerActivationOpensExistingDirectoryDirectly),
+            ("Explorer activation rejects a window destroyed before foreground readback", ExplorerActivationRejectsDestroyedWindow),
+            ("Explorer activation rejects unrelated foreground and denied activation", ExplorerActivationRejectsUnrelatedForeground),
             ("double-control gesture requires two released taps inside the activation window", DoubleControlGestureRequiresTwoReleasedTaps),
             ("double-control gesture rejects key repeat and intervening keys", DoubleControlGestureRejectsRepeatAndInterveningKeys),
             ("hotkey recording releases and restores the registered shortcut", HotKeyRecordingReleasesAndRestoresShortcut),
@@ -93,7 +111,19 @@ internal static class Program
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
             ("centered rectangle preserves the anchor visual center", CenteredRectanglePreservesAnchorCenter),
-            ("reconnect failure logging is rate limited", ReconnectFailureLoggingIsRateLimited),
+            ("centered native resize follows the HWND after a user move", CenteredNativeResizeUsesMovedWindowBounds),
+            ("centered resize reapplies after move end using the latest HWND center", CenteredResizeReappliesAfterNativeMoveEnd),
+            ("centered resize parks client correction during a native move", CenteredResizeParksClientCorrectionDuringMove),
+            ("centered resize checks client after position correction", CenteredResizeChecksClientAfterPositionCorrection),
+            ("centered replay rechecks client size at retirement", CenteredResizeRechecksAtRetirement),
+            ("client resize synchronization never publishes stale queued size", ClientResizeSynchronizationUsesLiveClient),
+            ("client resize synchronization retains parameters until delayed receiver returns", ClientResizeSynchronizationRetainsParameters),
+            ("old centered replay cannot retire or overwrite a newer request", CenteredResizeGenerationSurvivesReplay),
+            ("centered worker admission remains bounded and preserves HWND order", CenteredResizeWorkerIsBounded),
+            ("recovery ignores stale generation completion", CenteredResizeRecoveryIgnoresStaleCompletion),
+            ("browser registration compensates every partial store failure", BrowserRegistrationCompensatesPartialFailure),
+            ("native drag cancel has a non-error terminal result", NativeDragCancellationHasTerminalStatus),
+            ("delayed native HWND accepts newer resize without blocking", CenteredResizeDelayedHwndRemainsResponsive),
             ("taskbar progress command preserves native window and aggregate progress", TaskbarProgressCommandPreservesPayload),
             ("taskbar overlay placement preserves anchor and logical offsets", TaskbarOverlayPlacementPreservesPayload),
             ("taskbar overlay visibility preserves its native target", TaskbarOverlayVisibilityPreservesPayload),
@@ -115,6 +145,7 @@ internal static class Program
             ("desktop shell and tray contracts preserve bounded intent", DesktopShellAndTrayContractsRoundTrip),
             ("startup registration and tray actions use real Windows boundaries", DesktopShellUsesRealWindowsBoundaries),
             ("startup registration resolves the current desktop release path", StartupRegistrationResolvesCurrentDesktopPath),
+            ("desktop shell failures return bounded stage codes", DesktopShellFailuresReturnBoundedStageCodes),
             ("desktop tray rejects a missing product executable icon", DesktopTrayRequiresProductIcon),
             ("tray factory failure disposes partially created resources", TrayFactoryFailureDisposesPartialResources),
             ("titlebar move reaches the real native window boundary", TitlebarMoveUsesRealNativeWindow),
@@ -338,6 +369,129 @@ internal static class Program
             "platform_command",
             new { Command = "paste_text" });
         Assert(PlatformPipeClient.ResolveDiagnosticCorrelationId(uncorrelated) == uncorrelated.Id);
+        return Task.CompletedTask;
+    }
+
+    private static Task QuickLaunchFullscreenSuppressionIsPrecise()
+    {
+        foreach (var trigger in new[]
+        {
+            QuickLaunchSummonTrigger.HotKey,
+            QuickLaunchSummonTrigger.DoubleControl
+        })
+        {
+            var queries = 0;
+            var publications = 0;
+            var decision = QuickLaunchSummonGate.Dispatch(
+                triggerEnabled: true,
+                suppressInExclusiveFullscreen: true,
+                trigger: trigger,
+                queryFullscreenState: () =>
+                {
+                    queries++;
+                    return new FullscreenNotificationStateResult(true, 3, 0);
+                },
+                publish: _ => publications++);
+
+            Assert(decision.Suppressed);
+            Assert(decision.Trigger == trigger);
+            Assert(queries == 1);
+            Assert(publications == 0);
+
+            decision = QuickLaunchSummonGate.Dispatch(
+                triggerEnabled: true,
+                suppressInExclusiveFullscreen: true,
+                trigger: trigger,
+                queryFullscreenState: () => new FullscreenNotificationStateResult(true, 2, 0),
+                publish: _ => publications++);
+            Assert(!decision.Suppressed);
+            var borderlessOrWindowed = QuickLaunchSummonGate.Dispatch(
+                triggerEnabled: true,
+                suppressInExclusiveFullscreen: true,
+                trigger: trigger,
+                queryFullscreenState: () => new FullscreenNotificationStateResult(true, 1, 0),
+                publish: _ => publications++);
+            Assert(!borderlessOrWindowed.Suppressed);
+            Assert(publications == 2);
+
+            decision = QuickLaunchSummonGate.Dispatch(
+                triggerEnabled: true,
+                suppressInExclusiveFullscreen: true,
+                trigger: trigger,
+                queryFullscreenState: () => FullscreenNotificationStateResult.Failure(unchecked((int)0x80004001)),
+                publish: _ => publications++);
+            Assert(!decision.Suppressed);
+            Assert(decision.QueryHresult == unchecked((int)0x80004001));
+            Assert(!decision.Suppressed);
+            Assert(decision.QueryHresult == unchecked((int)0x80004001));
+            Assert(publications == 3);
+
+            queries = 0;
+            decision = QuickLaunchSummonGate.Dispatch(
+                triggerEnabled: true,
+                suppressInExclusiveFullscreen: false,
+                trigger: trigger,
+                queryFullscreenState: () =>
+                {
+                    queries++;
+                    return new FullscreenNotificationStateResult(true, 3, 0);
+                },
+                publish: _ => publications++);
+            Assert(!decision.Suppressed);
+            Assert(queries == 0);
+            Assert(publications == 4);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task QuickLaunchSummonDiagnosticsKeepPublishedCorrelationAndRateLimitFailures()
+    {
+        var diagnosticGate = new QuickLaunchSummonDiagnosticGate();
+        var success = new QuickLaunchSummonDecision(
+            Guid.NewGuid(),
+            QuickLaunchSummonTrigger.HotKey,
+            true,
+            false,
+            true,
+            true,
+            2,
+            null,
+            0.1);
+        Assert(diagnosticGate.TryAcquire(success, out _));
+        Assert(diagnosticGate.TryAcquire(success with { CorrelationId = Guid.NewGuid() }, out _));
+
+        var failure = success with
+        {
+            CorrelationId = Guid.NewGuid(),
+            Published = true,
+            QueryHresult = unchecked((int)0x80004001)
+        };
+        Assert(diagnosticGate.TryAcquire(failure, out _));
+        Assert(!diagnosticGate.TryAcquire(failure with { CorrelationId = Guid.NewGuid() }, out _));
+        return Task.CompletedTask;
+    }
+
+    private static Task QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "csharp",
+            "NxTools.PlatformHost",
+            "Windows",
+            "WindowsPlatformAdapter.EventWindow.cs"));
+        Assert(source.Contains(
+            "case WmHotKey when message.WParam.ToInt32() == QuickLaunchHotKeyId:\r\n                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.HotKey);",
+            StringComparison.Ordinal));
+        Assert(source.Contains(
+            "case WmQuickLaunchGesture:\r\n                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.DoubleControl);",
+            StringComparison.Ordinal));
+        Assert(source.Contains(
+            "var decision = QuickLaunchSummonGate.Dispatch(",
+            StringComparison.Ordinal));
+        Assert(source.Contains(
+            "correlationId => PublishQuickLaunchPanelRequestCore(correlationId)",
+            StringComparison.Ordinal));
         return Task.CompletedTask;
     }
 
@@ -1230,21 +1384,45 @@ internal static class Program
                 HotkeyKey = "Control",
                 HotkeyDisplay = "双击 Ctrl",
                 AutoQuickSwitchEnabled = true,
-                FileDialogSearchEnabled = true
+                FileDialogSearchEnabled = true,
+                SuppressInExclusiveFullscreen = true,
             }
         });
         var configuration = PlatformCommandParser.ParseConfigureQuickLaunch(configurationEnvelope);
         Assert(configuration.Enabled);
         Assert(configuration.AutoQuickSwitchEnabled);
         Assert(configuration.FileDialogSearchEnabled);
+        Assert(configuration.SuppressInExclusiveFullscreen);
         Assert(QuickLaunchTriggerBinding.TryCreate(configuration, out var binding, out _));
         Assert(binding.Kind == QuickLaunchTriggerKind.DoubleControl);
 
+        var legacyConfigurationEnvelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "configure_quick_launch",
+            Data = new
+            {
+                Enabled = true,
+                HotkeyModifiers = Array.Empty<string>(),
+                HotkeyKey = "Control",
+                HotkeyDisplay = "双击 Ctrl"
+            }
+        });
+        var legacyConfiguration = PlatformCommandParser.ParseConfigureQuickLaunch(legacyConfigurationEnvelope);
+        Assert(legacyConfiguration.SuppressInExclusiveFullscreen);
+        Assert(legacyConfiguration.AutoQuickSwitchEnabled);
+        Assert(legacyConfiguration.FileDialogSearchEnabled);
+
+        var summonCorrelationId = Guid.NewGuid();
         var eventEnvelope = PlatformEventEnvelopeFactory.Create(
             new QuickLaunchPanelRequestedEvent(
                 new ForegroundContext(88, 89, 9, "editor", "draft.md"),
                 1200, 700, 1, 144, 1_700_000_000_500,
-                new DirectoryNavigationContext("explorer", 88, @"C:\Work")));
+                new DirectoryNavigationContext("explorer", 88, @"C:\Work"),
+                summonCorrelationId));
+        Assert(eventEnvelope.CorrelationId == summonCorrelationId);
+        var eventData = eventEnvelope.Payload.GetProperty("data");
+        Assert(eventData.GetProperty("correlation_id").GetGuid() == summonCorrelationId);
+        Assert(eventData.GetProperty("requested_at_unix_ms").GetInt64() == 1_700_000_000_500);
         var json = JsonSerializer.Serialize(eventEnvelope, JsonDefaults.Options);
         Assert(json.Contains("\"event\":\"quick_launch_panel_requested\"", StringComparison.Ordinal));
         Assert(json.Contains("\"window_handle\":88", StringComparison.Ordinal));
@@ -1566,6 +1744,55 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task VisibleDialogReuseObservesReturningDirectoryOpusSource()
+    {
+        var snapshot = new FileDialogSearchHostSnapshot(
+            77,
+            @"D:\Workspace",
+            100,
+            100,
+            900,
+            600,
+            96);
+
+        Assert(FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+            autoQuickSwitchEnabled: true,
+            searchEnabled: true,
+            hostVisible: true,
+            snapshot,
+            foregroundWindowHandle: 77,
+            trackedSourceIsDirectoryOpus: true));
+        Assert(!FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+            autoQuickSwitchEnabled: false,
+            searchEnabled: true,
+            hostVisible: true,
+            snapshot,
+            foregroundWindowHandle: 77,
+            trackedSourceIsDirectoryOpus: true));
+        Assert(!FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+            autoQuickSwitchEnabled: true,
+            searchEnabled: true,
+            hostVisible: true,
+            snapshot,
+            foregroundWindowHandle: 88,
+            trackedSourceIsDirectoryOpus: true));
+        Assert(!FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+            autoQuickSwitchEnabled: true,
+            searchEnabled: true,
+            hostVisible: true,
+            snapshot,
+            foregroundWindowHandle: 77,
+            trackedSourceIsDirectoryOpus: false));
+        Assert(!FileDialogSearchHost.ShouldRefreshDirectorySourceOnReuse(
+            autoQuickSwitchEnabled: true,
+            searchEnabled: false,
+            hostVisible: false,
+            snapshot,
+            foregroundWindowHandle: 77,
+            trackedSourceIsDirectoryOpus: true));
+        return Task.CompletedTask;
+    }
+
     private static Task FileDialogSearchHostPreservesPlacement()
     {
         var envelope = ProtocolEnvelope.Create("platform_command", new
@@ -1788,7 +2015,6 @@ internal static class Program
             Assert(directoryOpus.LastNavigatedDirectory == directory.FullName);
             Assert(directoryOpus.LastActivatedWindowHandle == 88);
             Assert(registry.SessionCount == 1);
-
             var navigationOwnedAdapter =
                 new FakeThirdPartyFileManagerOperations(
                     "directory_opus",
@@ -1940,6 +2166,59 @@ internal static class Program
         Assert(native.LastActivatedWindowHandle == 88);
         return Task.CompletedTask;
     }
+    private static Task DirectoryOpusRefreshUsesCapturedSession()
+    {
+        var directory = Directory.CreateTempSubdirectory("nxtools-dopus-refresh-");
+        try
+        {
+            var native = new FakeThirdPartyFileManagerOperations(
+                "Directory Opus", 88, @"D:\OldTab");
+            var registry = new ThirdPartyFileManagerSessionRegistry([native]);
+            var foreground = new ForegroundContext(88, 89, 9, "dopus", "Old tab");
+            var initial = registry.TryCapture(foreground).Context ??
+                throw new InvalidOperationException("Initial DOpus session capture failed.");
+
+            native.CurrentDirectory = @"D:\NewTab";
+            var refreshed = registry.TryRefreshDirectoryOpusSource(
+                    88,
+                    initial.HostContextId,
+                    foreground with { WindowTitle = "New tab" }) ??
+                throw new InvalidOperationException("The existing DOpus session was not refreshed.");
+            Assert(refreshed.WindowHandle == initial.WindowHandle);
+            Assert(refreshed.HostContextId == initial.HostContextId);
+            Assert(refreshed.CurrentDirectory == @"D:\NewTab");
+            Assert(native.NavigateCount == 0);
+            Assert(registry.IsDirectoryOpusSource(
+                initial.WindowHandle,
+                initial.HostContextId));
+            Assert(!registry.IsDirectoryOpusSource(99, initial.HostContextId));
+            var otherRegistry = new ThirdPartyFileManagerSessionRegistry(
+                [new FakeThirdPartyFileManagerOperations("Total Commander", 89, @"E:\Other")]);
+            var otherContext = otherRegistry.TryCapture(
+                new ForegroundContext(89, 89, 9, "totalcmd", "Other"))
+                .Context ?? throw new InvalidOperationException("Other file manager session capture failed.");
+            Assert(!otherRegistry.IsDirectoryOpusSource(
+                otherContext.WindowHandle,
+                otherContext.HostContextId));
+            var navigation = registry.Navigate(
+                new NavigateThirdPartyFileManagerCommand(
+                    refreshed.WindowHandle,
+                    directory.FullName,
+                    refreshed.HostContextId),
+                Directory.Exists);
+            Assert(navigation.Success);
+            Assert(native.LastPaneState == 2);
+            Assert(registry.TryRefreshDirectoryOpusSource(
+                99,
+                refreshed.HostContextId,
+                foreground with { WindowHandle = 99 }) is null);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+        return Task.CompletedTask;
+    }
     private static Task DirectoryOpusFrameFocusKeepsCapturedPaneNavigable()
     {
         var native = new FakeDirectoryOpusWindowOperations
@@ -1986,6 +2265,308 @@ internal static class Program
             new DirectoryOpusPanePoint(450, 100),
             rememberedWindowHandle: 90);
         Assert(geometrySelected == 91);
+        return Task.CompletedTask;
+    }
+
+    private static Task DirectoryOpusDialogReturnRefreshesExistingTabPath()
+    {
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(autoSwitchEnabled: true, trackSources: true);
+        var dialog = new DirectoryNavigationContext(
+            DirectoryNavigationAdapter.FileDialogHost,
+            77,
+            @"C:\Dialog");
+        var native = new FakeThirdPartyFileManagerOperations(
+            "Directory Opus", 88, @"D:\OldTab");
+        var sessions = new ThirdPartyFileManagerSessionRegistry([native]);
+        var foreground = new ForegroundContext(88, 89, 9, "dopus", "Directory Opus");
+        var capturedSource = sessions.TryCapture(foreground).Context ??
+            throw new InvalidOperationException("The initial DOpus session capture failed.");
+
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        tracker.ObserveDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                capturedSource.WindowHandle,
+                capturedSource.CurrentDirectory,
+                capturedSource.HostContextId),
+            "Old tab (Directory Opus)");
+        var initial = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("The initial source should be consumed.");
+        Assert(initial.Source.CurrentDirectory == @"D:\OldTab");
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        Assert(!tracker.HasPendingDirectorySourceForWindow(88));
+
+        native.CurrentDirectory = @"D:\ExistingTab";
+        var switched = DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog,
+            source => sessions.IsDirectoryOpusSource(
+                source.Context.WindowHandle,
+                source.Context.HostContextId),
+            source =>
+            {
+                var refreshed = sessions.TryRefreshDirectoryOpusSource(
+                    source.Context.WindowHandle,
+                    source.Context.HostContextId,
+                    foreground);
+                if (refreshed is null)
+                {
+                    return false;
+                }
+                _ = tracker.RefreshDirectorySource(
+                    source.Context with
+                    {
+                        CurrentDirectory = refreshed.CurrentDirectory,
+                        HostContextId = refreshed.HostContextId
+                    },
+                    "Existing tab (Directory Opus)");
+                return true;
+            }) ?? throw new InvalidOperationException(
+                "Returning to a known dialog after an existing-tab switch should sync once.");
+        Assert(switched.Source.CurrentDirectory == @"D:\ExistingTab");
+        Assert(switched.Source.HostContextId == capturedSource.HostContextId);
+        Assert(native.NavigateCount == 0);
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+
+        var unchanged = DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog,
+            source => sessions.IsDirectoryOpusSource(
+                source.Context.WindowHandle,
+                source.Context.HostContextId),
+            source =>
+            {
+                var refreshed = sessions.TryRefreshDirectoryOpusSource(
+                    source.Context.WindowHandle,
+                    source.Context.HostContextId,
+                    foreground);
+                if (refreshed is null)
+                {
+                    return false;
+                }
+                _ = tracker.RefreshDirectorySource(
+                    source.Context with { CurrentDirectory = refreshed.CurrentDirectory },
+                    "Existing tab (Directory Opus)");
+                return true;
+            });
+        Assert(unchanged is null);
+
+        _ = tracker.RefreshDirectorySource(
+            tracker.LatestSource!.Context with { CurrentDirectory = @"D:\PendingOldPath" },
+            "Pending (Directory Opus)");
+        var failedRefresh = DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog,
+            _ => true,
+            _ => false);
+        Assert(failedRefresh is null);
+        Assert(!tracker.HasPendingDirectorySourceForWindow(88));
+        Assert(DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog with { WindowHandle = 78 },
+            _ => throw new InvalidOperationException("A new dialog must not refresh the source."),
+            _ => throw new InvalidOperationException("A new dialog must not refresh the source.")) is null);
+        return Task.CompletedTask;
+    }
+
+    private static Task AutoQuickSwitchRefreshesChangedDirectoryOpusSource()
+    {
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(enabled: true);
+        var dialog = new DirectoryNavigationContext("file_dialog", 77, @"C:\Dialog");
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+
+        tracker.ObserveDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                88,
+                @"D:\OldTab",
+                "dopus:old-session"),
+            "Old tab (Directory Opus)");
+        var initial = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("The first source should sync once.");
+        Assert(initial.Source.CurrentDirectory == @"D:\OldTab");
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+
+        Assert(tracker.RefreshDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                88,
+                @"D:\NewTab",
+                "dopus:new-session"),
+            "New tab (Directory Opus)"));
+        var refreshed = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("A changed source path should produce one new sync.");
+        Assert(refreshed.SourceWindowHandle == 88);
+        Assert(refreshed.Source.CurrentDirectory == @"D:\NewTab");
+        Assert(refreshed.Source.HostContextId == "dopus:new-session");
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+
+        Assert(!tracker.RefreshDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                88,
+                @"D:\NewTab",
+                "dopus:latest-session"),
+            "New tab (Directory Opus)"));
+        Assert(!tracker.RefreshDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                99,
+                @"E:\Unrelated",
+                "dopus:unrelated-session"),
+            "Unrelated (Directory Opus)"));
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        return Task.CompletedTask;
+    }
+
+
+    private static Task DirectoryOpusExistingTabSelectionRefreshesTrackedSource()
+    {
+        const uint eventObjectFocus = 0x8005;
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(autoSwitchEnabled: true, trackSources: true);
+        var dialog = new DirectoryNavigationContext(
+            DirectoryNavigationAdapter.FileDialogHost,
+            77,
+            @"C:\Dialog");
+        var native = new FakeThirdPartyFileManagerOperations(
+            "Directory Opus", 88, @"D:\OldTab")
+        {
+            RequiresPostNavigationActivation = false
+        };
+        var sessions = new ThirdPartyFileManagerSessionRegistry([native]);
+        var foreground = new ForegroundContext(88, 89, 9, "dopus", "Directory Opus");
+        var captured = sessions.TryCapture(foreground).Context ??
+            throw new InvalidOperationException("The initial DOpus session capture failed.");
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        tracker.ObserveDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                captured.WindowHandle,
+                captured.CurrentDirectory,
+                captured.HostContextId),
+            "Old tab (Directory Opus)");
+        var initial = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("The initial source should be consumed.");
+        Assert(initial.Source.CurrentDirectory == @"D:\OldTab");
+
+        var commandTarget = Path.GetTempPath();
+        Assert(sessions.Navigate(
+            new NavigateThirdPartyFileManagerCommand(
+                captured.WindowHandle,
+                commandTarget,
+                captured.HostContextId),
+            Directory.Exists).Success);
+        Assert(native.NavigateCount == 1);
+
+        // Selecting an already-open tab keeps the same lister HWND. DOpus
+        // raises an object-focus event, after which PlatformHost re-reads the
+        // same source identity even though its one-shot navigation was used.
+        native.CurrentDirectory = @"D:\ExistingTab";
+        Assert(DirectoryOpusSourceRefresh.ShouldRefresh(
+            eventType: eventObjectFocus,
+            objectId: DirectoryOpusSourceRefresh.ObjectIdWindow,
+            rootWindowHandle: captured.WindowHandle,
+            trackedListerWindowHandle: captured.WindowHandle));
+        var refreshed = sessions.TryRefreshDirectoryOpusSource(
+            captured.WindowHandle,
+            captured.HostContextId,
+            foreground) ?? throw new InvalidOperationException(
+                "Selecting an existing tab must refresh the source after its one-shot navigation was consumed.");
+        Assert(refreshed.HostContextId != captured.HostContextId);
+        Assert(!sessions.IsDirectoryOpusSource(
+            captured.WindowHandle,
+            captured.HostContextId));
+        Assert(sessions.IsDirectoryOpusSource(
+            refreshed.WindowHandle,
+            refreshed.HostContextId));
+        Assert(tracker.RefreshDirectorySource(
+            new DirectoryNavigationContext(
+                DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+                refreshed.WindowHandle,
+                refreshed.CurrentDirectory,
+                refreshed.HostContextId),
+            "Existing tab (Directory Opus)"));
+        var candidate = DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog,
+            source => sessions.IsDirectoryOpusSource(
+                source.Context.WindowHandle,
+                source.Context.HostContextId),
+            _ => true) ?? throw new InvalidOperationException(
+                "Returning to the known dialog after selecting an existing tab should yield one candidate.");
+        Assert(candidate.Source.CurrentDirectory == @"D:\ExistingTab");
+        Assert(candidate.Source.HostContextId == refreshed.HostContextId);
+        Assert(native.NavigateCount == 1);
+        Assert(DirectoryOpusDialogReturnRefresh.Observe(
+            tracker,
+            dialog,
+            _ => true,
+            _ => true) is null);
+
+        var refreshedNavigation = sessions.Navigate(
+            new NavigateThirdPartyFileManagerCommand(
+                refreshed.WindowHandle,
+                commandTarget,
+                refreshed.HostContextId),
+            Directory.Exists);
+        Assert(refreshedNavigation.Success);
+        Assert(native.NavigateCount == 2);
+        Assert(!sessions.Navigate(
+            new NavigateThirdPartyFileManagerCommand(
+                refreshed.WindowHandle,
+                commandTarget,
+                refreshed.HostContextId),
+            Directory.Exists).Success);
+        Assert(native.NavigateCount == 2);
+        Assert(sessions.TryRefreshDirectoryOpusSource(
+            refreshed.WindowHandle,
+            refreshed.HostContextId,
+            foreground with { ProcessId = foreground.ProcessId + 1 }) is null);
+        return Task.CompletedTask;
+    }
+
+
+
+    private static Task DirectoryOpusSourceRefreshRequiresTrackedListerNameChange()
+    {
+        Assert(DirectoryOpusSourceRefresh.ShouldRefresh(
+            eventType: DirectoryOpusSourceRefresh.EventObjectNameChange,
+            objectId: DirectoryOpusSourceRefresh.ObjectIdWindow,
+            rootWindowHandle: 88,
+            trackedListerWindowHandle: 88));
+        Assert(DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectSelection,
+            DirectoryOpusSourceRefresh.ObjectIdWindow,
+            88,
+            88));
+        Assert(DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectSelection,
+            DirectoryOpusSourceRefresh.ObjectIdClient,
+            88,
+            88));
+        Assert(DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectFocus,
+            DirectoryOpusSourceRefresh.ObjectIdClient,
+            88,
+            88));
+        Assert(!DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectFocus,
+            objectId: 1,
+            rootWindowHandle: 88,
+            trackedListerWindowHandle: 88));
+        Assert(!DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectLocationChange,
+            DirectoryOpusSourceRefresh.ObjectIdWindow,
+            88,
+            88));
+        Assert(!DirectoryOpusSourceRefresh.ShouldRefresh(
+            DirectoryOpusSourceRefresh.EventObjectNameChange,
+            DirectoryOpusSourceRefresh.ObjectIdWindow,
+            99,
+            88));
         return Task.CompletedTask;
     }
 
@@ -2452,6 +3033,80 @@ internal static class Program
         Assert((await Task.WhenAll(runs)).All(value => value));
     }
 
+    private static Task BoundedStaCompletionSignalContainsCallbackFailures()
+    {
+        var expected = new InvalidOperationException("completion callback failed");
+        var completed = BoundedStaOperationRunner.TrySignalCompletion(
+            () => throw expected,
+            out var error);
+
+        Assert(!completed);
+        Assert(error == expected.Message);
+        return Task.CompletedTask;
+    }
+    private static async Task BoundedStaOperationsReleaseCompletionWaitHandles()
+    {
+        using var process = Process.GetCurrentProcess();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        process.Refresh();
+        var baselineHandles = process.HandleCount;
+
+        for (var index = 0; index < 192; index++)
+        {
+            using var workerStarted = new ManualResetEventSlim();
+            using var releaseWorker = new ManualResetEventSlim();
+            var releaseTask = Task.Run(async () =>
+            {
+                if (!workerStarted.Wait(TimeSpan.FromSeconds(2)))
+                {
+                    throw new InvalidOperationException($"STA worker {index} did not start.");
+                }
+                await Task.Delay(35);
+                releaseWorker.Set();
+            });
+            var completed = BoundedStaOperationRunner.TryRun(
+                $"completion-handle-lifetime-{index}",
+                TimeSpan.FromSeconds(2),
+                cancellationToken =>
+                {
+                    workerStarted.Set();
+                    releaseWorker.Wait(cancellationToken);
+                    if (index % 2 == 1)
+                    {
+                        throw new InvalidOperationException("injected provider failure");
+                    }
+                    return true;
+                },
+                out bool? result,
+                out var error);
+
+            await releaseTask;
+            var operationSucceeded = index % 2 == 0;
+            if (completed != operationSucceeded ||
+                result != (operationSucceeded ? true : null) ||
+                (operationSucceeded ? error is not null : error != "injected provider failure"))
+            {
+                throw new InvalidOperationException(
+                    $"STA operation {index} did not preserve its expected completion result.");
+            }
+        }
+
+
+        await Task.Delay(100);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        process.Refresh();
+        var finalHandleCount = process.HandleCount;
+        if (finalHandleCount > baselineHandles + 64)
+        {
+            throw new InvalidOperationException(
+                $"Runner leaked process handles across repeated operations: baseline={baselineHandles}, final={finalHandleCount}.");
+        }
+    }
+
     private static async Task BoundedStaOperationsCancelLateWork()
     {
         var lateSideEffects = 0;
@@ -2511,6 +3166,49 @@ internal static class Program
         Assert(SpinWait.SpinUntil(
             () => BoundedStaOperationRunner.TryRun(
                 "stubborn-provider-test",
+                TimeSpan.FromMilliseconds(50),
+                _ => true,
+                out bool? _,
+                out _),
+            TimeSpan.FromSeconds(1)));
+        using var cancellation = new CancellationTokenSource();
+        using var cancellationWorkerStarted = new ManualResetEventSlim();
+        using var releaseCancelledWorker = new ManualResetEventSlim();
+        var cancelledRun = Task.Run(() =>
+        {
+            var succeeded = BoundedStaOperationRunner.TryRun(
+                "cancelled-stubborn-provider-test",
+                TimeSpan.FromSeconds(2),
+                token =>
+                {
+                    cancellationWorkerStarted.Set();
+                    releaseCancelledWorker.Wait();
+                    return token.IsCancellationRequested;
+                },
+                out bool? result,
+                out var error,
+                cancellation.Token);
+            return (Succeeded: succeeded, Result: result, Error: error);
+        });
+        Assert(cancellationWorkerStarted.Wait(TimeSpan.FromSeconds(1)));
+        cancellation.Cancel();
+        var cancelled = await cancelledRun.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert(!cancelled.Succeeded);
+        Assert(cancelled.Result is null);
+        Assert(cancelled.Error?.Contains("cancelled", StringComparison.OrdinalIgnoreCase) == true);
+        Assert(!BoundedStaOperationRunner.TryRun(
+            "cancelled-stubborn-provider-test",
+            TimeSpan.FromMilliseconds(20),
+            _ => true,
+            out bool? _,
+            out var cancelledBusyError));
+        Assert(cancelledBusyError?.Contains(
+            "previous bounded operation",
+            StringComparison.OrdinalIgnoreCase) == true);
+        releaseCancelledWorker.Set();
+        Assert(SpinWait.SpinUntil(
+            () => BoundedStaOperationRunner.TryRun(
+                "cancelled-stubborn-provider-test",
                 TimeSpan.FromMilliseconds(50),
                 _ => true,
                 out bool? _,
@@ -3211,6 +3909,189 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task ExplorerActivationSelectsFileInExistingFolder()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-explorer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, "artifact.bin");
+        File.WriteAllBytes(file, []);
+        try
+        {
+            var platform = new FakeExplorerShellPlatform
+            {
+                CandidateWindow = new IntPtr(10),
+                ForegroundWindow = new IntPtr(10),
+            };
+            var stages = new List<string>();
+            var result = ExplorerShellActivation.LaunchAndActivate(file, platform, stages.Add);
+            Assert(result.Success && result.Data == "foreground_confirmed");
+            Assert(platform.LaunchArguments.SequenceEqual([ $"/select,\"{file}\"" ]));
+            Assert(platform.RestoreTargets.SequenceEqual([new IntPtr(10)]));
+            Assert(platform.ActivationTargets.SequenceEqual([new IntPtr(10)]));
+            Assert(stages.Contains("target_resolved"));
+            Assert(stages.Contains("selection_requested"));
+            Assert(stages.Contains("foreground_confirmed"));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ExplorerActivationOpensExistingDirectoryDirectly()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-explorer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var platform = new FakeExplorerShellPlatform
+            {
+                CandidateWindow = new IntPtr(10),
+                ForegroundWindow = new IntPtr(10),
+            };
+            var result = ExplorerShellActivation.LaunchAndActivate(directory, platform);
+            Assert(result.Success);
+            Assert(platform.LaunchArguments.Count == 0);
+            Assert(platform.ActivationTargets.SequenceEqual([new IntPtr(10)]));
+            platform.CandidateWindow = IntPtr.Zero;
+            platform.ForegroundWindow = new IntPtr(11);
+            _ = ExplorerShellActivation.LaunchAndActivate(directory, platform);
+            Assert(platform.LaunchArguments.Last() == $"\"{directory}\"");
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ExplorerActivationWaitsForReusedWindowAndAcceptsForegroundChild()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-explorer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, "artifact.bin");
+        File.WriteAllBytes(file, []);
+        try
+        {
+            var platform = new FakeExplorerShellPlatform
+            {
+                PublishCandidateAfterLookup = 3,
+                ForegroundWindow = new IntPtr(21),
+                RootByWindow = { [new IntPtr(21)] = new IntPtr(20), [new IntPtr(20)] = new IntPtr(20) },
+            };
+            var result = ExplorerShellActivation.LaunchAndActivate(file, platform);
+            Assert(result.Success);
+            Assert(platform.LaunchArguments.Count == 1);
+            Assert(platform.WaitCount >= 1);
+            Assert(platform.ActivationTargets.Last() == new IntPtr(20));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ExplorerActivationRejectsDestroyedWindow()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-explorer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, "artifact.bin");
+        File.WriteAllBytes(file, []);
+        try
+        {
+            var platform = new FakeExplorerShellPlatform
+            {
+                CandidateWindow = new IntPtr(10),
+                DestroyAfterActivation = true,
+                ForegroundWindow = new IntPtr(10),
+            };
+            var result = ExplorerShellActivation.LaunchAndActivate(file, platform);
+            Assert(!result.Success && result.Data == "foreground_not_confirmed");
+            Assert(platform.ActivationTargets.SequenceEqual([new IntPtr(10)]));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ExplorerActivationRejectsUnrelatedForeground()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"nxtools-explorer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, "artifact.bin");
+        File.WriteAllBytes(file, []);
+        try
+        {
+            var platform = new FakeExplorerShellPlatform
+            {
+                CandidateWindow = new IntPtr(10),
+                ForegroundWindow = new IntPtr(12),
+                LastErrorCode = 5,
+            };
+            var result = ExplorerShellActivation.LaunchAndActivate(file, platform);
+            Assert(!result.Success && result.Data == "foreground_not_confirmed");
+            Assert(result.NativeErrorCode == 5);
+            Assert(platform.WaitCount == 7);
+            Assert(ExplorerShellActivation.IsExpectedForegroundRoot(
+                new IntPtr(10), new IntPtr(11),
+                window => window == new IntPtr(11) ? new IntPtr(10) : window));
+            Assert(!ExplorerShellActivation.IsExpectedForegroundRoot(
+                new IntPtr(10), new IntPtr(12), window => window));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private sealed class FakeExplorerShellPlatform : IExplorerShellPlatform
+    {
+        public IntPtr CandidateWindow { get; set; }
+        public IntPtr ForegroundWindow { get; set; }
+        public bool DestroyAfterActivation { get; set; }
+        public int PublishCandidateAfterLookup { get; set; }
+        public int LookupCount { get; private set; }
+        public int WaitCount { get; private set; }
+        public int LastErrorCode { get; set; }
+        public List<string> LaunchArguments { get; } = [];
+        public List<IntPtr> ActivationTargets { get; } = [];
+        public List<IntPtr> RestoreTargets { get; } = [];
+        public Dictionary<IntPtr, IntPtr> RootByWindow { get; } = [];
+
+        public IntPtr FindExplorerWindow(string directory)
+        {
+            LookupCount++;
+            if (LookupCount < PublishCandidateAfterLookup)
+            {
+                return IntPtr.Zero;
+            }
+            if (CandidateWindow == IntPtr.Zero && PublishCandidateAfterLookup > 0)
+            {
+                CandidateWindow = new IntPtr(20);
+            }
+            return CandidateWindow;
+        }
+
+        public void LaunchExplorer(string arguments) => LaunchArguments.Add(arguments);
+        public bool IsWindow(IntPtr window) => window != IntPtr.Zero &&
+            !(DestroyAfterActivation && window == new IntPtr(10) && ActivationTargets.Count > 0);
+        public bool IsIconic(IntPtr window) => window == new IntPtr(10);
+        public void RestoreWindow(IntPtr window) => RestoreTargets.Add(window);
+        public void TryActivateWindow(IntPtr window)
+        {
+            ActivationTargets.Add(window);
+        }
+        public IntPtr GetForegroundWindow() => ForegroundWindow;
+        public IntPtr GetRootWindow(IntPtr window) => RootByWindow.TryGetValue(window, out var root) ? root : window;
+        public void WaitForNextAttempt() => WaitCount++;
+    }
+
+
     private static long FindExplorerWindowHandle()
     {
         long match = 0;
@@ -3585,6 +4466,63 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+    private static Task DesktopShellFailuresReturnBoundedStageCodes()
+    {
+        var keyName = $@"Software\NxTools\Tests\DesktopShell\{Guid.NewGuid():N}";
+        using var runKey = Registry.CurrentUser.CreateSubKey(keyName, writable: true)
+            ?? throw new InvalidOperationException("Could not create isolated startup registry key.");
+        try
+        {
+            var missing = WindowsPlatformAdapter.ApplyStartupRegistration(
+                runKey,
+                Path.Combine(Path.GetTempPath(), $"missing-nxtools-{Guid.NewGuid():N}.exe"),
+                true);
+            Assert(!missing.Success);
+            Assert(missing.Data == "desktop_executable_unavailable");
+
+            using var readOnlyRunKey = Registry.CurrentUser.OpenSubKey(keyName, writable: false)
+                ?? throw new InvalidOperationException("Could not reopen isolated startup key.");
+            var writeFailure = WindowsPlatformAdapter.ApplyStartupRegistration(
+                readOnlyRunKey,
+                Environment.ProcessPath ?? throw new InvalidOperationException("Test process path is unavailable."),
+                true);
+            Assert(!writeFailure.Success);
+            Assert(writeFailure.Data == "startup_registration_failed");
+            Assert(writeFailure.NativeErrorCode is not null);
+
+            var trayException = WindowsPlatformAdapter.CreateDesktopShellApplyFailure(
+                new System.ComponentModel.Win32Exception(5, "private tray detail"),
+                "tray_icon");
+            Assert(!trayException.Success);
+            Assert(trayException.Data == "tray_icon_failed");
+            Assert(trayException.NativeErrorCode == 5);
+            Assert(!trayException.Error!.Contains("private tray detail", StringComparison.Ordinal));
+
+            var genericException = WindowsPlatformAdapter.CreateDesktopShellApplyFailure(
+                new InvalidOperationException("private registry path"),
+                "unknown");
+            Assert(!genericException.Success);
+            Assert(genericException.Data == "windows_shell_apply_failed");
+            Assert(!genericException.Error!.Contains("private registry path", StringComparison.Ordinal));
+
+            using var controller = new DesktopTrayController((_, _, _) =>
+                throw new InvalidOperationException("injected tray failure"));
+            var tray = controller.Configure(true, "unused", () => { }, () => { });
+            Assert(!tray.Success);
+            Assert(tray.Data == "tray_icon_failed");
+
+            var request = ProtocolEnvelope.Create("platform_command", new { Command = "configure_desktop_shell" });
+            var response = PlatformPipeClient.CreateCommandResultEnvelope(request, tray);
+            Assert(response.Payload.GetProperty("data").GetString() == "tray_icon_failed");
+            Assert(!response.Payload.GetRawText().Contains("injected tray failure", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(keyName, throwOnMissingSubKey: false);
+        }
+        return Task.CompletedTask;
+    }
+
     private static Task DesktopTrayRequiresProductIcon()
     {
         using var controller = new DesktopTrayController();
@@ -3747,6 +4685,657 @@ internal static class Program
         var odd = WindowsPlatformAdapter.CenteredRectangleForTest(
             new NativeWindowRectangle(0, 0, 101, 51), 20, 10);
         Assert(odd.Left == 40 && odd.Top == 20);
+        return Task.CompletedTask;
+    }
+
+    private static bool _restoreCompactClientOnMove;
+    private static bool _observeClientSizeMessages;
+    private static int _staleClientSizeMessages;
+    private static int _observedClientSizeMessages;
+    private static readonly WindowProcedure ClientChromeWindowProcedure = HandleClientChromeWindow;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ResizeTestWindowPosition
+    {
+        public IntPtr Window;
+        public IntPtr InsertAfter;
+        public int X;
+        public int Y;
+        public int Width;
+        public int Height;
+        public uint Flags;
+    }
+
+    private static IntPtr HandleClientChromeWindow(IntPtr window, uint message, IntPtr wParam, IntPtr lParam)
+    {
+        // Model a client-chrome window rather than the system dialog used by
+        // the old tests. GPUI also calculates its own WM_NCCALCSIZE rectangle.
+        if (message == 0x0083 && wParam != IntPtr.Zero)
+        {
+            var rectangle = Marshal.PtrToStructure<NativeWindowRectangle>(lParam);
+            Marshal.StructureToPtr(new NativeWindowRectangle(
+                rectangle.Left + 1, rectangle.Top + 2,
+                rectangle.Right - 1, rectangle.Bottom), lParam, false);
+            return IntPtr.Zero;
+        }
+        if (message == 0x0005 && _observeClientSizeMessages)
+        {
+            _observedClientSizeMessages++;
+            var current = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+            var announcedHeight = (int)((lParam.ToInt64() >> 16) & 0xffff);
+            if (current.Exists && announcedHeight != current.ClientBounds.Height)
+                _staleClientSizeMessages++;
+        }
+        if (message == 0x0046 && _restoreCompactClientOnMove)
+        {
+            var position = Marshal.PtrToStructure<ResizeTestWindowPosition>(lParam);
+            if ((position.Flags & 0x0001) != 0 && (position.Flags & 0x0002) == 0)
+            {
+                _restoreCompactClientOnMove = false;
+                position.Flags &= ~0x0001u;
+                position.Height = 178; // compact 176px client plus custom chrome
+                Marshal.StructureToPtr(position, lParam, false);
+            }
+        }
+        return DefWindowProc(window, message, wParam, lParam);
+    }
+
+    private static Task CenteredResizeGenerationSurvivesReplay()
+    {
+        var window = CreateWindowEx(0, "#32770", "resize ownership", 0x00CF0000,
+            100, 100, 500, 360, IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 278).Success);
+            using var entered = new ManualResetEventSlim();
+            using var resume = new ManualResetEventSlim();
+            var oldReplay = Task.Run(() => WindowsPlatformAdapter.ReplayCenteredResizeBarrierForTest(
+                window.ToInt64(), () => { entered.Set(); Assert(resume.Wait(TimeSpan.FromSeconds(2))); }));
+            Assert(entered.Wait(TimeSpan.FromSeconds(2)));
+            Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 410).Success);
+            resume.Set();
+            Assert(oldReplay.Wait(TimeSpan.FromSeconds(2)));
+            Assert(WindowsPlatformAdapter.PendingCenteredResizeForTest(window.ToInt64()).Height == 410,
+                "old readback must not remove or restore the superseded 278px request");
+            _ = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            _ = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            Assert(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64()).ClientBounds.Height == 410);
+            foreach (var terminal in new[] { false, true })
+            {
+                Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 278).Success);
+                if (terminal) _ = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+                _ = WindowsPlatformAdapter.ReplayCenteredResizeCommitForTest(window.ToInt64(), () =>
+                    Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 410).Success));
+                Assert(WindowsPlatformAdapter.PendingCenteredResizeForTest(window.ToInt64()).Height == 410,
+                    "both stale CAS writeback and stale retirement must preserve replacement");
+            }
+        }
+        finally { _ = DestroyWindow(window); }
+        return Task.CompletedTask;
+    }
+
+    private static readonly WindowProcedure DelayedResizeWindowProcedure = HandleDelayedResizeWindow;
+    private static readonly ManualResetEventSlim DelayedResizeEntered = new();
+    private static readonly ManualResetEventSlim DelayedResizeRelease = new();
+    private static int _delayNextResize;
+
+    private static IntPtr HandleDelayedResizeWindow(IntPtr window, uint message, IntPtr wParam, IntPtr lParam)
+    {
+        if (message == 0x0046 && Interlocked.Exchange(ref _delayNextResize, 0) == 1)
+        {
+            DelayedResizeEntered.Set();
+            _ = DelayedResizeRelease.Wait(TimeSpan.FromSeconds(5));
+        }
+        return DefWindowProc(window, message, wParam, lParam);
+    }
+
+    private static Task CenteredResizeDelayedHwndRemainsResponsive()
+    {
+        using var ready = new ManualResetEventSlim();
+        using var stop = new ManualResetEventSlim();
+        long windowHandle = 0;
+        Exception? ownerFailure = null;
+        var owner = new Thread(() =>
+        {
+            var instance = GetModuleHandle(null);
+            var className = $"NxToolsDelayedResize-{Guid.NewGuid():N}";
+            var windowClass = new WindowClassEx { Size = (uint)Marshal.SizeOf<WindowClassEx>(),
+                WindowProcedure = Marshal.GetFunctionPointerForDelegate(DelayedResizeWindowProcedure),
+                Instance = instance, ClassName = className };
+            IntPtr window = IntPtr.Zero;
+            try
+            {
+                Assert(RegisterClassEx(ref windowClass) != 0);
+                window = CreateWindowEx(0, className, "delayed resize", 0x00CF0000,
+                    100, 100, 500, 360, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+                Assert(window != IntPtr.Zero);
+                windowHandle = window.ToInt64(); ready.Set();
+                while (!stop.IsSet) { Application.DoEvents(); Thread.Sleep(1); }
+            }
+            catch (Exception failure) { ownerFailure = failure; ready.Set(); }
+            finally { if (window != IntPtr.Zero) _ = DestroyWindow(window); _ = UnregisterClass(className, instance); }
+        }) { IsBackground = true };
+        owner.SetApartmentState(ApartmentState.STA);
+        DelayedResizeEntered.Reset(); DelayedResizeRelease.Reset();
+        owner.Start();
+        try
+        {
+            Assert(ready.Wait(TimeSpan.FromSeconds(2)) && ownerFailure is null && windowHandle != 0);
+            Interlocked.Exchange(ref _delayNextResize, 1);
+            var timer = Stopwatch.StartNew();
+            Assert(WindowsPlatformAdapter.QueueNativeCenteredResizeForTest(windowHandle, 560, 278).Success);
+            Assert(timer.ElapsedMilliseconds < 500, "acceptance must not await native HWND delivery");
+            Assert(DelayedResizeEntered.Wait(TimeSpan.FromSeconds(2)));
+            timer.Restart();
+            Assert(WindowsPlatformAdapter.QueueNativeCenteredResizeForTest(windowHandle, 560, 410).Success);
+            Assert(timer.ElapsedMilliseconds < 500, "new request must remain responsive while old SetWindowPos is held");
+            Assert(WindowsPlatformAdapter.PendingCenteredResizeForTest(windowHandle).Height == 410);
+            DelayedResizeRelease.Set();
+            for (var retry = 0; retry < 200; retry++)
+            {
+                if (WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(windowHandle).ClientBounds.Height == 410) break;
+                Thread.Sleep(10);
+            }
+            Assert(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(windowHandle).ClientBounds.Height == 410);
+        }
+        finally { DelayedResizeRelease.Set(); stop.Set(); Assert(owner.Join(TimeSpan.FromSeconds(6))); }
+        return Task.CompletedTask;
+    }
+
+    private static async Task CenteredResizeWorkerIsBounded()
+    {
+        var coordinator = new CenteredResizeCoordinator(maximumWorkers: 1, maximumWindows: 2);
+        using var entered = new ManualResetEventSlim();
+        using var resume = new ManualResetEventSlim();
+        var order = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        Assert(coordinator.TrySchedule(new IntPtr(1), () => {
+            order.Enqueue(1); entered.Set(); Assert(resume.Wait(TimeSpan.FromSeconds(2)));
+        }));
+        Assert(entered.Wait(TimeSpan.FromSeconds(2)));
+        Assert(coordinator.TrySchedule(new IntPtr(1), () => order.Enqueue(2)));
+        Assert(coordinator.TrySchedule(new IntPtr(1), () => order.Enqueue(3)));
+        Assert(coordinator.TrySchedule(new IntPtr(2), () => order.Enqueue(4)));
+        Assert(!coordinator.TrySchedule(new IntPtr(3), () => order.Enqueue(5)));
+        Assert(order.ToArray().SequenceEqual(new[] { 1 }), "no parallel native operation may overtake a blocked HWND");
+        resume.Set();
+        for (var retry = 0; retry < 100 && order.Count < 3; retry++) await Task.Delay(10);
+        Assert(order.ToArray().SequenceEqual(new[] { 1, 3, 4 }), "queued HWND updates must coalesce, not spawn hung workers");
+    }
+
+    private static Task CenteredResizeRecoveryIgnoresStaleCompletion()
+    {
+        var root = new IntPtr(567);
+        var recovery = new CenteredResizeRecovery();
+        var newer = new CenteredResizeRecoverySnapshot(root, Guid.NewGuid(), 567, 1, 0) { Generation = 2, Width = 560, Height = 410 };
+        recovery.TrackPending(newer);
+        var stale = new CenteredResizeReplayResult(true, Guid.NewGuid(), 567, 1, 8, true, false, null) { Generation = 1 };
+        Assert(recovery.Observe(root, stale) == CenteredResizeRecoveryDecision.NoPendingResize);
+        Assert(recovery.TryGetSnapshot(root, out var retained) && retained == newer);
+        return Task.CompletedTask;
+    }
+
+    private static Task BrowserRegistrationCompensatesPartialFailure()
+    {
+        for (var failureAt = 1; failureAt <= 8; failureAt++)
+        {
+            var store = new SyntheticRegistrationStore(failureAt);
+            var original = store.Values.ToDictionary(pair => pair.Key, pair => pair.Value);
+            try
+            {
+                BrowserRegistrationTransaction.Apply(store, new[] {
+                    new BrowserRegistrationChange("manifest:chrome", "new chrome"),
+                    new BrowserRegistrationChange("manifest:firefox", "new firefox"),
+                    new BrowserRegistrationChange("key:chrome", "new chrome"),
+                    new BrowserRegistrationChange("key:edge", "new chrome"),
+                    new BrowserRegistrationChange("key:firefox", "new firefox"),
+                    new BrowserRegistrationChange("key:legacy-chrome", null),
+                    new BrowserRegistrationChange("key:legacy-edge", null),
+                    new BrowserRegistrationChange("key:legacy-firefox", null) });
+                Assert(false, "injected write must fail");
+            }
+            catch (IOException) { }
+            Assert(store.Values.Count == original.Count && original.All(pair => store.Values.GetValueOrDefault(pair.Key) == pair.Value),
+                $"partial failure {failureAt} must restore old manifests/keys and remove newly created ones");
+        }
+        return Task.CompletedTask;
+    }
+
+    private sealed class SyntheticRegistrationStore(int failureAt) : IBrowserRegistrationStore
+    {
+        internal readonly Dictionary<string, string> Values = new() { ["manifest:chrome"] = "old manifest", ["key:chrome"] = "old key", ["key:firefox"] = "prior firefox", ["key:legacy-chrome"] = "legacy value" };
+        private int _writes;
+        public object? Capture(string target) => Values.GetValueOrDefault(target);
+        public void Write(string target, string? value)
+        {
+            if (value is null) Values.Remove(target); else Values[target] = value;
+            if (++_writes == failureAt) throw new IOException("synthetic write-after-mutation failure");
+        }
+        public void Restore(string target, object? snapshot)
+        {
+            if (snapshot is string value) Values[target] = value; else Values.Remove(target);
+        }
+    }
+
+    private static Task NativeDragCancellationHasTerminalStatus()
+    {
+        var cancelled = NativeFileDragService.ResultForOleExit(0x00040101, 0);
+        Assert(cancelled.Success && cancelled.Error is null && cancelled.Data!.Contains("cancelled", StringComparison.Ordinal));
+        var dropped = NativeFileDragService.ResultForOleExit(0x00040100, 1);
+        Assert(dropped.Success && dropped.Data!.Contains("dropped", StringComparison.Ordinal));
+        Assert(!NativeFileDragService.ResultForOleExit(unchecked((int)0x80004005), 0).Success);
+        return Task.CompletedTask;
+    }
+
+    private static Task ClientResizeSynchronizationRetainsParameters()
+    {
+        using var ready = new ManualResetEventSlim();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var stop = new ManualResetEventSlim();
+        long windowHandle = 0;
+        Exception? ownerFailure = null;
+        var skipDelayedPointer = 0;
+        var refreshRead = 0;
+        var sizeNotifications = 0;
+        var staleNotifications = 0;
+        WindowProcedure procedure = (window, message, wParam, lParam) =>
+        {
+            if (message == 0x0005 && entered.IsSet)
+            {
+                Interlocked.Increment(ref sizeNotifications);
+                var live = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+                if (((lParam.ToInt64() >> 16) & 0xffff) != live.ClientBounds.Height)
+                    Interlocked.Increment(ref staleNotifications);
+            }
+            if (message == 0x0047 && lParam != IntPtr.Zero)
+            {
+                var position = Marshal.PtrToStructure<ResizeTestWindowPosition>(lParam);
+                if (position.Width == 0 && position.Height == 0 && position.Flags == 0x0016)
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(6)) || Volatile.Read(ref skipDelayedPointer) != 0)
+                        return IntPtr.Zero; // Never inspect a parameter after the old timed sender returned.
+                    position = Marshal.PtrToStructure<ResizeTestWindowPosition>(lParam);
+                    if (position.Window == window && position.Flags == 0x0016)
+                        Interlocked.Increment(ref refreshRead);
+                }
+            }
+            return HandleClientChromeWindow(window, message, wParam, lParam);
+        };
+        var owner = new Thread(() =>
+        {
+            var instance = GetModuleHandle(null);
+            var className = $"NxToolsDelayedClientRefresh-{Guid.NewGuid():N}";
+            var windowClass = new WindowClassEx { Size = (uint)Marshal.SizeOf<WindowClassEx>(),
+                WindowProcedure = Marshal.GetFunctionPointerForDelegate(procedure),
+                Instance = instance, ClassName = className };
+            IntPtr window = IntPtr.Zero;
+            try
+            {
+                Assert(RegisterClassEx(ref windowClass) != 0);
+                window = CreateWindowEx(0, className, "delayed client refresh", 0x80000000,
+                    300, 300, 562, 178, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+                Assert(window != IntPtr.Zero);
+                windowHandle = window.ToInt64(); ready.Set();
+                while (!stop.IsSet) { Application.DoEvents(); Thread.Sleep(1); }
+            }
+            catch (Exception failure) { ownerFailure = failure; ready.Set(); }
+            finally
+            {
+                if (window != IntPtr.Zero) _ = DestroyWindow(window);
+                _ = UnregisterClass(className, instance);
+                GC.KeepAlive(procedure);
+            }
+        }) { IsBackground = true };
+        owner.SetApartmentState(ApartmentState.STA);
+        Task<WindowsCommandResult>? sender = null;
+        owner.Start();
+        try
+        {
+            Assert(ready.Wait(TimeSpan.FromSeconds(2)) && ownerFailure is null && windowHandle != 0);
+            var before = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(windowHandle);
+            var foreground = GetForegroundWindow();
+            sender = Task.Run(() => WindowsPlatformAdapter.RefreshNativeClientSizeForTest(windowHandle));
+            Assert(entered.Wait(TimeSpan.FromSeconds(2)), "same-size synchronization must reach the delayed HWND");
+            var returnedEarly = sender.Wait(TimeSpan.FromMilliseconds(2300));
+            if (returnedEarly) Volatile.Write(ref skipDelayedPointer, 1);
+            release.Set();
+            Assert(sender.Wait(TimeSpan.FromSeconds(3)), "released native refresh must finish");
+            Assert(!returnedEarly, "client refresh returned while the receiver still owned its WINDOWPOS parameter");
+            Assert(sender.Result.Success && refreshRead > 0, "receiver must read the retained parameter before sender completes");
+            var after = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(windowHandle);
+            Assert(after.ClientBounds == before.ClientBounds, "refresh must preserve the actual initial client");
+            Assert(sizeNotifications > 0 && staleNotifications == 0,
+                "released refresh must notify the current client without stale dimensions");
+            Assert(after.Bounds == before.Bounds && GetForegroundWindow() == foreground,
+                "same-size refresh must preserve placement and foreground");
+        }
+        finally
+        {
+            release.Set();
+            if (sender is not null) Assert(sender.Wait(TimeSpan.FromSeconds(3)));
+            stop.Set();
+            Assert(owner.Join(TimeSpan.FromSeconds(3)));
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task ClientResizeSynchronizationUsesLiveClient()
+    {
+        var instance = GetModuleHandle(null);
+        var className = $"NxToolsQueuedClientSize-{Guid.NewGuid():N}";
+        var windowClass = new WindowClassEx
+        {
+            Size = (uint)Marshal.SizeOf<WindowClassEx>(),
+            WindowProcedure = Marshal.GetFunctionPointerForDelegate(ClientChromeWindowProcedure),
+            Instance = instance, ClassName = className
+        };
+        Assert(RegisterClassEx(ref windowClass) != 0);
+        var window = CreateWindowEx(0, className, "queued size boundary", 0x80000000,
+            300, 300, 562, 178, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            _observeClientSizeMessages = false;
+            Assert(WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 278).Success);
+            Assert(WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 176).Success);
+            _staleClientSizeMessages = 0;
+            _observeClientSizeMessages = true;
+            Application.DoEvents();
+            Assert(_staleClientSizeMessages == 0,
+                $"queued size synchronization announced a stale client: mismatches={_staleClientSizeMessages}");
+            Assert(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64()).ClientBounds.Height == 176);
+            _observedClientSizeMessages = 0;
+            Assert(WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 176).Success);
+            Assert(_observedClientSizeMessages > 0,
+                "same-size native correction must refresh the current client-size notification");
+            Assert(_staleClientSizeMessages == 0);
+        }
+        finally
+        {
+            _observeClientSizeMessages = false;
+            _ = DestroyWindow(window);
+            _ = UnregisterClass(className, instance);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task CenteredResizeRechecksAtRetirement()
+    {
+        var window = CreateWindowEx(0, "#32770", "resize retirement boundary", 0x80000000,
+            300, 300, 560, 176, IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 278).Success);
+            var first = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            Assert(first.Success && first.StillPending);
+            var replay = WindowsPlatformAdapter.ReplayCenteredResizeCommitForTest(window.ToInt64(), () =>
+            {
+                Assert(WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 176).Success);
+            });
+            var final = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+            Assert(final.ClientBounds.Height == 176, "test must restore compact native client after readback");
+            Assert(!replay.Success && replay.StillPending,
+                $"retired success after native client changed: height={final.ClientBounds.Height}, success={replay.Success}, pending={replay.StillPending}");
+            Assert(WindowsPlatformAdapter.PendingCenteredResizeForTest(window.ToInt64()).Height == 278);
+            var settled = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            Assert(settled.Success && !settled.StillPending);
+            Assert(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64()).ClientBounds.Height == 278);
+            Assert(settled.RequestedHeight == 278 && settled.ReadbackHeight == 278);
+            Assert(settled.MatchesCurrentClient(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64())));
+            Assert(WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 176).Success);
+            Assert(!settled.MatchesCurrentClient(WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64())),
+                "terminal publication cannot report settled after a later compact restoration");
+        }
+        finally { _ = DestroyWindow(window); }
+        return Task.CompletedTask;
+    }
+
+    private static Task CenteredResizeChecksClientAfterPositionCorrection()
+    {
+        var instance = GetModuleHandle(null);
+        var className = $"NxToolsClientResizeBoundary-{Guid.NewGuid():N}";
+        var windowClass = new WindowClassEx
+        {
+            Size = (uint)Marshal.SizeOf<WindowClassEx>(),
+            WindowProcedure = Marshal.GetFunctionPointerForDelegate(ClientChromeWindowProcedure),
+            Instance = instance,
+            ClassName = className
+        };
+        Assert(RegisterClassEx(ref windowClass) != 0);
+        var window = CreateWindowEx(0, className, "client-resize boundary", 0x80000000,
+            400, 300, 562, 178, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            var original = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+            _restoreCompactClientOnMove = true;
+            var applied = WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(
+                window.ToInt64(), 560, 278);
+            var final = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+            Assert(applied.Success && final.ClientBounds.Width == 560 && final.ClientBounds.Height == 278,
+                $"custom chrome must reach the confirmed client after position correction: {final.ClientBounds.Width}x{final.ClientBounds.Height}");
+            Assert(Math.Abs(final.Bounds.Left + final.Bounds.Right -
+                original.Bounds.Left - original.Bounds.Right) <= 2, "custom client horizontal center moved");
+            Assert(Math.Abs(final.Bounds.Top + final.Bounds.Bottom -
+                original.Bounds.Top - original.Bounds.Bottom) <= 2, "custom client vertical center moved");
+            Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(window.ToInt64(), 560, 278).Success);
+            _ = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            _restoreCompactClientOnMove = true;
+            var replay = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            final = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(window.ToInt64());
+            Assert(replay.Success && !replay.StillPending &&
+                final.ClientBounds.Width == 560 && final.ClientBounds.Height == 278,
+                $"recovery must settle the final client before retiring pending: {final.ClientBounds.Width}x{final.ClientBounds.Height}");
+        }
+        finally
+        {
+            _restoreCompactClientOnMove = false;
+            _ = DestroyWindow(window);
+            _ = UnregisterClass(className, instance);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task CenteredResizeReappliesAfterNativeMoveEnd()
+    {
+        const uint wsOverlappedWindow = 0x00CF0000;
+        const uint wsVisible = 0x10000000;
+        var window = CreateWindowEx(
+            0,
+            "#32770",
+            "NxTools deferred-resize test",
+            wsOverlappedWindow | wsVisible,
+            120,
+            140,
+            500,
+            360,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            GetModuleHandle(null),
+            IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            Assert(WindowsPlatformAdapter.ParkNativeWindowBoundsCenteredForTest(
+                window.ToInt64(), 560, 278).Success);
+            Assert(WindowsPlatformAdapter.SetNativeWindowPositionForTest(
+                window.ToInt64(), 430, 320).Success);
+            var latest = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(
+                window.ToInt64());
+            Assert(latest.Exists && latest.Visible);
+
+            var firstReplay = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            Assert(firstReplay.HadPendingResize);
+            Assert(firstReplay.WindowHandle == window.ToInt64());
+            Assert(firstReplay.CorrelationId == Guid.Empty);
+            Assert(firstReplay.Success && firstReplay.StillPending);
+            Assert(firstReplay.AttemptCount == 1);
+
+            var replay = WindowsPlatformAdapter.ReapplyNativeWindowBoundsCenteredForTest(window.ToInt64());
+            Assert(replay.HadPendingResize);
+            Assert(replay.WindowHandle == window.ToInt64());
+            Assert(replay.CorrelationId == Guid.Empty);
+            Assert(replay.Success && !replay.StillPending);
+            Assert(replay.AttemptCount == 2);
+            var resized = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(
+                window.ToInt64());
+            Assert(
+                resized.ClientBounds.Width == 560 && resized.ClientBounds.Height == 278,
+                $"client={resized.ClientBounds.Width}x{resized.ClientBounds.Height}, visible={resized.Bounds.Width}x{resized.Bounds.Height}");
+            Assert(Math.Abs(
+                resized.Bounds.Left + resized.Bounds.Right -
+                latest.Bounds.Left - latest.Bounds.Right) <= 2);
+            Assert(
+                Math.Abs(resized.Bounds.Top + resized.Bounds.Bottom - latest.Bounds.Top - latest.Bounds.Bottom) <= 2,
+                $"visible vertical center shifted: before={latest.Bounds.Top + latest.Bounds.Bottom}, after={resized.Bounds.Top + resized.Bounds.Bottom}, client={resized.ClientBounds.Width}x{resized.ClientBounds.Height}");
+        }
+        finally
+        {
+            _ = DestroyWindow(window);
+        }
+        return Task.CompletedTask;
+    }
+    private static Task CenteredResizeRetriesWhenStillPending()
+    {
+        var recovery = new CenteredResizeRecovery();
+        var root = new IntPtr(123);
+        var correlationId = Guid.NewGuid();
+
+        var firstReplay = Replay(correlationId, attempt: 1, stillPending: true);
+        Assert(recovery.OnMoveSizeEnd(root, firstReplay) ==
+            CenteredResizeRecoveryDecision.Retry);
+        Assert(recovery.AttemptsFor(root) == 1);
+        Assert(recovery.Observe(root, Replay(correlationId, attempt: 2, stillPending: true)) ==
+            CenteredResizeRecoveryDecision.Retry);
+        Assert(recovery.AttemptsFor(root) == 2);
+        Assert(recovery.Observe(root, Replay(correlationId, attempt: 3, stillPending: false)) ==
+            CenteredResizeRecoveryDecision.Completed);
+        Assert(!recovery.HasPending);
+
+        Assert(recovery.OnMoveSizeEnd(root, firstReplay) == CenteredResizeRecoveryDecision.Retry);
+        var decision = CenteredResizeRecoveryDecision.Retry;
+        for (var attempt = 2; attempt <= CenteredResizeRecovery.MaximumAttempts; attempt++)
+        {
+            decision = recovery.Observe(
+                root,
+                Replay(correlationId, attempt, stillPending: true));
+        }
+        Assert(decision == CenteredResizeRecoveryDecision.Exhausted);
+        Assert(!recovery.HasPending);
+
+        var replacementCorrelationId = Guid.NewGuid();
+        Assert(recovery.OnMoveSizeEnd(root, firstReplay) == CenteredResizeRecoveryDecision.Retry);
+        var replacementReplay = Replay(replacementCorrelationId, attempt: 1, stillPending: true);
+        Assert(recovery.Observe(root, replacementReplay) == CenteredResizeRecoveryDecision.Retry);
+        Assert(recovery.AttemptsFor(root) == 1);
+        return Task.CompletedTask;
+
+        static CenteredResizeReplayResult Replay(
+            Guid correlationId,
+            int attempt,
+            bool stillPending) => new(
+                HadPendingResize: true,
+                CorrelationId: correlationId,
+                WindowHandle: 321,
+                StartedAtTimestamp: 1,
+                AttemptCount: attempt,
+                Success: true,
+                StillPending: stillPending,
+                NativeErrorCode: null);
+
+    }
+
+
+    private static Task CenteredResizeParksClientCorrectionDuringMove()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var clientResize = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "csharp",
+            "NxTools.PlatformHost",
+            "Windows",
+            "WindowsPlatformAdapter.ClientResize.cs"));
+        var adapter = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "csharp",
+            "NxTools.PlatformHost",
+            "Windows",
+            "WindowsPlatformAdapter.cs"));
+        var moving = clientResize.IndexOf("NativeMethods.IsDraggingOrSizing(window)", StringComparison.Ordinal);
+        var park = clientResize.IndexOf("NativeMethods.ParkCenteredResizeForRecovery(", moving, StringComparison.Ordinal);
+        Assert(moving >= 0 && park > moving);
+        Assert(clientResize.Contains("Guid correlationId", StringComparison.Ordinal));
+        Assert(adapter.Contains("pending.CorrelationId", StringComparison.Ordinal));
+        Assert(adapter.Contains("pending.Width, pending.Height, pending.CorrelationId", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
+    private static Task CenteredNativeResizeUsesMovedWindowBounds()
+    {
+        const uint wsOverlappedWindow = 0x00CF0000;
+        const uint wsVisible = 0x10000000;
+        var window = CreateWindowEx(
+            0,
+            "#32770",
+            "NxTools centered-resize test",
+            wsOverlappedWindow | wsVisible,
+            120,
+            140,
+            500,
+            360,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            GetModuleHandle(null),
+            IntPtr.Zero);
+        Assert(window != IntPtr.Zero);
+        try
+        {
+            var moved = WindowsPlatformAdapter.SetNativeWindowPositionForTest(
+                window.ToInt64(),
+                430,
+                320);
+            Assert(moved.Success);
+            var previous = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(
+                window.ToInt64());
+            Assert(previous.Exists && previous.Visible);
+            Assert(previous.Bounds.Width > 0 && previous.Bounds.Height > 0);
+
+            foreach (var (width, height) in new[]
+            {
+                (440, 184), // progress
+                (440, 196), // failed
+                (440, 180)  // completed
+            })
+            {
+                var result = WindowsPlatformAdapter.SetNativeWindowBoundsCenteredForTest(
+                    window.ToInt64(),
+                    width,
+                    height);
+                Assert(result.Success);
+                var current = WindowsPlatformAdapter.CaptureNativeWindowPresentationForTest(
+                    window.ToInt64());
+                Assert(current.Exists && current.Visible);
+                Assert(
+                    current.ClientBounds.Width == width && current.ClientBounds.Height == height,
+                    $"target={width}x{height}, client={current.ClientBounds.Width}x{current.ClientBounds.Height}, visible={current.Bounds.Width}x{current.Bounds.Height}");
+                Assert(
+                    Math.Abs((current.Bounds.Left + current.Bounds.Right) -
+                        (previous.Bounds.Left + previous.Bounds.Right)) <= 2,
+                    $"visible horizontal center shifted: before={previous.Bounds.Left + previous.Bounds.Right}, after={current.Bounds.Left + current.Bounds.Right}");
+                Assert(
+                    Math.Abs((current.Bounds.Top + current.Bounds.Bottom) -
+                        (previous.Bounds.Top + previous.Bounds.Bottom)) <= 2,
+                    $"visible vertical center shifted: before={previous.Bounds.Top + previous.Bounds.Bottom}, after={current.Bounds.Top + current.Bounds.Bottom}, client={current.ClientBounds.Width}x{current.ClientBounds.Height}");
+                previous = current;
+            }
+        }
+        finally
+        {
+            _ = DestroyWindow(window);
+        }
         return Task.CompletedTask;
     }
 
@@ -5624,12 +7213,17 @@ internal static class Program
         return Task.CompletedTask;
     }
 
-    private static void Assert(bool condition)
+    private static void Assert(bool condition, string message)
     {
         if (!condition)
         {
-            throw new InvalidOperationException("assertion failed");
+            throw new InvalidOperationException(message);
         }
+    }
+
+    private static void Assert(bool condition)
+    {
+        Assert(condition, "assertion failed");
     }
 
     private static Task DirectoryOpusDisplayPathsCanonicalize()
@@ -5905,6 +7499,7 @@ internal static class Program
         IThirdPartyFileManagerOperations
     {
         public string Id => id;
+        public string CurrentDirectory { get; set; } = currentDirectory;
         public bool RequiresPostNavigationActivation { get; init; } = true;
         public long LastCapturedFocusWindowHandle { get; private set; }
         public long LastNavigatedWindowHandle { get; private set; }
@@ -5927,9 +7522,7 @@ internal static class Program
                 return false;
             }
             capture = foreground.WindowHandle == windowHandle
-                ? new ThirdPartyFileManagerCapture(
-                    currentDirectory,
-                    ++_nextPaneState)
+                ? new ThirdPartyFileManagerCapture(CurrentDirectory, ++_nextPaneState)
                 : null;
             return foreground.WindowHandle == windowHandle;
         }

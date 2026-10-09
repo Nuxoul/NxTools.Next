@@ -31,6 +31,9 @@ use nxtools_core::{NetworkProxyMode, NetworkSettings};
 
 const PROBE_RANGE: &str = "bytes=0-0";
 const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Deadline for a single probe request (headers only). The 30 s transfer
+/// stall timeout is far too long for an interactive dialog.
+const PROBE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct HttpDownloadClient {
@@ -146,23 +149,51 @@ impl HttpDownloadClient {
         &self,
         request: &DownloadRequest,
     ) -> Result<DownloadProbe, HttpDownloadError> {
-        request.validate()?;
+        self.probe_timed(request).await.map(|(probe, _)| probe)
+    }
 
-        // Probe latency: HEAD and the Range GET run CONCURRENTLY. The old
-        // sequential ladder (HEAD → maybe Range → maybe full GET) paid one to
-        // three full round trips before the dialog could show file info — the
-        // user-visible "前摇". The Range GET alone decides resumability, so
-        // racing both costs one round trip total; the full GET only runs when
-        // both racing probes failed outright.
-        let head_task = self.send(Method::HEAD, request, false);
-        let ranged_task = self.send(Method::GET, request, true);
-        let (head_result, ranged_result) = tokio::join!(head_task, ranged_task);
+    /// Probes the resource and reports per-stage latency so a slow probe can be
+    /// attributed to HEAD, the Range GET, the fallback GET or manifest parsing.
+    pub(crate) async fn probe_timed(
+        &self,
+        request: &DownloadRequest,
+    ) -> Result<(DownloadProbe, ProbeTimings), HttpDownloadError> {
+        request.validate()?;
+        let probe_started = Instant::now();
+        let mut timings = ProbeTimings::default();
+
+        // Probe latency: HEAD and the Range GET run CONCURRENTLY and both are
+        // awaited, so metadata that only one of them carries (for example a
+        // HEAD-only `Content-Disposition`) is never dropped. Each attempt has
+        // its own short deadline instead of the 30 s transfer stall timeout
+        // (the old product used 6 s HEAD / 18 s GET), so one slow request is
+        // bounded. The full GET only runs when both racing probes failed
+        // outright.
+        let head_future = async {
+            let started = Instant::now();
+            let result = self.probe_attempt(Method::HEAD, request, false).await;
+            (result, started.elapsed().as_millis() as u64)
+        };
+        let ranged_future = async {
+            let started = Instant::now();
+            let result = self.probe_attempt(Method::GET, request, true).await;
+            (result, started.elapsed().as_millis() as u64)
+        };
+        let (head_pair, ranged_result) = tokio::join!(head_future, ranged_future);
+        let head_result = Some(head_pair);
         let head = match head_result {
-            Ok(response) if response.status().is_success() => Some(response),
-            _ => None,
+            Some((result, elapsed_ms)) => {
+                timings.head_ms = Some(elapsed_ms);
+                match result {
+                    Ok(response) if response.status().is_success() => Some(response),
+                    _ => None,
+                }
+            }
+            None => None,
         };
         let mut ranged_failure = None;
-        let ranged = match ranged_result {
+        timings.range_ms = Some(ranged_result.1);
+        let ranged = match ranged_result.0 {
             Ok(response) if response.status().is_success() => Some(response),
             Ok(response) => {
                 ranged_failure = Some(HttpDownloadError::Status(response.status().as_u16()));
@@ -174,7 +205,10 @@ impl HttpDownloadClient {
             }
         };
         let fallback = if head.is_none() && ranged.is_none() {
-            match self.send(Method::GET, request, false).await {
+            let started = Instant::now();
+            let result = self.probe_attempt(Method::GET, request, false).await;
+            timings.fallback_ms = Some(started.elapsed().as_millis() as u64);
+            match result {
                 Ok(response) if response.status().is_success() => Some(response),
                 Ok(response) => {
                     ranged_failure = Some(HttpDownloadError::Status(response.status().as_u16()));
@@ -207,12 +241,15 @@ impl HttpDownloadClient {
             .or(head.as_ref())
             .expect("probe response");
         let probed_url = response.url().clone();
+        let manifest_started = Instant::now();
         let (final_url, media) = if is_hls_candidate(&probed_url, metadata.content_type.as_deref())
         {
             let (manifest_url, hls) = self.probe_hls_manifest(request).await?;
+            timings.manifest_ms = Some(manifest_started.elapsed().as_millis() as u64);
             (manifest_url, Some(DownloadMediaProbe::Hls(hls)))
         } else if is_dash_candidate(&probed_url, metadata.content_type.as_deref()) {
             let (manifest_url, dash) = self.probe_dash_manifest(request).await?;
+            timings.manifest_ms = Some(manifest_started.elapsed().as_millis() as u64);
             (manifest_url, Some(DownloadMediaProbe::Dash(dash)))
         } else {
             (probed_url, None)
@@ -242,7 +279,8 @@ impl HttpDownloadClient {
             }
             None => {}
         }
-        Ok(probe)
+        timings.total_ms = probe_started.elapsed().as_millis() as u64;
+        Ok((probe, timings))
     }
 
     async fn probe_dash_manifest(
@@ -1125,6 +1163,28 @@ impl HttpDownloadClient {
         ))
     }
 
+    /// One probe request bounded by `PROBE_ATTEMPT_TIMEOUT`. Slow servers
+    /// surface as `Stalled` instead of holding the dialog for the 30 s
+    /// transfer timeout.
+    async fn probe_attempt(
+        &self,
+        method: Method,
+        request: &DownloadRequest,
+        range_probe: bool,
+    ) -> Result<Response, HttpDownloadError> {
+        match tokio::time::timeout(
+            PROBE_ATTEMPT_TIMEOUT,
+            self.send(method, request, range_probe),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(HttpDownloadError::Stalled {
+                timeout_ms: duration_millis(PROBE_ATTEMPT_TIMEOUT),
+            }),
+        }
+    }
+
     async fn send(
         &self,
         method: Method,
@@ -1198,7 +1258,10 @@ impl HttpDownloadClient {
                 timeout_ms: duration_millis(self.stall_timeout),
             }
         } else {
-            HttpDownloadError::Client(error)
+            // reqwest formats its errors with the request URL, which can carry
+            // tokens in the path or query. Drop it before the error is logged
+            // or shown; the failure kind and source chain are kept.
+            HttpDownloadError::Client(error.without_url())
         }
     }
 }
@@ -1599,6 +1662,16 @@ pub enum DownloadTransferOutcome {
     },
 }
 
+/// Per-stage probe latency, in milliseconds. Carries no URL or header data.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProbeTimings {
+    pub head_ms: Option<u64>,
+    pub range_ms: Option<u64>,
+    pub fallback_ms: Option<u64>,
+    pub manifest_ms: Option<u64>,
+    pub total_ms: u64,
+}
+
 #[derive(Debug, Clone)]
 struct ProbeMetadata {
     content_length: Option<u64>,
@@ -1824,6 +1897,131 @@ mod tests {
             "one inconsistent CDN replica must be retried without accepting its bytes"
         );
     }
+
+    fn name_for(content_disposition: Option<&str>, url: &str) -> String {
+        resolve_file_name(
+            content_disposition,
+            &reqwest::Url::parse(url).expect("test url"),
+        )
+    }
+
+    const FALLBACK_URL: &str = "https://example.com/dl/fallback-from-url.bin";
+
+    #[test]
+    fn rfc5987_extended_filename_decodes_utf8_and_beats_the_plain_name() {
+        assert_eq!(
+            name_for(
+                Some("attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf"),
+                FALLBACK_URL
+            ),
+            "报告.pdf"
+        );
+        assert_eq!(
+            name_for(
+                Some(
+                    "attachment; filename=\"report.pdf\"; filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf"
+                ),
+                FALLBACK_URL
+            ),
+            "报告.pdf",
+            "filename* must win over the ASCII fallback regardless of order"
+        );
+        assert_eq!(
+            name_for(
+                Some(
+                    "attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf; filename=\"report.pdf\""
+                ),
+                FALLBACK_URL
+            ),
+            "报告.pdf"
+        );
+    }
+
+    #[test]
+    fn unsupported_or_malformed_extended_filenames_fall_back_safely() {
+        assert_eq!(
+            name_for(
+                Some("attachment; filename=\"plain.zip\"; filename*=ISO-8859-1''%e9.zip"),
+                FALLBACK_URL
+            ),
+            "plain.zip",
+            "only UTF-8 is decoded; other charsets use the plain name"
+        );
+        assert_eq!(
+            name_for(Some("attachment; filename*=UTF-8''%E6%8A"), FALLBACK_URL),
+            "fallback-from-url.bin",
+            "an invalid UTF-8 sequence must not become mojibake"
+        );
+        assert_eq!(
+            name_for(Some("attachment; filename*=UTF-8''%E6%8"), FALLBACK_URL),
+            "fallback-from-url.bin",
+            "a truncated escape must be rejected"
+        );
+    }
+
+    #[test]
+    fn quoted_filenames_keep_semicolons_and_escaped_quotes() {
+        assert_eq!(
+            name_for(Some("attachment; filename=\"a;b.zip\""), FALLBACK_URL),
+            "a;b.zip"
+        );
+        assert_eq!(
+            name_for(
+                Some("attachment; filename=\"say \\\"hi\\\".txt\""),
+                FALLBACK_URL
+            ),
+            "fallback-from-url.bin",
+            "a quote is not a valid Windows file-name character"
+        );
+        assert_eq!(
+            name_for(
+                Some("attachment; filename=plain.zip; size=10"),
+                FALLBACK_URL
+            ),
+            "plain.zip"
+        );
+        assert_eq!(
+            name_for(Some("inline; filename=\"x.zip\""), FALLBACK_URL),
+            "x.zip"
+        );
+    }
+
+    #[test]
+    fn url_path_names_are_percent_decoded_but_stay_safe() {
+        assert_eq!(
+            name_for(
+                None,
+                "https://example.com/files/%E6%8A%A5%E5%91%8A.pdf?token=1"
+            ),
+            "报告.pdf"
+        );
+        assert_eq!(
+            name_for(None, "https://example.com/files/a%2Fb.zip"),
+            "download.bin",
+            "an encoded path separator must not smuggle a directory component"
+        );
+        assert_eq!(
+            name_for(None, "https://example.com/files/..%5C..%5Cevil.exe"),
+            "download.bin"
+        );
+        assert_eq!(name_for(None, "https://example.com/files/"), "download.bin");
+    }
+
+    #[test]
+    fn unsafe_disposition_names_never_reach_the_file_system() {
+        for header in [
+            "attachment; filename=\"..\\\\..\\\\evil.exe\"",
+            "attachment; filename=\"CON.txt\"",
+            "attachment; filename*=UTF-8''..%5C..%5Cevil.exe",
+            "attachment; filename*=UTF-8''%2e%2e",
+        ] {
+            assert_eq!(
+                name_for(Some(header), "https://example.com/"),
+                "download.bin",
+                "{header} must be rejected"
+            );
+        }
+    }
 }
 
 fn valid_probe_range(response: &Response) -> bool {
@@ -1991,24 +2189,138 @@ fn header_string(value: Option<&HeaderValue>) -> Option<String> {
 fn resolve_file_name(content_disposition: Option<&str>, final_url: &reqwest::Url) -> String {
     let candidate = content_disposition
         .and_then(content_disposition_file_name)
+        .filter(|name| is_safe_windows_file_name(name))
         .or_else(|| {
             final_url
                 .path_segments()?
                 .next_back()
-                .map(ToOwned::to_owned)
-        })
-        .filter(|name| is_safe_windows_file_name(name));
+                .and_then(percent_decode_utf8)
+                .filter(|name| is_safe_windows_file_name(name))
+        });
     candidate.unwrap_or_else(|| "download.bin".to_owned())
 }
 
+/// Parses `Content-Disposition` parameters per RFC 6266: quoted strings may
+/// contain `;` and backslash escapes, and `filename*` (RFC 5987/8187, UTF-8
+/// only) wins over the plain `filename`.
 fn content_disposition_file_name(value: &str) -> Option<String> {
-    value.split(';').skip(1).find_map(|parameter| {
-        let (name, value) = parameter.trim().split_once('=')?;
-        if !name.trim().eq_ignore_ascii_case("filename") {
-            return None;
+    let mut plain = None;
+    let mut extended = None;
+    for (name, parameter) in content_disposition_parameters(value) {
+        if name.eq_ignore_ascii_case("filename*") {
+            extended = extended.or_else(|| decode_extended_parameter(&parameter));
+        } else if name.eq_ignore_ascii_case("filename") {
+            plain = plain.or(Some(parameter));
         }
-        Some(value.trim().trim_matches('"').to_owned())
-    })
+    }
+    extended.or(plain)
+}
+
+/// Splits the parameters that follow the disposition type, honouring quoted
+/// strings. Malformed trailing text is ignored rather than failing the probe.
+fn content_disposition_parameters(value: &str) -> Vec<(String, String)> {
+    let mut parameters = Vec::new();
+    let mut characters = value.chars().peekable();
+    // Skip the disposition type (`attachment`, `inline`, ...).
+    for character in characters.by_ref() {
+        if character == ';' {
+            break;
+        }
+    }
+    loop {
+        while characters
+            .peek()
+            .is_some_and(|c| c.is_whitespace() || *c == ';')
+        {
+            characters.next();
+        }
+        let mut name = String::new();
+        while let Some(&character) = characters.peek() {
+            if character == '=' || character == ';' {
+                break;
+            }
+            name.push(character);
+            characters.next();
+        }
+        if characters.peek() != Some(&'=') {
+            if characters.peek().is_none() {
+                break;
+            }
+            continue;
+        }
+        characters.next();
+        while characters.peek().is_some_and(|c| c.is_whitespace()) {
+            characters.next();
+        }
+        let mut parameter = String::new();
+        if characters.peek() == Some(&'"') {
+            characters.next();
+            while let Some(character) = characters.next() {
+                match character {
+                    '\\' => {
+                        if let Some(escaped) = characters.next() {
+                            parameter.push(escaped);
+                        }
+                    }
+                    '"' => break,
+                    other => parameter.push(other),
+                }
+            }
+        } else {
+            while let Some(&character) = characters.peek() {
+                if character == ';' {
+                    break;
+                }
+                parameter.push(character);
+                characters.next();
+            }
+            parameter = parameter.trim().to_owned();
+        }
+        parameters.push((name.trim().to_owned(), parameter));
+    }
+    parameters
+}
+
+/// Decodes `UTF-8''percent-encoded-name`. Other charsets and malformed values
+/// yield `None` so the plain `filename` (or the URL name) is used instead.
+fn decode_extended_parameter(value: &str) -> Option<String> {
+    let mut parts = value.splitn(3, '\'');
+    let charset = parts.next()?;
+    let _language = parts.next()?;
+    let encoded = parts.next()?;
+    if !charset.eq_ignore_ascii_case("utf-8") {
+        return None;
+    }
+    percent_decode_utf8(encoded)
+}
+
+/// Strict percent-decoding into UTF-8. `None` when an escape is truncated or
+/// the bytes are not valid UTF-8, so a bad name never becomes mojibake.
+fn percent_decode_utf8(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let high = bytes.get(index + 1).copied().and_then(hex_value)?;
+            let low = bytes.get(index + 2).copied().and_then(hex_value)?;
+            decoded.push(high * 16 + low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Error)]

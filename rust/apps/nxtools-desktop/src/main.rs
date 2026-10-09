@@ -29,9 +29,9 @@ use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use downloads::{DownloadApplication, DownloadRuntimeContext};
 use gpui::{
     App, AppContext, Application, TitlebarOptions, WindowBackgroundAppearance, WindowBounds,
-    WindowDecorations, WindowKind, WindowOptions, px, size, transparent_black,
+    WindowDecorations, WindowKind, WindowOptions, px, size,
 };
-use gpui_component::{Root, Theme, ThemeMode};
+use gpui_component::Root;
 use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
@@ -52,7 +52,6 @@ use std::rc::Rc;
 use std::sync::Once;
 use std::time::Instant;
 use tracing::{error, info};
-use ui::typography::{TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,35 +205,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
         .with_assets(NxToolsAssets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
-            Theme::change(ThemeMode::Dark, None, cx);
-            let clear = transparent_black();
-            let visual_theme = crate::theme::Theme::zed_dark();
-            let component_theme = Theme::global_mut(cx);
-            component_theme.font_family = UI_FONT_FAMILY.into();
-            component_theme.mono_font_family = UI_MONO_FONT_FAMILY.into();
-            component_theme.font_size = px(TEXT_BODY);
-            component_theme.mono_font_size = px(TEXT_LABEL);
-            component_theme.colors.background = clear;
-            component_theme.colors.window_border = clear;
-            component_theme.colors.foreground = visual_theme.text.into();
-            component_theme.colors.muted_foreground = visual_theme.placeholder.into();
-            component_theme.colors.caret = visual_theme.accent.into();
-            component_theme.colors.selection = visual_theme.accent_soft.into();
-            component_theme.colors.border = visual_theme.border.into();
-            component_theme.colors.input = visual_theme.border.into();
-            component_theme.colors.ring = visual_theme.border_active.into();
-            component_theme.colors.popover = visual_theme.surface_raised.into();
-            component_theme.colors.popover_foreground = visual_theme.text.into();
-            component_theme.colors.accent = visual_theme.element_selected.into();
-            component_theme.colors.accent_foreground = visual_theme.text.into();
-            component_theme.colors.muted = visual_theme.element.into();
-            component_theme.colors.list = visual_theme.canvas.into();
-            component_theme.colors.list_active = visual_theme.element_selected.into();
-            component_theme.colors.list_active_border = visual_theme.border_subtle.into();
-            component_theme.colors.list_hover = visual_theme.surface_hover.into();
-            component_theme.colors.scrollbar = visual_theme.canvas.into();
-            component_theme.colors.scrollbar_thumb = visual_theme.border.into();
-            component_theme.colors.scrollbar_thumb_hover = visual_theme.text_muted.into();
+            crate::theme::apply_component_theme(cx);
 
             let notifications = cx.new(|_| NotificationCenter::default());
             let platform_bridge = Rc::new(platform_bridge);
@@ -292,6 +263,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                     notifications.clone(),
                     cx,
                 )
+            });
+            network_settings.update(cx, |owner, _| {
+                owner.bind_clipboard(clipboard.downgrade());
+                owner.bind_quick_launch(quick_launch.downgrade());
             });
             let downloads = cx.new(|cx| {
                 DownloadApplication::new(
@@ -472,6 +447,23 @@ fn install_panic_logging() {
 }
 
 fn main() {
+    #[cfg(not(debug_assertions))]
+    if std::env::args().any(|argument| argument == "--ui-preview") {
+        eprintln!("Isolated UI preview is available only in Debug builds.");
+        std::process::exit(2);
+    }
+    #[cfg(debug_assertions)]
+    match main_window::visual_preview::requested(&std::env::args().collect::<Vec<_>>()) {
+        Ok(true) => {
+            main_window::visual_preview::run();
+            return;
+        }
+        Ok(false) => {}
+        Err(_) => {
+            eprintln!("Invalid isolated UI preview arguments.");
+            std::process::exit(2);
+        }
+    }
     let instance_wait = protected_restart_instance_wait();
     let launch_mode = match DesktopLaunchMode::from_arguments(std::env::args()) {
         Ok(launch_mode) => launch_mode,

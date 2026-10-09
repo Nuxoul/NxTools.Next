@@ -410,7 +410,11 @@ impl IndexerService {
             }
         }
         self.snapshots = Arc::new(snapshots);
-        self.status.phase = IndexPhase::Ready;
+        self.status.phase = if self.snapshots.is_empty() {
+            IndexPhase::VolumesReady
+        } else {
+            IndexPhase::Ready
+        };
         self.status.indexed_items = self
             .status
             .drives
@@ -527,7 +531,11 @@ impl IndexerService {
     }
 
     fn record_build_failure(&mut self, mount_points: Vec<String>, message: String) {
-        self.status.phase = IndexPhase::Ready;
+        self.status.phase = if self.snapshots.is_empty() {
+            IndexPhase::VolumesReady
+        } else {
+            IndexPhase::Ready
+        };
         for mount_point in mount_points {
             self.build_errors.insert(
                 normalized_mount_key(&mount_point),
@@ -1538,6 +1546,29 @@ where
     )
 }
 
+/// Service-host entry: Hello is read before acquiring the exclusive indexer state lock.
+pub fn serve_admitted_session<R, W>(
+    reader: R,
+    writer: W,
+    service: &mut IndexerService,
+    handshake: Envelope,
+    command_handler: Arc<ServiceCommandHandler>,
+) -> Result<()>
+where
+    R: BufRead + Send + 'static,
+    W: Write,
+{
+    serve_session_with_sources_and_handshake(
+        reader,
+        writer,
+        service,
+        Arc::new(mft::scan_volume_and_persist),
+        Arc::new(usn::poll_snapshot),
+        Some(command_handler),
+        Some(handshake),
+    )
+}
+
 #[cfg(test)]
 fn serve_with_scanner<R, W>(
     reader: R,
@@ -1574,8 +1605,8 @@ where
 }
 
 fn serve_session_with_sources<R, W>(
-    mut reader: R,
-    mut writer: W,
+    reader: R,
+    writer: W,
     service: &mut IndexerService,
     scanner: Arc<SnapshotScanner>,
     journal_poller: Arc<JournalPoller>,
@@ -1585,10 +1616,39 @@ where
     R: BufRead + Send + 'static,
     W: Write,
 {
-    let Some(frame) = read_bounded_sync_frame(&mut reader)? else {
-        bail!("desktop disconnected before indexer handshake");
+    serve_session_with_sources_and_handshake(
+        reader,
+        writer,
+        service,
+        scanner,
+        journal_poller,
+        command_handler,
+        None,
+    )
+}
+
+fn serve_session_with_sources_and_handshake<R, W>(
+    mut reader: R,
+    mut writer: W,
+    service: &mut IndexerService,
+    scanner: Arc<SnapshotScanner>,
+    journal_poller: Arc<JournalPoller>,
+    command_handler: Option<Arc<ServiceCommandHandler>>,
+    handshake: Option<Envelope>,
+) -> Result<()>
+where
+    R: BufRead + Send + 'static,
+    W: Write,
+{
+    let handshake = match handshake {
+        Some(handshake) => handshake,
+        None => {
+            let Some(frame) = read_bounded_sync_frame(&mut reader)? else {
+                bail!("desktop disconnected before indexer handshake");
+            };
+            Envelope::decode_line(&frame).context("invalid indexer handshake")?
+        }
     };
-    let handshake = Envelope::decode_line(&frame).context("invalid indexer handshake")?;
     if !matches!(handshake.message, Message::Hello(_)) {
         bail!("desktop did not begin the indexer session with hello");
     }

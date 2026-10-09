@@ -1,54 +1,5 @@
-# Directory Structure
+# Finder structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/crates/nxtools-finder/src/lib.rs#FinderCatalog`, `repo:rust/crates/nxtools-finder/src/query.rs#FileQuery`, `repo:rust/crates/nxtools-finder/src/custom_command.rs`, `repo:rust/crates/nxtools-finder/src/calculator.rs`, `repo:rust/crates/nxtools-finder/src/environment_variable.rs`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+lib owns application scan/snapshot/ranking and usage/recent directories; query/pinyin own matching; custom_command prepares typed argv, calculator/env yield typed search actions. File index results supplied externally by Indexer, not re-scanned by Finder per query. SearchResultAction separates OpenTarget/CopyText/RunCommand; native executor and GPUI KeepOpen/session policy live elsewhere. Preserve launchable rank precedence and bounded result behavior with tests, not unexplained score changes. [Architecture](../../shared/architecture.md).

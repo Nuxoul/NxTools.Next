@@ -1,54 +1,5 @@
-# Directory Structure
+# Network structure
 
-> How backend code is organized in this project.
+Evidence: `repo:rust/crates/nxtools-network/src/lib.rs#NetworkPolicy`, `repo:rust/crates/nxtools-network/src/lib.rs#NetworkOperationSnapshot`, `repo:rust/crates/nxtools-network/Cargo.toml`.
 
----
-
-## Overview
-
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+One lib owns normalized/validated NetworkSettings behind shared lock, monotonic generation, immutable route snapshot and reqwest client construction. It depends on Core settings, not Desktop/download execution. Direct no_proxy, system default and explicit manual route are deliberate branches. Consumer owns HTTP/probe deadlines, certificate policy and operation logs. No new global mutable request header/credential state. Keep [shared boundaries](../../shared/architecture.md).

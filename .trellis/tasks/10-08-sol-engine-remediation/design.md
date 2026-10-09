@@ -1,0 +1,3 @@
+# Engine boundary
+
+Exclusive files: nxtools-download crate + tests and browser-host/blob_upload.rs. References first: download note -> ABDM -> legacy product resource/transfer behavior; update note with newly verified invariants. Classify shrink from retained identity and checkpoint Waiting before merge, avoid generic growth path on shrink. Completed DASH checkpoints require matching artifact length; crash-window adoption separate from known-corrupt completed artifacts. Receiving is a bounded in-flight lease, not idle; protect it from reaper, ensure abandoned work terminates by existing socket/operation bounds and cleans capacity. Reject duplicate receiving claims.

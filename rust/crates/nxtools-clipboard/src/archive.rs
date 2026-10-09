@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -46,6 +46,15 @@ pub enum ClipboardArchiveError {
     Json(#[from] serde_json::Error),
     #[error("unsupported clipboard archive: {0}")]
     Invalid(String),
+    #[error(
+        "archive import partially applied ({inserted} inserted, {updated} updated, {skipped} skipped): {reason}"
+    )]
+    Partial {
+        inserted: usize,
+        updated: usize,
+        skipped: usize,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -245,6 +254,23 @@ fn archive_file_name(kind: AssetKind, digest: &str) -> String {
     }
 }
 
+// Tracks only files created by this import. Reused content-addressed files are
+// never owned by the attempt, and preflight finishes before the first DB write.
+struct ImportAssets {
+    new_paths: Vec<PathBuf>,
+    committed: bool,
+}
+
+impl Drop for ImportAssets {
+    fn drop(&mut self) {
+        if !self.committed {
+            for path in &self.new_paths {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+}
+
 pub(crate) fn import_archive(
     history: &mut ClipboardHistory,
     archive_path: &Path,
@@ -267,104 +293,170 @@ pub(crate) fn import_archive(
         )));
     }
 
-    let mut report = ClipboardArchiveImportReport::default();
+    let mut owned = ImportAssets {
+        new_paths: Vec::new(),
+        committed: false,
+    };
+    let mut extracted = HashMap::new();
     let mut total_asset_bytes = 0_u64;
-    for item in manifest.items {
-        let image_path = match item.image_entry.as_deref() {
-            Some(entry) => extract_asset(
+    let mut assets_written = 0;
+    // Validate and materialize every asset referenced by an importable row before
+    // any row can commit. Malformed/skipped rows never create orphan assets.
+    for item in &manifest.items {
+        if !importable(item) {
+            continue;
+        }
+        let entries = item
+            .image_entry
+            .iter()
+            .map(|entry| (entry.as_str(), AssetKind::Image))
+            .chain(
+                item.source
+                    .icon_entry
+                    .iter()
+                    .map(|entry| (entry.as_str(), AssetKind::Icon)),
+            )
+            .chain(
+                item.formats
+                    .iter()
+                    .map(|format| (format.data_entry.as_str(), AssetKind::NativeFormat)),
+            );
+        for (entry, kind) in entries {
+            let key = (entry.to_owned(), kind.archive_directory());
+            if extracted.contains_key(&key) {
+                continue;
+            }
+            let path = extract_asset(
                 &mut archive,
                 entry,
-                AssetKind::Image,
+                kind,
                 asset_root,
                 &mut total_asset_bytes,
-                &mut report.assets_written,
-            )?,
-            None => String::new(),
-        };
-        let icon_path = match item.source.icon_entry.as_deref() {
-            Some(entry) => extract_asset(
-                &mut archive,
-                entry,
-                AssetKind::Icon,
-                asset_root,
-                &mut total_asset_bytes,
-                &mut report.assets_written,
-            )?,
-            None => String::new(),
-        };
-        let mut formats = Vec::with_capacity(item.formats.len());
-        for format in item.formats {
-            let data_path = extract_asset(
-                &mut archive,
-                &format.data_entry,
-                AssetKind::NativeFormat,
-                asset_root,
-                &mut total_asset_bytes,
-                &mut report.assets_written,
+                &mut assets_written,
+                &mut owned.new_paths,
             )?;
-            formats.push(ClipboardNativeFormat {
-                format_id: format.format_id,
-                format_name: format.format_name,
-                data_path,
-                size_bytes: format.size_bytes,
-                sort_order: format.sort_order,
-            });
-        }
-        let source = CaptureSource {
-            window_handle: item.source.window_handle,
-            process_id: item.source.process_id,
-            process_name: item.source.process_name,
-            process_icon_path: icon_path,
-            window_title: item.source.window_title,
-        };
-        let outcome = match item.kind.as_str() {
-            "text" if !item.text.is_empty() => history.capture(TextCapture {
-                text: item.text,
-                native_formats: formats,
-                source,
-                captured_at_unix_ms: item.captured_at_unix_ms,
-            })?,
-            "image" if !image_path.is_empty() => history.capture_image(ImageCapture {
-                image_path,
-                width: item.image_width,
-                height: item.image_height,
-                native_formats: formats,
-                source,
-                captured_at_unix_ms: item.captured_at_unix_ms,
-            })?,
-            "files" if !item.file_paths.is_empty() => history.capture_files(FilesCapture {
-                paths: item.file_paths,
-                native_formats: formats,
-                source,
-                captured_at_unix_ms: item.captured_at_unix_ms,
-            })?,
-            _ => {
-                report.skipped += 1;
-                continue;
-            }
-        };
-        let imported = match &outcome {
-            CaptureOutcome::Inserted(item) => {
-                report.inserted += 1;
-                item
-            }
-            CaptureOutcome::Updated(item) => {
-                report.updated += 1;
-                item
-            }
-            CaptureOutcome::IgnoredEmpty => {
-                report.skipped += 1;
-                continue;
-            }
-        };
-        if item.is_favorite {
-            history.set_favorite(imported.id, true)?;
-        }
-        if item.is_pinned {
-            history.set_pinned(imported.id, true)?;
+            extracted.insert(key, path);
         }
     }
-    Ok(report)
+    // The guard remains active through database writes; after a partial commit,
+    // only resources proven unreferenced may be removed.
+
+    let mut report = ClipboardArchiveImportReport::default();
+    let imported = (|| -> Result<(), ClipboardArchiveError> {
+        for item in manifest.items {
+            if !importable(&item) {
+                report.skipped += 1;
+                continue;
+            }
+            let image_path = item
+                .image_entry
+                .as_deref()
+                .map(|entry| extracted[&(entry.to_owned(), "images")].clone())
+                .unwrap_or_default();
+            let icon_path = item
+                .source
+                .icon_entry
+                .as_deref()
+                .map(|entry| extracted[&(entry.to_owned(), "icons")].clone())
+                .unwrap_or_default();
+            let mut formats = Vec::with_capacity(item.formats.len());
+            for format in item.formats {
+                let data_path = extracted[&(format.data_entry, "formats")].clone();
+                formats.push(ClipboardNativeFormat {
+                    format_id: format.format_id,
+                    format_name: format.format_name,
+                    data_path,
+                    size_bytes: format.size_bytes,
+                    sort_order: format.sort_order,
+                });
+            }
+            let source = CaptureSource {
+                window_handle: item.source.window_handle,
+                process_id: item.source.process_id,
+                process_name: item.source.process_name,
+                process_icon_path: icon_path,
+                window_title: item.source.window_title,
+            };
+            let outcome = match item.kind.as_str() {
+                "text" if !item.text.is_empty() => history.capture(TextCapture {
+                    text: item.text,
+                    native_formats: formats,
+                    source,
+                    captured_at_unix_ms: item.captured_at_unix_ms,
+                })?,
+                "image" if !image_path.is_empty() => history.capture_image(ImageCapture {
+                    image_path,
+                    width: item.image_width,
+                    height: item.image_height,
+                    native_formats: formats,
+                    source,
+                    captured_at_unix_ms: item.captured_at_unix_ms,
+                })?,
+                "files" if !item.file_paths.is_empty() => history.capture_files(FilesCapture {
+                    paths: item.file_paths,
+                    native_formats: formats,
+                    source,
+                    captured_at_unix_ms: item.captured_at_unix_ms,
+                })?,
+                _ => {
+                    report.skipped += 1;
+                    continue;
+                }
+            };
+            let imported = match &outcome {
+                CaptureOutcome::Inserted(item) => {
+                    report.inserted += 1;
+                    item
+                }
+                CaptureOutcome::Updated(item) => {
+                    report.updated += 1;
+                    item
+                }
+                CaptureOutcome::IgnoredEmpty => {
+                    report.skipped += 1;
+                    continue;
+                }
+            };
+            if item.is_favorite {
+                history.set_favorite(imported.id, true)?;
+            }
+            if item.is_pinned {
+                history.set_pinned(imported.id, true)?;
+            }
+        }
+        Ok(())
+    })();
+    match history.referenced_asset_paths() {
+        Ok(referenced) => {
+            owned
+                .new_paths
+                .retain(|path| !referenced.contains(&path.to_string_lossy().into_owned()));
+            // Drop removes only this attempt's unreferenced new resources.
+        }
+        Err(_) => {
+            // Reference lookup failure cannot justify deleting committed data.
+            owned.committed = true;
+        }
+    }
+    imported.map_err(|error| ClipboardArchiveError::Partial {
+        inserted: report.inserted,
+        updated: report.updated,
+        skipped: report.skipped,
+        reason: error.to_string(),
+    })?;
+    Ok(ClipboardArchiveImportReport {
+        assets_written,
+        ..report
+    })
+}
+
+fn importable(item: &ArchiveItem) -> bool {
+    match item.kind.as_str() {
+        "text" => !item.text.trim().is_empty(),
+        "image" => item.image_entry.is_some(),
+        "files" => !item.file_paths.is_empty(),
+        _ => false,
+    }
 }
 
 fn read_manifest(archive: &mut ZipArchive<File>) -> Result<ArchiveManifest, ClipboardArchiveError> {
@@ -386,6 +478,7 @@ fn extract_asset(
     asset_root: &Path,
     total_asset_bytes: &mut u64,
     assets_written: &mut usize,
+    new_paths: &mut Vec<PathBuf>,
 ) -> Result<String, ClipboardArchiveError> {
     validate_entry_name(entry_name, kind.archive_directory())?;
     let mut entry = archive.by_name(entry_name)?;
@@ -402,31 +495,38 @@ fn extract_asset(
     }
 
     let temporary = asset_root.join(format!(".import-{}.tmp", uuid::Uuid::new_v4()));
-    let mut output = File::create(&temporary)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = entry.read(&mut buffer)?;
-        if read == 0 {
-            break;
+    let written = (|| -> Result<PathBuf, ClipboardArchiveError> {
+        let mut output = File::create(&temporary)?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = entry.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            output.write_all(&buffer[..read])?;
+            hasher.update(&buffer[..read]);
         }
-        output.write_all(&buffer[..read])?;
-        hasher.update(&buffer[..read]);
+        output.sync_all()?;
+        drop(output);
+        let digest = format!("{:x}", hasher.finalize());
+        let destination = kind.destination(asset_root, &digest);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if destination.exists() {
+            fs::remove_file(&temporary)?;
+        } else {
+            fs::rename(&temporary, &destination)?;
+            new_paths.push(destination.clone());
+            *assets_written += 1;
+        }
+        Ok(destination)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    output.sync_all()?;
-    drop(output);
-    let digest = format!("{:x}", hasher.finalize());
-    let destination = kind.destination(asset_root, &digest);
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if destination.exists() {
-        fs::remove_file(&temporary)?;
-    } else {
-        fs::rename(&temporary, &destination)?;
-        *assets_written += 1;
-    }
-    Ok(destination.to_string_lossy().into_owned())
+    Ok(written?.to_string_lossy().into_owned())
 }
 
 fn validate_entry_name(
